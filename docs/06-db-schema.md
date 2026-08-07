@@ -83,13 +83,22 @@ CREATE TABLE passenger_downstream (
 ```sql
 CREATE TABLE wallet (
   passenger_id           TEXT PRIMARY KEY,
-  balance                INTEGER NOT NULL DEFAULT 0,      -- microunit
+  balance                INTEGER NOT NULL DEFAULT 0,      -- microunit（可用余额）
+  reserved               INTEGER NOT NULL DEFAULT 0,      -- microunit（冻结中，未消费）
   updated_at             TEXT NOT NULL,
-  FOREIGN KEY (passenger_id) REFERENCES passenger(id)
+  FOREIGN KEY (passenger_id) REFERENCES passenger(id),
+  CHECK (balance >= 0),
+  CHECK (reserved >= 0)
 );
 ```
 
-**同事务原子性**：`wallet.balance` 变更必须与 `wallet_ledger` 插入**在同一事务**。
+**并发控制**（见 `09-transactions.md § 7`）：
+
+- 用 `BEGIN IMMEDIATE` 拿写锁（SQLite 无行级锁）
+- 冻结：条件更新 `WHERE balance >= ?`，`rowsAffected == 0` 视为余额不足或冲突
+- **禁止**：先 SELECT 判 balance 再 UPDATE 的"检查-然后-操作"模式
+
+**同事务原子性**：`wallet.balance` / `wallet.reserved` 变更必须与 `wallet_ledger` 插入**在同一事务**。
 
 ## 5. 积分流水 · `wallet_ledger`
 
@@ -262,12 +271,15 @@ CREATE TABLE pull_round (
 
 ## 11. 号台账 · `credential_ledger`
 
+**号归属 = Bus**（见 `decisions.md §3.7`）。号属于 bus_id；成员通过 bus_member 权限访问。个人单独拉号进的 `record-<pid>` group 视为"pid 名下私有 bus"（简化模型）。
+
 ```sql
 CREATE TABLE credential_ledger (
   id                          TEXT PRIMARY KEY,           -- 我方内部 id
   kiro_rs_credential_id       INTEGER NOT NULL UNIQUE,    -- housepool (kiro.rs) 里的 credential id (u64)
-  owner_passenger_id          TEXT NOT NULL,               -- 号的归属乘客
-  current_group               TEXT NOT NULL,               -- bus-<id> | record-<pid>
+  owner_bus_id                TEXT,                        -- 号所归属的 bus（若在 bus group 里）
+  owner_record_passenger_id   TEXT,                        -- 或号在 record-<pid> group 里，属于该乘客的拉号记录
+  current_group               TEXT NOT NULL,               -- bus-<id> | record-<pid> | market
   vendor_id                   TEXT NOT NULL,
   vendor_order_id             TEXT,                        -- vendor 侧的批次订单 id
   source_pull_round_id        TEXT NOT NULL,               -- 从哪一次拉号来
@@ -277,14 +289,23 @@ CREATE TABLE credential_ledger (
   dead_at                     TEXT,
   death_source                TEXT,                        -- housepool_probe | vendor_webhook | vendor_poll
   handed_off_at               TEXT,                        -- handoff 时间
-  FOREIGN KEY (owner_passenger_id) REFERENCES passenger(id),
-  FOREIGN KEY (source_pull_round_id) REFERENCES pull_round(id)
+  FOREIGN KEY (owner_bus_id) REFERENCES bus(id),
+  FOREIGN KEY (owner_record_passenger_id) REFERENCES passenger(id),
+  FOREIGN KEY (source_pull_round_id) REFERENCES pull_round(id),
+  CHECK (
+    (owner_bus_id IS NOT NULL AND owner_record_passenger_id IS NULL) OR
+    (owner_bus_id IS NULL AND owner_record_passenger_id IS NOT NULL)
+  )
 );
 ```
 
-**索引**：`(owner_passenger_id, status)`, `(current_group)`, `(vendor_id, status)`, `(status, dead_at)`, `(pulled_at)`（用于平均寿命聚合）。
+**索引**：`(owner_bus_id, status)`, `(owner_record_passenger_id, status)`, `(current_group)`, `(vendor_id, status)`, `(status, dead_at)`, `(pulled_at)`。
 
-**注意**：**credential 明文永不落库**（在 housepool = kiro.rs 里）。本表只是我方的**台账**（who / when / where / dead？）。**handoff 后 `status = handed_off`**，明文早已交给乘客、housepool 里已 DELETE。
+**注意**：
+- **credential 明文永不落库**（在 housepool = kiro.rs 里）。本表只是我方的**台账**（who / when / where / dead？）
+- **handoff 后 `status = handed_off`**，明文早已交给乘客、housepool 里已 DELETE
+- **权限查询**：拼车 bus 里的号，成员通过 `bus_member` 表能拿访问权；1 人 bus 也走同一 join
+- **号在 record group 时** `owner_bus_id IS NULL`，走 `owner_record_passenger_id`
 
 ## 12. 平均寿命聚合视图 · `vendor_lifespan_snapshot`
 
@@ -503,13 +524,15 @@ capability_slot / pull_round_capability （阶段 2c 起写）
 
 ## Migration 顺序（1a 首批）
 
-**首批 migration 覆盖阶段 1a 所需 12 张表**（其余延后）：
+**首批 migration 覆盖阶段 1a 所需 16 张表**（其余延后）：
 
 1. `passenger`, `passenger_api_key`, `passenger_downstream`
-2. `wallet`, `wallet_ledger`
+2. `wallet`（**含 reserved 字段**）, `wallet_ledger`
 3. `bus`, `bus_member`
-4. `pull_intent`, `pull_round`, `credential_ledger`
+4. `pull_intent`, `pull_round`, `credential_ledger`（**含 owner_bus_id / owner_record_passenger_id**）
 5. `vendor_account`, `passenger_daily_counter`
+6. `idempotency_record`（HTTP 幂等）
+7. `pending_purchase`, `pending_assignment`（1a 只上这两个；`pending_topup` 是 1b）
 
 **1b 加**：`cdk`, `cdk_redemption`, `payment_order`
 
@@ -520,6 +543,109 @@ capability_slot / pull_round_capability （阶段 2c 起写）
 **2c 加**：`capability_slot`, `pull_round_capability`
 
 **3+**：管理端 / 市场相关表另写
+
+## 19. HTTP 幂等 · `idempotency_record`
+
+见 `09-transactions.md § 6` 完整说明。
+
+```sql
+CREATE TABLE idempotency_record (
+  id                     TEXT PRIMARY KEY,
+  passenger_id           TEXT NOT NULL,
+  method                 TEXT NOT NULL,
+  path                   TEXT NOT NULL,
+  idempotency_key        TEXT NOT NULL,           -- 客户端 X-Idempotency-Key (32 hex)
+  request_fingerprint    TEXT NOT NULL,           -- sha256(canonical body) - 防冲突
+  response_status        INTEGER,
+  response_headers       TEXT,                     -- JSON
+  response_body          BLOB,                     -- 首次响应体（handoff 场景不含明文 keys）
+  created_at             TEXT NOT NULL,
+  first_completed_at     TEXT,
+  UNIQUE (passenger_id, path, idempotency_key)
+);
+```
+
+**索引**：`(passenger_id, path, idempotency_key)`, `(created_at)`。
+
+**过期**：`created_at` 早于 30 天前的记录 janitor 清理（幂等窗口）。
+
+**handoff 特例**：response_body 存"状态版"（不含 credential 明文）；重放响应 `already_delivered: true` + credential_ids 数组 + 空 keys 数组。
+
+## 20. 状态机持久化表 · `pending_purchase` / `pending_assignment` / `pending_topup`
+
+见 `09-transactions.md § 2/3/4/5` 完整状态定义。
+
+### `pending_purchase`
+
+```sql
+CREATE TABLE pending_purchase (
+  id                       TEXT PRIMARY KEY,
+  idempotency_record_id    TEXT NOT NULL,
+  passenger_id             TEXT NOT NULL,
+  bus_id                   TEXT,                          -- 拼车拉号时；单独拉号 null
+  target_group             TEXT NOT NULL,                 -- bus-<id> | record-<pid>
+  vendor_id                TEXT NOT NULL,
+  client_order_id          TEXT NOT NULL,                 -- vendor 幂等键 (32 hex)
+  count_requested          INTEGER NOT NULL,
+  reserved_amount          INTEGER NOT NULL,              -- 冻结的积分
+  status                   TEXT NOT NULL,                 -- initial | reserved | purchased | imported | completed | cancelled_reserve | need_recover_vendor | need_manual
+  vendor_order_id          TEXT,                          -- purchased 后填
+  pull_round_id            TEXT,                          -- completed 时关联到 pull_round
+  error                    TEXT,
+  created_at               TEXT NOT NULL,
+  updated_at               TEXT NOT NULL,
+  UNIQUE (vendor_id, client_order_id),
+  FOREIGN KEY (passenger_id) REFERENCES passenger(id),
+  FOREIGN KEY (bus_id) REFERENCES bus(id),
+  FOREIGN KEY (idempotency_record_id) REFERENCES idempotency_record(id),
+  FOREIGN KEY (pull_round_id) REFERENCES pull_round(id)
+);
+```
+
+**索引**：`(status, updated_at)` （janitor 扫超时用），`(passenger_id, created_at)`。
+
+### `pending_assignment`
+
+```sql
+CREATE TABLE pending_assignment (
+  id                    TEXT PRIMARY KEY,
+  idempotency_record_id TEXT NOT NULL,
+  passenger_id          TEXT NOT NULL,
+  credential_id         TEXT NOT NULL,                    -- 我方 credential_ledger.id
+  target                TEXT NOT NULL,                    -- to-bus | to-passengerpool | handoff
+  target_bus_id         TEXT,                              -- target='to-bus' 时
+  status                TEXT NOT NULL,                    -- initial | external_done | status_updated | completed | need_manual
+  error                 TEXT,
+  created_at            TEXT NOT NULL,
+  updated_at            TEXT NOT NULL,
+  FOREIGN KEY (passenger_id) REFERENCES passenger(id),
+  FOREIGN KEY (credential_id) REFERENCES credential_ledger(id),
+  FOREIGN KEY (target_bus_id) REFERENCES bus(id),
+  FOREIGN KEY (idempotency_record_id) REFERENCES idempotency_record(id)
+);
+```
+
+**索引**：`(status, updated_at)`, `(passenger_id, created_at)`。
+
+### `pending_topup`
+
+```sql
+CREATE TABLE pending_topup (
+  id                     TEXT PRIMARY KEY,
+  idempotency_record_id  TEXT NOT NULL,
+  passenger_id           TEXT NOT NULL,
+  payment_order_id       TEXT NOT NULL,
+  status                 TEXT NOT NULL,                   -- initial | gateway_ordered | gateway_paid | credited | completed | expired | cancelled | refunded | pending_manual
+  error                  TEXT,
+  created_at             TEXT NOT NULL,
+  updated_at             TEXT NOT NULL,
+  FOREIGN KEY (passenger_id) REFERENCES passenger(id),
+  FOREIGN KEY (payment_order_id) REFERENCES payment_order(id),
+  FOREIGN KEY (idempotency_record_id) REFERENCES idempotency_record(id)
+);
+```
+
+**索引**：`(status, updated_at)`。
 
 ## 备份 / 迁移
 

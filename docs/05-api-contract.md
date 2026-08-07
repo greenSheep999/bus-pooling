@@ -51,6 +51,18 @@
 - 写请求**建议**带 `X-Idempotency-Key: <32 hex>` header
 - **拉号 / 派去向 / 充值起单**这三类**必须**带，否则响应体的 `client_order_id` 会由服务端生成，客户端无法重放
 - 同 key 重复 → 返回**字节一致**的原响应，不重复副作用
+- 幂等窗口：**30 天**（服务端 `idempotency_record` 表 30 天后清理，之后重放视为新请求）
+
+### handoff 幂等特例（重要）
+
+`POST /api/me/pull-records/{id}/handoff` 和 `POST /api/me/pull-records/assign`（含 handoff 分支）**是幂等规则的例外**：
+
+- **首次调用**：返回 credential 明文（`keys[]` 含完整字段）
+- **重放（同 X-Idempotency-Key）**：返回**`already_delivered: true` + `credential_ids: [...]` + `delivered_at: "..."` + `keys: []`**（**明文只给一次**）
+
+理由：handoff 语义是"号数据交出去 + 我方 DELETE 号"，明文我方**不留**（安全），故不可能"字节一致重放"。客户端需要缓存首次响应里的明文，重放时不再期望拿到明文。
+
+**其它端点**（购买 / 派进车 / 派 passengerpool）**没有明文问题**，字节一致重放规则依然适用。
 
 ---
 

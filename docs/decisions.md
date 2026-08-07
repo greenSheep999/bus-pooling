@@ -189,6 +189,16 @@
 ### 3.6 拉号记录 = 数据库表（不进 housepool）❌
 - 见 1.3
 
+### 3.7 号归属 = Bus（不是乘客）✅
+- **提议**：号在 credential_ledger 有唯一 owner
+- **决策**：**号归属 Bus（`owner_bus_id`）**，成员通过 `bus_member` 表拿访问权
+- **理由**：拼车语义 = "大家一起养的号"；owner 归 Bus 后：
+  - 退出 Bus 不影响号（号仍在 bus group）
+  - 解散 Bus 才需要决定号归谁（阶段 1a 简化：解散时号 handoff 给创建人 or 死号扫掉）
+  - 拼车分摊 / 补车 / 退款 都以 Bus 为主体
+- **单独拉号进 record group** 的号：`owner_bus_id = NULL, owner_record_passenger_id = <pid>`
+- **参考**：`06-db-schema.md § 11 credential_ledger`（CHECK 约束保证 XOR）· `09-transactions.md`
+
 ---
 
 ## 4. 概念 / 术语作废
