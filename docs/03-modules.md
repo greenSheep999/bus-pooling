@@ -41,7 +41,10 @@
 - **依赖**：无
 - **谁调它**：`decider`, `webhookin`, 后续任何需要"提供上游能力"的模块
 - **P 标签**：1a（先只有 kiro 一个 provider）
-- **契约**：`provider.go` 定义 `Provider` interface：`Vendors() []Vendor` / `EventParser() WebhookParser`；`vendor.go` 定义 `Vendor` interface：`Stock() / Purchase() / OrderKeys() / Balance()`
+- **契约**：`provider.go` 定义 `Provider` interface：`Vendors() []Vendor` / `EventParser() WebhookParser`；`vendor.go` 定义 `Vendor` interface：
+  - `Stock()` / `Purchase()` / `OrderKeys()` / `Balance()` —— 基础
+  - `KeyHealth(id)` —— 单号死活探测（91kiro `/api/my/keys/{id}/usage`、drop.kiro.ss `/api/status`、kiroapp.io `/api/me/keys/{id}` 各家不同）
+  - `KeyStats()` —— 批量健康统计（91kiro `/api/my/rounds`、kiro.ooo `/my/dispatch-log`）
 
 ### `internal/providers/kiro/`
 
@@ -158,9 +161,10 @@
 - **目的**：跨 vendor 决策（比价 / 健康 / fallback） + 实际发起 vendor purchase + 记账 + 存进 housepool + 触发上车
 - **输入**：`BatchIntent` 或 `Intent`
 - **输出**：`PurchaseResult { credentials[], vendor_id, cost, participants_split }`
-- **依赖**：`providers/*`, `wallet`（记账）, `housepool`（进 bus group）, `pullrecord`（单独拉号写记录）
+- **依赖**：`providers/*`, `wallet`（记账）, `housepool`（进 bus group）, `pullrecord`（单独拉号写记录）, `deathwatch`（读平均寿命统计）
 - **谁调它**：`strategy`（1 人 bus 意图直发）, `coalescer`（多人 bus 合流后发）, `api`（单独拉号）
-- **P 标签**：1a（单 vendor 直选）→ 1d（比价 + fallback，与自动一起上）
+- **P 标签**：1a（单 vendor 直选）→ 1d（比价 + fallback + **平均寿命**，与自动一起上）
+- **比价维度**：**单价 / 平均寿命 = 每积分能活的时长**（不是只看单价）
 - **归一算价**：跨 vendor 单价 → 一个"每 key 有效积分成本"，含通道费/手续费在内
 
 ### `internal/deathwatch/` (业务包 10/15)
@@ -170,7 +174,9 @@
 - **输出**：补车意图（发回 `strategy` 意图池）；退款事务（走 `wallet.warranty_refund`）
 - **依赖**：`housepool`, `bus`, `strategy`, `wallet`
 - **谁调它**：定时器 + `webhookin`
-- **P 标签**：1a 基础（探活 + 踢死号）→ 1d（webhook 归一化 + 自动补车）
+- **平均寿命统计**：`credential.dead_at - created_at` 聚合成 `(vendor, 窗口)→ 平均寿命`，供 `decider` 使用
+- **死活信号 3 路**：housepool 探活 / vendor webhook / vendor 死活端点轮询（兜底）
+- **P 标签**：1a 基础（探活 + 踢死号）→ 1d（webhook 归一化 + 自动补车 + 寿命统计）
 - **规则 A**：见 §00.7.5
 
 ### `internal/webhookout/` (业务包 11/15)

@@ -412,7 +412,11 @@ delivery       passengerpool.kirors      乘客的号池（外部）
   - 选"推我号池" → 走 G-②（复制到 passengerpool；同时进 housepool 副本 group）
   - 选"拿走" → 走 G-③（离开系统）
 - **拉号记录里的号不监控**（不在 housepool，Layer 4 5 项能力不覆盖）
-- 拉号记录里的号有过期策略（例：N 天未处理 → 提醒 / 自动兜底动作）—— 具体待 1a 落码时定
+- **拉号记录里的号"过期" = 号本身死了**（不是按 N 天）——通过 vendor 探活得知：
+  - 定时调 vendor 的死活端点（如 drop.kiro.ss `GET /api/status` / 91kiro `/api/my/rounds` / kiro.ooo `/my/dispatch-log`）
+  - 收 vendor webhook 的 `all_keys_dead` / `key_revoked_abuse` / `on_key_suspect`
+  - 号死了 → 拉号记录里该行标记 `status: dead`（不删，留历史）
+  - 号还活但用户 N 天没处理 → 只**提醒**乘客处理，不自动搬迁（尊重用户选择权）
 
 ---
 

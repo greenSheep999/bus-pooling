@@ -103,20 +103,27 @@
 - **不选 vendor**（那是 3d） · **不实际调 vendor**（那是走 Layer 2）
 
 #### 3d · 决策模型
-- 输入：一个拉号意图 + 6 家 vendor 实时快照
-- 决策：
-  - **比价**：跨 vendor 归一算价（CNY/USD/积分/阶梯/手续费 → 一个"每 key 有效积分成本"）
+- 输入：一个拉号意图 + 6 家 vendor 实时快照 + **6 家平均寿命统计**
+- 决策维度：
+  - **单价**：跨 vendor 归一算价（CNY/USD/积分/阶梯/手续费 → "每 key 积分成本"）
+  - **平均寿命**：从历史号 `dead_at - created_at` 采样算得（近 N 天），得"每 vendor 号平均活多久"
+  - **有效成本** = 单价 / 平均寿命 = **每积分能活的时长**（真正的比价维度）
   - **筛选**：按策略上限（`max_unit_price`）过滤
   - **健康**：按存活 / 缺货信号过滤
   - **Fallback**：主选挂了走次选
 - 输出：一个具体的 vendor 选择 + 幂等键 + 调用参数
 - **不发请求**（发请求是 Layer 2 的事）
+- **平均寿命数据来源**：`deathwatch` 记录的号死时间 - `providers` 记录的拉号时间；聚合成"vendor × 最近 N 天 → 平均寿命"表
 
-#### 3e · 号死监控 + 质保退款
-- 订阅 kiro.rs 的存活状态（Layer 4 提供）
-- 订阅 vendor webhook 的死号事件（`all_keys_dead` / `warranty_refund` / vendor 自定的失效信号，见各家档案）
+#### 3e · 号死监控 + 质保退款 + 寿命统计
+- 三个信号源，任一触发号"判死"：
+  - **kiro.rs 探活**（housepool 5 项能力之一，Layer 4 提供）
+  - **vendor 主动 webhook**（`all_keys_dead` / `warranty_refund` / `key_revoked_abuse` / `on_key_suspect` —— 各家事件名不同，见档案 §10-11）
+  - **定时轮询 vendor 死活端点**（drop.kiro.ss `/api/status`、91kiro `/api/my/rounds`、kiro.ooo `/my/dispatch-log`）—— 兜底
+- 号死落库：记 `credential.dead_at`（+ `death_source`：kiro.rs 探活 / vendor webhook / vendor 轮询）
 - 规则 A：号死 → 从分组踢出 → 分组全死 → 触发新一轮（回到 3b/3c/3d）
 - 规则 B：上游退我方 → 我方按乘客比例退积分（走 3a 记账）
+- **平均寿命统计**：从 `credential.created_at → dead_at` 聚合，按 (vendor, 时间窗口) → 平均寿命，供 3d 决策
 - **不担保号本身质量**（§00.1、§00.7.5）
 
 #### 3f · 对外 webhook 出向
