@@ -149,7 +149,7 @@
   2. **存活探测** —— 号什么时候死了
   3. **成本 / 用量追踪** —— 每 group（每辆 bus / 个人 / 市场）用了多少额度；号死时耗了多少
   4. **分组** —— 按 group 组织号（`personal-<pid>` / `bus-<bus_id>` / market group）+ `CreateClientKey` / `RotateClientKey`
-  5. **并发监控** —— 每 group 的调用频率（是 P5 压车治理的探测基础）
+  5. **并发监控** —— 每 group 的调用频率（是阶段 2c 压车治理的探测基础）
 - **我方是 kiro.rs 的客户端**（Layer 3 通过 `housepool/kirors` 包调它）
 - **命名理由**：抽象叫 `housepool`（我方自家的号池），具体实现叫 `kirors`。将来若换其它号池实现，只加一个 `housepool/otherimpl/`，不改上层
 - **不能省**：曾讨论过"用数据库替代 housepool"—— **不可行**。数据库只能做记账（"这号归谁"），但 §1-5 的**运行时**能力（校验 / 探活 / 用量 / 并发监控）必须号池实现才有
