@@ -301,7 +301,25 @@ docs/vendors/_sources/root-*.html
 
 ---
 
-## 12. 最后一句话
+## 12. 内部术语 vs 对外文案（严格分离）
+
+**内部术语**（架构讨论 / 代码 / 内部文档用）：
+
+- `housepool` / 我方号池 / kiro.rs 承载层 / `record-<pid>` group / `bus-<id>` group / provider / vendor adapter / decider / coalescer / deathwatch / pullrecord / …
+
+**对外文案**（乘客 UI / 对外 webhook 载荷 / API 错误 message / 帮助中心）：
+
+- **绝不出现** `housepool` / `record group` / `provider` / `adapter` / `decider` 等词
+- **允许出现**：拼车 / 车 / 号 / 拉号 / 我的号池（指乘客自己的 passengerpool）/ 车友 / 车队 / 补车 / 拿走 / ……
+- 乘客只知道：他有账号、钱包、能建车、能拉号、号可以进车 / 推自己号池 / 拿走 —— 中间层的技术细节他不需要知道
+
+**如果 UI 或 API 错误 message 里出现内部术语** → **立即整改**。
+
+**参考**：
+- 对外 message / webhook / 页面文案在 `web/i18n/` (阶段 1a 起) 或代码里 hardcode 时**必须**过内部代码 review 时的"术语作废"检查
+- 内部文档（`docs/*.md` / `CLAUDE.md` / `README.md`）可以用内部术语；但 `README.md` 里**面向新人开发者**的部分要平衡（术语必要时保留，但加解释）
+
+## 13. 最后一句话
 
 **这个项目是给一个人做的公益工具，不是软件工程师简历**。
 

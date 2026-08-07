@@ -247,6 +247,18 @@
 | `DeleteCredentialBatch(ids)` | `POST /credentials/batch/delete` |
 | `ListGroups` / `CreateGroup` / `UpdateGroup` / `DeleteGroup` | `GET/POST/DELETE/PATCH /groups[/{name}]` |
 | `ListClientKeys` / `CreateClientKey` / `UpdateClientKey` / `DeleteClientKey` | `/client-keys/*` |
+| **统计端点**（bus 视角号数据） | |
+| `StatsOverview` | `GET /stats/overview`（today/week calls, tokens, errors, credits, activeCredentials, activeClientKeys） |
+| `StatsByCredential(window, ?group)` | `GET /stats/by-credential?range=24h\|7d\|30d[&group=bus-<id>]`（每号 calls / inputTokens / outputTokens / errors） |
+| `StatsTimeSeries(window, ?group)` | `GET /stats/timeseries?range=24h\|7d\|30d&granularity=hour\|day` |
+| `StatsByModel(window)` | `GET /stats/by-model` |
+
+**平均并发**：kiro.rs **未提供直接读端点**（虽然内部有并发计数——`POST /credentials/{id}/clear-concurrency` 存在为证）。当前 3 条出路：
+- (a) 给 kiro.rs 加 `GET /credentials/{id}/concurrency` 端点 —— **推荐**
+- (b) 我方定期采样聚合分钟级峰值 / 均值
+- (c) 从 `stats_timeseries` 反推（需响应时间，未提供）
+
+**决策**：**(a) 待跟 kiro.rs 运维方（用户本人）拍板**；未拍板前平均并发字段留空展示"—"。
 
 - **依赖**：`infra/httpx`, `infra/secrets`（kiro.rs admin key）
 - **P 标签**：1a

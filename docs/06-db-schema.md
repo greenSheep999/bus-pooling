@@ -305,6 +305,63 @@ CREATE TABLE vendor_lifespan_snapshot (
 
 **索引**：`(vendor_id, window, observed_at DESC)`。
 
+## 12.5 号用量快照 · `credential_usage_snapshot`
+
+从 kiro.rs `GET /stats/by-credential` 定期拉快照落进本表，用于 UI 展示"每号用了多少 / 平均积分消耗 / 平均并发"。
+
+```sql
+CREATE TABLE credential_usage_snapshot (
+  id                        TEXT PRIMARY KEY,
+  kiro_rs_credential_id     INTEGER NOT NULL,           -- housepool 里的 credential id
+  window                    TEXT NOT NULL,              -- '24h' | '7d' | '30d'
+  calls                     INTEGER NOT NULL DEFAULT 0,
+  input_tokens              INTEGER NOT NULL DEFAULT 0,
+  output_tokens             INTEGER NOT NULL DEFAULT 0,
+  errors                    INTEGER NOT NULL DEFAULT 0,
+  credits_used              INTEGER NOT NULL DEFAULT 0, -- microunit，从 vendor 或 kiro.rs 拿
+  avg_credits_per_day       INTEGER NOT NULL DEFAULT 0, -- microunit
+  concurrency_avg           INTEGER,                     -- **kiro.rs 未直接给，可能是 null**
+  observed_at               TEXT NOT NULL,
+  UNIQUE (kiro_rs_credential_id, window, observed_at)
+);
+```
+
+**索引**：`(kiro_rs_credential_id, window, observed_at DESC)`。
+
+**采集节奏**：每 5-15 分钟一次（阶段 1d 可配置）。
+
+**`concurrency_avg` 字段现状**：
+- kiro.rs 未提供直接读端点（`POST /credentials/{id}/clear-concurrency` 存在为证——内部有并发计数）
+- 三条出路（详见 `03-modules.md · housepool/kirors` 备注）：
+  - (a) 给 kiro.rs 加 `GET /credentials/{id}/concurrency`
+  - (b) 我方采样聚合
+  - (c) 反推（不可用）
+- 未拍板前该字段常态 `NULL`，UI 显示 `—`
+
+## 12.6 Bus 用量聚合视图 · `bus_usage_snapshot`
+
+```sql
+CREATE TABLE bus_usage_snapshot (
+  id                              TEXT PRIMARY KEY,
+  bus_id                          TEXT NOT NULL,
+  window                          TEXT NOT NULL,          -- '24h' | '7d' | '30d'
+  alive_count                     INTEGER NOT NULL,
+  dead_count                      INTEGER NOT NULL,
+  avg_lifespan_seconds            INTEGER NOT NULL,
+  total_calls                     INTEGER NOT NULL,
+  total_credits_used              INTEGER NOT NULL,       -- microunit
+  avg_credits_per_cred_per_day    INTEGER NOT NULL,       -- microunit
+  errors_rate                     REAL NOT NULL,          -- 0.0..1.0
+  concurrency_avg                 INTEGER,                 -- 同上，可能 null
+  observed_at                     TEXT NOT NULL,
+  UNIQUE (bus_id, window, observed_at)
+);
+```
+
+**用途**：Bus 详情页 UI 读这张表；跨窗口对比时用。
+
+**索引**：`(bus_id, window, observed_at DESC)`。
+
 ## 13. Webhook 入向去重 · `vendor_webhook_delivery`
 
 ```sql
@@ -456,7 +513,7 @@ capability_slot / pull_round_capability （阶段 2c 起写）
 
 **1b 加**：`cdk`, `cdk_redemption`, `payment_order`
 
-**1d 加**：`vendor_lifespan_snapshot`, `vendor_webhook_delivery`
+**1d 加**：`vendor_lifespan_snapshot`, `vendor_webhook_delivery`, `credential_usage_snapshot`, `bus_usage_snapshot`
 
 **1e 加**：`outbound_webhook_delivery`
 
