@@ -393,7 +393,7 @@
                                   "id": "M2Pgot",
                                   "name": "Name",
                                   "fill": "$fg",
-                                  "content": "我的号池",
+                                  "content": "日常一号",
                                   "fontFamily": "$font",
                                   "fontSize": 17,
                                   "fontWeight": "600",
@@ -495,7 +495,7 @@
                                   "id": "nHBrJ",
                                   "name": "Cost",
                                   "fill": "$fg",
-                                  "content": "¥ 12",
+                                  "content": "12 积分",
                                   "fontFamily": "$font",
                                   "fontSize": 13,
                                   "fontWeight": "600"
@@ -6063,6 +6063,7 @@
       "x": 0,
       "y": 3918,
       "name": "Extract Key · 提取 key",
+      "enabled": false,
       "clip": true,
       "width": 1440,
       "height": 1280,
@@ -6393,6 +6394,7 @@
           "x": 0,
           "y": 65,
           "name": "Main",
+          "enabled": false,
           "width": 1440,
           "height": 1215,
           "layout": "vertical",
@@ -6431,7 +6433,7 @@
             },
             {
               "type": "frame",
-              "id": "oTSmc",
+              "id": "C2iMF",
               "name": "Action Card",
               "width": "fill_container",
               "fill": [
@@ -6480,20 +6482,21 @@
               "children": [
                 {
                   "type": "frame",
-                  "id": "RilFj",
+                  "id": "ssWzb",
+                  "name": "Left",
                   "width": "fill_container",
                   "layout": "vertical",
                   "gap": 24,
                   "children": [
                     {
                       "type": "frame",
-                      "id": "OQBxk",
+                      "id": "wd1lC",
                       "layout": "vertical",
                       "gap": 10,
                       "children": [
                         {
                           "type": "text",
-                          "id": "cGrVN",
+                          "id": "YfSwj",
                           "fill": "$fg-tertiary",
                           "content": "来源 vendor",
                           "fontFamily": "$font",
@@ -6502,13 +6505,13 @@
                         },
                         {
                           "type": "frame",
-                          "id": "mJWQ5",
+                          "id": "gEjJa",
                           "gap": 8,
                           "alignItems": "center",
                           "children": [
                             {
                               "type": "frame",
-                              "id": "VRgHc",
+                              "id": "tgUbv",
                               "fill": "$brand-subtle",
                               "cornerRadius": 8,
                               "stroke": "$brand-hairline",
@@ -6523,7 +6526,7 @@
                               "children": [
                                 {
                                   "type": "text",
-                                  "id": "Ymljm",
+                                  "id": "m7zeA",
                                   "fill": "$brand-strong",
                                   "content": "Kiro Market",
                                   "fontFamily": "$font",
@@ -6534,7 +6537,7 @@
                             },
                             {
                               "type": "frame",
-                              "id": "api6m",
+                              "id": "PQ50a",
                               "fill": "$bg",
                               "cornerRadius": 8,
                               "stroke": "$hairline",
@@ -6549,7 +6552,7 @@
                               "children": [
                                 {
                                   "type": "text",
-                                  "id": "m6uDE",
+                                  "id": "diLFK",
                                   "fill": "$fg-secondary",
                                   "content": "Kiro CEO",
                                   "fontFamily": "$font",
@@ -6560,7 +6563,7 @@
                             },
                             {
                               "type": "frame",
-                              "id": "H9yHx",
+                              "id": "qgPRO",
                               "fill": "$bg",
                               "cornerRadius": 8,
                               "stroke": "$hairline",
@@ -6575,7 +6578,7 @@
                               "children": [
                                 {
                                   "type": "text",
-                                  "id": "UrmnE",
+                                  "id": "xbjA1",
                                   "fill": "$fg-secondary",
                                   "content": "Kiro OOO",
                                   "fontFamily": "$font",
@@ -6586,7 +6589,7 @@
                             },
                             {
                               "type": "frame",
-                              "id": "RnBkp",
+                              "id": "RH83q",
                               "fill": "$bg",
                               "cornerRadius": 8,
                               "stroke": "$hairline",
@@ -6601,7 +6604,7 @@
                               "children": [
                                 {
                                   "type": "text",
-                                  "id": "kziIZ",
+                                  "id": "kRmZg",
                                   "fill": "$fg-secondary",
                                   "content": "Kiro App IO",
                                   "fontFamily": "$font",
@@ -6612,7 +6615,7 @@
                             },
                             {
                               "type": "frame",
-                              "id": "G5jP2",
+                              "id": "q1bZ7",
                               "fill": "$bg",
                               "cornerRadius": 8,
                               "stroke": "$hairline",
@@ -6627,7 +6630,7 @@
                               "children": [
                                 {
                                   "type": "text",
-                                  "id": "sxN2x",
+                                  "id": "fLaZ2",
                                   "fill": "$fg-secondary",
                                   "content": "Kiro App CC",
                                   "fontFamily": "$font",
@@ -6638,7 +6641,7 @@
                             },
                             {
                               "type": "frame",
-                              "id": "xxIke",
+                              "id": "iH9Js",
                               "fill": "$bg",
                               "cornerRadius": 8,
                               "stroke": "$hairline",
@@ -6653,7 +6656,7 @@
                               "children": [
                                 {
                                   "type": "text",
-                                  "id": "xITRG",
+                                  "id": "EYKbc",
                                   "fill": "$fg-secondary",
                                   "content": "Kiro Drop",
                                   "fontFamily": "$font",
@@ -6668,13 +6671,13 @@
                     },
                     {
                       "type": "frame",
-                      "id": "OiLij",
+                      "id": "a1XMT",
                       "layout": "vertical",
                       "gap": 10,
                       "children": [
                         {
                           "type": "text",
-                          "id": "U5PWf",
+                          "id": "faJuN",
                           "fill": "$fg-tertiary",
                           "content": "数量",
                           "fontFamily": "$font",
@@ -6683,13 +6686,13 @@
                         },
                         {
                           "type": "frame",
-                          "id": "C5X5PU",
+                          "id": "M438q6",
                           "gap": 12,
                           "alignItems": "center",
                           "children": [
                             {
                               "type": "frame",
-                              "id": "LRrAz",
+                              "id": "LQal7",
                               "fill": "$bg",
                               "cornerRadius": 10,
                               "stroke": "$hairline",
@@ -6703,7 +6706,7 @@
                               "children": [
                                 {
                                   "type": "frame",
-                                  "id": "wDq2m",
+                                  "id": "JrTpA",
                                   "width": 32,
                                   "height": 32,
                                   "cornerRadius": 8,
@@ -6712,7 +6715,7 @@
                                   "children": [
                                     {
                                       "type": "icon",
-                                      "id": "LeRnZ",
+                                      "id": "DvtDT",
                                       "width": 14,
                                       "height": 14,
                                       "icon": "minus",
@@ -6723,7 +6726,7 @@
                                 },
                                 {
                                   "type": "text",
-                                  "id": "r7yGs6",
+                                  "id": "x3uSK",
                                   "fill": "$fg",
                                   "textGrowth": "fixed-width",
                                   "width": 56,
@@ -6735,7 +6738,7 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "mpOR3",
+                                  "id": "Rn3lK",
                                   "width": 32,
                                   "height": 32,
                                   "cornerRadius": 8,
@@ -6744,7 +6747,7 @@
                                   "children": [
                                     {
                                       "type": "icon",
-                                      "id": "QzE6o",
+                                      "id": "b1vtB",
                                       "width": 14,
                                       "height": 14,
                                       "icon": "plus",
@@ -6757,16 +6760,16 @@
                             },
                             {
                               "type": "text",
-                              "id": "x7tyxA",
-                              "fill": "$fg-secondary",
-                              "content": "号",
+                              "id": "q4GYC",
+                              "fill": "$fg-tertiary",
+                              "content": "号 · 上限 20",
                               "fontFamily": "$font",
-                              "fontSize": 15,
+                              "fontSize": 12,
                               "fontWeight": "normal"
                             },
                             {
                               "type": "text",
-                              "id": "MHGVg",
+                              "id": "K53Fi0",
                               "fill": "$fg-tertiary",
                               "content": "·",
                               "fontFamily": "$font",
@@ -6775,72 +6778,85 @@
                             },
                             {
                               "type": "frame",
-                              "id": "MFfY0",
-                              "gap": 6,
-                              "alignItems": "center",
+                              "id": "e8HJxT",
+                              "fill": "$bg-elevated",
+                              "cornerRadius": 6,
+                              "padding": [
+                                4,
+                                10
+                              ],
                               "children": [
                                 {
-                                  "type": "frame",
-                                  "id": "NgtGA",
-                                  "fill": "$bg-elevated",
-                                  "cornerRadius": 6,
-                                  "padding": [
-                                    4,
-                                    10
-                                  ],
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "GlSTL",
-                                      "fill": "$fg-secondary",
-                                      "content": "1",
-                                      "fontFamily": "$font",
-                                      "fontSize": 12,
-                                      "fontWeight": "500"
-                                    }
-                                  ]
-                                },
+                                  "type": "text",
+                                  "id": "DmPYm",
+                                  "fill": "$fg-secondary",
+                                  "content": "1",
+                                  "fontFamily": "$font",
+                                  "fontSize": 12,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "DmZxR",
+                              "fill": "$brand-subtle",
+                              "cornerRadius": 6,
+                              "padding": [
+                                4,
+                                10
+                              ],
+                              "children": [
                                 {
-                                  "type": "frame",
-                                  "id": "S49epa",
-                                  "fill": "$bg-elevated",
-                                  "cornerRadius": 6,
-                                  "padding": [
-                                    4,
-                                    10
-                                  ],
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "wLkGZ",
-                                      "fill": "$fg-secondary",
-                                      "content": "5",
-                                      "fontFamily": "$font",
-                                      "fontSize": 12,
-                                      "fontWeight": "500"
-                                    }
-                                  ]
-                                },
+                                  "type": "text",
+                                  "id": "KK8ar",
+                                  "fill": "$brand-strong",
+                                  "content": "5",
+                                  "fontFamily": "$font",
+                                  "fontSize": 12,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "Qnust",
+                              "fill": "$bg-elevated",
+                              "cornerRadius": 6,
+                              "padding": [
+                                4,
+                                10
+                              ],
+                              "children": [
                                 {
-                                  "type": "frame",
-                                  "id": "yJZgq",
-                                  "fill": "$bg-elevated",
-                                  "cornerRadius": 6,
-                                  "padding": [
-                                    4,
-                                    10
-                                  ],
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "rJ4TY",
-                                      "fill": "$fg-secondary",
-                                      "content": "10",
-                                      "fontFamily": "$font",
-                                      "fontSize": 12,
-                                      "fontWeight": "500"
-                                    }
-                                  ]
+                                  "type": "text",
+                                  "id": "ZXMhf",
+                                  "fill": "$fg-secondary",
+                                  "content": "10",
+                                  "fontFamily": "$font",
+                                  "fontSize": 12,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "A4kC4",
+                              "fill": "$bg-elevated",
+                              "cornerRadius": 6,
+                              "padding": [
+                                4,
+                                10
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "i6QSDR",
+                                  "fill": "$fg-secondary",
+                                  "content": "20",
+                                  "fontFamily": "$font",
+                                  "fontSize": 12,
+                                  "fontWeight": "500"
                                 }
                               ]
                             }
@@ -6852,14 +6868,15 @@
                 },
                 {
                   "type": "frame",
-                  "id": "xfYY5",
+                  "id": "XlxRm",
+                  "name": "Right",
                   "width": 340,
                   "layout": "vertical",
-                  "gap": 16,
+                  "gap": 12,
                   "children": [
                     {
                       "type": "text",
-                      "id": "AZAia",
+                      "id": "paBct",
                       "fill": "$fg-tertiary",
                       "content": "预估花费",
                       "fontFamily": "$font",
@@ -6868,15 +6885,19 @@
                     },
                     {
                       "type": "frame",
-                      "id": "i47IO4",
+                      "id": "dIoay",
                       "gap": 8,
+                      "padding": [
+                        4,
+                        0
+                      ],
                       "alignItems": "end",
                       "children": [
                         {
                           "type": "text",
-                          "id": "x6STR3",
+                          "id": "DwemY",
                           "fill": "$fg",
-                          "content": "-106",
+                          "content": "-101",
                           "fontFamily": "$font",
                           "fontSize": 56,
                           "fontWeight": "600",
@@ -6884,7 +6905,7 @@
                         },
                         {
                           "type": "text",
-                          "id": "xRnUn",
+                          "id": "w4Wate",
                           "fill": "$fg-tertiary",
                           "content": "积分",
                           "fontFamily": "$font",
@@ -6895,29 +6916,30 @@
                     },
                     {
                       "type": "frame",
-                      "id": "nuuuL",
-                      "width": "fit_content(0)",
+                      "id": "KLmPr",
+                      "width": "fill_container",
                       "layout": "vertical",
                       "gap": 6,
                       "children": [
                         {
                           "type": "frame",
-                          "id": "hCuu9",
+                          "id": "FU3jB",
                           "width": "fill_container",
+                          "gap": 8,
                           "justifyContent": "space_between",
                           "children": [
                             {
                               "type": "text",
-                              "id": "RXiz4",
+                              "id": "L8YOY",
                               "fill": "$fg-tertiary",
-                              "content": "号价 · 5 号",
+                              "content": "号价 · 5 号 × 20",
                               "fontFamily": "$font",
                               "fontSize": 12,
                               "fontWeight": "normal"
                             },
                             {
                               "type": "text",
-                              "id": "YIfai",
+                              "id": "AxBa0",
                               "fill": "$fg-secondary",
                               "content": "100 积分",
                               "fontFamily": "$font",
@@ -6928,13 +6950,14 @@
                         },
                         {
                           "type": "frame",
-                          "id": "FIf9k",
+                          "id": "m1deZ",
                           "width": "fill_container",
+                          "gap": 8,
                           "justifyContent": "space_between",
                           "children": [
                             {
                               "type": "text",
-                              "id": "SedVZ",
+                              "id": "uLXrv",
                               "fill": "$fg-tertiary",
                               "content": "服务费",
                               "fontFamily": "$font",
@@ -6943,33 +6966,7 @@
                             },
                             {
                               "type": "text",
-                              "id": "kbT6f",
-                              "fill": "$fg-secondary",
-                              "content": "5 积分",
-                              "fontFamily": "$font",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "Y584gu",
-                          "width": "fill_container",
-                          "justifyContent": "space_between",
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "y27zB",
-                              "fill": "$fg-tertiary",
-                              "content": "通道费 5%",
-                              "fontFamily": "$font",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "QwHVT",
+                              "id": "kqKVr",
                               "fill": "$fg-secondary",
                               "content": "1 积分",
                               "fontFamily": "$font",
@@ -6982,7 +6979,39 @@
                     },
                     {
                       "type": "frame",
-                      "id": "AFNm9",
+                      "id": "J5xFch",
+                      "fill": "$bg-elevated",
+                      "cornerRadius": 6,
+                      "gap": 6,
+                      "padding": [
+                        6,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "YGbta",
+                          "width": 11,
+                          "height": 11,
+                          "icon": "info",
+                          "library": "lucide",
+                          "fill": "$fg-tertiary"
+                        },
+                        {
+                          "type": "text",
+                          "id": "T1S5vt",
+                          "fill": "$fg-tertiary",
+                          "content": "通道费在充值时已扣 · 不重复计",
+                          "fontFamily": "$font",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "lwa0R",
                       "width": "fill_container",
                       "fill": "$brand",
                       "cornerRadius": 12,
@@ -7007,7 +7036,7 @@
                       "children": [
                         {
                           "type": "icon",
-                          "id": "Gz8vM",
+                          "id": "H62Mq2",
                           "width": 16,
                           "height": 16,
                           "icon": "zap",
@@ -7016,7 +7045,7 @@
                         },
                         {
                           "type": "text",
-                          "id": "wFLuw",
+                          "id": "CjIFM",
                           "fill": "#FFFFFF",
                           "content": "提取 5 号",
                           "fontFamily": "$font",
@@ -7025,7 +7054,7 @@
                         },
                         {
                           "type": "text",
-                          "id": "ziGce",
+                          "id": "oB978",
                           "fill": "#FFFFFF99",
                           "content": "·",
                           "fontFamily": "$font",
@@ -7034,9 +7063,9 @@
                         },
                         {
                           "type": "text",
-                          "id": "iMFYz",
+                          "id": "flA2d",
                           "fill": "#FFFFFFCC",
-                          "content": "-106 积分",
+                          "content": "-101 积分",
                           "fontFamily": "$font",
                           "fontSize": 15,
                           "fontWeight": "500"
@@ -7933,7 +7962,7 @@
                               "type": "text",
                               "id": "n1x9Y",
                               "fill": "$fg",
-                              "content": "已 handoff · 离开系统",
+                              "content": "handoff 归档 · 3 号",
                               "fontFamily": "$font",
                               "fontSize": 14,
                               "fontWeight": "500"
@@ -7944,7 +7973,7 @@
                           "type": "text",
                           "id": "qJhxa",
                           "fill": "$fg-tertiary",
-                          "content": "已离开系统 · 无追踪",
+                          "content": "号明文已交给你 · 我方仅留台账",
                           "fontFamily": "$font",
                           "fontSize": 12,
                           "fontWeight": "normal"
@@ -14638,7 +14667,7 @@
                           "type": "text",
                           "id": "rrTlM",
                           "fill": "$fg",
-                          "content": "waffo · 支付宝 · 200 元",
+                          "content": "waffo · 支付宝 · 200 元 → 到账 190",
                           "fontFamily": "$font",
                           "fontSize": 14,
                           "fontWeight": "500"
@@ -14649,7 +14678,7 @@
                           "fill": "$success",
                           "textGrowth": "fixed-width",
                           "width": 104,
-                          "content": "+200 积分",
+                          "content": "+190 积分",
                           "textAlign": "right",
                           "fontFamily": "$font",
                           "fontSize": 14,
@@ -14661,7 +14690,7 @@
                           "fill": "$fg-tertiary",
                           "textGrowth": "fixed-width",
                           "width": 96,
-                          "content": "余额 1,394",
+                          "content": "余额 1,384",
                           "textAlign": "right",
                           "fontFamily": "$font",
                           "fontSize": 12,
@@ -19177,6 +19206,82 @@
             },
             {
               "type": "frame",
+              "id": "f6Ch7r",
+              "name": "Pull In Progress Banner",
+              "width": "fill_container",
+              "fill": "$brand-subtle",
+              "cornerRadius": 12,
+              "stroke": "$brand-hairline",
+              "strokeWidth": 1,
+              "strokeAlignment": "inner",
+              "gap": 16,
+              "padding": [
+                14,
+                20
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "prDvy",
+                  "width": 28,
+                  "height": 28,
+                  "fill": "$brand",
+                  "cornerRadius": 8,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "wcynK",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "loader",
+                      "library": "lucide",
+                      "fill": "#FFFFFF"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "lkxMn",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 3,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "z6n8AF",
+                      "fill": "$fg",
+                      "content": "拉号中 · +3 号中 · 从 Kiro Market",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "FwlpT",
+                      "fill": "$fg-secondary",
+                      "content": "round rd_01H8Z... · 已完成 1/3 · 预计还需 2 秒",
+                      "fontFamily": "$font",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "j4uUFu",
+                  "fill": "$brand-strong",
+                  "content": "查看",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
               "id": "uJpAi",
               "width": "fill_container",
               "fill": [
@@ -19261,7 +19366,7 @@
                               "type": "text",
                               "id": "W4LxhP",
                               "fill": "$brand-strong",
-                              "content": "拼车 · 3 车友",
+                              "content": "独享 · 1 人",
                               "fontFamily": "$font",
                               "fontSize": 11,
                               "fontWeight": "600"
@@ -19302,7 +19407,7 @@
                           "type": "text",
                           "id": "dBAzK",
                           "fill": "$fg-tertiary",
-                          "content": "创建于 8 天前 · 邀请码 KIRO-A8Q2",
+                          "content": "创建于 8 天前",
                           "fontFamily": "$font",
                           "fontSize": 12,
                           "fontWeight": "normal"
@@ -19495,7 +19600,7 @@
                           "id": "VaW6b",
                           "width": 36,
                           "height": 36,
-                          "fill": "#F87171",
+                          "fill": "$brand",
                           "cornerRadius": 999,
                           "stroke": "$bg",
                           "strokeWidth": 2,
@@ -19507,55 +19612,7 @@
                               "type": "text",
                               "id": "SsGlF",
                               "fill": "#FFFFFF",
-                              "content": "J",
-                              "fontFamily": "$font",
-                              "fontSize": 14,
-                              "fontWeight": "600"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "Yr1RO",
-                          "width": 36,
-                          "height": 36,
-                          "fill": "#60A5FA",
-                          "cornerRadius": 999,
-                          "stroke": "$bg",
-                          "strokeWidth": 2,
-                          "strokeAlignment": "outer",
-                          "justifyContent": "center",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "m3V1FC",
-                              "fill": "#FFFFFF",
-                              "content": "A",
-                              "fontFamily": "$font",
-                              "fontSize": 14,
-                              "fontWeight": "600"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "nB9Hw",
-                          "width": 36,
-                          "height": 36,
-                          "fill": "#FBBF24",
-                          "cornerRadius": 999,
-                          "stroke": "$bg",
-                          "strokeWidth": 2,
-                          "strokeAlignment": "outer",
-                          "justifyContent": "center",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "H7Hgg1",
-                              "fill": "#FFFFFF",
-                              "content": "M",
+                              "content": "D",
                               "fontFamily": "$font",
                               "fontSize": 14,
                               "fontWeight": "600"
@@ -19642,7 +19699,7 @@
                               "type": "text",
                               "id": "tCa2r",
                               "fill": "$fg-secondary",
-                              "content": "邀请车友",
+                              "content": "编辑",
                               "fontFamily": "$font",
                               "fontSize": 13,
                               "fontWeight": "500"
@@ -19838,7 +19895,7 @@
                           "type": "text",
                           "id": "d6SQE",
                           "fill": "$fg-secondary",
-                          "content": "车友",
+                          "content": "成员",
                           "fontFamily": "$font",
                           "fontSize": 14,
                           "fontWeight": "500"
@@ -19857,7 +19914,7 @@
                               "type": "text",
                               "id": "zg1Nj",
                               "fill": "$fg-tertiary",
-                              "content": "3",
+                              "content": "1",
                               "fontFamily": "$font",
                               "fontSize": 11,
                               "fontWeight": "600"
@@ -20798,6 +20855,39 @@
             },
             {
               "type": "frame",
+              "id": "fwMOL",
+              "name": "Status Hint",
+              "width": "fill_container",
+              "fill": "$bg-elevated",
+              "gap": 8,
+              "padding": [
+                10,
+                28
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "U3li1j",
+                  "width": 12,
+                  "height": 12,
+                  "icon": "info",
+                  "library": "lucide",
+                  "fill": "$fg-tertiary"
+                },
+                {
+                  "type": "text",
+                  "id": "DE2ki",
+                  "fill": "$fg-tertiary",
+                  "content": "号在 bus 里 · 已推池 · 未 handoff · 3 项操作均可用",
+                  "fontFamily": "$font",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
               "id": "ln4e6",
               "width": "fill_container",
               "layout": "vertical",
@@ -21082,7 +21172,6 @@
                           "type": "text",
                           "id": "OeBb9",
                           "fill": "$fg-tertiary",
-                          "content": "我方账号 · account-3",
                           "fontFamily": "$font-mono",
                           "fontSize": 11,
                           "fontWeight": "normal"
@@ -26374,6 +26463,40 @@
         },
         {
           "value": "#FDBA74",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "tag-refund-bg-status": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#EEF2FF",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#1E1B4B",
+          "theme": {
+            "mode": "dark"
+          }
+        }
+      ]
+    },
+    "tag-refund-fg-status": {
+      "type": "color",
+      "value": [
+        {
+          "value": "#4338CA",
+          "theme": {
+            "mode": "light"
+          }
+        },
+        {
+          "value": "#A5B4FC",
           "theme": {
             "mode": "dark"
           }
