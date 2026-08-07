@@ -217,6 +217,99 @@ bus-pooling 本体（Go 服务）
 - ✗ 号池存活探测底层（调 kiro.rs）
 - ✗ 乘客的下游业务（不知情）
 
+## 6.5 功能优先级矩阵
+
+**三个分类**（这跟 §7 阶段是**正交**的两个维度：**分类**决定"该不该做"，**阶段**决定"什么时候做"）：
+
+| 分类 | 含义 | 决策规则 |
+|---|---|---|
+| 🟥 **核心保障** | 缺了产品不成立、跑不通 | **必须做**，无条件 |
+| 🟨 **加分项** | 提升体验 / 效率 / 决策质量，但不阻塞主流程 | 按阶段推进；砍功能时**从这里砍**，别砍 🟥 |
+| 🟩 **衍生收益空间** | 未来利润点 / 差异化 | 不阻塞主线；等条件（数据 / 通道 / 用户量）成熟再评估 |
+
+### 🟥 核心保障（22 项）
+
+**账户 / 钱**：
+- 乘客账号（注册 / 登录 / API key）→ `passenger` / `authpassenger`
+- 积分钱包 + 流水 → `wallet`
+- 兑换码充值 → `redeem`
+- payment-gateway 充值（waffo）+ 通道费 pass-through → `payment`
+
+**拉号主链**：
+- vendor 拉号（**首家 91kiro**）→ `providers/kiro/vendors/kiro91`
+- 6 家 vendor 全量接入 → `providers/kiro/vendors/*`（阶段 1b）
+- 号价 pass-through + 服务费 1/1 → `decider` + `wallet`
+- 单次议价 +20%（`count==1`）→ `decider`
+- housepool 承载（credential 校验/探活/用量/分组/并发）→ `housepool/kirors`
+- 号死自动补车 → `deathwatch`
+- 质保退款（跟随上游，按 N 分摊退积分）→ `deathwatch` + `wallet`
+
+**Bus 主入口**：
+- 建 bus / 拉号进 bus / 退出 / 解散 → `bus` + `strategy` + `decider`
+- 1 人 bus + 匿名撮合多人 bus（`kind: single/anon`）→ `bus` + `coalescer/anon`
+- Bus 补车集单 → `coalescer`
+
+**单独拉号次入口**：
+- 单独拉号进 `record-<pid>` group（disabled=true）→ `pullrecord`
+- 派去向（进车 / 推 passengerpool / handoff）→ `pullrecord` + `delivery/*`
+
+**下游交付**：
+- 推 passengerpool 双写 → `delivery/passengerpool/kirors`
+- Handoff 拿走 → `delivery/handoff`
+
+**基础配置**：
+- 乘客配 passengerpool url + token（`downstream_config`）
+- 乘客配对外 webhook + 我方推送 → `webhookout`
+- vendor webhook 入向归一化 → `webhookin`
+
+### 🟨 加分项（15 项）
+
+**决策 / 策略**：
+- 自动策略引擎（`auto_enabled` + `per_round_count` + `min_count` + `keep_safety_stock` + `max_unit_price` + `daily_round_limit` + `daily_spend_limit`）→ `strategy`（阶段 1d）
+- 跨 vendor 比价（有效成本 = 单价 / 平均寿命）→ `decider`（1d）
+- Fallback（首选 vendor 挂 → 次选）→ `decider`（1d）
+- 平均寿命统计（`vendor_lifespan_snapshot`）→ `deathwatch`（1d）
+- 全 vendor 缺货 → 排队等 webhook → `decider` + `webhookin`（1d）
+
+**拼车增强**：
+- 邀请码组队 bus（`kind: team`）→ `bus` + `coalescer/team`（2a）
+- 列队策略（多 bus 抢同 vendor 排队）→ `coalescer` + `decider`（2b）
+- 压车治理（bus 内 RPM/TPM 探测 + 隔离）→ `deathwatch` + `bus`（2c）
+
+**并发配置**（用户此轮明确列出的散点）：
+- 乘客并发上限（`max_rpm` / `max_tpm`）→ `strategy` + `bus`（2c，与压车治理绑定）
+- Bus 并发配置（成员容量、每成员 RPM/TPM 分配）→ `bus`（2c）
+
+**数据 / 可视化**：
+- 数据看板（跨 vendor 平均寿命 / 价格 / 缺货率；乘客维度：号池水位 / 花费 / 存活）→ `web` + 聚合视图（3a）
+- 号死主动通知乘客 → `webhookout`
+- record group 里死号 UI 标记 → `web`
+
+**运维便利**：
+- 单价上限过滤（策略里 `max_unit_price` 拒绝超价拉号）→ `strategy`（1d）
+- 每日轮次 / 花费上限自动停 → `strategy`（1d）
+
+### 🟩 衍生收益空间（10 项，全部 ⏸ 或阶段 3+）
+
+- **附加能力插槽**（`capability_fee`，阶段 1 无实例；参考 `decisions §2.6&2.7`）→ `decider` + `capability_slot` 表
+  - 稳定优先（排噪邻 + 优先撮合 20%）→ 2c 后可上
+  - 其他候选待定
+- **发车**（乘客上 AWS → 我方转发 vendor → vendor 开号）→ `providers/kiro/vendors/*/dispatch`（3b/3c）
+- **市场公开池 + 卖号分成**（乘客把号挂进 market group，被别人买时乘客拿分成）→ `market` group + 新 ledger 类型（3d）
+- **长效号预留池**（从平均寿命高的 vendor 定期少量储备）→ 依赖 3d 市场（未来）
+- **合作下游消耗**（B2B 直接对接下游产品方）→ 待定
+- **散户切片**（一把 key 切多份卖给小散户，独立产品线）→ 阶段 3 后（`decisions §5.1`）
+- **地区议价 / 双币价目**（等多通道接入后启用）→ 阶段 2+ 通道扩展后
+- **优先拍单议价**（若阶段 2b 列队策略引入抢占优先级）→ 阶段 2b 后
+- **寿命 SLA 议价**（用户要求"平均寿命 ≥ X" 加价）→ 阶段 1d 数据成熟后
+- **会员制订阅**（服务费打折 / 优先撮合 / 数据看板全开）→ 阶段 2+ 用户量稳定后
+
+## 6.6 砍功能顺序（如果需要收敛范围）
+
+**从右往左砍**：先砍 🟩 收益空间 → 再砍 🟨 加分项 → **绝对不砍 🟥 核心保障**。
+
+**核心保障砍任何一项**都要**用户显式批准**。
+
 ## 7. 分阶段
 
 | 阶段 | 目标 | 核心边界 |
