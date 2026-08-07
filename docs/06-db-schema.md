@@ -44,6 +44,30 @@ CREATE TABLE passenger (
 
 **依赖**：`internal/passenger`（Layer 3a）。
 
+## 1.5 会话 · `session`
+
+自建登录用：cookie 存随机 token，映射到本表；服务端每次请求校验。
+
+```sql
+CREATE TABLE session (
+  id                     TEXT PRIMARY KEY,              -- session token（32 hex）hash 后的 SHA-256
+  passenger_id           TEXT NOT NULL,
+  ip_created             TEXT,                           -- 登录时的 IP（可选，安全审计用）
+  user_agent             TEXT,                           -- 登录时的 UA（可选）
+  created_at             TEXT NOT NULL,
+  last_used_at           TEXT NOT NULL,
+  expires_at             TEXT NOT NULL,                  -- 默认 30 天；"记住我" 可延长
+  revoked_at             TEXT,                           -- 主动登出 or 密码变更
+  FOREIGN KEY (passenger_id) REFERENCES passenger(id)
+);
+```
+
+**索引**：`(passenger_id, revoked_at)`, `(expires_at)`（janitor 清过期）。
+
+**cookie**：**httpOnly + Secure + SameSite=Lax**；名字 `bp_session`；值是 token 明文（服务端存 hash）。
+
+**清理**：janitor 定时删 `expires_at < now` 或 `revoked_at IS NOT NULL AND ...` 的行。
+
 ## 2. API Key · `passenger_api_key`
 
 ```sql
@@ -524,15 +548,15 @@ capability_slot / pull_round_capability （阶段 2c 起写）
 
 ## Migration 顺序（1a 首批）
 
-**首批 migration 覆盖阶段 1a 所需 16 张表**（其余延后）：
+**首批 migration 覆盖阶段 1a 所需 17 张表**（其余延后）：
 
-1. `passenger`, `passenger_api_key`, `passenger_downstream`
+1. `passenger`, `passenger_api_key`, `passenger_downstream`, **`session`**
 2. `wallet`（**含 reserved 字段**）, `wallet_ledger`
 3. `bus`, `bus_member`
 4. `pull_intent`, `pull_round`, `credential_ledger`（**含 owner_bus_id / owner_record_passenger_id**）
 5. `vendor_account`, `passenger_daily_counter`
 6. `idempotency_record`（HTTP 幂等）
-7. `pending_purchase`, `pending_assignment`（1a 只上这两个；`pending_topup` 是 1b）
+7. `pending_purchase`, `pending_assignment`, **`pending_handoff`**（handoff 是 1a 交付内容；`pending_topup` 是 1b；`pending_dissolution` 也是 1a）
 
 **1b 加**：`cdk`, `cdk_redemption`, `payment_order`
 
@@ -627,6 +651,63 @@ CREATE TABLE pending_assignment (
 
 **索引**：`(status, updated_at)`, `(passenger_id, created_at)`。
 
+### `pending_handoff` （P0 修补 · 两阶段 token 交付）
+
+见 `09-transactions.md § 4` 完整状态定义。
+
+```sql
+CREATE TABLE pending_handoff (
+  id                    TEXT PRIMARY KEY,
+  idempotency_record_id TEXT,                           -- init 阶段 X-Idempotency-Key（可选）
+  passenger_id          TEXT NOT NULL,
+  download_token        TEXT NOT NULL UNIQUE,           -- 32 hex，客户端拿它来 fulfill/confirm
+  credential_ids_json   TEXT NOT NULL,                  -- ["cred_id_1", "cred_id_2", ...]
+  status                TEXT NOT NULL,                  -- token_issued | fulfilled | confirmed | completed | expired | expired_after_fulfill | need_manual
+  fulfill_count         INTEGER NOT NULL DEFAULT 0,     -- fulfill 被调多少次（断线重试用）
+  fulfilled_at          TEXT,
+  confirmed_at          TEXT,
+  completed_at          TEXT,
+  expires_at            TEXT NOT NULL,                  -- token TTL，默认 now + 5min
+  error                 TEXT,
+  created_at            TEXT NOT NULL,
+  updated_at            TEXT NOT NULL,
+  FOREIGN KEY (passenger_id) REFERENCES passenger(id),
+  FOREIGN KEY (idempotency_record_id) REFERENCES idempotency_record(id)
+);
+```
+
+**索引**：`(download_token)`, `(status, expires_at)` （janitor 扫过期用），`(passenger_id, created_at DESC)`。
+
+**特殊**：
+- **明文永不存本表**（每次 fulfill 从 housepool 实时读）
+- `download_token` 是幂等键（不用 X-Idempotency-Key）
+- `expires_at` 到期后 janitor 复原 credential（disabled=true 保持）+ status=`expired`
+
+### `pending_dissolution`（Bus 解散批量号迁移）
+
+见 `09-transactions.md § 5`。
+
+```sql
+CREATE TABLE pending_dissolution (
+  id                     TEXT PRIMARY KEY,
+  idempotency_record_id  TEXT NOT NULL,
+  bus_id                 TEXT NOT NULL,
+  initiator_passenger_id TEXT NOT NULL,
+  credential_ids_json    TEXT NOT NULL,        -- 快照，解散触发时锁定
+  processed_count        INTEGER NOT NULL DEFAULT 0,
+  failed_count           INTEGER NOT NULL DEFAULT 0,
+  status                 TEXT NOT NULL,        -- initial | snapshot_taken | moving | completed | need_manual
+  error                  TEXT,
+  created_at             TEXT NOT NULL,
+  updated_at             TEXT NOT NULL,
+  FOREIGN KEY (bus_id) REFERENCES bus(id),
+  FOREIGN KEY (initiator_passenger_id) REFERENCES passenger(id),
+  FOREIGN KEY (idempotency_record_id) REFERENCES idempotency_record(id)
+);
+```
+
+**索引**：`(status, updated_at)`, `(bus_id)`。
+
 ### `pending_topup`
 
 ```sql
@@ -653,9 +734,16 @@ CREATE TABLE pending_topup (
 - 加密字段主密钥**分离备份**（不跟 DB 一起）
 - 迁移到 PostgreSQL 的门槛：单机 QPS 撑不住 时（预计阶段 2 之后）
 
+## 已冻结的约定（跟 `CLAUDE.md § 7.2` 一致）
+
+- **时间**：UTC 存储（`TEXT` ISO-8601）· UI 层转 CST
+- **金额**：`INTEGER` microunit（1 元 = 1_000_000）
+- **主键**：UUID v7（26 字符 Crockford Base32，`TEXT` 存）
+- **并发**：SQLite `BEGIN IMMEDIATE` + 条件 UPDATE
+- **加密字段**：`secret_<name>_encrypted BLOB`（AES-GCM，见 `10-secrets.md` 阶段 1a 起手时补）
+
 ## 待定（阶段 1a 落码时确定）
 
-- 时间是否用 CST 还是 UTC —— **建议 UTC 存 + UI 层转 CST**
-- money 是否真用 microunit —— **建议是**，跟 91kiro/kiroappio 精度对齐
-- UUID v7 生成库（Go 有多个实现）—— **落码时选**
-- 索引具体的 SQL —— **每张表首次 migration 时定**
+- UUID v7 生成库（Go 有多个实现）—— 落码时选具体的
+- 索引具体的 SQL —— 每张表首次 migration 时定
+- SQLite 版本 · WAL 参数（`journal_mode=WAL` / `synchronous=NORMAL` 是默认，特殊调整跟着实测走）

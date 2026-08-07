@@ -53,14 +53,36 @@
 - 同 key 重复 → 返回**字节一致**的原响应，不重复副作用
 - 幂等窗口：**30 天**（服务端 `idempotency_record` 表 30 天后清理，之后重放视为新请求）
 
-### handoff 幂等特例（重要）
+### handoff · 两阶段 token 交付（P0 修补 · 见 `09-transactions.md § 4`）
 
-`POST /api/me/pull-records/{id}/handoff` 和 `POST /api/me/pull-records/assign`（含 handoff 分支）**是幂等规则的例外**：
+**问题**：单次 HTTP handoff 无法保证明文可靠交付（响应中途断线，我方已 DELETE 但客户端没收到明文）。
 
-- **首次调用**：返回 credential 明文（`keys[]` 含完整字段）
-- **重放（同 X-Idempotency-Key）**：返回**`already_delivered: true` + `credential_ids: [...]` + `delivered_at: "..."` + `keys: []`**（**明文只给一次**）
+**解决**：**两阶段 token**——先发 token，客户端 fulfill 拿明文（TTL 内可重试），最后 confirm 才 DELETE：
 
-理由：handoff 语义是"号数据交出去 + 我方 DELETE 号"，明文我方**不留**（安全），故不可能"字节一致重放"。客户端需要缓存首次响应里的明文，重放时不再期望拿到明文。
+```
+1. POST /api/me/pull-records/{id}/handoff-init
+   请求：{ credential_ids: [...] }
+   返回：{ download_token: "32hex", expires_at: "5min later" }
+   （不返回明文；credential 保留 disabled=true）
+
+2. GET /api/me/handoff/{token}
+   TTL 内可多次调用（网络断了重试用），每次返回 credential 明文四件套
+   （credential 仍在 housepool）
+
+3. POST /api/me/handoff/{token}/confirm
+   客户端**显式确认收到** → 触发 housepool DELETE + credential_ledger 标 handed_off
+   （幂等：多次 confirm 返回同状态）
+```
+
+**TTL 过期未 confirm** → janitor 恢复 credential（保留 disabled=true 状态），用户可重发 `handoff-init`。
+
+**客户端集成**：
+```javascript
+const { download_token } = await POST('/pull-records/X/handoff-init', { credential_ids })
+const { keys } = await GET(`/handoff/${download_token}`)  // 断线可重试
+displayToUser(keys)
+await POST(`/handoff/${download_token}/confirm`)
+```
 
 **其它端点**（购买 / 派进车 / 派 passengerpool）**没有明文问题**，字节一致重放规则依然适用。
 
@@ -70,9 +92,9 @@
 
 | Method | Path | 说明 | 阶段 |
 |---|---|---|---|
-| POST | `/api/register` | 注册（邮箱 + 密码 或 SuperTokens 引导） | 1a |
-| POST | `/api/login` | 登录 | 1a |
-| POST | `/api/logout` | 登出 | 1a |
+| POST | `/api/register` | 注册（邮箱 + 密码 · 密码 Argon2id 哈希 · Go 自建） | 1a |
+| POST | `/api/login` | 登录（返 session cookie） | 1a |
+| POST | `/api/logout` | 登出（清 session） | 1a |
 | GET | `/api/me/profile` | 当前账号信息 | 1a |
 | POST | `/api/me/password` | 改密码（会话鉴权强制） | 1a |
 
@@ -208,8 +230,10 @@
 | POST | `/api/me/pull` | 单独拉一批号（不指定 bus） | 1a |
 | GET | `/api/me/pull-records` | 我的拉号记录（分页；含状态、去向历史） | 1a |
 | GET | `/api/me/pull-records/{record_id}` | 单条详情 | 1a |
-| POST | `/api/me/pull-records/assign` | 派去向（一次可混合三种） | 1a |
-| POST | `/api/me/pull-records/{record_id}/handoff` | 单条拿走（快捷） | 1e |
+| POST | `/api/me/pull-records/assign` | 派去向（进车 · 推自己号池；handoff 分支走 handoff-init 两阶段） | 1a |
+| POST | `/api/me/pull-records/{record_id}/handoff-init` | 拿走 · 阶段 1 · 发放 download_token | 1a |
+| GET | `/api/me/handoff/{token}` | 拿走 · 阶段 2 · fulfill · 拿明文（断线可重试） | 1a |
+| POST | `/api/me/handoff/{token}/confirm` | 拿走 · 阶段 3 · 客户端确认，触发 DELETE | 1a |
 
 ### `POST /api/me/pull`
 
