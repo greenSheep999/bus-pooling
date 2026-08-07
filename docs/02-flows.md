@@ -18,7 +18,8 @@
 | F | 质保退款 | vendor webhook `warranty_refund` | |
 | G-② | 去向 ② · 推 passengerpool | 用户从 bus 或拉号记录选"推我号池" | 双写 |
 | G-③ | 去向 ③ · handoff（拿走号数据） | 用户从拉号记录选"拿走这几个" | 离开系统 |
-| H | 次入口：单独拉号 → 拉号记录 | 乘客手动或 API 拉一批号 | **不进池，用户后续再定去向** |
+| H | 次入口：单独拉号 | 乘客手动或 API 拉一批号 | 进 housepool 的 `record-<pid>` group，`disabled=true` |
+| I | 派去向（改 group/disabled/删除） | 用户在拉号记录里对每号派去向 | 进车 / 推自己号池 / 拿走 三种任意组合 |
 
 ---
 
@@ -371,18 +372,18 @@ delivery       passengerpool.kirors      乘客的号池（外部）
 
 ---
 
-## H · 次入口：单独拉号（不进池）
+## H · 次入口：单独拉号（号进 housepool `record-<pid>` group）
 
-**场景**：乘客点"单独拉几个号"（不指定 bus），或调 API `POST /pull` 拉一批。号进"拉号记录"数据库表，**不进池**，用户后续对每号选去向。
+**场景**：乘客点"单独拉几个号"（不指定 bus），或调 API `POST /pull` 拉一批。号**进 housepool**，进 `record-<pid>` group，`disabled=true`（不发下游），等用户派去向。
 
 ```
-乘客/API      strategy       decider     provider-adapter   vendor    数据库
+乘客/API      strategy       decider     provider-adapter   vendor    housepool
  │              │              │              │                │         │
  │ 单独拉号                                                              │
  │ count=10, vendor=?                                                    │
  ├─────────────►│              │              │                │         │
  │              │  判可行（钱够 / 未触上限）                              │
- │              │  意图 { count:10, no_bus }                              │
+ │              │  意图 { count:10, target: record-<pid> }                │
  │              ├─────────────►│                                         │
  │              │              │  同 C.[1..4]                            │
  │              │              │  purchase(10)                           │
@@ -395,28 +396,85 @@ delivery       passengerpool.kirors      乘客的号池（外部）
  │              │              │  服务费 1 × 10（每号一轮）              │
  │              │              │  → wallet 扣 + ledger 落                │
  │              │              │                                         │
- │              │              │  **写"拉号记录"表**                     │
- │              │              │  每号一行 { credential, status: unassigned, │
- │              │              │             passenger_id, pulled_at }   │
- │              │              ├────────────────────────────────────────►│
+ │              │              │  BatchImport → housepool                │
+ │              │              │  { groups: [record-<pid>],              │
+ │              │              │    disabled: true }                     │
+ │              │              ├─────────────────────────────►│           │
  │              │              │                                         │
- │◄── 10 个号已入拉号记录（用户去处理去向）──                            │
+ │◄── 10 个号已入 record-<pid> group，等派去向 ──                            │
 ```
 
 **关键点**：
 
-- **单独拉号的号不进任何 group**（不进 housepool 的 bus / market；不进 passengerpool）
-- **只在数据库的"拉号记录"表里躺着**，`status: unassigned`
-- 用户后续对每号（或批量）选去向：
-  - 选"进车 X" → 号从记录移到 housepool 的 `bus-X` group（走 C 的入池流程尾段）
-  - 选"推我号池" → 走 G-②（复制到 passengerpool；同时进 housepool 副本 group）
-  - 选"拿走" → 走 G-③（离开系统）
-- **拉号记录里的号不监控**（不在 housepool，Layer 4 5 项能力不覆盖）
-- **拉号记录里的号"过期" = 号本身死了**（不是按 N 天）——通过 vendor 探活得知：
-  - 定时调 vendor 的死活端点（如 drop.kiro.ss `GET /api/status` / 91kiro `/api/my/rounds` / kiro.ooo `/my/dispatch-log`）
-  - 收 vendor webhook 的 `all_keys_dead` / `key_revoked_abuse` / `on_key_suspect`
-  - 号死了 → 拉号记录里该行标记 `status: dead`（不删，留历史）
-  - 号还活但用户 N 天没处理 → 只**提醒**乘客处理，不自动搬迁（尊重用户选择权）
+- **号已进 housepool**（唯一物理位置）；靠 `record-<pid>` group + `disabled=true` 标"未派"状态
+- **已监控**：Layer 4 5 项能力全覆盖（校验、探活、用量、并发、组统计）—— 平均寿命也能采到这些号，数据价值更高
+- **不发下游**：`disabled=true`，即使有 client_key 也发不到这些 credential
+- **过期定义 = 号本身死了**（不是 N 天）：靠 housepool 探活 / vendor webhook / vendor 端点轮询（见 §00.8 术语"平均寿命"）
+  - 死号处理：housepool 保留（`dead` 状态由 kiro.rs 标记），UI 里显示"已失效"，不删除（留历史）
+  - 用户可手动清理死号（走 handoff 的 DELETE 路径，但不给明文，因为号已经无用）
+- **用户派去向**见时序 **I** ▼
+
+---
+
+## I · 派去向（改 group + disabled，或删除）
+
+**场景**：乘客 A 的 `record-<pid>` group 有 10 个号；派 5 个进 bus X，2 个推自己号池，3 个拿走。
+
+```
+乘客/API        pullrecord       housepool             delivery
+   │              │              (kiro.rs)                │
+   │  Assign(passenger, plan)                             │
+   │  plan: { bus-X: 5, passengerpool: 2, handoff: 3 }    │
+   ├─────────────►│                                       │
+   │              │                                       │
+   │  === 5 个进 bus X ===                                 │
+   │              │  PUT /credentials/{id} × 5             │
+   │              │  { groups: [bus-X], disabled: false }  │
+   │              ├──────────────►│                       │
+   │              │◄──── ok ──────┤                       │
+   │              │                                       │
+   │  === 2 个推 passengerpool（双写）===                  │
+   │              │  取 credential 明文                    │
+   │              ├──────────────►│                       │
+   │              │◄─── creds ────┤                       │
+   │              │  触发去向 ② 复制到 passengerpool        │
+   │              ├─────────────────────────────────────►│
+   │              │◄──── ok ──────                          │
+   │              │  PUT /credentials/{id} × 2             │
+   │              │  { disabled: false }（保留 record group）│
+   │              ├──────────────►│                       │
+   │              │◄──── ok ──────┤                       │
+   │              │                                       │
+   │  === 3 个 handoff（拿走）===                          │
+   │              │  取 credential 明文                    │
+   │              ├──────────────►│                       │
+   │              │◄─── creds ────┤                       │
+   │              │  触发去向 ③ 返回给用户                  │
+   │              ├─────────────────────────────────────►│
+   │              │                                       │
+   │              │  DELETE /credentials/{id} × 3         │
+   │              ├──────────────►│                       │
+   │              │◄──── ok ──────┤                       │
+   │              │                                       │
+   │              │  数据库：数据库落"已 handoff"历史      │
+   │              │  （不留明文）                          │
+   │              │                                       │
+   │◄── 分派完成 ─┤                                       │
+```
+
+**关键点**：
+
+- **一次派可以混合三种去向**（进车 + 推自己号池 + 拿走），每号独立决定
+- **进车 / 推自己号池**：号仍在 housepool（改 group / 改 disabled，不删）→ 我方持续监控
+- **handoff（拿走）**：`DELETE /credentials/{id}` → 号离开 housepool + 明文交给用户
+- **原子性**：状态转换的顺序 **先外部交付、后 housepool 状态修改**：
+  - handoff：先返回明文给用户 → 再 `DELETE`
+  - 推自己号池：先 `BatchImport` 到 passengerpool → 再 `PUT disabled=false`
+  - 进车：改 group + disabled 是 kiro.rs 内一步事务
+- **credential 其它字段保留**（`priority` / `concurrency_limit` / `endpoint_policy` 等）：`PUT` 只改指定字段
+- 派完后：
+  - `bus-X` group 里的号 → 参与 bus X 补车集单（时序 D）；号死走时序 E
+  - `record-<pid>` group 里 `disabled=false` 的号 → 已复制到 passengerpool；号死时 housepool 副本判死 + webhook 通知乘客
 
 ---
 

@@ -190,15 +190,16 @@
 
 ### `internal/pullrecord/` (业务包 12/15)
 
-- **目的**：单独拉号（次入口）的号暂存表；号在这里 `status: unassigned`，**不进 housepool，不监控**
-- **输入**：`decider` 拉到号 & 意图无 bus_id → 写入表
-- **输出**：用户后续调 `Assign(record_id, destination)` 派去向：
-  - 进车 → 移到 housepool 的 `bus-<bus_id>` group（通知 `bus`）
-  - 推自己号池 → 触发 `delivery/passengerpool` 双写
-  - 拿走 → 触发 `delivery/handoff`
-- **依赖**：`infra/db`, `bus`, `delivery/*`, `housepool`
-- **谁调它**：`decider`（单独拉号后写入）、`api` UI/API（用户选去向时）
+- **目的**：单独拉号后号在 housepool `record-<pid>` group + `disabled=true` 的**编排器**（不是数据库表管理器）
+- **输入**：`decider` 拉到号 & 意图 `target: record-<pid>` → 调 `housepool.BatchImport(groups=[record-<pid>], disabled=true)`
+- **输出**：用户后续调 `Assign(passenger_id, plan)` 派去向：
+  - 进车 X → `housepool.UpdateCredential(id, {groups: [bus-X], disabled: false})`
+  - 推自己号池 → 取明文 → `delivery/passengerpool` 双写 → `housepool.UpdateCredential(id, {disabled: false})`
+  - 拿走 → 取明文 → `delivery/handoff` 交给用户 → `housepool.DeleteCredential(id)`
+- **依赖**：`housepool`, `delivery/*`, `infra/db`（存 handoff 历史）
+- **谁调它**：`decider`（单独拉号后创建）、`api` UI/API（用户派去向时）
 - **P 标签**：1a（次入口一开始就要）
+- **原子性要求**：**先做外部 delivery，再改 housepool 状态**（顺序反了 → 用户没拿到号但号已经变态）
 
 ### `internal/bus/` (业务包 13/15)
 
@@ -229,6 +230,22 @@
 ### `internal/housepool/kirors/` (业务包 14/15 · 同家族)
 
 - **目的**：**具体实现** = kiro.rs 客户端（对接 `kiro.aibbq.xyz`）
+- **kiro.rs 端点清单**（已在 kiro.rs 源码 `src/admin/router.rs` 确认）：
+
+| 我方法 | kiro.rs 端点 |
+|---|---|
+| `ListCredentials` | `GET /credentials` |
+| `GetCredentialBalance(id)` | `GET /credentials/{id}/balance` |
+| `TestCredential(id)` | `POST /credentials/{id}/test` |
+| `BatchImport(reqs)` | `POST /credentials/batch-import` |
+| `UpdateCredential(id, {groups?, disabled?, priority?, ...})` | `PUT /credentials/{id}` |
+| `SetDisabled(id, bool)` | `POST /credentials/{id}/disabled` |
+| `SetDisabledBatch(ids, bool)` | `POST /credentials/batch/disabled` |
+| `DeleteCredential(id)` | `DELETE /credentials/{id}` |
+| `DeleteCredentialBatch(ids)` | `POST /credentials/batch/delete` |
+| `ListGroups` / `CreateGroup` / `UpdateGroup` / `DeleteGroup` | `GET/POST/DELETE/PATCH /groups[/{name}]` |
+| `ListClientKeys` / `CreateClientKey` / `UpdateClientKey` / `DeleteClientKey` | `/client-keys/*` |
+
 - **依赖**：`infra/httpx`, `infra/secrets`（kiro.rs admin key）
 - **P 标签**：1a
 

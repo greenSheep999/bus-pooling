@@ -136,8 +136,8 @@ bus-pooling 本体（Go 服务）
     │     │
     │     └── 次入口 · 单独拉号
     │           ─ 选 vendor + 数量，拉一批号
-    │           ─ 号进"拉号记录"（数据库表，不进池，不监控）
-    │           ─ 用户后续对每号选一个去向 ▼
+    │           ─ 号进 housepool 的 `record-<pid>` group（disabled=true，不发下游）
+    │           ─ 已进池、有监控；等用户派去向 ▼
     │
     ├── 号的 3 种去向（去向 1/2 进池监控；去向 3 离开系统）
     │     ├─ ① 进车 → housepool 的 bus group（进池，监控）
@@ -160,9 +160,12 @@ bus-pooling 本体（Go 服务）
 **核心不变量**：
 
 - **拼车是主入口**（最大价值）；单独拉号是次入口
-- **拉号 ≠ 进池**：拼车触发的号直接进池（bus group）；单独拉号进"拉号记录"（不进池）
+- **所有拉的号都进 housepool**（monitoring 是硬需求）—— 差别只在 group 与 disabled 状态：
+  - 拼车触发 → `bus-<bus_id>` group, `disabled=false`
+  - 单独拉号 → `record-<pid>` group, `disabled=true`（等派去向）
+- **改去向 = 改 group + 改 disabled**（kiro.rs `PUT /credentials/{id}`）
 - **推给乘客号池 = 双写**：housepool 永远保留副本用于监控，乘客那侧是**复制**
-- **只有"拿走号数据"才离开系统**——那 3 个号相当于用户拉走自己处理，我们不留、不管
+- **只有"拿走号数据"才真正离开系统**（kiro.rs `DELETE /credentials/{id}`）—— 唯一 fire-and-forget 的路径
 - **API 是入口方式，不是去向**（API 也能触发 3 种去向的任一种）
 
 ## 6. 我们做 / 不做（明单）
@@ -267,7 +270,7 @@ bus-pooling 本体（Go 服务）
 | **主入口 · 拼车** | `bus entry` | 建 bus → 拼车动作触发拉号，号**直接进 bus group（进池）** |
 | **次入口 · 单独拉号** | `solo pull entry` | 用户手动/API 拉一批号 → 号进"拉号记录" → 用户后续再定去向 |
 | 车 / bus | `bus` | 拼车局实体（1 人或多人都是 bus）。housepool 里对应 `bus-<bus_id>` group |
-| 拉号记录 | `pull record` | 数据库表。装单独拉号后**未定去向**的号，**不进池、不监控** |
+| 拉号记录 | `pull record` | **housepool 里的 `record-<pid>` group + `disabled=true`**。号已进池、被监控，但不发下游，等用户派去向 |
 | 系统撮合 | `anonymous match` | 匿名拼车：系统按标签匹配成员进同一 bus |
 | 邀请码组队 | `invite team` | 认识的人主动组车：建 bus + 邀请码分发 |
 | 补车 | `refill` | bus 内号死后触发新一轮拉号，补回目标水位 |
@@ -276,11 +279,11 @@ bus-pooling 本体（Go 服务）
 
 **号的 3 种去向**（不管 UI 触发还是 API 触发，去向都是这 3 种之一）：
 
-| 去向 | 英文 | 号最终所在 | 我方监控 |
-|---|---|---|---|
-| ① 进车 | `to-bus` | housepool 的 `bus-<bus_id>` group | ✓ |
-| ② 推给自己号池 | `to-passengerpool` | **双写**：housepool 保留副本 + passengerpool（乘客用） | ✓ 靠 housepool 副本 |
-| ③ 拿走号数据 | `handoff` | 离开系统（用户自己拿走处理） | ✗ 不监控 |
+| 去向 | 英文 | 底层 kiro.rs 动作 | 号最终所在 | 我方监控 |
+|---|---|---|---|---|
+| ① 进车 | `to-bus` | `PUT /credentials/{id}` `groups=[bus-X]`, `disabled=false` | housepool `bus-<bus_id>` group | ✓ |
+| ② 推给自己号池 | `to-passengerpool` | housepool 保留 + BatchImport 到 passengerpool | **双写** | ✓（靠 housepool 副本）|
+| ③ 拿走号数据 | `handoff` | `DELETE /credentials/{id}` | 离开 housepool + 交给用户 | ✗ 唯一"fire-and-forget" |
 
 **触发入口 2 种**：UI 触发 / API 触发。**API 不是"一种去向"**，它是**操作方式**，能触发任意 3 种去向。
 

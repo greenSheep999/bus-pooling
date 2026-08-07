@@ -131,13 +131,14 @@
 - 载荷形态是"我们的形态"，不是任何单一 vendor 的形态
 
 #### 3g · 拉号记录（pullrecord）
-- **单独拉号入口的暂存表**：单独拉号后号进这里，`status: unassigned`
-- 用户后续对每号选去向：
-  - 进 bus → 走 3d/3h 移到 `bus-<bus_id>` group
-  - 推 passengerpool → 走 Layer 5 双写
-  - 拿走 → 走 Layer 5 handoff（离开系统）
-- **注意**：拉号记录**不在 housepool**，不监控；号一旦有去向，才进相应 group 或离开
-- **拼车触发的号不经过这里**（直接进 bus group）
+- **不是数据库表**。是"housepool 里 `record-<pid>` group + `disabled=true`"这一类号的**编排器**
+- 单独拉号触发后：`decider` 调 `BatchImport` 到 `record-<pid>` group + `disabled=true`
+- 用户后续对每号派去向（走 kiro.rs 相应端点）：
+  - **进 bus X** → `PUT /credentials/{id}` `{groups: [bus-X], disabled: false}`
+  - **推 passengerpool** → 保留在 record group + 触发 Layer 5 双写复制
+  - **拿走 handoff** → `DELETE /credentials/{id}` + 数据库落一条"已 handoff"历史（不留明文）
+- **号已进池已监控**（平均寿命统计也能采到这些号，数据价值更高）
+- **拼车触发的号不经过这里**（`BatchImport` 直接进 `bus-<bus_id>`）
 
 #### 3h · bus 实体管理
 - bus 是**长期存在的实体**（成员加入/退出 · 补车规则 · 目标水位 · 分账规则 · 邀请码）
@@ -154,12 +155,22 @@
 - **不复刻**。housepool 承担的 5 项能力**全部由 kiro.rs 提供，我方不做**：
   1. **校验凭证** —— 号存进去时验证有效性
   2. **存活探测** —— 号什么时候死了
-  3. **成本 / 用量追踪** —— 每 group（每辆 bus / 个人 / 市场）用了多少额度；号死时耗了多少
-  4. **分组** —— 按 group 组织号（`personal-<pid>` / `bus-<bus_id>` / market group）+ `CreateClientKey` / `RotateClientKey`
+  3. **成本 / 用量追踪** —— 每 group（每辆 bus / 拉号记录 / 市场）用了多少额度；号死时耗了多少
+  4. **分组** —— 按 group 组织号 + `CreateClientKey` / `RotateClientKey`
   5. **并发监控** —— 每 group 的调用频率（是阶段 2c 压车治理的探测基础）
+- housepool 里的 group 类型：
+  - `bus-<bus_id>` —— 拼车局（1 人或多人；`disabled=false`）
+  - `record-<pid>` —— 拉号记录（单独拉号入口，`disabled=true`，不发下游）
+  - `market` —— 市场（阶段 3d）
 - **我方是 kiro.rs 的客户端**（Layer 3 通过 `housepool/kirors` 包调它）
-- **命名理由**：抽象叫 `housepool`（我方自家的号池），具体实现叫 `kirors`。将来若换其它号池实现，只加一个 `housepool/otherimpl/`，不改上层
-- **不能省**：曾讨论过"用数据库替代 housepool"—— **不可行**。数据库只能做记账（"这号归谁"），但 §1-5 的**运行时**能力（校验 / 探活 / 用量 / 并发监控）必须号池实现才有
+- **命名理由**：抽象叫 `housepool`（我方自家的号池），具体实现叫 `kirors`
+- **kiro.rs 关键端点**（已经支持，见 kiro.rs 源码 `src/admin/router.rs`）：
+  - `POST /credentials/batch-import` —— 号入池
+  - `PUT /credentials/{id}` —— 改 groups（None 不动、Some 整体替换）+ 其它字段
+  - `POST /credentials/{id}/disabled` / `POST /credentials/batch/disabled` —— 禁用/启用
+  - `DELETE /credentials/{id}` / `POST /credentials/batch/delete` —— 从池删除
+  - `GET /credentials` / `GET /credentials/{id}/balance` —— 状态与存活探活
+- **所有号都在 housepool**：不管拼车的 / 单独拉的 / 双写的副本 / market 的；差别是 group 与 disabled 状态。**唯一离开的路径**：`DELETE /credentials/{id}`（对应去向 ③ handoff）
 
 ### Layer 5 · 出货（去向 ② / ③ 的实现）
 
@@ -215,14 +226,14 @@ Layer 5 只处理**离开 housepool 或双写副本**的动作。**去向 ① �
 [decider → adapter → vendor purchase → 记账]
         │
         ▼
-[写"拉号记录"数据库表]                               (Layer 3g)
-   status: unassigned；不进 housepool，不监控
+[BatchImport → housepool `record-<pid>` group]       (Layer 3 → Layer 4)
+   disabled=true（不发下游），号已在池，已监控
         │
         ▼
-[用户后续对每号选去向]
-        ├── 进车 → 移到 housepool bus-<bus_id>       (Layer 4)
-        ├── 推自己号池 → 去向 ② 双写                  (Layer 5)
-        └── 拿走 → 去向 ③ handoff                    (Layer 5)
+[用户后续对每号派去向]                               (Layer 3g pullrecord)
+        ├── 进车 → PUT /credentials/{id} groups=[bus-X], disabled=false
+        ├── 推自己号池 → 保留 record + 触发 Layer 5 双写
+        └── 拿走 → DELETE /credentials/{id}（离开 housepool）
 ```
 
 ## 4. 边界约束（每层不做什么）
