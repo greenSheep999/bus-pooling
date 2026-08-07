@@ -1,0 +1,744 @@
+{
+  "version": "2.15",
+  "children": [
+    {
+      "type": "frame",
+      "id": "liVgk",
+      "x": 0,
+      "y": 0,
+      "name": "Solo Pull",
+      "clip": true,
+      "width": 1440,
+      "height": 1024,
+      "fill": "$bg",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "ktFTP",
+          "layoutPosition": "absolute",
+          "x": 0,
+          "y": 0,
+          "name": "Hero Glow",
+          "fill": {
+            "type": "gradient",
+            "gradientType": "radial",
+            "enabled": true,
+            "rotation": 0,
+            "size": {
+              "width": 0.95,
+              "height": 1.1
+            },
+            "colors": [
+              {
+                "color": "#9147FF26",
+                "position": 0
+              },
+              {
+                "color": "#9147FF0F",
+                "position": 0.45
+              },
+              {
+                "color": "#9147FF00",
+                "position": 1
+              }
+            ],
+            "center": {
+              "y": 0
+            }
+          },
+          "width": 1440,
+          "height": 440
+        },
+        {
+          "type": "frame",
+          "id": "QpYyW",
+          "name": "Top Nav",
+          "width": "fill_container",
+          "height": 64,
+          "padding": [
+            0,
+            32
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "y1WkQ",
+              "name": "Nav Left",
+              "width": "fill_container",
+              "height": "fill_container",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "A4Me2J",
+                  "name": "Logo",
+                  "width": 24,
+                  "height": 24,
+                  "fill": "$kiro-500",
+                  "cornerRadius": 7,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "qZbSK",
+                      "name": "K",
+                      "fill": "#FFFFFF",
+                      "content": "K",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "DTQ3L",
+              "name": "Tabs",
+              "height": "fill_container",
+              "gap": 32,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "jJUHp",
+                  "name": "Tab 拼车",
+                  "width": 34,
+                  "height": "fill_container",
+                  "layout": "vertical",
+                  "padding": [
+                    23,
+                    0,
+                    0,
+                    0
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "q1Nyh3",
+                      "name": "Label",
+                      "fill": "$text-secondary",
+                      "content": "拼车",
+                      "fontFamily": "$font",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "rectangle",
+                      "id": "e2TNF",
+                      "name": "Active Line",
+                      "fill": "#FFFFFF00",
+                      "width": 34,
+                      "height": 2
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Y9yhK",
+                  "name": "Tab 拉号",
+                  "width": 34,
+                  "height": "fill_container",
+                  "layout": "vertical",
+                  "padding": [
+                    23,
+                    0,
+                    0,
+                    0
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "r6hflQ",
+                      "name": "Label",
+                      "fill": "$kiro-700",
+                      "content": "拉号",
+                      "fontFamily": "$font",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "rectangle",
+                      "id": "j2mHrm",
+                      "name": "Active Line",
+                      "fill": "$kiro-500",
+                      "width": 34,
+                      "height": 2
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "vCGAX",
+                  "name": "Tab 钱包",
+                  "width": 34,
+                  "height": "fill_container",
+                  "layout": "vertical",
+                  "padding": [
+                    23,
+                    0,
+                    0,
+                    0
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "JVLA3",
+                      "name": "Label",
+                      "fill": "$text-secondary",
+                      "content": "钱包",
+                      "fontFamily": "$font",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "rectangle",
+                      "id": "paDI1",
+                      "name": "Active Line",
+                      "fill": "#FFFFFF00",
+                      "width": 34,
+                      "height": 2
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "a5cBcc",
+                  "name": "Tab 我",
+                  "width": 18,
+                  "height": "fill_container",
+                  "layout": "vertical",
+                  "padding": [
+                    23,
+                    0,
+                    0,
+                    0
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "oj9f6",
+                      "name": "Label",
+                      "fill": "$text-secondary",
+                      "content": "我",
+                      "fontFamily": "$font",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "rectangle",
+                      "id": "qMols",
+                      "name": "Active Line",
+                      "fill": "#FFFFFF00",
+                      "width": 18,
+                      "height": 2
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "y0HQI",
+              "name": "Nav Right",
+              "width": "fill_container",
+              "height": "fill_container",
+              "gap": 16,
+              "justifyContent": "end",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "pR1NL",
+                  "name": "Cmd K Hint",
+                  "fill": "#D6D6D6",
+                  "content": "⌘K",
+                  "fontFamily": "$font",
+                  "fontSize": 12
+                },
+                {
+                  "type": "frame",
+                  "id": "ec9ON",
+                  "name": "Balance Chip",
+                  "fill": "$kiro-50",
+                  "cornerRadius": 20,
+                  "padding": [
+                    8,
+                    14
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "P1AQQk",
+                      "name": "Balance",
+                      "fill": "$kiro-700",
+                      "content": "¥ 1,245",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "n9AeI",
+                  "name": "Avatar",
+                  "width": 40,
+                  "height": 40,
+                  "fill": "#EFEFEF",
+                  "cornerRadius": 20,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "fCsfQ",
+                      "name": "Initial",
+                      "fill": "$text-secondary",
+                      "content": "D",
+                      "fontFamily": "$font",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "USbyl",
+          "name": "Content",
+          "width": "fill_container",
+          "height": "fill_container",
+          "layout": "vertical",
+          "padding": [
+            96,
+            48,
+            48,
+            48
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "RJIR1",
+              "name": "Center Column",
+              "width": 560,
+              "layout": "vertical",
+              "gap": 48,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ifg9P",
+                  "name": "Header",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 12,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "R0PspN",
+                      "name": "Title",
+                      "fill": "$text-primary",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "拉几个号？",
+                      "textAlign": "center",
+                      "fontFamily": "$font",
+                      "fontSize": 32,
+                      "fontWeight": "600",
+                      "letterSpacing": -0.5
+                    },
+                    {
+                      "type": "text",
+                      "id": "Y311IG",
+                      "name": "Subtitle",
+                      "fill": "$text-secondary",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "从 6 家 vendor 里选便宜的自动拉，进你的拉号记录",
+                      "lineHeight": 1.5,
+                      "textAlign": "center",
+                      "fontFamily": "$font",
+                      "fontSize": 15
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "pK4pw",
+                  "name": "Form Card",
+                  "width": "fill_container",
+                  "fill": "$kiro-50",
+                  "cornerRadius": "$radius-card",
+                  "layout": "vertical",
+                  "gap": 40,
+                  "padding": 40,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "N5jzs9",
+                      "name": "Row Quantity",
+                      "width": "fill_container",
+                      "gap": 24,
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "JSRDs",
+                          "name": "Quantity Label",
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "X069Dj",
+                              "name": "Label",
+                              "fill": "$text-primary",
+                              "content": "数量",
+                              "fontFamily": "$font",
+                              "fontSize": 15,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "WhMn3",
+                          "name": "Stepper Group",
+                          "layout": "vertical",
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "aey5Q",
+                              "name": "Stepper",
+                              "gap": 8,
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "G77Su",
+                                  "name": "Minus",
+                                  "width": 36,
+                                  "height": 36,
+                                  "fill": "#FFFFFF",
+                                  "cornerRadius": 18,
+                                  "justifyContent": "center",
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "icon",
+                                      "id": "crNJ8",
+                                      "name": "Minus Icon",
+                                      "width": 16,
+                                      "height": 16,
+                                      "icon": "minus",
+                                      "library": "lucide",
+                                      "fill": "$kiro-700"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "CRtyG",
+                                  "name": "Number Input",
+                                  "width": 88,
+                                  "height": 56,
+                                  "fill": "#FFFFFF",
+                                  "cornerRadius": "$radius-control",
+                                  "justifyContent": "center",
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "u3bkJ",
+                                      "name": "Value",
+                                      "fill": "$text-primary",
+                                      "content": "5",
+                                      "fontFamily": "$font",
+                                      "fontSize": 30,
+                                      "fontWeight": "600"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "WwlUb",
+                                  "name": "Plus",
+                                  "width": 36,
+                                  "height": 36,
+                                  "fill": "#FFFFFF",
+                                  "cornerRadius": 18,
+                                  "justifyContent": "center",
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "icon",
+                                      "id": "iE2uB",
+                                      "name": "Plus Icon",
+                                      "width": 16,
+                                      "height": 16,
+                                      "icon": "plus",
+                                      "library": "lucide",
+                                      "fill": "$kiro-700"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "gyHZc",
+                              "name": "Range",
+                              "fill": "$text-tertiary",
+                              "content": "1-200",
+                              "fontFamily": "$font",
+                              "fontSize": 12
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "pwnrs",
+                      "name": "Row Vendor",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 12,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "p2Rdl",
+                          "name": "Label",
+                          "fill": "$text-primary",
+                          "content": "从哪家 vendor",
+                          "fontFamily": "$font",
+                          "fontSize": 15,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "T3l69X",
+                          "name": "Vendor Dropdown",
+                          "width": "fill_container",
+                          "height": 56,
+                          "fill": "#FFFFFF",
+                          "cornerRadius": "$radius-control",
+                          "stroke": "$kiro-100",
+                          "strokeWidth": 1,
+                          "strokeAlignment": "inner",
+                          "padding": [
+                            0,
+                            20
+                          ],
+                          "justifyContent": "space_between",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "yi6MI",
+                              "name": "Selected",
+                              "fill": "$kiro-700",
+                              "content": "让系统选便宜的",
+                              "fontFamily": "$font",
+                              "fontSize": 15,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "icon",
+                              "id": "aHlMU",
+                              "name": "Chevron",
+                              "width": 18,
+                              "height": 18,
+                              "icon": "chevron-down",
+                              "library": "lucide",
+                              "fill": "$kiro-700"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "v0Y5I",
+                          "name": "Vendor Note",
+                          "fill": "$text-tertiary",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "系统会跨 Kiro Market / Kiro CEO / Kiro OOO / Kiroapp.io / Kiroapp.cc / Kiro Drop 比价",
+                          "lineHeight": 1.6,
+                          "fontFamily": "$font",
+                          "fontSize": 12
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "u5vJL",
+                  "name": "CTA Group",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 24,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "nLYUv",
+                      "name": "Primary Button",
+                      "width": 400,
+                      "height": 56,
+                      "fill": "$kiro-500",
+                      "cornerRadius": 10,
+                      "effect": {
+                        "type": "shadow",
+                        "shadowType": "outer",
+                        "color": "#9147FF40",
+                        "offset": {
+                          "x": 0,
+                          "y": 6
+                        },
+                        "blur": 20
+                      },
+                      "layout": "vertical",
+                      "gap": 2,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "WOLZm",
+                          "name": "Button Label",
+                          "fill": "#FFFFFF",
+                          "content": "拉 5 个号 · ¥ 106",
+                          "fontFamily": "$font",
+                          "fontSize": 17,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "text",
+                          "id": "JMH9U",
+                          "name": "Button Sub",
+                          "fill": "#FFFFFFB8",
+                          "content": "含服务费与通道费",
+                          "fontFamily": "$font",
+                          "fontSize": 12
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "K6HNa",
+                      "name": "Detail Link",
+                      "gap": 4,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Q2jpDo",
+                          "name": "Link Label",
+                          "fill": "$text-secondary",
+                          "content": "查看费用明细",
+                          "fontFamily": "$font",
+                          "fontSize": 13
+                        },
+                        {
+                          "type": "icon",
+                          "id": "oCXOV",
+                          "name": "Chevron",
+                          "width": 14,
+                          "height": 14,
+                          "icon": "chevron-down",
+                          "library": "lucide",
+                          "fill": "$text-tertiary"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variables": {
+    "kiro-500": {
+      "type": "color",
+      "value": "#9147FF"
+    },
+    "kiro-700": {
+      "type": "color",
+      "value": "#6420C7"
+    },
+    "kiro-50": {
+      "type": "color",
+      "value": "#F5F0FF"
+    },
+    "kiro-100": {
+      "type": "color",
+      "value": "#EBE0FF"
+    },
+    "brand-alpha-08": {
+      "type": "color",
+      "value": "#9147FF14"
+    },
+    "brand-alpha-20": {
+      "type": "color",
+      "value": "#9147FF33"
+    },
+    "bg": {
+      "type": "color",
+      "value": "#FFFFFF"
+    },
+    "surface": {
+      "type": "color",
+      "value": "#FAFAFA"
+    },
+    "text-primary": {
+      "type": "color",
+      "value": "#141414"
+    },
+    "text-secondary": {
+      "type": "color",
+      "value": "#767676"
+    },
+    "text-tertiary": {
+      "type": "color",
+      "value": "#A3A3A3"
+    },
+    "font": {
+      "type": "string",
+      "value": "Inter"
+    },
+    "radius-card": {
+      "type": "number",
+      "value": 16
+    },
+    "radius-control": {
+      "type": "number",
+      "value": 12
+    }
+  },
+  "fileToken": "35c6983a-4e02-49a1-9a37-9daef95be77f"
+}

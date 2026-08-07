@@ -1,0 +1,1010 @@
+{
+  "version": "2.15",
+  "children": [
+    {
+      "type": "frame",
+      "id": "b1NIv",
+      "x": 0,
+      "y": 0,
+      "name": "Home · 首页",
+      "clip": true,
+      "width": 1440,
+      "height": 1024,
+      "fill": "$bg",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "YPKvn",
+          "name": "Top Nav",
+          "width": "fill_container",
+          "height": 64,
+          "padding": [
+            0,
+            32
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "Q8dVMe",
+              "name": "Nav Left",
+              "width": "fill_container",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "DGgHl",
+                  "name": "Logo Mark",
+                  "width": 28,
+                  "height": 28,
+                  "fill": "$kiro-500",
+                  "cornerRadius": 9,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "leWqv",
+                      "name": "Logo Letter",
+                      "fill": "#FFFFFF",
+                      "content": "K",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "F4ysh9",
+              "name": "Nav Tabs",
+              "gap": 32,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "iHOdw",
+                  "name": "Tab 拼车",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "G6s7I",
+                      "name": "Label",
+                      "fill": "$kiro-500",
+                      "content": "拼车",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 1,
+                      "id": "XO8wh",
+                      "name": "Underline",
+                      "fill": "$kiro-500",
+                      "width": 28,
+                      "height": 2
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "P3PMSD",
+                  "name": "Tab 拉号",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "XZJP6",
+                      "name": "Label",
+                      "fill": "$text-secondary",
+                      "content": "拉号",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 1,
+                      "id": "Paav2",
+                      "name": "Underline",
+                      "fill": "#9147FF00",
+                      "width": 28,
+                      "height": 2
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "qr1Hp",
+                  "name": "Tab 钱包",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "sdVQZ",
+                      "name": "Label",
+                      "fill": "$text-secondary",
+                      "content": "钱包",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 1,
+                      "id": "II63M",
+                      "name": "Underline",
+                      "fill": "#9147FF00",
+                      "width": 28,
+                      "height": 2
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "igr64",
+                  "name": "Tab 我",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "r4hO4R",
+                      "name": "Label",
+                      "fill": "$text-secondary",
+                      "content": "我",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 1,
+                      "id": "x3UHj7",
+                      "name": "Underline",
+                      "fill": "#9147FF00",
+                      "width": 16,
+                      "height": 2
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "o4VaB8",
+              "name": "Nav Right",
+              "width": "fill_container",
+              "gap": 14,
+              "justifyContent": "end",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "BMfTL",
+                  "name": "Balance Chip",
+                  "fill": "$kiro-50",
+                  "cornerRadius": 20,
+                  "padding": [
+                    8,
+                    14
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "eUQzd",
+                      "name": "Balance Value",
+                      "fill": "$kiro-700",
+                      "content": "¥ 1,245",
+                      "fontFamily": "$font-body",
+                      "fontSize": 14,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Z8wWc",
+                  "name": "Avatar",
+                  "width": 40,
+                  "height": 40,
+                  "fill": "#F0F0F2",
+                  "cornerRadius": 20,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "PWDf4",
+                      "name": "Avatar Letter",
+                      "fill": "#57575E",
+                      "content": "D",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "TJF8X",
+                  "name": "Command Hint",
+                  "fill": "#CDCDD3",
+                  "content": "⌘K",
+                  "fontFamily": "$font-body",
+                  "fontSize": 11
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "XzwTA",
+          "name": "Hero",
+          "width": "fill_container",
+          "fill": [
+            "#FFFFFF",
+            {
+              "type": "gradient",
+              "gradientType": "radial",
+              "enabled": true,
+              "rotation": 0,
+              "size": {
+                "width": 1.5,
+                "height": 1.05
+              },
+              "colors": [
+                {
+                  "color": "#9147FF2E",
+                  "position": 0
+                },
+                {
+                  "color": "#9147FF12",
+                  "position": 0.35
+                },
+                {
+                  "color": "#9147FF00",
+                  "position": 0.85
+                }
+              ],
+              "center": {
+                "y": 0
+              }
+            }
+          ],
+          "layout": "vertical",
+          "gap": 28,
+          "padding": [
+            76,
+            48,
+            44,
+            48
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "DyOGd",
+              "name": "Head Group",
+              "layout": "vertical",
+              "gap": 14,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "Taub0",
+                  "name": "Greeting",
+                  "fill": "$text-secondary",
+                  "content": "晚上好，danlio",
+                  "fontFamily": "$font-body",
+                  "fontSize": 15
+                },
+                {
+                  "type": "text",
+                  "id": "ptgjW",
+                  "name": "Headline",
+                  "fill": "$text-primary",
+                  "content": "有 3 辆车正在跑",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-body",
+                  "fontSize": 48,
+                  "fontWeight": "600",
+                  "letterSpacing": -0.8
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "tQaI2",
+              "name": "Status Chips",
+              "gap": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "TNNdZ",
+                  "name": "Chip 8 号活着",
+                  "gap": 8,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "ellipse",
+                      "id": "pnesr",
+                      "name": "Dot",
+                      "fill": "$dot-alive",
+                      "width": 8,
+                      "height": 8
+                    },
+                    {
+                      "type": "text",
+                      "id": "tnhVc",
+                      "name": "Label",
+                      "fill": "$text-secondary",
+                      "content": "8 号活着",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15
+                    }
+                  ]
+                },
+                {
+                  "type": "ellipse",
+                  "id": "m7yKK",
+                  "name": "Divider",
+                  "fill": "#D8D8DE",
+                  "width": 3,
+                  "height": 3
+                },
+                {
+                  "type": "frame",
+                  "id": "PoASK",
+                  "name": "Chip 2 已失效",
+                  "gap": 8,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "ellipse",
+                      "id": "j3gbh",
+                      "name": "Dot",
+                      "fill": "$dot-dead",
+                      "width": 8,
+                      "height": 8
+                    },
+                    {
+                      "type": "text",
+                      "id": "UnE3M",
+                      "name": "Label",
+                      "fill": "$text-secondary",
+                      "content": "2 已失效",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15
+                    }
+                  ]
+                },
+                {
+                  "type": "ellipse",
+                  "id": "dDlSH",
+                  "name": "Divider",
+                  "fill": "#D8D8DE",
+                  "width": 3,
+                  "height": 3
+                },
+                {
+                  "type": "frame",
+                  "id": "YivSj",
+                  "name": "Chip 今天用了 ¥ 45",
+                  "gap": 8,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "sb7Au",
+                      "name": "Label",
+                      "fill": "$text-secondary",
+                      "content": "今天用了 ¥ 45",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "OTluS",
+          "name": "My Cars Wrap",
+          "width": "fill_container",
+          "padding": [
+            40,
+            48,
+            0,
+            48
+          ],
+          "justifyContent": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "gibAe",
+              "name": "My Cars",
+              "width": 1120,
+              "layout": "vertical",
+              "gap": 24,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "NSxRO",
+                  "name": "Section Title",
+                  "fill": "$text-primary",
+                  "content": "我的车",
+                  "fontFamily": "$font-body",
+                  "fontSize": 20,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "rkyDB",
+                  "name": "Car Row",
+                  "width": "fill_container",
+                  "gap": 40,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "kdMOE",
+                      "name": "Card 我的号池",
+                      "width": "fill_container",
+                      "height": 220,
+                      "fill": "$kiro-50",
+                      "cornerRadius": 16,
+                      "layout": "vertical",
+                      "padding": 28,
+                      "justifyContent": "space_between",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "Xzjzw",
+                          "name": "Card Head",
+                          "width": "fill_container",
+                          "gap": 12,
+                          "justifyContent": "space_between",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "HYT65",
+                              "name": "Car Name",
+                              "fill": "$text-primary",
+                              "content": "我的号池",
+                              "fontFamily": "$font-body",
+                              "fontSize": 20,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "q7kHxQ",
+                              "name": "Tag Chip",
+                              "fill": "#FFFFFF",
+                              "cornerRadius": 6,
+                              "padding": [
+                                5,
+                                10
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "v7tW3l",
+                                  "name": "Tag Label",
+                                  "fill": "$kiro-700",
+                                  "content": "独享",
+                                  "fontFamily": "$font-body",
+                                  "fontSize": 12,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "WT2kC",
+                          "name": "Card Metric",
+                          "layout": "vertical",
+                          "gap": 6,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "rUhvp",
+                              "name": "Alive Count",
+                              "fill": "$text-primary",
+                              "content": "4",
+                              "lineHeight": 1.1,
+                              "fontFamily": "$font-body",
+                              "fontSize": 32,
+                              "fontWeight": "600",
+                              "letterSpacing": -0.5
+                            },
+                            {
+                              "type": "frame",
+                              "id": "cDh6S",
+                              "name": "Metric Label",
+                              "gap": 7,
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "ellipse",
+                                  "id": "QtnJo",
+                                  "name": "Dot",
+                                  "fill": "$dot-alive",
+                                  "width": 7,
+                                  "height": 7
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "P0qphz",
+                                  "name": "Label",
+                                  "fill": "$text-secondary",
+                                  "content": "号活着",
+                                  "fontFamily": "$font-body",
+                                  "fontSize": 13
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Y8o75W",
+                          "name": "Card Foot",
+                          "width": "fill_container",
+                          "justifyContent": "end",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "xzud7",
+                              "name": "Enter Link",
+                              "fill": "$kiro-500",
+                              "content": "进入 →",
+                              "fontFamily": "$font-body",
+                              "fontSize": 14,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "o2vFa",
+                      "name": "Card 周末拼车局",
+                      "width": "fill_container",
+                      "height": 220,
+                      "fill": "$kiro-50",
+                      "cornerRadius": 16,
+                      "layout": "vertical",
+                      "padding": 28,
+                      "justifyContent": "space_between",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "Yo7TT",
+                          "name": "Card Head",
+                          "width": "fill_container",
+                          "gap": 12,
+                          "justifyContent": "space_between",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "K1w0S",
+                              "name": "Car Name",
+                              "fill": "$text-primary",
+                              "content": "周末拼车局",
+                              "fontFamily": "$font-body",
+                              "fontSize": 20,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "zFXYh",
+                              "name": "Tag Chip",
+                              "fill": "#FFFFFF",
+                              "cornerRadius": 6,
+                              "padding": [
+                                5,
+                                10
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "X638A",
+                                  "name": "Tag Label",
+                                  "fill": "$kiro-700",
+                                  "content": "拼车 3人",
+                                  "fontFamily": "$font-body",
+                                  "fontSize": 12,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "m92Jkf",
+                          "name": "Card Metric",
+                          "layout": "vertical",
+                          "gap": 6,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "Tr8WC",
+                              "name": "Alive Count",
+                              "fill": "$text-primary",
+                              "content": "3",
+                              "lineHeight": 1.1,
+                              "fontFamily": "$font-body",
+                              "fontSize": 32,
+                              "fontWeight": "600",
+                              "letterSpacing": -0.5
+                            },
+                            {
+                              "type": "frame",
+                              "id": "dZi1F",
+                              "name": "Metric Label",
+                              "gap": 7,
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "ellipse",
+                                  "id": "Dzyuk",
+                                  "name": "Dot",
+                                  "fill": "$dot-alive",
+                                  "width": 7,
+                                  "height": 7
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "aYGr7",
+                                  "name": "Label",
+                                  "fill": "$text-secondary",
+                                  "content": "号活着",
+                                  "fontFamily": "$font-body",
+                                  "fontSize": 13
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "tvDO0",
+                          "name": "Card Foot",
+                          "width": "fill_container",
+                          "justifyContent": "end",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "k9Ndf9",
+                              "name": "Enter Link",
+                              "fill": "$kiro-500",
+                              "content": "进入 →",
+                              "fontFamily": "$font-body",
+                              "fontSize": 14,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ARCMN",
+                      "name": "Card Kiro 常驻车",
+                      "width": "fill_container",
+                      "height": 220,
+                      "fill": "$kiro-50",
+                      "cornerRadius": 16,
+                      "layout": "vertical",
+                      "padding": 28,
+                      "justifyContent": "space_between",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "jX8oG",
+                          "name": "Card Head",
+                          "width": "fill_container",
+                          "gap": 12,
+                          "justifyContent": "space_between",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "VxO1U",
+                              "name": "Car Name",
+                              "fill": "$text-primary",
+                              "content": "Kiro 常驻车",
+                              "fontFamily": "$font-body",
+                              "fontSize": 20,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "AvDz5",
+                              "name": "Tag Chip",
+                              "fill": "#FFFFFF",
+                              "cornerRadius": 6,
+                              "padding": [
+                                5,
+                                10
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "VGNbg",
+                                  "name": "Tag Label",
+                                  "fill": "$kiro-700",
+                                  "content": "拼车 2人",
+                                  "fontFamily": "$font-body",
+                                  "fontSize": 12,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "fNugJ",
+                          "name": "Card Metric",
+                          "layout": "vertical",
+                          "gap": 6,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "DLkaF",
+                              "name": "Alive Count",
+                              "fill": "$text-primary",
+                              "content": "1",
+                              "lineHeight": 1.1,
+                              "fontFamily": "$font-body",
+                              "fontSize": 32,
+                              "fontWeight": "600",
+                              "letterSpacing": -0.5
+                            },
+                            {
+                              "type": "frame",
+                              "id": "GlVaq",
+                              "name": "Metric Label",
+                              "gap": 7,
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "ellipse",
+                                  "id": "IweVl",
+                                  "name": "Dot",
+                                  "fill": "$dot-alive",
+                                  "width": 7,
+                                  "height": 7
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "GIXLN",
+                                  "name": "Label",
+                                  "fill": "$text-secondary",
+                                  "content": "号活着",
+                                  "fontFamily": "$font-body",
+                                  "fontSize": 13
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Bam6l",
+                          "name": "Card Foot",
+                          "width": "fill_container",
+                          "justifyContent": "end",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "V16HEw",
+                              "name": "Enter Link",
+                              "fill": "$kiro-500",
+                              "content": "进入 →",
+                              "fontFamily": "$font-body",
+                              "fontSize": 14,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "sF0dy",
+          "name": "Actions Wrap",
+          "width": "fill_container",
+          "padding": [
+            64,
+            48,
+            0,
+            48
+          ],
+          "justifyContent": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "Wm6Te",
+              "name": "Quick Actions",
+              "gap": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "TuqRX",
+                  "name": "Btn 建一辆新车",
+                  "fill": "$kiro-500",
+                  "cornerRadius": 10,
+                  "padding": [
+                    16,
+                    32
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "gj1u5",
+                      "name": "Label",
+                      "fill": "#FFFFFF",
+                      "content": "建一辆新车",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "lJMSm",
+                  "name": "Btn 单独拉号",
+                  "cornerRadius": 10,
+                  "stroke": "$kiro-100",
+                  "strokeWidth": 1,
+                  "strokeAlignment": "inner",
+                  "padding": [
+                    16,
+                    32
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "qImaO",
+                      "name": "Label",
+                      "fill": "$kiro-700",
+                      "content": "单独拉号",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "J65WxG",
+                  "name": "Btn 充值",
+                  "cornerRadius": 10,
+                  "padding": [
+                    16,
+                    28
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "M70bwV",
+                      "name": "Label",
+                      "fill": "$text-secondary",
+                      "content": "充值",
+                      "fontFamily": "$font-body",
+                      "fontSize": 15,
+                      "fontWeight": "500"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variables": {
+    "kiro-500": {
+      "type": "color",
+      "value": "#9147FF"
+    },
+    "kiro-700": {
+      "type": "color",
+      "value": "#6420C7"
+    },
+    "kiro-50": {
+      "type": "color",
+      "value": "#F5F0FF"
+    },
+    "kiro-100": {
+      "type": "color",
+      "value": "#EBE0FF"
+    },
+    "brand-alpha-08": {
+      "type": "color",
+      "value": "#9147FF14"
+    },
+    "brand-alpha-20": {
+      "type": "color",
+      "value": "#9147FF33"
+    },
+    "bg": {
+      "type": "color",
+      "value": "#FFFFFF"
+    },
+    "text-primary": {
+      "type": "color",
+      "value": "#0A0A0A"
+    },
+    "text-secondary": {
+      "type": "color",
+      "value": "#6B6B70"
+    },
+    "text-tertiary": {
+      "type": "color",
+      "value": "#A0A0A6"
+    },
+    "surface-subtle": {
+      "type": "color",
+      "value": "#FAFAFA"
+    },
+    "dot-alive": {
+      "type": "color",
+      "value": "#4CAF7D"
+    },
+    "dot-dead": {
+      "type": "color",
+      "value": "#E5808A"
+    },
+    "font-body": {
+      "type": "string",
+      "value": "Inter"
+    }
+  },
+  "fileToken": "3b774b59-9465-493e-8003-6ac7c1e97ebf"
+}
