@@ -220,11 +220,21 @@ CREATE TABLE bus (
   kind                   TEXT NOT NULL,                   -- single | anon | team
   creator_passenger_id   TEXT NOT NULL,
   invite_code            TEXT UNIQUE,                     -- team 才有
-  refill_watermark       INTEGER NOT NULL DEFAULT 0,      -- 号数低于水位触发补车
   max_members            INTEGER,                          -- anon / team 才有
   status                 TEXT NOT NULL DEFAULT 'active',  -- active | dissolved
   created_at             TEXT NOT NULL,
   dissolved_at           TEXT,
+
+  -- 补车策略（每车一策略 · decisions §8.6）
+  auto_refill_enabled    INTEGER NOT NULL DEFAULT 0,      -- 0/1 · 号死自动补
+  refill_watermark       INTEGER NOT NULL DEFAULT 0,      -- 活号低于水位（号数）触发补车
+  refill_min_count       INTEGER,                          -- 每轮至少补到 N 号
+  per_round_count        INTEGER,                          -- 每轮拉几号
+  max_unit_price         INTEGER,                          -- microunit · 单号最高价
+  daily_round_limit      INTEGER,                          -- 每日最多拉号次数
+  daily_spend_limit      INTEGER,                          -- microunit · 每日花费上限
+  preferred_vendor       TEXT,                              -- NULL = 有效成本比价自动选
+
   FOREIGN KEY (creator_passenger_id) REFERENCES passenger(id)
 );
 
@@ -313,6 +323,8 @@ CREATE TABLE credential_ledger (
   dead_at                     TEXT,
   death_source                TEXT,                        -- housepool_probe | vendor_webhook | vendor_poll
   handed_off_at               TEXT,                        -- handoff 时间
+  pushed_to_passengerpool_at  TEXT,                        -- 号是否推给了乘客 passengerpool（双写状态）· NULL = 未推 · 有值 = 已推
+  passengerpool_push_error    TEXT,                        -- 推送失败原因；NULL = 无失败 / 未推
   FOREIGN KEY (owner_bus_id) REFERENCES bus(id),
   FOREIGN KEY (owner_record_passenger_id) REFERENCES passenger(id),
   FOREIGN KEY (source_pull_round_id) REFERENCES pull_round(id),
@@ -358,7 +370,7 @@ CREATE TABLE vendor_lifespan_snapshot (
 CREATE TABLE credential_usage_snapshot (
   id                        TEXT PRIMARY KEY,
   kiro_rs_credential_id     INTEGER NOT NULL,           -- housepool 里的 credential id
-  window                    TEXT NOT NULL,              -- '24h' | '7d' | '30d'
+  window                    TEXT NOT NULL,              -- '1h' | '24h' | '7d' | '30d'   （1h 用于号详情抽屉 24 柱图）
   calls                     INTEGER NOT NULL DEFAULT 0,
   input_tokens              INTEGER NOT NULL DEFAULT 0,
   output_tokens             INTEGER NOT NULL DEFAULT 0,
@@ -472,24 +484,26 @@ CREATE TABLE pull_round_capability (
 
 **阶段 1 空表**（无实例）；阶段 2c 加"稳定优先"时才写第一行。
 
-## 16. 策略 · `passenger_strategy`
+## 16. 全局默认策略 · `passenger_strategy_default`
+
+**注意**：`decisions §8.6` 定"补车策略跟 bus 绑"—— 每车一策略字段在 `bus` 表 §8。此表只作为**乘客建新车时的默认值** + **单独拉号（record group）时的策略参数**。
 
 ```sql
-CREATE TABLE passenger_strategy (
+CREATE TABLE passenger_strategy_default (
   passenger_id             TEXT PRIMARY KEY,
-  auto_enabled             INTEGER NOT NULL DEFAULT 0,
   per_round_count          INTEGER,
-  min_count                INTEGER,
-  keep_safety_stock        INTEGER,
   max_unit_price           INTEGER,                      -- microunit
-  daily_round_limit        INTEGER,
-  daily_spend_limit        INTEGER,                      -- microunit
-  target_bus_id            TEXT,                          -- 自动拉进哪辆 bus
+  daily_round_limit        INTEGER,                      -- 全局 · 跨所有 bus 累加
+  daily_spend_limit        INTEGER,                      -- microunit · 全局
   updated_at               TEXT NOT NULL,
-  FOREIGN KEY (passenger_id) REFERENCES passenger(id),
-  FOREIGN KEY (target_bus_id) REFERENCES bus(id)
+  FOREIGN KEY (passenger_id) REFERENCES passenger(id)
 );
 ```
+
+**含义**：
+- 建新 bus 时 · 若不填字段 · 从此表取默认值
+- 提取 key（record group）走全局限额（此表 `daily_round_limit` / `daily_spend_limit`）
+- Bus 级限额（`bus.daily_round_limit` / `bus.daily_spend_limit`）** 车内**  · 跟全局是**AND** 关系（两个都不超才允许）
 
 ## 17. Vendor 账户凭证（我方在 vendor 那的账号）· `vendor_account`
 
