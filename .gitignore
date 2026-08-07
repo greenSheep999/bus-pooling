@@ -17,3 +17,9 @@ docs/vendors/_sources/kiroceo-docs.extracted.txt
 # 一般噪音
 .DS_Store
 *.swp
+
+# ── 前端
+web/node_modules/
+web/dist/
+web/.vite/
+.playwright-mcp/

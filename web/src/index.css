@@ -1,0 +1,58 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg: 0 0% 100%;
+    --bg-elevated: 0 0% 98%;
+    --fg: 0 0% 4%;
+    --fg-secondary: 0 0% 32%;
+    --fg-tertiary: 0 0% 64%;
+    --hairline: 0 0% 93%;
+  }
+
+  .dark {
+    --bg: 0 0% 4%;
+    --bg-elevated: 0 0% 8%;
+    --fg: 0 0% 98%;
+    --fg-secondary: 0 0% 64%;
+    --fg-tertiary: 0 0% 40%;
+    --hairline: 0 0% 12%;
+  }
+
+  * {
+    @apply border-hairline;
+  }
+
+  body {
+    @apply bg-bg text-fg font-sans antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* 卡片三态（design/audit.md 视觉规范） */
+  .card {
+    @apply bg-bg border border-hairline rounded-panel shadow-card;
+  }
+
+  .card-focal {
+    @apply bg-bg-elevated bg-glow-tr rounded-focal shadow-card;
+    border: 1px solid rgb(145 71 255 / 0.12);
+  }
+
+  .card-hover {
+    @apply transition-all;
+  }
+  .card-hover:hover {
+    @apply -translate-y-1 shadow-hover;
+    border-color: rgb(145 71 255 / 0.22);
+  }
+}
