@@ -329,9 +329,14 @@
 
 ### `internal/authpassenger/`
 
-- **目的**：乘客登录（SuperTokens 客户端 或 内置 email/password）
+- **目的**：乘客登录 · **Go 自建**（无外部依赖）
+- **实现**：
+  - 密码哈希：Argon2id（`golang.org/x/crypto/argon2`，`memory=64MB, iterations=3, parallelism=2`）
+  - Session：`sessions` 表 + cookie 存随机 token（32 hex）；也接受 `X-API-Key` header 登录
+  - API key：`passenger_api_key.key_hash` 存 SHA-256(明文)；明文只 create/rotate 时返回一次
+  - 邮箱验证 / 忘记密码 / 社交登录：**阶段 1 不做**（放 §00.9 未决 · 阶段 3+ 补）
 - **P 标签**：1a
-- **备注**：如决定用 SuperTokens，此包是对接层；否则自建
+- **备注**：**不用 SuperTokens**（`decisions.md §1.9` 记录）—— 项目是公益工具，自建 200 行 Go 够用
 
 ### `internal/authadmin/`
 

@@ -217,6 +217,12 @@
 
 ## 5. 未来产品线
 
+### 1.9 用 SuperTokens 做登录方案 ⏸
+- **提议**：用 SuperTokens 或 Casdoor / Ory Kratos 等外接身份管理服务
+- **当前不做**：项目是公益工具（`README.md`），阶段 1 只需要"登录 / 登出 / API key"三件事，**Go 自建约 200 行代码**就够（Argon2id + session cookie）
+- **未来可能做**：如果需要邮箱验证 / 忘记密码 / 社交登录（Google / GitHub）→ 阶段 3+ 用户量稳定后可评估接入 SuperTokens 或 Ory
+- **参考**：`03-modules.md · authpassenger`；密码哈希算法用 Argon2id（跟登录方案是两回事，见对话记录）
+
 ### 5.1 散户切片（一把 key 切多份卖给小散户）⏸
 - **提议**：用 kiro.rs `CreateClientKey(usage_limit)` 把一把号的额度切成多份卖
 - **当前不做**：不是拼车主线，避免混乱；kiro.rs 天然支持但先聚焦拼车

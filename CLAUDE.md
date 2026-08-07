@@ -166,6 +166,7 @@ pullrecord · bus · housepool · delivery
 - ❌ 按 CNY/USD 双币种区分海外国内（waffo 单币种不支持）
 - ❌ 按用户注册地区判定（无法校验）
 - ❌ 散户切片（一把 key 切多份）—— 未来产品线，不并入拼车
+- ⏸ SuperTokens / Casdoor / Ory 等外接登录方案 —— 阶段 1 自建（Go + Argon2id + session cookie），未来可评估
 
 ---
 
@@ -211,9 +212,12 @@ pullrecord · bus · housepool · delivery
 ### 7.2 数据库
 
 - SQLite WAL 单节点
-- 主键约定：**待 `06-db-schema.md` 落草稿时统一**（uuid v7 或 snowflake 二选一）
-- money 字段：**待定**（int microdollar 或 numeric decimal）
+- 主键：**UUID v7**（时间有序 + 无遍历攻击面），存 `TEXT`
+- money 字段：**整数 microunit**（1 元 = 1_000_000）
 - 时间：ISO-8601 UTC 存储；UI 层做时区转换
+- **并发控制**：SQLite 用 `BEGIN IMMEDIATE`（不用 `SELECT ... FOR UPDATE` —— SQLite 不支持行级锁）
+- **事务边界**：跨系统写（vendor + kiro.rs + SQLite）**不做隐式两阶段提交** —— 用**持久化状态机**（见 `docs/09-transactions.md`）
+- 幂等：写请求以 `X-Idempotency-Key` 做请求指纹落 `idempotency_record` 表（见 `06-db-schema.md`）
 
 ### 7.3 命名冲突哨兵
 
