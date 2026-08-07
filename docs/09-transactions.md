@@ -360,7 +360,7 @@ ALTER TABLE wallet ADD COLUMN reserved INTEGER NOT NULL DEFAULT 0;
 
 ## 11. 阶段推进
 
-- **1a**（sprint-1a-frontend 后的 sprint-1b-backend）：`pending_purchase` + `wallet.reserved` + `idempotency_record` + janitor
+- **1a**（sprint-1a-frontend 前端 + sprint-1a-backend 后端）：`pending_purchase`（含 `purchasing` 中间态）+ `wallet.reserved` + `idempotency_record` + `pending_handoff` + `pending_dissolution` + janitor
 - **1a**（同）：`pending_handoff`（阶段 1a 唯一的 assign 场景）
 - **1b**：`pending_topup`（充值渠道）
 - **1c**：`pending_assignment` 全形态（进车 / 推 passengerpool）

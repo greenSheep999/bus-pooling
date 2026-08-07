@@ -239,7 +239,7 @@ web/
 
 ## Sprint 1a 前端 · 完成后开 · Sprint 1a 后端
 
-**看 `sprint-1a-backend.md`**（原 sprint-1b-backend.md，rename 后）。
+**看 `sprint-1a-backend.md`**。
 
 **关键**：Sprint 1a 前端完成、用户 Review 后，`05-api-contract.md` 和 `06-db-schema.md` 可能会有小改；Sprint 1a 后端按**最终版**契约实现，不用推翻重来。
 
