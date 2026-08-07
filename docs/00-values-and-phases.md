@@ -322,7 +322,9 @@ bus-pooling 本体（Go 服务）
 | **1b** | 加 5 家 vendor + 兑换码 + payment-gateway（waffo 5% pass-through） | 仍无拼车（多人）、无自动 |
 | **1c** | **匿名撮合多人 bus 拼车** + 号价按 N 分摊 + 集单调度 | 无邀请码、无自动 |
 | **1d** | 自动模式（时钟 / 水位 / vendor webhook 触发）+ 号死自动补车 + 决策模型（比价 + fallback） | 无邀请码、无压车治理 |
-| **1e** | 去向 ② 推 passengerpool（双写）+ 去向 ③ handoff + 对外 webhook | 无邀请码、无发车 |
+| **1e** | 去向 ② 推 passengerpool（双写）+ 对外 webhook | 无邀请码、无发车 |
+
+**关于 handoff（拿走）时机说明**：**handoff 在 1a 就有**（两阶段 token 交付实现）。1e 只加"推 passengerpool 双写"和"对外 webhook"，不涉及 handoff 本身。
 
 ### 阶段 2 · 拼车增强 + 治理
 

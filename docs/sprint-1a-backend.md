@@ -1,10 +1,14 @@
-# Sprint 1b · 后端跟随（后端落地阶段 1a 的所有能力）
+# Sprint 1a · 后端（跟前端一起交付阶段 1a）
 
-> 前置：Sprint 1a（前端骨架）已完成 + `05-api-contract.md` 已冻结；`09-transactions.md`（状态机）；`06-db-schema.md`（含 idempotency_record + pending_purchase）；`07-provider-contract.md` · `08-housepool-contract.md`
+> 前置：Sprint 1a 前端骨架（`sprint-1a-frontend.md`）已完成 + `05-api-contract.md` 已冻结；`09-transactions.md`（状态机）；`06-db-schema.md`（含 sessions + idempotency_record + pending_handoff）；`07-provider-contract.md` · `08-housepool-contract.md`
 >
-> **Sprint 1b 目标**：**单 vendor（91kiro）+ 主入口拼车（1 人 bus）+ 次入口单独拉号 + 手动派去向（含 handoff）+ housepool 承载 + 事务状态机 + 幂等 + 基础监控 + 手动号死处理**，端到端跟前端联调通。
+> **Sprint 1a 后端目标**：**单 vendor（91kiro）+ 主入口拼车（1 人 bus）+ 次入口单独拉号 + 手动派去向（含两阶段 handoff）+ housepool 承载 + 4 类事务状态机 + 幂等 + 基础监控 + 手动号死处理**，端到端跟前端联调通。
 >
-> **命名说明**：本文件旧名 `sprint-1a.md` —— 阶段 1a 的**产品能力**由 sprint-1a-frontend（前端）+ sprint-1b-backend（后端）**两个 sprint 联合交付**。
+> **命名说明**：**阶段 1a 由前后端两个 sprint 联合交付**：
+> - `sprint-1a-frontend.md` · 前端骨架 + MSW + 12 页
+> - `sprint-1a-backend.md` · 本文件 · 后端真接口
+>
+> 阶段 1b（未来）是"5 家 vendor + CDK + payment"，跟本文件无关。
 
 ## 完成标准（Definition of Done）
 
@@ -51,8 +55,10 @@
 | `POST /api/me/pull` | ✅ 实现 | 单独拉号 → record group |
 | `GET /api/me/pull-records` | ✅ 实现 | |
 | `GET /api/me/pull-records/{id}` | ✅ 实现 | |
-| `POST /api/me/pull-records/assign` | ✅ 实现 | 三种 target 都实现；到 passengerpool 走 mock 通道 |
-| `POST /api/me/pull-records/{id}/handoff` | ✅ 实现 | **走 `pending_handoff` 状态机 + 幂等特例** |
+| `POST /api/me/pull-records/assign` | ✅ 实现 | 进车 + 推 passengerpool 分支实现（passengerpool 走 mock 通道）；handoff 分支返回 download_token |
+| `POST /api/me/pull-records/{id}/handoff-init` | ✅ 实现 | **两阶段 token 阶段 1** |
+| `GET /api/me/handoff/{token}` | ✅ 实现 | **两阶段 token 阶段 2 · fulfill** |
+| `POST /api/me/handoff/{token}/confirm` | ✅ 实现 | **两阶段 token 阶段 3 · 触发 DELETE** |
 | `GET /api/me/credentials` | ✅ 实现 | |
 | `GET /api/me/credentials/{id}` | ✅ 实现 | 含 usage 字段（concurrency_avg 常态 null） |
 | `GET /api/me/strategy` | ✅ 实现 | 存空对象即可 |
@@ -67,7 +73,7 @@
 | `GET /api/vendors/{id}/health` | ⚙️ 骨架 501 | 1d 有平均寿命才做 |
 | `POST /webhook/vendor/91kiro` | ⚙️ 骨架 501 | 1d 才做 |
 
-**共 42 端点，Sprint 1b 实现 30 + 骨架 12。**
+**共 43 端点，Sprint 1a 后端实现 31 + 骨架 12。**
 
 ## 阶段 1a 的"必须做" 12 项模块
 
@@ -270,9 +276,9 @@
 - [ ] **kiro.rs commit sha 已绑**并 CI 校验通过
 - [ ] **API 响应 grep 无内部术语**（`housepool` / `initiated` / `handed_off` 等）
 
-## Sprint 1a 结束后 · 下一个 Sprint 是什么
+## Sprint 1a（前后端）结束后 · 下一个 Sprint
 
-**Sprint 1b**（预计另 2 周）：
+**Sprint 1b**（预计 2 周）：
 - 加 5 家 vendor adapter（kiroceo / kirooo / kiroappio / kiroappcc / kirodrop）
 - 兑换码 `redeem` 包
 - payment-gateway (waffo) `payment` 包

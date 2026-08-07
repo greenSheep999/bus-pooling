@@ -200,7 +200,7 @@ web/
 
 ### 总工时估算
 
-约 **8.5 天纯前端开发**（不含 review 之后的调整）。单人节奏约 **2 周**。
+约 **9.5 天纯前端开发**（不含 review 之后的调整）。单人节奏约 **2 周**。
 
 **关键路径**：`#F1 → #F2 → #F3 → #F4 → #F5 → #F6 → #F14`（约 5 天）。**#F7-F12 可并行**（多个页面独立开发）。
 
@@ -237,11 +237,11 @@ web/
 - [ ] Bun build 无报错
 - [ ] 用户 Review 清单归档
 
-## Sprint 1a 之后 · Sprint 1b 后端开始
+## Sprint 1a 前端 · 完成后开 · Sprint 1a 后端
 
-**看 `sprint-1b-backend.md`**（原 sprint-1a.md 内容，加了 endpoint matrix + 事务状态机 + 幂等契约 + DRY_RUN 开关 + kiro.rs commit sha）。
+**看 `sprint-1a-backend.md`**（原 sprint-1b-backend.md，rename 后）。
 
-**关键**：Sprint 1a 结束后，`05-api-contract.md` 和 `06-db-schema.md` 可能会有小改（based on 用户 review 反馈）；Sprint 1b 按**最终版**契约来做，不用推翻重来。
+**关键**：Sprint 1a 前端完成、用户 Review 后，`05-api-contract.md` 和 `06-db-schema.md` 可能会有小改；Sprint 1a 后端按**最终版**契约实现，不用推翻重来。
 
 ## 提醒
 
