@@ -2,47 +2,96 @@
 
 > 前置：`04-scenarios.md` · `05-api-contract.md` · `sprint-1a-frontend.md`
 >
-> **12 页面 + 2 layout** 覆盖阶段 1 全部乘客侧需求。管理端阶段 3+ 单独开文档。
+> **14 页面 + 2 layout** 覆盖阶段 1 全部乘客侧需求。管理端阶段 3+ 单独开文档。
+>
+> **视觉基线**：`design/mockups/05-home.pen`（24 张 mockup 已定型）· 规范见本文末「视觉规范」
 >
 > **原则**（`CLAUDE.md §12`）：
 > - **不出现内部术语**（`housepool` / `provider` / `record group` / `initiated`）
 > - **状态只显示 2-3 态**（"活" / "已失效"，不显示 `preparing/live/dying`）
 
+## 导航形态（`decisions §8.2`）
+
+**顶栏 5 tab · 无侧栏**（侧栏方案已推翻）：
+
+```
+[K logo]  概览 · 拼车 · 提取 key · 我的发车 · 对接文档     [上游库存] [积分] [🔔] [头像▾]
+```
+
+- **左对齐** tab（logo 紧邻，非居中）
+- **右侧 4 元素**：上游库存 badge · 积分 pill（绿色）· 通知铃铛 · 头像 dropdown
+- **头像 dropdown**：我的 · API key · 机器人通知 · 设置 · 语言 · 主题 · 登出
+
 ## 路由树
 
 ```
-/                              → 首页 / 仪表盘（登录后跳）
+/                              → 概览（数据看板，登录后跳）
 /login                         → 登录（未登录跳）
 /register                      → 注册
-/buses                         → 我的车列表（首页一部分，独立页可选）
-/buses/new                     → 建车
-/buses/:id                     → 车详情（tab: 号列表 / 拉号历史 / 成员 / 统计）
-/pull                          → 单独拉号
-/pull-records                  → 拉号记录列表 + 派去向
-/wallet                        → 钱包 · 余额 + 充值 + 兑换 + 流水（可拆两页，1a 合并）
-/settings/strategy             → 策略参数配置
-/settings/downstream           → 下游配置（passengerpool + 我方 webhook）
+
+/buses                         → 拼车 · 车列表（tab 主页）
+/buses/new                     → 建车（模态）
+/buses/:id                     → 车详情（tab: 号列表 / 拉号历史 / 补车策略 / 成员 / 危险区）
+
+/extract                       → 提取 key · 主动作 + 提取记录
+/extract/assign                → 派去向（模态：进车 / 推我的号池 / 拿走）
+
+/dispatch                      → 我的发车（阶段 3 空态占位）
+/docs                          → 对接文档（静态帮助页）
+
+/wallet                        → 钱包 · 余额 + 充值 + 兑换 + 流水（积分 pill 点击进入）
+/settings/downstream           → 设置 · 我的号池（passengerpool 配置）
+/settings/webhook              → 机器人通知（webhook 配置 + 投递记录）
 /settings/api-keys             → API key 管理
-/settings/profile              → 账号 · 邮箱 / 改密码（简化版）
+/settings/profile              → 我的 · 邮箱 / 改密码 / 危险区
 ```
 
-**共 13 条路由 · 12 独立页面**（`/` 是仪表盘）。
+**共 14 条路由**。补车策略**跟 bus 绑**（`decisions §8.6`），在车详情页内，不做独立 `/settings/strategy`。
+
+## 概览页结构（`/`）
+
+**全页时间维度控制器**在 Hero 右侧：`今日 / 7 天 / 30 天 / 90 天 / 全部` —— 切换后下方所有数据（KPI / 业务卡 / 趋势 / Vendor / 活动）跟着变。
+
+1. **Hero** — 「概览」+ 副标 + 时间切换
+2. **4 KPI 卡** — 总余额（focal 光晕）· 今日消费 · 累计拉号 · 活跃号；每卡右上角 icon
+3. **3 业务卡**（等高）— 拼车 / 提取 key / 我的发车
+   - 各含：主数字 · 分布堆叠条 · 明细列表 · 底部汇总行
+   - 我的发车为阶段 3 灰卡占位
+4. **使用趋势** — 全宽 · 曲线图 + 渐变面积 · 维度切换（消耗 / 拉号 / 寿命）
+5. **Vendor 行**（两卡等高）— 左：监测表（单价/寿命/有效成本/存活率/今日拉/fallback）· 右：占比环形图
+6. **活动记录** — 全宽裸列表（无卡片外壳，hairline 分隔）
 
 ## 通用组件（`src/components/`）
 
-- `<AppLayout>` · 侧栏 + 顶栏（余额 + 头像）
+**布局**
+- `<AppLayout>` · 顶栏（5 tab + 右侧 4 元素）+ 内容区
 - `<AuthLayout>` · 登录/注册居中卡片
-- `<BusCard>` · 车卡片（车名 / kind / 成员数 / 号数 / 状态）
-- `<CredentialRow>` · 号行（credential 简版 / vendor icon / pulled_at / 状态 / 用量）
-- `<StatusBadge>` · 通用状态徽章（**只支持 2-3 态**）
-- `<PriceBreakdown>` · 展开一次消费的 4 项组成（号价 / 单次议价 / 服务费 / 通道费）
-- `<HandoffModal>` · handoff 明文展示模态（一次性、复制按钮）
-- `<VendorTag>` · vendor 展示名（`91kiro` → "Kiro Market"，映射见 `CLAUDE.md §12.5`）
-- `<CopyButton>` · 明文复制（用于 API key / handoff / webhook secret）
-- `<Pager>` · 分页
-- `<Toaster>` · 全局 toast
 
-## 12 页详解
+**数据展示**
+- `<KpiCard>` · 数据卡（label + 右上 icon + 大数字 + 单位基线对齐 + 副标）
+- `<TrendChart>` · 曲线图（贝塞尔平滑 + 渐变面积）+ 维度切换
+- `<DonutChart>` · 环形占比图（中心数字 + 图例带百分比）
+- `<DistributionBar>` · 堆叠横条（业务卡内的号池/去向分布）
+- `<DataTable>` · 表格（表头/数据居中对齐，末列居右）
+- `<TimeRangePicker>` · 全页时间维度切换
+
+**业务**
+- `<BusCard>` · 车卡片（车名 / kind / 号数 / 状态 / 寿命 / 今日消费）
+- `<CredentialRow>` · 号行（vendor / pulled_at / 状态 / 用量进度条 / 寿命）
+- `<ActivityRow>` · 活动行（时间 / tag / 描述 / 金额）
+- `<VendorTag>` · vendor 展示名（`91kiro` → "Kiro Market"，映射见下）
+- `<StockBadge>` · 上游库存（header · 绿点 + 可拉号数）
+- `<CreditPill>` · 积分余额（header · **绿色系** `#E8F7EF` / `#1F7A47`）
+
+**通用**
+- `<StatusBadge>` · 状态徽章（**只支持 2-3 态**）
+- `<PriceBreakdown>` · 消费明细（号价 / 单次议价 / 服务费；**通道费只在充值页出现**）
+- `<HandoffModal>` · handoff 两步（警告确认 → 明文一次性展示）
+- `<CopyButton>` · 明文复制（API key / handoff / webhook secret）
+- `<Pager>` · 分页
+- `<Toaster>` · 全局 toast（success / info / warning / error）
+
+## 页面详解
 
 ### 1. `/login` · 登录
 
@@ -76,26 +125,29 @@
 
 ---
 
-### 3. `/` · 首页 / 仪表盘
+### 3. `/` · 概览
 
-**布局**：`<AppLayout>`。
+**布局**：`<AppLayout>`。**定位：数据看板，不做操作**（车列表在 `/buses`）。
 
-**上半部**：
-- 余额卡片（`<PriceBreakdown>` 概览：可用 / 冻结 / 总）
-- 快捷按钮：建车 · 单独拉号 · 充值
+结构见上文「概览页结构」。要点：
 
-**中部**：
-- **我的车列表**（`<BusCard>` × N）
-  - 每卡片：车名 · single/anon/team 徽章 · 成员 3/5 · 号 8 活 2 失效 · "进入"按钮
-- 空态：引导"建你的第一辆车"
-
-**下部**：
-- **最近拉号 5 条**（跨 bus）—— 每条：时间 · vendor · count · 花费
+- **时间维度全页控制** · Hero 右侧 `<TimeRangePicker>`
+- **4 KPI**：总余额（光晕 focal）/ 今日消费 / 累计拉号 / 活跃号
+- **3 业务卡等高**：拼车（号池分布 3 车）/ 提取 key（去向分布 4 类）/ 我的发车（阶段 3 灰卡）
+- **趋势图**全宽曲线 · **Vendor 监测表 + 占比环形图**两卡等高 · **活动记录**裸列表
 
 **API**：
 - `GET /api/me/wallet` · 余额
-- `GET /api/me/buses` · 车列表
-- （近期拉号列表 API 待补 · MSW mock）
+- `GET /api/me/overview?range=30d` · KPI + 业务汇总（**待补端点**）
+- `GET /api/me/trend?range=30d&metric=credits` · 趋势序列（**待补端点**）
+- `GET /api/vendors/stats` · Vendor 监测 + 占比（**待补端点**）
+- `GET /api/me/activities?range=30d` · 活动记录（**待补端点**）
+- `GET /api/vendors/stock` · 上游库存 badge（**待补端点**）
+
+**颜色约定**：
+- 积分/余额 → **绿色系**（`$credit-bg` / `$credit-fg`）
+- 品牌紫留给导航高亮 + focal 卡 + 主 CTA
+- 分布图配色用**同色系深浅**（紫 `#9147FF` → `#A574FF` → `#C9A9FF` → `#E3D5FF`），不用蓝/黄/橙杂色
 
 ---
 
@@ -129,12 +181,23 @@
 - 表格：时间 · vendor · count · 参与人（谁分几个）· 号价 · 服务费 · 议价 · 通道费 · **总消费** · 状态
 - 点行展开号明细
 
-**Tab C · 成员**：
-- 头像 · 用户名 · 加入时间 · "退出/移除"按钮（1 人 bus 不显示；多人 bus 是 1c）
+**Tab C · 补车策略**（`decisions §8.6` · 跟车绑，非全局设置）：
+- `auto_refill_enabled` toggle（号死自动补）
+- `refill_watermark` 水位线（活号低于 N 触发）
+- `refill_min_count` 每轮至少补到 N 号
+- `per_round_count` 每轮拉几号
+- `max_unit_price` 单号最高价（积分）
+- `daily_round_limit` / `daily_spend_limit` 每日限额
+- `preferred_vendor` 指定 vendor（默认空 = 有效成本比价自动选）
 
-**Tab D · 统计**（1d 数据成熟才显示）：
-- 24h / 7d / 30d 窗口切换
-- 图表：调用趋势 · 号存活分布 · 平均寿命
+**Tab D · 成员**：
+- 头像 · 用户名 · 加入时间 · "退出/移除"按钮
+- **`kind=single` 时显示「成员 1」= 自己**（无邀请码、无多头像）
+
+**Tab E · 危险区**：
+- 解散车 → 二次确认 → 活号挪到你的提取记录，死号归档
+
+**进行中状态**：`pull_round.status=initiated` 时 hero 下方显示「拉号中 · +N 号 · 已完成 x/y」banner
 
 **动作**：
 - "拉号"按钮 → 弹窗输 count + vendor 可选 → POST `/api/me/buses/{id}/pull`
@@ -146,6 +209,7 @@
 - `GET /api/me/buses/{id}/pulls`
 - `GET /api/me/buses/{id}/members`
 - `GET /api/me/buses/{id}/stats` （1d）
+- `PUT /api/me/buses/{id}/strategy` · 补车策略（**待补端点**）
 - `POST /api/me/buses/{id}/pull`
 
 ---
@@ -222,44 +286,58 @@
 
 ---
 
-### 9. `/settings/strategy` · 策略参数
+### 9. `/dispatch` · 我的发车（阶段 3 空态）
 
-**字段**：
-- Toggle：auto_enabled
-- per_round_count（数字）
-- min_count（数字）
-- keep_safety_stock（数字）
-- max_unit_price（数字 · microunit UI 转元）
-- daily_round_limit（数字）
-- daily_spend_limit（数字 · microunit UI 转元）
-- target_bus_id（下拉 · 从我的车里选）
+**布局**：`<AppLayout>` · 顶栏「我的发车」高亮。
 
-**说明区**：
-- "auto_enabled 开启后系统按参数自动拉号补车"
-- **阶段 1a 后端不用这些参数**，只存表；1d 才真的按参数触发
+**内容**：hero 光晕 + 「阶段 3 开放」badge + 大标题 + 3 张 feature 卡（你的 AWS · 合规透明 · 寿命最长）+ 底部 hint。
 
-**API**：
-- `GET /api/me/strategy`
-- `PUT /api/me/strategy`
+**说明**：`decisions §8.3` — 顶栏保留占位 tab，结构定型不推翻，阶段 3b 直接填内容。
 
 ---
 
-### 10. `/settings/downstream` · 下游配置
+### 10. `/settings/downstream` · 设置 · 我的号池
 
-**passengerpool 卡片**：
-- URL 输入
-- Token 输入（保存后打码 · 每次编辑要重新输）
-- 保存 → PUT `/api/me/downstream/passengerpool`
+**布局**：`<AppLayout>` · 面包屑「设置 › 我的号池」。**技术页**（允许出现 kiro.rs 等术语，类比对接文档）。
 
-**我方 webhook 卡片**：
-- URL 输入
-- "保存并生成 secret" → PUT `/api/me/downstream/webhook` → 显示 secret 一次
-- "发测试" 按钮 → POST `/api/me/downstream/webhook/test`
-- 投递日志表（`GET /api/me/downstream/webhook/deliveries`）
+**3 状态卡**：连通状态（绿点） · 推送成功率 · 累计推送数
+
+**kiro.rs 端点卡**（focal 光晕）：
+- URL 输入 + "测试连接"
+- Admin API Key（保存后打码 · 查看按钮）
+
+**推送策略卡**：4 条规则 toggle
+- 号进 bus 立即推（双写）
+- 号死重推（同步删除）
+- 失败自动重试（5s / 30s / 5min 退避）
+- 仅拼车号推（关 = 拼车+提取都推）
 
 **API**：
 - `GET /api/me/downstream`
 - `PUT /api/me/downstream/passengerpool`
+- `POST /api/me/downstream/passengerpool/test`
+
+---
+
+### 10b. `/settings/webhook` · 机器人通知
+
+**布局**：`<AppLayout>` · 面包屑「设置 › 机器人通知」。**技术页**。
+
+**Webhook 端点卡**（focal 光晕）：
+- URL 输入 + "发测试事件"
+- Secret（HMAC 签名密钥 · 打码 + 复制 + 重新生成）
+- 右上「启用中」绿 chip
+
+**订阅事件卡**：5 个 event 卡带 toggle
+- `round.completed` 拉号轮次完成
+- `round.failed` 拉号失败
+- `credential.dead` 号死了
+- `bus.refilled` 补车触发
+- `wallet.low` 余额低
+
+**投递记录卡**：时间 · 成功/失败 chip · event · HTTP code · retry 次数 · 延迟 + 筛选
+
+**API**：
 - `PUT /api/me/downstream/webhook`
 - `POST /api/me/downstream/webhook/test`
 - `GET /api/me/downstream/webhook/deliveries`
@@ -317,11 +395,43 @@
 | `91kiro` | Kiro Market |
 | `kiroceo` | Kiro CEO |
 | `kirooo` | Kiro OOO |
-| `kiroappio` | Kiroapp.io |
-| `kiroappcc` | Kiroapp.cc |
+| `kiroappio` | Kiro App IO |
+| `kiroappcc` | Kiro App CC |
 | `kirodrop` | Kiro Drop |
 
-前端 `<VendorTag>` 组件封装此映射，UI 只显示 display name。
+前端 `<VendorTag>` 组件封装此映射，UI 只显示 display name。**「Vendor」在标题里首字母大写**（如「Vendor 监测」「Vendor 占比」），不叫「比价」。
+
+## 视觉规范（`decisions §8.15 / §8.16` + mockup 定型）
+
+**字号 5 档**：
+| 档 | size | 用法 |
+|---|---|---|
+| 主 | 36 | 每页 hero title 唯一一档 |
+| 数字 | 32 | KPI / focal 数字 |
+| 副 | 20 | section 标题 / 卡片标题 |
+| Body | 13-14 | 表格 / 列表 / label |
+| Micro | 11-12 | hint / 时间 / tag |
+
+**例外**：钱包 hero 余额可用 48（唯一 giant）。
+
+**卡片**：
+- 圆角 20（普通）/ 24（focal 大卡）
+- padding 24-28
+- 默认：`$bg` + `$hairline` 边 + 阴影 `0/2/8 #0A0A0A08`
+- focal：加径向紫光晕（右上角）+ `$brand-hairline` 边
+- hover：上浮 4px + 紫 tinted 阴影 `0/12/32 #9147FF33`
+
+**间距**：section 之间 56 · 卡片之间 24 · 页边距 96
+
+**列表**（活动记录 / 拉号记录）：**不用卡片外壳**，裸列表 + hairline 分隔行
+
+**配色**：
+- 积分 / 余额 → 绿色系 `$credit-bg` `$credit-fg`
+- 品牌紫 → 导航高亮 / focal 卡 / 主 CTA
+- 分布图 → 同色系深浅（`#9147FF` → `#A574FF` → `#C9A9FF` → `#E3D5FF`），**不用蓝/黄/橙杂色**
+- 状态色：活 `$success` · 死 `$danger` · 部分 `$tag-partial-*`
+
+**表格对齐**：首列左对齐 · 中间数据列**居中** · 末列**居右**
 
 ## i18n 词条（1a 只做中文）
 
@@ -335,9 +445,23 @@
 
 有命中 = 违反 `CLAUDE.md §12` = review 打回。
 
+## 待补 API 端点（mockup 已画 · `05-api-contract.md` 未定义）
+
+概览页和 Vendor 监测需要这些，1a 用 MSW mock，落码前补进契约：
+
+| 端点 | 用途 |
+|---|---|
+| `GET /api/me/overview?range=` | KPI 4 项 + 3 业务线汇总 |
+| `GET /api/me/trend?range=&metric=` | 趋势序列（消耗 / 拉号 / 寿命） |
+| `GET /api/me/activities?range=` | 活动记录（跨类型混流） |
+| `GET /api/vendors/stats` | Vendor 监测（单价/寿命/有效成本/存活率/今日拉/fallback）+ 占比 |
+| `GET /api/vendors/stock` | 上游库存汇总（header badge） |
+| `PUT /api/me/buses/{id}/strategy` | 补车策略（跟车绑） |
+
 ## 未来页面（不在 Sprint 1a）
 
 - `/market` · 市场（3d）
-- `/dispatch` · 发车 · 上传 AWS（3b/3c）
-- `/stats` · 数据看板（3a）
+- `/stats` · 数据看板（3a · 概览页的深化版）
 - `/admin/*` · 管理端（3+）
+
+`/dispatch` 我的发车已在 1a 画空态占位（`decisions §8.3`），阶段 3b/3c 填内容。
