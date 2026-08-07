@@ -110,7 +110,9 @@
 - **依赖**：`infra/db`, `passenger`
 - **谁调它**：`redeem`, `payment`, `decider`（记账）, `deathwatch`（退款）
 - **P 标签**：1a
-- **ledger reason 枚举**：`recharge` / `channel_fee` / `redeem` / `key_cost` / `service_fee` / `warranty_refund` / `admin_adjust`
+- **ledger reason 枚举**：`recharge` / `channel_fee` / `redeem` / `key_cost` / `single_pull_fee` / `capability_fee` / `service_fee` / `warranty_refund` / `admin_adjust`
+  - `single_pull_fee` 和 `capability_fee` 都是**我方收入**，分开记账便于以后拆报表看利润构成
+  - `capability_fee` 的 memo 里写具体是哪个附加能力（`stable_priority` / 未来其它）
 - **原子性**：扣款 + 落流水在**一个事务**；跨包调用用返回值确认
 
 ### `internal/redeem/` (业务包 5/15)
