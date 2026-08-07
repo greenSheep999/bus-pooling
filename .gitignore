@@ -1,0 +1,19 @@
+# Playwright 中间快照 —— 含账密与 API Key 明文，永不入库
+.playwright-mcp/
+
+# 根目录的 Playwright snapshot 副本 —— 同样含明文，永不入库
+/kiro-ooo-api.md
+/kiroapp-cc-apikey.md
+/kiroapp-io-apidocs.md
+
+# Vendor 文档抓取的中间产物（bundle mini化代码、SPA 骨架、乱码抽取）
+# 只留 kiroceo-docs.js 作复核证据
+docs/vendors/_sources/root-*.html
+docs/vendors/_sources/cc-index.js
+docs/vendors/_sources/drop-authpage.js
+docs/vendors/_sources/ooo-app.js
+docs/vendors/_sources/kiroceo-docs.extracted.txt
+
+# 一般噪音
+.DS_Store
+*.swp
