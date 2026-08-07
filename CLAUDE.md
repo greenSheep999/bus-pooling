@@ -301,7 +301,51 @@ docs/vendors/_sources/root-*.html
 
 ---
 
-## 12. 内部术语 vs 对外文案（严格分离）
+## 12. 状态与术语 · 严格双分离
+
+**核心**：**内部** vs **对外** 严格分离两件事——
+- **状态**（如 `credential.status` / `pull_round.status`）：内部多态，对外收敛（**见 §12.5**）
+- **术语**（如 `housepool` / `provider`）：内部随便叫，对外只用人话（**见 §12.6**）
+
+**旧项目失败的根因**：这两个分离都没做 → 内部实现细节全渗透到用户端 → 用户端跟着内部演化跳来跳去 → 复杂度失控 → 衍生一堆"补丁"功能。
+
+**本项目铁律**：**API 返回体 / UI / webhook / 帮助中心里，绝不出现内部状态枚举或内部术语**。有则 code review 直接打回。
+
+### 12.5 状态收敛原则（内部多态 → 用户少态）
+
+**旧项目栽过大跤**：把内部 6 个状态全暴露给用户 → 用户困惑 → 加"解释性"功能（tooltip / 详情页 / FAQ）→ 越加越复杂。
+
+**本项目铁律**：**用户端只显示 2-3 个决策性状态**；内部多态在 API 层做映射收敛。
+
+### 状态映射表（关键实体）
+
+| 实体 | 内部状态（DB / 代码） | 用户可见状态（UI / API 返回 / webhook 载荷） |
+|---|---|---|
+| **credential** | `status ∈ {alive, dead, handed_off}` × `disabled ∈ {0,1}` × `current_group` × `death_source ∈ {housepool_probe, vendor_webhook, vendor_poll}` | **"活的"** / **"已失效"** 二态。`handed_off` 直接不出现在用户号列表里 |
+| **bus** | `kind ∈ {single, anon, team}` × `status ∈ {active, dissolved}` | UI 上叫**"我的车"** / **"拼车"** / **"车队"**（对应 single/anon/team），底部标 **"活跃"** / **"已解散"** 二态 |
+| **pull_intent** | `pending / in_flight / coalesced / fulfilled / failed / cancelled` | **"拉号中"** / **"完成"** / **"失败"** 三态（合流细节隐去） |
+| **pull_round** | `initiated / completed / failed / partial / refunded` | **"成功"** / **"部分成功"** / **"失败"** / **"已退款"** 四态 |
+| **payment_order** | `pending / paid / failed / cancelled / refunded` | **"待付款"** / **"已到账"** / **"失败"** 三态（cancelled 合入 failed；refunded 单独） |
+| **outbound_webhook_delivery** | `pending / delivered / failed / dropped` × `attempt` × `response_status` | **"成功"** / **"失败"** 二态 + 一个"重试次数" |
+| **vendor** | `vendor_id ∈ {91kiro, kiroceo, kirooo, kiroappio, kiroappcc, kirodrop}` | 展示名（例：`91kiro` → **"Kiro Market"**、`kirodrop` → **"Kiro Drop"**）；不暴露内部 id |
+| **credential 死亡来源** | `death_source ∈ {housepool_probe, vendor_webhook, vendor_poll}` | **不显示**（用户不关心谁探到的死，只关心死了） |
+
+### 收敛的三条规则
+
+1. **决策性状态**才展示 —— 用户看了会做不同事的才展示（如"待付款"vs"已到账"），只是内部区分用的不展示（如 `death_source`）
+2. **合并近义状态** —— `cancelled` / `failed` 用户视角都是"失败"，合并
+3. **专业术语翻译成人话** —— `pool` → "号池"（乘客的），`bus-<id> group` 内部叫但对外叫"车"，`housepool` 不出现
+
+### 违反检查（code review 时必看）
+
+- [ ] API 返回体 / webhook 载荷里出现内部 status 枚举值？**违反**，改成映射后的
+- [ ] UI 页面 / 帮助文档里出现 `housepool` / `record group` / `provider_id`？**违反**
+- [ ] 状态字段超过 4 个可能值？**审查是否可以合并**（除非确实每态都要用户做不同决策）
+- [ ] 用户投诉"这个状态是什么意思"？**说明状态没收敛好**
+
+**旧项目最典型的失败**：`credential.state ∈ {preparing, standby, live, dying, dead, failed, scrapped}` 七态全暴露 → 前端加 tooltip 解释 → 又衍生"车次状态解释"帮助页 → 复杂度呈指数级。**本项目对乘客只有"活"/"死"二态**。
+
+### 12.6 术语双分离 · 内部 vs 对外
 
 **内部术语**（架构讨论 / 代码 / 内部文档用）：
 
