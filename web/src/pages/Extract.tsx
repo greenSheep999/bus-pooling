@@ -6,6 +6,7 @@ import { PullExtractModal } from "@/components/PullExtractModal";
 import {
   BareHead, BareList, BareRow, Card, Chip, SectionHead,
 } from "@/components/ui/primitives";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn, fmtCredits, fmtLifespan, fmtTime, vendorName } from "@/lib/utils";
 import type { Credential } from "@/types";
 export default function Extract() {
@@ -110,11 +111,9 @@ export default function Extract() {
               <div className="min-w-[640px]">
                 <BareHead>
                   <span className="w-8 shrink-0 pl-2">
-                    <input
-                      type="checkbox"
-                      checked={selected.size === items.length}
-                      onChange={toggleAll}
-                      className="size-4 accent-brand"
+                    <Checkbox
+                      checked={selected.size === items.length && items.length > 0}
+                      onCheckedChange={toggleAll}
                     />
                   </span>
                   <span className="min-w-0 flex-1">key · vendor</span>
@@ -146,12 +145,10 @@ function RecordRow({
   return (
     <BareRow onClick={onToggle} className={cn(picked && "bg-brand-subtle/40")}>
       <span className="w-8 shrink-0 pl-2">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={picked}
-          onChange={onToggle}
+          onCheckedChange={onToggle}
           onClick={(e) => e.stopPropagation()}
-          className="size-4 accent-brand"
         />
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-2">

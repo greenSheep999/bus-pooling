@@ -94,3 +94,13 @@
 .recharts-surface * {
   outline: none !important;
 }
+
+/* 隐藏 <input type="number"> 的浏览器原生 spinner 箭头（跟我们的输入框风格不搭） */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}

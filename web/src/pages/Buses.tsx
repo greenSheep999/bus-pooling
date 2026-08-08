@@ -92,37 +92,52 @@ export default function Buses() {
           </button>
         </Card>
       ) : (
-        /* 车列表整块 · 内部间距 24px 跟卡片左右 gap-6 统一 · 按钮 pt-6 保持独立呼吸 */
+        /* 车列表整块 · focal 显示条件（方案 A · 决定见对话）：
+           - 有多人车（team/anon）→ 启用双列 focal + mini（多人车做 focal · 单人车做 mini）
+           - 全是 single → 3 张 BusCard 平铺（前 3 辆）· 剩下的走"查看全部"展开
+           理由：focal 大卡（车友头像组 · 邀请车友 · 24h 柱图）本身是给多人车设计的
+                 阶段 1a 全 single 时不 focal，避免为设计而设计 */
         <div className="space-y-6">
-          {/* 主视图 · 严格照 mock：左 2 mini + 右 1 focal · 焦点优先多人车 → 选中车 → 第一辆 */}
           {(() => {
-            const multiCandidate = items.find((b) => b.kind !== "single");
-            const focal = multiCandidate ?? items.find((b) => b.id === selectedId) ?? items[0];
-            const miniList = items.filter((b) => b.id !== focal.id).slice(0, 2);
-            return (
-              <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[340px_1fr]">
-                <div className="flex flex-col gap-3">
-                  {miniList.map((b) => {
-                    const idx = items.findIndex((x) => x.id === b.id);
-                    return (
-                      <BusMiniCard
-                        key={b.id} bus={b} role={roleOf(idx)}
-                        active={false}
-                        onClick={() => setSelectedId(b.id)}
-                      />
-                    );
-                  })}
+            const multiBus = items.find((b) => b.kind !== "single");
+
+            if (multiBus) {
+              // 阶段 2+ 有多人车：左 2 mini + 右 focal
+              const miniList = items.filter((b) => b.id !== multiBus.id).slice(0, 2);
+              return (
+                <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[340px_1fr]">
+                  <div className="flex flex-col gap-3">
+                    {miniList.map((b) => {
+                      const idx = items.findIndex((x) => x.id === b.id);
+                      return (
+                        <BusMiniCard
+                          key={b.id} bus={b} role={roleOf(idx)}
+                          active={false}
+                          onClick={() => setSelectedId(b.id)}
+                        />
+                      );
+                    })}
+                  </div>
+                  <BusFocalCard
+                    bus={multiBus}
+                    role={roleOf(items.findIndex((b) => b.id === multiBus.id))}
+                    onPullClick={() => setPullBus(multiBus)}
+                  />
                 </div>
-                <BusFocalCard
-                  bus={focal}
-                  role={roleOf(items.findIndex((b) => b.id === focal.id))}
-                  onPullClick={() => setPullBus(focal)}
-                />
+              );
+            }
+
+            // 阶段 1a · 全 single · 3 张 BusCard 平铺（前 3 辆）
+            return (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {items.slice(0, 3).map((b, i) => (
+                  <BusCard key={b.id} bus={b} role={roleOf(i)} />
+                ))}
               </div>
             );
           })()}
 
-          {/* 展开后 · 所有车 BusCard grid · 跟上面主视图紧贴（外层 space-y-4） */}
+          {/* 展开 · 所有车 BusCard grid · 永远可展开 · 跟主视图紧贴 */}
           {expanded && (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
               {items.map((b, i) => (
@@ -131,7 +146,7 @@ export default function Buses() {
             </div>
           )}
 
-          {/* 按钮独立带 pt-6 顶部空间 · 展开态在列表下 · 收起态在主视图下 */}
+          {/* 按钮 · 永远显示 · pt-6 独立呼吸 */}
           <div className="flex justify-center pt-6">
             <button
               onClick={() => setExpanded((v) => !v)}
@@ -306,7 +321,8 @@ function PullHistRow({ r }: { r: PullRound }) {
           </span>
         ) : (
           <>
-            <span className="shrink-0 font-semibold tnum text-fg">+{r.count_purchased}</span>
+            <span className="shrink-0 text-fg-secondary">共拉取</span>
+            <span className="shrink-0 font-semibold tnum text-fg">{r.count_purchased}</span>
             <span className="shrink-0 text-fg-secondary">个号，从</span>
             <span className="shrink-0 whitespace-nowrap rounded-md border border-hairline bg-bg-elevated px-2 py-[2px] text-label font-medium text-fg-secondary shadow-card">
               {vendorName(r.vendor_id)}

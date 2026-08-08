@@ -9,6 +9,8 @@ import {
 import {
   BareHead, BareList, BareRow, Card, Chip, Segmented,
 } from "@/components/ui/primitives";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { KpiCard } from "@/components/KpiCard";
 import { PullNowModal } from "@/components/PullNowModal";
 import { EditStrategyPanel } from "@/components/EditStrategyPanel";
@@ -71,18 +73,15 @@ export default function BusDetail() {
             </div>
             <p className="text-fg-tertiary">
               {bus.kind === "single" ? "1 人车" : bus.kind === "team" ? "邀请码车" : "搭车"} ·{" "}
-              {new Date(bus.created_at).toLocaleDateString("zh-CN")} 建 · 成员{" "}
+              创建于 {new Date(bus.created_at).toLocaleDateString("zh-CN")} · 成员{" "}
               <span className="font-semibold tnum text-fg-secondary">{bus.member_count}</span>
             </p>
           </div>
 
-          <button
-            onClick={() => setPullOpen(true)}
-            className="flex shrink-0 items-center gap-2 rounded-lg bg-brand px-4 py-2 font-semibold text-white shadow-card transition-opacity hover:opacity-90"
-          >
-            <KeyRound className="size-4" />
+          <Button onClick={() => setPullOpen(true)} className="shrink-0">
+            <KeyRound />
             立即拉号
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -391,20 +390,20 @@ function TabDanger({
           请输入车名 <span className="rounded bg-bg px-1.5 py-0.5 font-mono font-semibold">{name}</span> 确认
         </p>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <input
+          <Input
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
             placeholder={name}
-            className="flex-1 rounded-lg border border-hairline bg-bg px-3 py-2 focus:border-danger-fg focus:outline-none"
+            className="flex-1"
           />
-          <button
+          <Button
+            variant="danger"
             onClick={onDissolve}
             disabled={!canDissolve || dissolve.isPending}
-            className="flex items-center justify-center gap-1.5 rounded-lg bg-danger-fg px-4 py-2 font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-45"
           >
-            <Trash2 className="size-4" />
+            <Trash2 />
             {dissolve.isPending ? "解散中…" : "确认解散"}
-          </button>
+          </Button>
         </div>
       </div>
     </Card>

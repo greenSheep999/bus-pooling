@@ -238,42 +238,6 @@ export function Segmented<T extends string>({
   );
 }
 
-/* ─────────────── Button ─────────────── */
-
-export function Button({
-  variant = "ghost",
-  size = "md",
-  icon,
-  children,
-  className,
-  ...rest
-}: {
-  variant?: "primary" | "ghost" | "danger";
-  size?: "sm" | "md";
-  icon?: ReactNode;
-  children?: ReactNode;
-} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      {...rest}
-      className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-all",
-        size === "sm" ? "px-3.5 py-2 text-label" : "px-4 py-2.5",
-        variant === "primary" &&
-          "bg-brand text-white shadow-[0_8px_20px_-2px_rgb(145_71_255/0.28)] hover:brightness-110 active:scale-[0.98]",
-        variant === "ghost" &&
-          "border border-hairline bg-bg text-fg-secondary hover:bg-bg-elevated",
-        variant === "danger" &&
-          "border border-danger-fg/40 bg-bg text-danger-fg hover:bg-danger-bg",
-        className,
-      )}
-    >
-      {icon}
-      {children}
-    </button>
-  );
-}
-
 /* ─────────────── 裸列表（无卡壳 · hairline 分隔） ─────────────── */
 
 export function BareList({ children }: { children: ReactNode }) {

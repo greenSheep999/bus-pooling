@@ -60,8 +60,8 @@ export const buses: Bus[] = [
     },
   },
   {
-    id: "bus_kiro", name: "Kiro 常驻车", kind: "single", status: "active",
-    member_count: 1, invite_code: null, created_at: ago(24 * 30),
+    id: "bus_kiro", name: "Kiro 常驻车", kind: "team", status: "active",
+    member_count: 3, invite_code: "K7X-2M4", created_at: ago(24 * 30),
     alive_count: 6, dead_count: 1, spend_today: C(5),
     avg_lifespan_seconds: 28 * 3600,
     strategy: {

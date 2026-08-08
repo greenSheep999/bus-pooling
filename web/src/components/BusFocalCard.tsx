@@ -1,9 +1,9 @@
-import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, Clock, Download, UserPlus, Users } from "lucide-react";
-import { useBusPulls } from "@/api/hooks";
+import { useBusCredentials } from "@/api/hooks";
 import { Card, Chip } from "./ui/primitives";
-import { avatarColor, avatarLetter, cn, fmtCredits, fmtLifespan } from "@/lib/utils";
+import { PoolDistribution } from "./PoolDistribution";
+import { avatarColor, avatarLetter, fmtCredits, fmtLifespan } from "@/lib/utils";
 import type { Bus } from "@/types";
 
 /** 拼车列表主视图右侧 focal 大卡 · 严格照 mock 图
@@ -21,21 +21,7 @@ export function BusFocalCard({
   role?: "owner" | "member";
   onPullClick: () => void;
 }) {
-  const { data: pulls } = useBusPulls(bus.id);
-
-  // 24 小时柱图 · 从 pulls 按小时聚合 count_purchased
-  const bars = useMemo(() => {
-    const now = Date.now();
-    const buckets = Array.from({ length: 24 }, () => 0);
-    for (const p of pulls ?? []) {
-      const dt = now - new Date(p.created_at).getTime();
-      const h = Math.floor(dt / 3_600_000);
-      if (h >= 0 && h < 24) buckets[23 - h] += p.count_purchased;
-    }
-    const max = Math.max(1, ...buckets);
-    const total = buckets.reduce((s, n) => s + n, 0);
-    return { buckets, max, total };
-  }, [pulls]);
+  const { data: creds } = useBusCredentials(bus.id);
 
   const kindLabel =
     bus.kind === "single"
@@ -64,7 +50,7 @@ export function BusFocalCard({
         <div className="flex shrink-0 items-center gap-2">
           <MembersStack bus={bus} />
           <span className="hidden text-label text-fg-tertiary sm:inline">
-            {daysAgo} 天前建
+            创建于 {daysAgo} 天前
           </span>
         </div>
       </div>
@@ -105,29 +91,8 @@ export function BusFocalCard({
         />
       </div>
 
-      {/* 24h 柱图 · 高度压缩到 h-12 · 只保留视觉信号 */}
-      <div className="space-y-1.5">
-        <div className="flex items-baseline justify-between text-label">
-          <span className="text-fg-tertiary">24 小时调用趋势</span>
-          <span className="text-fg-tertiary">
-            共 <span className="font-semibold tnum text-fg-secondary">{bars.total}</span>{" "}
-            个号 · 峰值 <span className="font-semibold tnum text-fg-secondary">{bars.max}</span>
-          </span>
-        </div>
-        <div className="flex h-12 items-end gap-[3px]">
-          {bars.buckets.map((n, i) => (
-            <div
-              key={i}
-              className={cn(
-                "flex-1 rounded-sm",
-                n === 0 ? "bg-brand/10" : "bg-brand/60",
-              )}
-              style={{ height: `${(n / bars.max) * 100 || 8}%` }}
-              title={`${23 - i}h 前 · ${n} 个号`}
-            />
-          ))}
-        </div>
-      </div>
+      {/* 号池分布 · 按 vendor · compact 版跟 BusCard 呼应 */}
+      <PoolDistribution credentials={creds} variant="compact" label="号池分布 · 按 vendor" />
 
       {/* 底部动作行 · mt-auto 沉底 */}
       <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">

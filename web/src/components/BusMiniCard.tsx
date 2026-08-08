@@ -45,7 +45,7 @@ export function BusMiniCard({
               </span>
             )}
           </div>
-          <div className="truncate text-body-lg font-semibold">{bus.name}</div>
+          <div className="truncate text-section font-semibold tracking-tight">{bus.name}</div>
         </div>
         <span
           className="grid size-8 shrink-0 place-items-center rounded-full font-semibold"
