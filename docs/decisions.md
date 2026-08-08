@@ -472,6 +472,205 @@
 
 **参考**：`09-transactions.md §4`（两阶段交付）· `06-db-schema.md §11 §11.1`（台账）· `CLAUDE.md §1.2`（handoff 语义）
 
+### 8.30 加价栈重构 · vendor 定价配置 + 统一 surcharge 插槽 ⏸（阶段 1b · **有 3 处待确认**）
+
+**车主原话**：
+> 我们后台或者服务配置，最好每个 vendor 对应有他的积分价格、vendor 积分对 rmb 还是 usd、对应价格是多少、转换 rmb 或 usd 是多少。我们每个 vendor 的加价控制之前是 1% 的服务费，内部还要有个加价。比如活得特别长的车可能临时加价。所以我们是 vendor 附加费 + 服务费 + 区域附加费 + 零售附加费 + 插槽（可动态增加减少）控制哪个开启，什么条件开启，什么条件减免。
+
+#### A. vendor 定价配置（无冲突 · 直接做）
+
+`07-provider-contract §161-166` 已经暴露出这个需求：**各家 vendor 的价格口径本来就不一致** ——
+
+| vendor | 价格字段 | 币种 |
+|---|---|---|
+| 91kiro / kiroceo | `zones[].unit_price` | CNY |
+| kirooo | `key-price-tiers` **阶梯**（产量越大单价越低） | CNY |
+| kiroappio | `price_min` / `price_max` **区间** | CNY |
+| **kirodrop** | `stock.price` | **USD** |
+
+那份文档里写了「混币在 decider 里换算」但没定换算表在哪。落成一张配置表：
+
+```sql
+CREATE TABLE vendor_pricing (
+  vendor_id            TEXT PRIMARY KEY,
+  -- vendor 报价的原始币种（我方不改它，只做换算）
+  quote_currency       TEXT NOT NULL,          -- CNY | USD
+  -- 换算成积分的汇率 · 1 积分 = 1 CNY（decisions §8.7）
+  -- CNY 家填 1_000_000（1:1）· USD 家填当期汇率 × 1_000_000
+  credits_per_unit     INTEGER NOT NULL,       -- microunit
+  rate_source          TEXT,                    -- manual | 汇率 API 名（阶段 1b 先 manual）
+  rate_updated_at      TEXT,
+  -- 该 vendor 的附加费（我方内部加价 · 见 B）
+  vendor_surcharge_bp  INTEGER NOT NULL DEFAULT 0,
+  active               INTEGER NOT NULL DEFAULT 1,
+  updated_at           TEXT NOT NULL
+);
+```
+
+**汇率阶段 1b 手工配**（`rate_source='manual'`）—— 接汇率 API 是额外的外部依赖和失败面，等 USD 家的量起来再说。手工配的风险是汇率漂移吃掉利润，所以 `rate_updated_at` 要在后台显眼处提示"多久没更新了"。
+
+#### B. 统一 surcharge 插槽（**推荐把 5 类合并成一张表**）
+
+车主列的 5 类：`vendor 附加费 + 服务费 + 区域附加费 + 零售附加费 + 插槽`。其中"插槽"本来就是 `capability_slot`（`06-db-schema §15`），而前 4 类的结构完全一样（都是"某条件下按号价加 X%"）。**建议合并成一张 `surcharge_rule`**，`capability_slot` 并入它：
+
+```sql
+CREATE TABLE surcharge_rule (
+  id                  TEXT PRIMARY KEY,
+  kind                TEXT NOT NULL,          -- vendor | zone | retail | capability | adhoc
+  name                TEXT NOT NULL UNIQUE,   -- 'retail_markup' | 'zone_eu' | 'long_life_bump' …
+  rate_bp             INTEGER NOT NULL,       -- basis point · 2000 = 20%
+  base                TEXT NOT NULL DEFAULT 'key_cost',  -- 加在号价上（跟 00 §3「议价费加在号价上」一致）
+  active              INTEGER NOT NULL DEFAULT 0,
+  -- 什么条件开启（JSON 谓词 · 例 {"vendor_id":"kirodrop"} / {"zone":"eu"}
+  --   / {"passenger.invited":false} / {"bus.avg_lifespan_h":{">":48}}）
+  applies_when_json   TEXT,
+  -- 什么条件减免（例 {"coupon_code":"any"} / {"passenger.invited":true}）· 优先级高于 applies_when
+  waived_when_json    TEXT,
+  -- 用户能否主动勾选（capability 类为 1，其余 0 —— 系统自动判定）
+  user_selectable     INTEGER NOT NULL DEFAULT 0,
+  priority            INTEGER NOT NULL DEFAULT 100,   -- 多条同时命中时的计算顺序
+  created_at          TEXT NOT NULL,
+  updated_at          TEXT NOT NULL
+);
+```
+
+**为什么合并**：车主要的是「**插槽控制哪个开启、什么条件开启、什么条件减免**」—— 这句话对 5 类都成立。分成 5 张表就要写 5 套判定逻辑、5 个后台页面；合并成一张，定价引擎只需**一次遍历**：取所有 `active=1` 且 `applies_when` 命中且 `waived_when` 未命中的规则，按 `priority` 累加。加新收费点 = 插一行，不改代码。
+
+**`long_life_bump` 就是车主说的"活得特别长的车可能临时加价"** —— `kind='adhoc'`，`applies_when_json: {"bus.avg_lifespan_h":{">":48}}`。
+
+**合并后 `capability_slot` / `pull_round_capability` 作废**，改成 `surcharge_rule` + `pull_round_surcharge`（记每轮实际命中了哪几条、各收了多少，便于回溯和申诉）。
+
+#### C. 加价栈的完整顺序（合并车主的 5 类 + 现有规则）
+
+```
+号价（pass-through · 按 vendor_pricing 换算成积分）
+  + 号价 × Σ(命中的 surcharge_rule.rate_bp)     ← vendor / zone / retail / capability / adhoc
+  + 单次议价（count==1 时号价 × 20%）
+  + 服务费（每人每次固定 1 积分 · 见待确认 ①）
+  ────────────────────────────────────────
+  = 乘客本次扣除
+  （通道费不在这里 —— 只在充值时收一次 · §8.21）
+```
+
+跟 `00 §3` 现有公式的关系：**结构不变**（都是"号价 + 号价的百分比项 + 固定服务费"），只是把"附加能力费"这一项从单一插槽扩展成 5 类可配规则。
+
+---
+
+### ⚠️ 待车主确认（3 处跟已定规则冲突，**没敢自己拍**）
+
+**① 服务费是 1% 还是固定 1 积分？**
+
+- 车主说「vendor 的加价控制之前是 **1% 的服务费**」
+- 但 `CLAUDE.md §1.3` + `00 §3` 定的是「服务费 = 每人每次拉号动作**固定 1 元 / 1 USDT**」，`05-api-contract` 的响应示例也是 `service_fee: 1000000`（= 1 积分）
+- **两者差异很大**：拉 10 个 20 积分的号，固定制收 1 积分，1% 制收 2 积分；号价越高差越多
+- 而且 `00 §3` 的获利模型整个建立在固定制上（"我们收入 = Σ(参与轮数) × 固定单价"，推导出"我方没有动机加价号成本"这个对齐激励）—— 改成 1% 会**破坏这个激励**（号价越高我方赚越多）
+- **我的建议**：服务费**保持固定 1 积分**，把"按 vendor 的百分比加价"放到 `surcharge_rule` 的 `kind='vendor'` 里去（那本来就是你说的"vendor 附加费"）。这样既有了 per-vendor 百分比加价，又不破坏获利模型的对齐性
+- 改定价规则属于 `CLAUDE.md §11` 危险动作，要你点头
+
+**② 区域附加费按谁的区域？**
+
+- `§2.10 地区议价` 当初 ⏸ 的理由是「**无法可靠识别用户地区**」，`§8.20` 用邀请码替代了它
+- 但你现在说的"区域附加费"可能指**vendor 的区**（`us-east-1` / `eu-west-1`）—— 那个**我方一定知道**（提取页已经有 us/eu 选择器，`kiroappio` 的 `price_us` / `price_eu` 本来就不同价）
+- 按 vendor 区加价**完全可行**，跟 §2.10 不冲突（那条说的是用户所在地）
+- **确认**：是 vendor 的区，对吧？如果是用户所在地，那还是 §2.10 那个死结
+
+**③ 零售附加费 = §8.20 的那个 +20% 吗？**
+
+- `§8.20` 已定：无注册邀请码 且 本次无优惠码 → 加价 20%
+- 你说的"零售附加费"听起来是同一个东西
+- 如果是，那 `surcharge_rule` 里就是 `kind='retail'` / `name='retail_markup'` / `rate_bp=2000` / `waived_when_json: {"or":[{"passenger.invited":true},{"coupon_code":"any"}]}`
+- **顺带**：`§8.20` 数据落地里写的表名是 `surcharge_rule` + 那条规则叫 `region_markup` —— **这个名字是错的**（它判的是有没有邀请码，跟 region 无关），改叫 `retail_markup`
+
+---
+
+**阶段**：`vendor_pricing` 和 `surcharge_rule` 都是 **1b**（多 vendor 一上来就需要换算和分别加价）· `long_life_bump` 这类 adhoc 规则等有数据了再插行，不用改代码
+
+**不做**：汇率自动更新（1b 手工配）· 加价明细下发给前端（`§8.20` 已定只给最终价）
+
+**参考**：`00 §3` 计费模型 · `07-provider-contract §161-166` 各家价格口径 · `06-db-schema §15` capability_slot（将被合并）· §8.20 · §8.21 · §8.29
+
+### 8.29 邀请制 · 个人码 vs 系统码 + 邀请奖励 ⏸（v1 上线后立即补 · 阶段 1b）
+
+**车主原话**：
+> 第一版上线之后立马补充邀请制。个人邀请码、和系统邀请码划分零售和社群的不是一种。邀请人进来可以 N 轮减免 5% 手续费或者服务费，看哪种。
+
+#### 两种码 · 职责不同（关键区分）
+
+`§8.20` 定了「邀请码（注册时）」vs「优惠码（支付/提号时）」。本条在**邀请码内部再分两类**：
+
+| | **系统邀请码** | **个人邀请码** |
+|---|---|---|
+| 谁发 | 我方（发给社群） | 每个乘客都自动有一个 |
+| 作用 | **划社群身份** → 解锁 vendor 真名 + 免零售附加费 | **只给邀请人奖励** |
+| 被邀请人身份 | **社群** | **仍是零售**（照加价） |
+| `passenger.invited` | `true` | `false` |
+
+**这是本条的核心，也是必须分两类的原因**：如果个人码也解锁社群身份，那**任何人都能生成码让别人免加价** → 零售加价形同虚设 → `§8.20` 的整个定价分层崩掉。所以个人码**只奖励邀请人，不改被邀请人的身份**。
+
+#### 邀请奖励
+
+**减免对象建议选「服务费」不选「手续费」**：
+
+| | 手续费（通道费 5%） | **服务费（推荐）** |
+|---|---|---|
+| 归属 | **waffo 的**，pass-through | **我方收入** |
+| 减免意味着 | 我方**自掏腰包垫付** —— 直接违反 `00 §3`「pass-through，我方不加不承担」和 `§2.13` | 少赚，不倒贴 |
+| 触发时机 | **只在充值时**（§8.21） | 每次拉号 |
+| 跟"N 轮"匹配吗 | ❌ 充值跟"轮"没关系 | ✅ 服务费本来就是按轮收的 |
+
+所以：**邀请人获得 N 轮服务费减免**。
+
+**但减免比例不能是 5%** —— 服务费是固定 1 积分/人·轮（见 `§8.30 待确认 ①`），5% 就是 0.05 积分，无感。按轮**全免**才有感知：
+
+```
+邀请 1 人成功注册并完成首次拉号 → 邀请人获得 3 轮「服务费全免」
+```
+
+| 参数 | 建议值 | 说明 |
+|---|---|---|
+| 每邀请 1 人奖励轮数 | **3 轮** | 3 积分的感知价值 · 可后台配 |
+| 生效条件 | 被邀请人**完成首次拉号** | 防刷号注册（只注册不消费不给奖） |
+| 有效期 | 90 天 | 不做永久，免得账上挂一堆永不过期的债 |
+| 累积上限 | 待定 | 防止有人靠拉人把服务费永久免掉 |
+
+#### 数据落地（阶段 1b）
+
+```sql
+-- §8.20 的 invite_code 表加 kind
+ALTER TABLE invite_code ADD COLUMN kind TEXT NOT NULL DEFAULT 'system';  -- system | personal
+-- personal 码：owner_id = 邀请人 · max_uses 不限 · 不置 invited=true
+
+CREATE TABLE invite_reward (
+  id                TEXT PRIMARY KEY,
+  inviter_id        TEXT NOT NULL,
+  invitee_id        TEXT NOT NULL,
+  rounds_granted    INTEGER NOT NULL,       -- 奖励轮数
+  rounds_used       INTEGER NOT NULL DEFAULT 0,
+  status            TEXT NOT NULL,          -- pending（未完成首拉）| active | exhausted | expired
+  expires_at        TEXT NOT NULL,
+  created_at        TEXT NOT NULL,
+  UNIQUE (inviter_id, invitee_id),          -- 同一对只奖一次
+  FOREIGN KEY (inviter_id) REFERENCES passenger(id),
+  FOREIGN KEY (invitee_id) REFERENCES passenger(id)
+);
+```
+
+计费时：若邀请人有 `status='active'` 且未过期的 reward，本轮服务费记 0 并 `rounds_used += 1`，`wallet_ledger` 留一条 `service_fee_waived` 说明来源（用户要看得见"这轮免了，因为邀请了 @xx"）。
+
+#### 前端（1b）
+
+- **`/me` 页**加「我的邀请码」块：码 + 复制 + 「已邀请 N 人 · 剩余 M 轮免服务费」
+- 注册页邀请码字段**文案要改** —— 现在写「填了免加价 + 看真名」，但那只对**系统码**成立。填个人码只是"帮朋友拿奖励"，得如实说明，否则是误导
+
+#### 拒绝
+
+- ❌ **个人码解锁社群身份** —— 零售加价会崩（见上）
+- ❌ **减免通道费** —— 那是 waffo 的钱，减免等于我方倒贴
+- ❌ **注册即奖** —— 刷号成本太低，要求完成首次拉号
+- ❌ **永久奖励** —— 账上挂永不过期的债
+
+**参考**：§8.20（两种码的原始区分）· §8.21（通道费只在充值）· §8.30（服务费口径待确认）· `00 §3` 获利模型
+
 ### 8.28 契约向已定的界面对齐 ✅（后端动工前的核对结论）
 
 **背景**：前端 16 条路由全部落地后，拿实际调用逐条对 `sprint-1a-backend.md` 那张「冻结」的端点矩阵，发现**实质出入**（不是措辞问题）。原则定为：**界面已经跑通并验证过，契约向界面对齐**；文档里更早的设想若跟界面冲突，改文档。
@@ -744,7 +943,8 @@ card 左下角常驻灰色小字：**「价格受市场波动影响，会有波�
 - `passenger.invited`（bool）· `passenger.invite_code_used`（注册时用的邀请码）
 - `invite_code` 表（注册用）：code / owner_id / used_count / max_uses / expires_at
 - `coupon_code` 表（支付 / 提号用）：code / discount_rule / used_count / max_uses / expires_at
-- `surcharge_rule` 表：后台可配多个附加费（当前只有一条 region_markup 20%）
+- `surcharge_rule` 表：后台可配多个附加费 —— 完整设计见 **`§8.30`**（5 类合并成一张表）
+  - 当前这条规则原名 `region_markup` → **改叫 `retail_markup`**：它判的是"有没有邀请码"，跟 region 无关（region 判定在 §2.10 已 ⏸），旧名字会误导
 - 定价 API 返回**最终价**，不下发原价和加价明细
 
 **参考**：`docs/14-extract-page-plan.md §4` · `web/src/components/UpstreamStatusPanel.tsx`
@@ -858,7 +1058,7 @@ card 左下角常驻灰色小字：**「价格受市场波动影响，会有波�
 
 **❌ 永久否决**（不再讨论）：1.1–1.8 全部（架构原则）、**2.4（数据看板作为收益点，功能仍做）**、2.12（多信号识别）、2.13–2.17（收费根本原则）、3.1–3.6 全部（bus/号概念）、4.1–4.4 全部（术语作废）、5.3（拉号记录 N 天过期）、6.1–6.2（vendor 数据）
 
-**⏸ 当前不做，未来迭代**：2.1（卖号 → 通过市场公开池）、2.2（会员制）、2.3（长效号池）、**2.6&2.7 稳定优先附加能力打包**、2.8（指定 vendor 议价）、2.9（寿命 SLA）、2.10–2.11（地区议价 / 双币种）、5.1（散户切片）、**8.1（全局搜索）、8.17（多人车 member 提醒车主拉号 · 阶段 2a）、8.18（多人车百分比分摊扣款 · 阶段 2a）、8.19（数据 tab 成员维度 · 阶段 2a）、8.22（vendor 价格走势页 · 前端已做 · 后端待定）、8.23（自费号派进车按份额清算 · 前端预览已做 · 后端结算阶段 2a）、8.26（成员欠费挂起 + 成员管理 tab · 前端已做 · 后端阶段 2a）**
+**⏸ 当前不做，未来迭代**：2.1（卖号 → 通过市场公开池）、2.2（会员制）、2.3（长效号池）、**2.6&2.7 稳定优先附加能力打包**、2.8（指定 vendor 议价）、2.9（寿命 SLA）、2.10–2.11（地区议价 / 双币种）、5.1（散户切片）、**8.1（全局搜索）、8.17（多人车 member 提醒车主拉号 · 阶段 2a）、8.18（多人车百分比分摊扣款 · 阶段 2a）、8.19（数据 tab 成员维度 · 阶段 2a）、8.22（vendor 价格走势页 · 前端已做 · 后端待定）、8.23（自费号派进车按份额清算 · 前端预览已做 · 后端结算阶段 2a）、8.26（成员欠费挂起 + 成员管理 tab · 前端已做 · 后端阶段 2a）、**8.29（邀请制 · 个人码 vs 系统码 + 邀请奖励 · v1 后立即补 · 1b）、8.30（加价栈重构 · vendor 定价配置 + 统一 surcharge 插槽 · 1b · ⚠️ 3 处待确认）****
 
 **✅ 已接受**：2.5（API 售卖 —— 我们推自己池 API）、单次议价（`00 §3`）、**8.20（邀请码双层机制 · 覆盖 2.10/2.11/2.12 地区议价）**、**8.21（通道费只在充值展示）**、**8.2（顶栏结构）、8.3（我的发车占位）、8.4（概览活动流混流+tag）、8.5（号质量=用量+寿命）、8.6（补车策略跟车绑）、8.7（UI 单位=积分）、8.8（活动流无查看全部）、8.9（阶段 1 只 single）、8.10（搭车更名）、8.11（立即拼车下拉）、8.12（概览是数据页）、8.13（拼车页专属记录）、8.14（用量进度条 10k 阈值）、8.15（卡片默认+hover 阴影）**
 

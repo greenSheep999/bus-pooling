@@ -356,6 +356,14 @@
 - `delivery/passengerpool/kirors` 双写
 - `webhookout` 我方推乘客
 
+## ⚠️ 开工前必须先定的一条
+
+**服务费口径**：固定 1 积分/人·轮，还是号价的 1%？见 `decisions §8.30 待确认 ①`。
+
+它挡住 **Iss #5（wallet）· Iss #9（decider 计费）· Iss #10（bus pull）** 三个 issue —— 这三个都要写计费公式。现在文档里 `00 §3` / `CLAUDE.md §1.3` / `05-api-contract` 都是固定制，但车主口头提过 1%。**别猜，先问**。
+
+另外两条（区域附加费按谁的区、零售附加费是否等于 §8.20 那个 20%）不挡 1a 开工 —— 1a 只有 91kiro 单家、单区，加价栈 §8.30 是 1b 的事。
+
 ## 提醒
 
 - **每个 issue 完成时 commit 一次**（不要等一堆 issue 一起提）
