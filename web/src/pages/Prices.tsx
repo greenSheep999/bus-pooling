@@ -228,7 +228,7 @@ export default function Prices() {
 
             {/* 6 行 · 每行一家
                 relative + 绝对定位的 X 网格层 · 竖线贯穿全部 6 行（不在每行 SVG 内部各画一遍） */}
-            <div className="relative mb-1.5 divide-y divide-hairline">
+            <div className="relative mb-1.5 divide-y divide-hairline border-b border-hairline">
               {/* X 网格层 · 只覆盖图区（左列 300px + gap 16px 之后，右列 96px + gap 16px 之前） */}
               <div
                 className="pointer-events-none absolute inset-y-0 z-0"
@@ -282,8 +282,9 @@ export default function Prices() {
               ))}
             </div>
 
-            {/* 日期轴 · 刻度位置跟整体 X 网格层严格对齐（同一套 leftPct） */}
-            <div className="flex gap-4 border-t border-hairline pt-1.5">
+            {/* 日期轴 · 刻度位置跟整体 X 网格层严格对齐（同一套 leftPct）
+                不加 border-t —— 上面 divide-y 最后一行已经有分隔线，叠一起会变 2px */}
+            <div className="flex gap-4 pt-1.5">
               <span className="w-[300px] shrink-0" />
               <div className="relative h-4 min-w-0 flex-1">
                 {dateTicks.map(({ date, leftPct }) => (
@@ -302,8 +303,8 @@ export default function Prices() {
               <span className="w-24 shrink-0" />
             </div>
 
-            {/* 图例 · 跟日期轴拉开距离（之前贴太近混在一起） */}
-            <div className="mt-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 border-t border-hairline pt-4 text-label text-fg-tertiary">
+            {/* 图例 · 跟日期轴拉开距离 · 不加分割线（日期轴上面已经有一条了） */}
+            <div className="mt-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-label text-fg-tertiary">
               <span className="flex items-center gap-1.5">
                 <span
                   className="inline-block w-[6px] rounded-full"
