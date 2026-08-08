@@ -165,6 +165,28 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*Response, error) {
 	return nil, fmt.Errorf("httpx: 重试用尽: %w", lastErr)
 }
 
+// Stream 发请求并把 **未读的** 响应交给调用方，用于 SSE / 长流。
+//
+// 跟 Do 的区别：Do 会把 body 整体读完再返回，流式响应下那意味着「等流结束才拿到
+// 第一个字节」—— 进度事件全白等，长流还可能撞上 client timeout。
+//
+// **调用方负责 resp.Body.Close()**。
+//
+// **不重试** —— 流可能已经产生了副作用（BatchImport 已导进去几个号），重放会重复导入。
+// 幂等性由调用方保证。
+func (c *Client) Stream(ctx context.Context, req *http.Request) (*http.Response, error) {
+	if req == nil {
+		return nil, ErrNilRequest
+	}
+	// 流式响应不能有整体 timeout（长导入会被砍断）· 超时靠 ctx 控制
+	streamClient := &http.Client{Transport: c.hc.Transport}
+	resp, err := streamClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("httpx: 建流失败: %w", err)
+	}
+	return resp, nil
+}
+
 func shouldRetry(status int) bool {
 	return status == http.StatusTooManyRequests || status >= 500
 }

@@ -393,7 +393,73 @@ func (c *Client) BatchImport(ctx context.Context, req housepool.BatchImportReque
 - `adminKey` 明文永不落文件，从 `internal/secrets` 拿
 - BatchImport 走 SSE（kiro.rs 是流式响应），我方需要一个 goroutine 读 stream 塞 channel
 
+## 10b. Wire 格式实况（**已逐条核对 kiro.rs 源码**）
+
+契约上面几节写的是**归一化后的 Go 类型**。kiro.rs 实际吐出来的 JSON 跟它有几处不一样，
+mapper 要负责翻译。这几条是踩过就白费一轮联调的：
+
+### ① JSON 是 camelCase，不是 snake_case
+
+kiro.rs 全部 admin 类型都带 `#[serde(rename_all = "camelCase")]`。所以：
+
+| 归一化字段 | wire 上实际是 |
+|---|---|
+| `credential_id` | `credentialId` |
+| `total_failure_count` | `totalFailureCount` |
+| `disabled_reason` | `disabledReason` |
+| `last_used_at` | `lastUsedAt` |
+| `credential_count` | `credentialCount` |
+
+**我方对外 API 是 snake_case**（`05-api-contract`），所以 kirors/mapper.go 是两种命名的
+唯一交界处。别让 camelCase 漏到上层。
+
+### ② 列表端点返回**包着的对象**，不是裸数组
+
+```
+GET /credentials  →  { "total": N, "available": N, "disabledCount": N,
+                       "coolingCount": N, "inFlightTotal": N, "rpmTotal": N,
+                       "tpmTotal": N, "currentId": N, "credentials": [...] }
+GET /groups       →  { "total": N, "groups": [...] }
+```
+
+`ListCredentials` / `ListGroups` 要取 `.credentials` / `.groups` 字段。
+顺带：那几个聚合字段（`available` / `disabledCount` / `inFlightTotal` / `rpmTotal` / `tpmTotal`）
+**免费给的**，`StatsOverview` 的一部分可以直接从这里拿，不用单独打 stats 端点。
+
+### ③ BatchImport 的 summary 是**流里的最后一个事件**，不是单独通道
+
+kiro.rs 的 `BatchImportEvent.status` 取值是 `"verified" | "duplicate" | "failed" | "summary"`，
+summary 事件的 `summary` 字段才有值。
+
+**所以契约 §4 里 `BatchImportResult{ Events, Summary }` 两个 channel 的设计要调整** ——
+实现上是一个 SSE 流，读到 `status == "summary"` 就把它塞进 Summary channel 再关闭两个 channel。
+接口形状保留（上层用起来更清楚），但别以为是两个 HTTP 流。
+
+**字段名差异**：契约 §4 写 `Duplicated`，wire 上是 `duplicate`；契约漏了 `rolled_back`（wire 有）。
+
+**`imported` 这个 status 在 wire 上不存在** —— 契约 §4 的 `ImportStatusImported` 是多的
+（summary 里有 `imported` 计数，但事件流里没有这个 status）。
+
+### ④ `SetDisabled` 的 body 只有 `{disabled}`，没有 reason
+
+见 §DisabledReason 判据 —— 我方传不进自定义 reason，kiro.rs 一律写 `Manual`。
+
+### ⑤ 前缀和鉴权
+
+- 所有端点挂在 **`/api/admin`** 下（`src/main.rs:356`）
+- 鉴权：**`x-api-key: <admin key>`** 或 `Authorization: Bearer <admin key>`（`src/admin/router.rs:63-65`）
+- `Config.BaseURL` 只填到域名（`https://kiro.aibbq.xyz`），client 内部拼 `/api/admin`
+
 ## 11. kiro.rs 端点对应表
+
+> **前缀和鉴权**（已核对 kiro.rs 源码 · 本表原来漏了这两条，会白费一轮联调）：
+>
+> - **所有端点都挂在 `/api/admin` 下** —— `src/main.rs:356` 的 `.nest("/api/admin", admin_app)`。
+>   下表的路径都是**相对这个前缀**的，例如 `ListCredentials` 实际打 `GET {base}/api/admin/credentials`
+> - **鉴权 header 二选一**（`src/admin/router.rs:63-65`）：`x-api-key: <admin key>`
+>   或 `Authorization: Bearer <admin key>`。我方统一用前者
+> - `base` 就是 `Config.BaseURL`（例 `https://kiro.aibbq.xyz`），**不要**自己再拼 `/api/admin`
+>   —— client 内部拼
 
 | 我方法 | kiro.rs 端点 | 备注 |
 |---|---|---|
@@ -404,7 +470,7 @@ func (c *Client) BatchImport(ctx context.Context, req housepool.BatchImportReque
 | `DeleteCredential` | `DELETE /credentials/{id}` | |
 | `DeleteCredentialBatch` | `POST /credentials/batch/delete` | |
 | `ListCredentials` | `GET /credentials` | 可加 query 过滤 |
-| `GetCredential` | `GET /credentials/{id}` | 单个 |
+| `GetCredential` | **没有这个端点** | `/credentials/{id}` 只有 `delete` / `put`（已核对 `src/admin/router.rs:75-77`）· 实现走 `ListCredentials` 后按 id 过滤 |
 | `GetBalance` | `GET /credentials/{id}/balance` | 号的用量 |
 | `TestCredential` | `POST /credentials/{id}/test` | 探活 |
 
