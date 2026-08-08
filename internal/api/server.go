@@ -13,8 +13,16 @@ import (
 
 	"github.com/bus-pooling/bus-pooling/internal/bus"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
+	"github.com/bus-pooling/bus-pooling/internal/delivery/handoff"
+	"github.com/bus-pooling/bus-pooling/internal/downstream"
+	"github.com/bus-pooling/bus-pooling/internal/housepool"
+	"github.com/bus-pooling/bus-pooling/internal/insight"
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
+	"github.com/bus-pooling/bus-pooling/internal/pullrecord"
+	"github.com/bus-pooling/bus-pooling/internal/redeem"
 	"github.com/bus-pooling/bus-pooling/internal/strategy"
+	"github.com/bus-pooling/bus-pooling/internal/topup"
+	"github.com/bus-pooling/bus-pooling/internal/vendorview"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
 
@@ -22,12 +30,20 @@ import (
 const maxBodyBytes = 1 << 20
 
 type Server struct {
-	db         *sql.DB
-	passengers *passenger.Store
-	wallets    *wallet.Store
-	strategies *strategy.Store
-	buses      *bus.Store
-	decider    *decider.Orchestrator
+	db          *sql.DB
+	passengers  *passenger.Store
+	wallets     *wallet.Store
+	strategies  *strategy.Store
+	buses       *bus.Store
+	decider     *decider.Orchestrator
+	redeems     *redeem.Store
+	topups      *topup.Store
+	pullRecords *pullrecord.Store
+	handoffs    *handoff.Store
+	pool        housepool.HousePool
+	vendorView  *vendorview.Service
+	insights    *insight.Store
+	downstreams *downstream.Store
 	// secureCookie 生产环境要 true（HTTPS）· 本地 http 调试设 false 否则 cookie 不生效
 	secureCookie bool
 }
@@ -41,6 +57,14 @@ type ServerDeps struct {
 	Strategies   *strategy.Store
 	Buses        *bus.Store
 	Decider      *decider.Orchestrator
+	Redeems      *redeem.Store
+	Topups       *topup.Store
+	PullRecords  *pullrecord.Store
+	Handoffs     *handoff.Store
+	Pool         housepool.HousePool
+	VendorView   *vendorview.Service
+	Insights     *insight.Store
+	Downstreams  *downstream.Store
 	SecureCookie bool
 }
 
@@ -52,6 +76,14 @@ func NewServer(d ServerDeps) *Server {
 		strategies:   d.Strategies,
 		buses:        d.Buses,
 		decider:      d.Decider,
+		redeems:      d.Redeems,
+		topups:       d.Topups,
+		pullRecords:  d.PullRecords,
+		handoffs:     d.Handoffs,
+		pool:         d.Pool,
+		vendorView:   d.VendorView,
+		insights:     d.Insights,
+		downstreams:  d.Downstreams,
 		secureCookie: d.SecureCookie,
 	}
 }
@@ -85,6 +117,45 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/me/buses/{bus_id}/leave", handler(s.RequireAuth(s.handleLeaveBus)))
 	mux.Handle("DELETE /api/me/buses/{bus_id}", handler(s.RequireAuth(s.handleDissolveBus)))
 	mux.Handle("POST /api/me/buses/{bus_id}/pull", handler(s.RequireAuth(s.handleBusPull)))
+
+	// 拉号记录 · 派去向（进车 / 推池）· handoff 三段式（05-api-contract §5 / §5b）
+	mux.Handle("GET /api/me/pull-records", handler(s.RequireAuth(s.handleListPullRecords)))
+	mux.Handle("GET /api/me/pull-records/{record_id}", handler(s.RequireAuth(s.handleGetPullRecord)))
+	mux.Handle("POST /api/me/pull-records/assign", handler(s.RequireAuth(s.handleAssign)))
+	mux.Handle("POST /api/me/handoff", handler(s.RequireAuth(s.handleHandoffInit)))
+	mux.Handle("GET /api/me/handoff/{token}", handler(s.RequireAuth(s.handleHandoffFulfill)))
+	mux.Handle("POST /api/me/handoff/{token}/confirm", handler(s.RequireAuth(s.handleHandoffConfirm)))
+
+	// 兑换码 + 充值（05-api-contract §3）
+	mux.Handle("POST /api/me/redeem", handler(s.RequireAuth(s.handleRedeem)))
+	mux.Handle("POST /api/me/topup", handler(s.RequireAuth(s.handleCreateTopup)))
+	mux.Handle("GET /api/me/topup/{order_id}", handler(s.RequireAuth(s.handleGetTopupOrder)))
+	mux.Handle("GET /api/me/topup-orders", handler(s.RequireAuth(s.handleListTopupOrders)))
+	// dev 内部端点，接了真 waffo 后删掉（改成签名验证的 /api/webhooks/waffo）
+	mux.Handle("POST /api/internal/topup/{order_id}/paid", handler(s.RequireAuth(s.handleDevMarkTopupPaid)))
+
+	// vendors 只读（05-api-contract §9）· 全部要鉴权
+	mux.Handle("GET /api/vendors/stock", handler(s.RequireAuth(s.handleVendorsStock)))
+	mux.Handle("GET /api/vendors/prices", handler(s.RequireAuth(s.handleVendorsPrices)))
+	mux.Handle("GET /api/vendors/stats", handler(s.RequireAuth(s.handleVendorsStats)))
+	mux.Handle("GET /api/vendors/auto-pick", handler(s.RequireAuth(s.handleVendorsAutoPick)))
+	mux.Handle("GET /api/vendors/{vendor_id}/stock", handler(s.RequireAuth(s.handleVendorStock)))
+	mux.Handle("GET /api/vendors/{vendor_id}/history", handler(s.RequireAuth(s.handleVendorHistory)))
+
+	// 首页 / 数据 tab / 活动流（05-api-contract §9b）
+	mux.Handle("GET /api/me/overview", handler(s.RequireAuth(handleOverviewWith(s.insights))))
+	mux.Handle("GET /api/me/trend", handler(s.RequireAuth(handleTrendWith(s.insights, s.buses))))
+	mux.Handle("GET /api/me/activities", handler(s.RequireAuth(handleActivitiesWith(s.insights))))
+
+	// 下游配置（05-api-contract §8）
+	mux.Handle("GET /api/me/downstream", handler(s.RequireAuth(s.handleGetDownstream)))
+	mux.Handle("PUT /api/me/downstream/passengerpool", handler(s.RequireAuth(s.handlePutPassengerpool)))
+	mux.Handle("POST /api/me/downstream/passengerpool/test", handler(s.RequireAuth(s.handleTestPassengerpool)))
+	mux.Handle("GET /api/me/downstream/webhook", handler(s.RequireAuth(s.handleGetWebhook)))
+	mux.Handle("PUT /api/me/downstream/webhook", handler(s.RequireAuth(s.handlePutWebhook)))
+	mux.Handle("POST /api/me/downstream/webhook/secret", handler(s.RequireAuth(s.handleRotateWebhookSecret)))
+	mux.Handle("POST /api/me/downstream/webhook/test", handler(s.RequireAuth(s.handleTestWebhook)))
+	mux.Handle("GET /api/me/downstream/webhook/deliveries", handler(s.RequireAuth(s.handleListDeliveries)))
 
 	// 只会话 —— API key 不能做这两件事
 	mux.Handle("POST /api/me/password", handler(s.RequireSession(s.handleChangePassword)))

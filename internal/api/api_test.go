@@ -13,8 +13,15 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/bus"
 	"github.com/bus-pooling/bus-pooling/internal/db"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
+	"github.com/bus-pooling/bus-pooling/internal/delivery/handoff"
+	"github.com/bus-pooling/bus-pooling/internal/downstream"
+	"github.com/bus-pooling/bus-pooling/internal/insight"
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
+	"github.com/bus-pooling/bus-pooling/internal/pullrecord"
+	"github.com/bus-pooling/bus-pooling/internal/redeem"
+	"github.com/bus-pooling/bus-pooling/internal/secrets"
 	"github.com/bus-pooling/bus-pooling/internal/strategy"
+	"github.com/bus-pooling/bus-pooling/internal/topup"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
 
@@ -58,14 +65,28 @@ func newEnvBase(t *testing.T, mkDecider func(*db.DB) *decider.Orchestrator) *tes
 	if mkDecider != nil {
 		orch = mkDecider(d)
 	}
+
+	// downstream 需要 cipher（AES-GCM），测试固定一把
+	cipher, err := secrets.New(strings.Repeat("01", 32))
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+
 	mux := http.NewServeMux()
 	NewServer(ServerDeps{
-		DB:           d.DB,
-		Passengers:   passenger.NewStore(d.DB),
-		Wallets:      wallets,
-		Strategies:   strategy.NewStore(d.DB),
-		Buses:        bus.NewStore(d.DB),
-		Decider:      orch,
+		DB:          d.DB,
+		Passengers:  passenger.NewStore(d.DB),
+		Wallets:     wallets,
+		Strategies:  strategy.NewStore(d.DB),
+		Buses:       bus.NewStore(d.DB),
+		Decider:     orch,
+		Redeems:     redeem.NewStore(d.DB),
+		Topups:      topup.NewStore(d.DB),
+		PullRecords: pullrecord.NewStore(d.DB),
+		Handoffs:    handoff.NewStore(d.DB, 0),
+		Insights:    insight.NewStore(d.DB),
+		Downstreams: downstream.NewStore(d.DB, cipher),
+		// VendorView / Pool 保留 nil —— handler 里各自有 nil 兜底（返 503）
 		SecureCookie: false,
 	}).Routes(mux)
 

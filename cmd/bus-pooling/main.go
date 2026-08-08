@@ -25,14 +25,23 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/bus"
 	"github.com/bus-pooling/bus-pooling/internal/config"
 	"github.com/bus-pooling/bus-pooling/internal/db"
+	"github.com/bus-pooling/bus-pooling/internal/deathwatch"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
+	"github.com/bus-pooling/bus-pooling/internal/delivery/handoff"
+	"github.com/bus-pooling/bus-pooling/internal/downstream"
+	"github.com/bus-pooling/bus-pooling/internal/housepool"
 	"github.com/bus-pooling/bus-pooling/internal/housepool/kirors"
 	"github.com/bus-pooling/bus-pooling/internal/httpx"
+	"github.com/bus-pooling/bus-pooling/internal/insight"
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 	"github.com/bus-pooling/bus-pooling/internal/providers/kiro"
+	"github.com/bus-pooling/bus-pooling/internal/pullrecord"
+	"github.com/bus-pooling/bus-pooling/internal/redeem"
 	"github.com/bus-pooling/bus-pooling/internal/secrets"
 	"github.com/bus-pooling/bus-pooling/internal/strategy"
+	"github.com/bus-pooling/bus-pooling/internal/topup"
+	"github.com/bus-pooling/bus-pooling/internal/vendorview"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
 
@@ -178,7 +187,8 @@ func buildVendorRegistry(cfg config.Config) (*providers.Registry, error) {
 	return r, nil
 }
 
-// buildDecider 装配拉号编排器。
+// buildDecider 装配拉号编排器 + 返回同一份 pool（deathwatch / vendorview
+// 都要复用这一份 —— 别在两处各建一份 kirors.Client）。
 //
 // **默认走内存 mock**（`DryRunVendor` + `DryRunPool`）—— vendor 侧是真积分，
 // 阶段 1a 只跑通接口。切真链路需要**同时**：
@@ -186,11 +196,17 @@ func buildVendorRegistry(cfg config.Config) (*providers.Registry, error) {
 //   - env `BP_ALLOW_LIVE_PULL=1`（第二把锁，防意外配错）
 //
 // 单靠 `DRY_RUN=false` 不够 —— 那个变量在很多地方影响行为，一处误配会全线通到真扣款。
-func buildDecider(cfg config.Config, sqldb *db.DB, reg *providers.Registry) (*decider.Orchestrator, error) {
+//
+// live 模式下返回的 pool 是 *kirors.Client（同时满足 decider.PoolClient 和
+// housepool.HousePool 两个接口）；mock 模式下 pool 是 nil（deathwatch / handoff
+// 都会防 nil），api handler 用的 housepool.HousePool 也是 nil，vendorview
+// 只用 registry 不用 pool。
+func buildDecider(cfg config.Config, sqldb *db.DB, reg *providers.Registry) (*decider.Orchestrator, housepool.HousePool, decider.Rates, error) {
 	live := !cfg.DryRun && os.Getenv("BP_ALLOW_LIVE_PULL") == "1"
 
 	var vendor decider.VendorClient
 	var pool decider.PoolClient
+	var pubPool housepool.HousePool
 	if !live {
 		vendor = &decider.DryRunVendor{VendorID: providers.Vendor91Kiro}
 		pool = &decider.DryRunPool{}
@@ -200,7 +216,7 @@ func buildDecider(cfg config.Config, sqldb *db.DB, reg *providers.Registry) (*de
 	} else {
 		v, err := reg.Get(providers.Vendor91Kiro)
 		if err != nil {
-			return nil, fmt.Errorf("live 模式但未启用 kiro91 vendor: %w", err)
+			return nil, nil, decider.Rates{}, fmt.Errorf("live 模式但未启用 kiro91 vendor: %w", err)
 		}
 		hc, err := httpx.New(httpx.Config{
 			Timeout: cfg.HTTPX.Timeout, MaxRetries: cfg.HTTPX.MaxRetries,
@@ -208,16 +224,17 @@ func buildDecider(cfg config.Config, sqldb *db.DB, reg *providers.Registry) (*de
 			Proxy:         cfg.HTTPX.Proxy, NoProxy: cfg.HTTPX.NoProxy,
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, decider.Rates{}, err
 		}
 		poolClient, err := kirors.New(kirors.Config{
 			BaseURL: cfg.Housepool.BaseURL, AdminKey: cfg.Secrets.HousepoolAdminKey,
 		}, hc)
 		if err != nil {
-			return nil, fmt.Errorf("装配号池客户端: %w", err)
+			return nil, nil, decider.Rates{}, fmt.Errorf("装配号池客户端: %w", err)
 		}
 		vendor = v
 		pool = poolClient
+		pubPool = poolClient
 		slog.Warn("拉号走 LIVE 链路 · 会产生真扣款", "vendor", providers.Vendor91Kiro)
 	}
 
@@ -230,7 +247,7 @@ func buildDecider(cfg config.Config, sqldb *db.DB, reg *providers.Registry) (*de
 		Vendor: vendor,
 		Pool:   pool,
 		Rates:  rates,
-	}), nil
+	}), pubPool, rates, nil
 }
 
 func runServe(ctx context.Context, cfg config.Config) error {
@@ -238,7 +255,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	if err := cfg.RequireSecrets(); err != nil {
 		return err
 	}
-	if _, err := secrets.New(cfg.Secrets.MasterKey); err != nil {
+	cipher, err := secrets.New(cfg.Secrets.MasterKey)
+	if err != nil {
 		return err
 	}
 	if _, err := httpx.New(httpx.Config{
@@ -281,10 +299,21 @@ func runServe(ctx context.Context, cfg config.Config) error {
 
 	// secureCookie：生产走 HTTPS 要 true；本地 http 调试必须 false，否则浏览器不存 cookie
 	secureCookie := os.Getenv("BP_INSECURE_COOKIE") == ""
-	orch, err := buildDecider(cfg, database, vendorRegistry)
+	orch, poolClient, rates, err := buildDecider(cfg, database, vendorRegistry)
 	if err != nil {
 		return err
 	}
+
+	// vendorview 用同一份 rates（费率不进代码，走 decider.Rates 唯一入口）
+	vendorSvc, err := vendorview.New(vendorview.Config{
+		Registry: vendorRegistry,
+		Rates:    rates,
+	})
+	if err != nil {
+		return err
+	}
+
+	handoffs := handoff.NewStore(database.DB, 0) // 0 = 默认 TTL
 
 	apiSrv := api.NewServer(api.ServerDeps{
 		DB:           database.DB,
@@ -293,6 +322,14 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		Strategies:   strategy.NewStore(database.DB),
 		Buses:        bus.NewStore(database.DB),
 		Decider:      orch,
+		Redeems:      redeem.NewStore(database.DB),
+		Topups:       topup.NewStore(database.DB),
+		PullRecords:  pullrecord.NewStore(database.DB),
+		Handoffs:     handoffs,
+		Pool:         poolClient, // 可能为 nil（mock 模式）· handler 有 nil 兜底
+		VendorView:   vendorSvc,
+		Insights:     insight.NewStore(database.DB),
+		Downstreams:  downstream.NewStore(database.DB, cipher),
 		SecureCookie: secureCookie,
 	})
 	apiSrv.Routes(mux)
@@ -304,6 +341,18 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		})
 		go janitor.Run(ctx)
 		slog.Info("janitor 已启动")
+	}
+
+	// handoff janitor 扫过期 token · Store 自己防 nil，跑起来不依赖 pool
+	handoffJanitor := handoff.NewJanitor(handoff.JanitorConfig{Store: handoffs})
+	go handoffJanitor.Run(ctx)
+	slog.Info("handoff janitor 已启动")
+
+	// deathwatch 只在真号池 live 起时跑（mock 模式没 pool 可探）
+	if poolClient != nil {
+		w := deathwatch.New(deathwatch.Config{DB: database.DB, Pool: poolClient})
+		go w.Run(ctx)
+		slog.Info("deathwatch 已启动")
 	}
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
