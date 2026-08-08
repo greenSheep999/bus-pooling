@@ -217,7 +217,7 @@ await POST(`/handoff/${download_token}/confirm`)
   "purchased": 5,
   "key_cost": 100000000,        // 号价（pass-through）
   "single_pull_fee": 0,          // count==5 → 0
-  "service_fee_total": 5000000,  // 号数 × 1 积分 = 5 × 1（§8.33 · 按号不按次）
+  "service_fee_total": 5000000,  // 算好的金额 · 不下发费率
   "channel_fee": 0,              // 拉号动作不涉及通道费
   "total_debit": 105000000,      // 号价 100 + 服务费 5
   "balance_remaining": 895000000
@@ -261,16 +261,16 @@ await POST(`/handoff/${download_token}/confirm`)
   ],
   "key_cost": 200000000,
   "single_pull_fee": 0,             // count>=2 → 0
-  "service_fee": 10000000,          // 号数 × 1 积分 = 10 × 1（§8.33）
+  "service_fee": 10000000,          // 算好的金额 · 不下发费率
   "total_debit": 210000000,         // 号价 200 + 服务费 10
   "balance_remaining": 790000000
 }
 ```
 
 **注意**：
-- `service_fee` = **号数 × 1 积分**（`decisions §8.33`）· **按号不按次**：拉 10 个 = 10 积分
-  - ~~"一次动作一轮，跟 count 无关"~~ —— 这句原来是错的，会让拉 10 个只收 1 积分
-  - **单一费率**，不分社群 / 零售（区分那两类是**区域附加费 20%** 的职责，有系统邀请码就免）
+- 计费是**逐层乘**（`decisions §8.34`）：`最终单价 = 号价 × (1+各层率…)`，`本次扣除 = 最终单价 × 号数`
+  - ~~"一次动作一轮，跟 count 无关"~~ —— 原来这句是错的，会让拉 10 个号只收 1 份服务费
+- **各层费率不下发** —— 响应只给**算好的金额**（`§8.20`：不下发原价和加价明细）
 - **服务端裁定**，客户端传什么都不信
 - `single_pull_fee` 只在 `count==1` 才有
 
@@ -398,7 +398,7 @@ await POST(`/handoff/${download_token}/confirm`)
       "count_purchased": 5,
       "participants_split": { "01H_alice": 2, "01H_bob": 3 },  // 谁分几个
       "key_cost_total": 100000000,
-      "service_fee_total": 5000000,   // 号数 × 1 = 5 × 1 · 按 share_pct 在 alice/bob 之间分摊
+      "service_fee_total": 5000000,   // 按 share_pct 在 alice/bob 之间分摊
       "single_pull_fee_total": 0,
       "created_at": "..."
     },

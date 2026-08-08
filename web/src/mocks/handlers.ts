@@ -1,5 +1,5 @@
 import { http, HttpResponse, delay } from "msw";
-import { serviceFee, topupBreakdown, vendorLabel } from "@/lib/utils";
+import { MICRO, topupBreakdown, vendorLabel } from "@/lib/utils";
 import * as fx from "./fixtures";
 
 const ok = async (data: any, ms = 120) => {
@@ -148,8 +148,8 @@ export const handlers = [
     const unit = 20_000_000;
     const keyCost = unit * b.count;
     const single = b.count === 1 ? keyCost * 0.2 : 0;
-    // 服务费 = 号数 × 1 积分（§8.33）· 服务端裁定
-    const service = serviceFee(b.count);
+    // 服务费按号数（mock · 真实规则在后端）
+    const service = b.count * MICRO;
     return ok({ key_cost: keyCost, single_pull_fee: single, service_fee: service, total: keyCost + single + service }, 80);
   }),
   http.post("/api/me/pull", () => ok({ round_id: "rd_new", status: "initiated" }, 800)),

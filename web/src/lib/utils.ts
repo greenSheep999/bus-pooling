@@ -56,26 +56,9 @@ export function fmtK(v: number): string {
 /** 连续被跳过几次自动挂起（decisions §8.26）· 充值后归零 */
 export const SUSPEND_AFTER = 3;
 
-/** waffo 通道费 5% · pass-through，我方不加不承担（decisions §2.13）
- *  **只在充值时收一次**（§8.21）—— 拉号 / 提取 / 派号都是积分抵扣，那些页面不许显示通道费 */
+/** 支付通道费率 · 这一项是**对用户公示**的（充值卡里明示是通道收取）
+ *  只在充值时出现 —— 拉号 / 提取 / 派号都是积分抵扣，那些页面不显示它 */
 export const CHANNEL_FEE_RATE = 0.05;
-
-/** 服务费 · **每个号 1 积分**（decisions §8.33）
- *
- *  两个要点（都纠正过早先的错）：
- *  1. **按号算，不是按次** —— 拉 10 个号 = 10 积分。早先文档写「一次动作一轮，
- *     跟 count 无关」是错的（拉 10 个只收 1 积分，服务费跟工作量脱钩）
- *  2. **单一费率，不分社群 / 零售** —— §8.31 那个 1/7 两档已废：区分社群和零售
- *     是**区域附加费 20%** 的职责（有系统邀请码就免），服务费再分一次是重复计价
- *
- *  1 积分/号 在号价 20 积分时约等于 5% —— 车主说的"按百分比更合理"，
- *  按号计费天然就实现了（跟量挂钩），又不用引入百分比制的浮动。 */
-export const SERVICE_FEE_PER_KEY = 1 * MICRO;
-
-/** 服务费 = 号数 × 1 积分 */
-export function serviceFee(count: number): number {
-  return Math.max(0, Math.round(count)) * SERVICE_FEE_PER_KEY;
-}
 
 /** 充值：付款额 → 通道费 + 实际到账 */
 export function topupBreakdown(paid: number): { fee: number; credits: number } {

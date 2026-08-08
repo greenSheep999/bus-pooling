@@ -11,7 +11,8 @@ import {
 } from "@/components/ui/select";
 import { UpstreamStatusPanel } from "@/components/UpstreamStatusPanel";
 import { ExtractConfirmModal } from "@/components/ExtractConfirmModal";
-import { fmtCredits, serviceFee, toCredits, vendorLabel } from "@/lib/utils";
+import { previewFees } from "@/lib/pricing";
+import { fmtCredits, toCredits, vendorLabel } from "@/lib/utils";
 import type { Zone } from "@/types";
 
 /** 提取 key 表单 · 通用组件（Extract 页顶部 card + PullExtractModal 都用它）
@@ -32,7 +33,7 @@ export function PullExtractForm({
   const { data: vendors } = useVendorStats();
   const availableVendors = (vendors?.stats ?? []).filter((v) => !v.out_of_stock);
 
-  /** 有注册邀请码 = 社群成员 · 看 vendor 真名 + 无加价 · decisions §8.20 */
+  /** 注册时填过邀请码 · 决定 vendor 显示真名还是编号 · decisions §8.20 */
   const invited = !!me?.invited;
 
   const [count, setCount] = useState(3);
@@ -59,7 +60,7 @@ export function PullExtractForm({
     return stock.zones.find((z) => z.zone === zone) ?? stock.zones[0];
   }, [stock, zone]);
 
-  /** 当前生效单价（已含附加费）· auto 走推荐结果 · 具体 vendor 走该区单价 */
+  /** 服务端给的当前单价 · auto 走推荐结果 · 具体 vendor 走该区单价 */
   const unitPrice = isAuto ? pick?.unit_price ?? null : activeZone?.unit_price ?? null;
   const available = isAuto ? pick?.available ?? null : activeZone?.available ?? null;
   /** 实际会派到的 vendor 显示名（auto 时来自推荐结果） */
@@ -68,15 +69,12 @@ export function PullExtractForm({
     : vendorLabel(vendorId, invited);
   const effectiveZone = isAuto ? pick?.zone ?? null : activeZone ? (stock!.zones.length === 1 ? null : activeZone.zone) : null;
 
-  /* 预估费用 · auto 和具体 vendor 都要有（散客默认 auto · 必须能看到花多少） */
-  const estimate = useMemo(() => {
-    if (unitPrice == null) return null;
-    const keyCost = unitPrice * count;
-    const singlePullFee = count === 1 ? keyCost * 0.2 : 0;
-    /* 服务费 = 号数 × 1 积分（§8.33）· 按号不按次 */
-    const svcFee = serviceFee(count);
-    return { keyCost, singlePullFee, svcFee, total: keyCost + singlePullFee + svcFee };
-  }, [unitPrice, count]);
+  /* 预估费用 · auto 和具体 vendor 都要有（散客默认 auto · 必须能看到花多少）
+     后端就绪后换成 useEstimate()（见 lib/pricing.ts） */
+  const estimate = useMemo(
+    () => (unitPrice == null ? null : previewFees({ unitPrice, count })),
+    [unitPrice, count],
+  );
 
   const bargain = count === 1;
   const outOfStock = available === 0;
@@ -165,7 +163,7 @@ export function PullExtractForm({
                       muted
                     />
                   )}
-                  <FeeRow label={`服务费 · 1 × ${count}`} value={`${toCredits(estimate.svcFee)} 积分`} muted />
+                  <FeeRow label={`服务费 · 1 × ${count}`} value={`${toCredits(estimate.serviceFee)} 积分`} muted />
                   {/* 通道费只在充值积分时收 · 拉号/提取都是抵扣积分 · decisions §8.21 · 不显示 */}
                 </div>
               </div>

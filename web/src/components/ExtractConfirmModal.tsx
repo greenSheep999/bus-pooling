@@ -9,7 +9,8 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
-import { fmtCredits, serviceFee, toCredits } from "@/lib/utils";
+import { previewFees } from "@/lib/pricing";
+import { fmtCredits, toCredits } from "@/lib/utils";
 import type { Money, Zone } from "@/types";
 
 export interface ExtractConfirmInfo {
@@ -19,7 +20,7 @@ export interface ExtractConfirmInfo {
   isAuto: boolean;
   zone: Zone | null;
   count: number;
-  /** 最终单价（含附加费）· 填优惠码后由父层重算 */
+  /** 服务端给的最终单价 · 填优惠码后由父层重算 */
   unitPrice: Money | null;
   warrantyMinutes: number;
 }
@@ -45,20 +46,14 @@ export function ExtractConfirmModal({
 
   const code = coupon.trim();
 
-  /* 优惠码折扣 · 阶段 1a 前端按已知规则预览（**真实减免由后端裁定**）
-     §8.32：优惠码是**独立的一档减免**（后台可配 5~20%），跟区域附加费是两回事 ——
-     区域附加费 20% 由**系统邀请码**免（那个在注册时就定了，体现在 info.unitPrice 里已经不含它）。
-     这里按默认 5% 预览；实际额度后端说了算。 */
-  const COUPON_PREVIEW_RATE = 0.05;
-  const discounted = applied && info.unitPrice != null
-    ? Math.round(info.unitPrice * (1 - COUPON_PREVIEW_RATE))
-    : info.unitPrice;
-
-  const keyCost = (discounted ?? 0) * info.count;
-  const singlePullFee = info.count === 1 ? keyCost * 0.2 : 0;
-  /* 服务费 = 号数 × 1 积分（§8.33）· 按号不按次 */
-  const svcFee = serviceFee(info.count);
-  const total = keyCost + singlePullFee + svcFee;
+  /* 费用预览 · 后端就绪后换成 useEstimate()（见 lib/pricing.ts） */
+  const fees = previewFees({
+    unitPrice: info.unitPrice ?? 0,
+    count: info.count,
+    couponApplied: !!applied,
+  });
+  const { keyCost, singlePullFee, serviceFee: svcFee, total } = fees;
+  const discounted = info.unitPrice == null ? null : fees.unitPrice;
 
   /* 全局单价上限（decisions §8.27）· 超了不给确认
      判的是**优惠码折后价** —— 用码压到线内就该放行 */
