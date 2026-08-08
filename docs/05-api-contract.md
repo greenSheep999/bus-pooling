@@ -53,14 +53,14 @@
 - 同 key 重复 → 返回**字节一致**的原响应，不重复副作用
 - 幂等窗口：**30 天**（服务端 `idempotency_record` 表 30 天后清理，之后重放视为新请求）
 
-### handoff · 两阶段 token 交付（P0 修补 · 见 `09-transactions.md § 4`）
+### handoff · 三段式 token 交付（P0 修补 · 见 `09-transactions.md § 4`）
 
 **问题**：单次 HTTP handoff 无法保证明文可靠交付（响应中途断线，我方已 DELETE 但客户端没收到明文）。
 
-**解决**：**两阶段 token**——先发 token，客户端 fulfill 拿明文（TTL 内可重试），最后 confirm 才 DELETE：
+**解决**：**三段式 token**——先发 token，客户端 fulfill 拿明文（TTL 内可重试），最后 confirm 才 DELETE：
 
 ```
-1. POST /api/me/pull-records/{id}/handoff-init
+1. POST /api/me/handoff
    请求：{ credential_ids: [...] }
    返回：{ download_token: "32hex", expires_at: "5min later" }
    （不返回明文；credential 保留 disabled=true）
@@ -74,11 +74,11 @@
    （幂等：多次 confirm 返回同状态）
 ```
 
-**TTL 过期未 confirm** → janitor 恢复 credential（保留 disabled=true 状态），用户可重发 `handoff-init`。
+**TTL 过期未 confirm** → janitor 恢复 credential（保留 disabled=true 状态），用户可重新 `POST /me/handoff`。
 
 **客户端集成**：
 ```javascript
-const { download_token } = await POST('/pull-records/X/handoff-init', { credential_ids })
+const { download_token } = await POST('/me/handoff', { credential_ids })
 const { keys } = await GET(`/handoff/${download_token}`)  // 断线可重试
 displayToUser(keys)
 await POST(`/handoff/${download_token}/confirm`)
@@ -256,7 +256,7 @@ await POST(`/handoff/${download_token}/confirm`)
   "vendor_id": "kiro91",
   "purchased": 10,
   "records": [
-    { "record_id": "01H8...", "credential_id": 12345 },   // 12345 是 kiro.rs credential id (u64)
+    { "credential_id": "01H8...", "kiro_rs_id": 12345 },   // credential_id = 我方 UUID（派发时用这个）
     ...
   ],
   "key_cost": 200000000,
@@ -267,6 +267,10 @@ await POST(`/handoff/${download_token}/confirm`)
 }
 ```
 
+**ID 口径**（别混）：
+- `credential_id` = **我方** `credential_ledger.id`（UUID v7 · TEXT）· **所有 API 都用这个**（assign / handoff 都收它）
+- `kiro_rs_id` = housepool 侧的 u64 · 只在需要跟 kiro.rs 对账时出现，**不作为 API 入参**
+
 **注意**：
 - 计费是**逐层乘**（`decisions §8.34`）：`最终单价 = 号价 × (1+各层率…)`，`本次扣除 = 最终单价 × 号数`
   - ~~"一次动作一轮，跟 count 无关"~~ —— 原来这句是错的，会让拉 10 个号只收 1 份服务费
@@ -275,6 +279,8 @@ await POST(`/handoff/${download_token}/confirm`)
 - `single_pull_fee` 只在 `count==1` 才有
 
 ### `POST /api/me/pull-records/assign` （派去向 · 只管进车 / 推号池）
+
+**`destination` 取值**：线上契约用 `into_bus` / `push_pool`；`pending_assignment.target` 存 `to-bus` / `to-passengerpool`（历史命名）。**映射在 handler 里做一次**，别让两套值互相渗透。
 
 ```json
 // req · 一次一个去向（界面上就是"勾一批 → 点一个动作"）
@@ -312,7 +318,7 @@ await POST(`/handoff/${download_token}/confirm`)
 // ② GET /api/me/handoff/{token}
 {
   "keys": [
-    { "credential_id": "01H8h", "key": "ksk_live_…", "vendor_id": "91kiro", "account": "aws-…@kiro.tmp" }
+    { "credential_id": "01H8h", "key": "ksk_live_…", "vendor_id": "kiro91", "account": "aws-…@kiro.tmp" }
   ]
 }
 
@@ -593,6 +599,30 @@ X-Bus-Signature: sha256=<hex HMAC-SHA256(secret, timestamp + "." + body)>
 - 端点在 `12-admin-api.md`（未来）落地
 
 ---
+
+## 响应形状 · 以前端类型为准的那几个
+
+下面这些端点是 **1a 必做**，但本文档没写完整响应形状。**权威定义在 `web/src/types/index.ts`** —— 前端已经按那个形状跑通并验证过整套 UI，后端照它实现即可。
+
+| 端点 | 形状 | 参考实现 |
+|---|---|---|
+| `POST /me/pull/estimate` | `{ key_cost, single_pull_fee, service_fee, total }` | `hooks.ts useEstimate` |
+| `GET /me/pull/events` | `Paged<ExtractEvent>` | `types` `ExtractEvent` |
+| `GET /me/assign/events` | `Paged<AssignEvent>` | `types` `AssignEvent` |
+| `GET /vendors/stock` | `StockSummary` | `types` `StockSummary` |
+| `GET /vendors/{id}/stock` | `VendorStock` | `types` `VendorStock` |
+| `GET /vendors/stats` | `{ stats: VendorStat[], share: VendorShare[] }` | `types` |
+| `GET /vendors/auto-pick` | `AutoPickResult` | `types` `AutoPickResult` |
+| `GET /me/overview` | `Overview` | `types` `Overview` |
+| `GET /me/trend` | `TrendPoint[]` | `types` `TrendPoint` |
+| `GET /me/activities` | `Paged<Activity>` | `types` `Activity` |
+| `GET /me/strategy` | `GlobalStrategy` | `types` `GlobalStrategy` |
+
+**mock 实现可以直接参考** `web/src/mocks/handlers.ts` —— 那里每个端点都有能跑的返回值，字段齐全。
+
+**为什么不在这里重抄一遍**：抄一份就多一处会漂移的地方。类型定义是**可执行的契约**（TS 编译器会检查前端有没有用错），Markdown 表格不是。有出入时**以 `types/index.ts` 为准**。
+
+**唯一例外**：金额字段一律 **整数 microunit**（`types` 里 `Money = number` 看不出这个），命名一律 snake_case（前端 `types` 已经是 snake_case，直接对应）。
 
 ## 错误码全表
 

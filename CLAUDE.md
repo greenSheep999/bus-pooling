@@ -42,7 +42,7 @@
 | 中文 | 英文 | 归属 |
 |---|---|---|
 | 号价 | `key_cost` | vendor pass-through |
-| 单次议价 | `single_pull_fee` | 我方（`count==1` 时号价 × 20%） |
+| 单次议价 | `single_pull_fee` | 我方（`count==1` 时链上加一层 `× (1+率)`，**不是号价 × 率** —— 见 `decisions §8.34` 分项拆法） |
 | 附加能力费 | `capability_fee` | 我方（**插槽**，阶段 1 无实例） |
 | 服务费 | `service_fee` | 我方（加价链最后一层 `× (1+率)` · 单一费率不分社群/零售 · 具体率在后台配置，**不写进代码** · 见 `decisions §8.34`） |
 | 通道费 | `channel_fee` | waffo（`pass-through` 5%） |

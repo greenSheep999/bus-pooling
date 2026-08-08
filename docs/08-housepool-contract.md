@@ -84,7 +84,7 @@ type Credential struct {
     Email            string
     Priority         uint32
     Disabled         bool
-    DisabledReason   string
+    DisabledReason   string        // 见下方「DisabledReason 约定」
     Subscription     string
     Provider         string          // 上游 provider 标记（未使用）
     AuthMethod       string
@@ -399,7 +399,7 @@ func (c *Client) BatchImport(ctx context.Context, req housepool.BatchImportReque
 |---|---|---|
 | `BatchImport` | `POST /credentials/batch-import` | SSE 流 |
 | `UpdateCredential` | `PUT /credentials/{id}` | body 只带需改字段 |
-| `SetDisabled` | `POST /credentials/{id}/disabled` | body `{disabled: bool, reason?: string}` |
+| `SetDisabled` | `POST /credentials/{id}/disabled` | body `{disabled: bool}` · **无 reason 字段**（kiro.rs 自己写 `Manual`） |
 | `SetDisabledBatch` | `POST /credentials/batch/disabled` | body `{ids: [...], disabled: bool}` |
 | `DeleteCredential` | `DELETE /credentials/{id}` | |
 | `DeleteCredentialBatch` | `POST /credentials/batch/delete` | |
@@ -407,6 +407,38 @@ func (c *Client) BatchImport(ctx context.Context, req housepool.BatchImportReque
 | `GetCredential` | `GET /credentials/{id}` | 单个 |
 | `GetBalance` | `GET /credentials/{id}/balance` | 号的用量 |
 | `TestCredential` | `POST /credentials/{id}/test` | 探活 |
+
+### DisabledReason 判据（**deathwatch 必读** · 已对照 kiro.rs 源码核实）
+
+**问题**：`disabled=true` **不能**当作"号死了"的判据 —— `record-<pid>` group 里的号**按设计就是 `disabled=true`**（`CLAUDE.md §1.1`：拉号记录 = group + `disabled=true`）。
+
+**`reason` 不能由我方指定**（核实结果）：
+- `POST /credentials/{id}/disabled` 的 body **只有 `{disabled: bool}`**，没有 reason 字段
+- `DisabledReason` 是 kiro.rs 侧的**闭合枚举**（8 个变体），我方传不进自定义值
+- 我方通过 Admin API disable 的号，kiro.rs 一律写 **`Manual`**
+
+**所以判据靠枚举值本身**：
+
+| `DisabledReason` | 谁造成的 | deathwatch 怎么看 |
+|---|---|---|
+| `Manual` | **只有 Admin API 会写**（= 我方主动） | **不是死号**（拉号记录待派 / handoff 待确认 / 成员挂起都落这个） |
+| `Suspended` | 上游明确封号（403 + 封禁文案） | **判死** · 且不可自愈，`death_source = vendor_poll` |
+| `QuotaExceeded` | 额度用尽 | **判死**（`decisions §8.14` 的寿终） |
+| `InvalidRefreshToken` | refresh token 永久失效 | **判死** |
+| `TooManyFailures` / `TooManyRefreshFailures` / `AutoThrottled` | kiro.rs 自愈机制累计触发 | **疑似** —— 这几个 kiro.rs 侧可能自动恢复，用 `TestCredential` 复核 |
+| `InvalidConfig` | 凭据配置缺字段 | 我方导入错了，**不是死号** · 报警人工看 |
+
+**判死流程（按顺序）**：
+
+1. **`Manual` → 直接跳过**（那是我方自己 disable 的）
+2. **`Suspended` / `QuotaExceeded` / `InvalidRefreshToken` → 判死**，写 `dead_at` + `death_source`
+3. **其余 disabled 的 → 调 `TestCredential` 复核**，返回 error 才判死
+4. **`disabled=false` 但要抽查存活 → `TestCredential`**（这是唯一的主动探活手段，接口只返 `error`）
+
+**不要**只凭 `disabled=true` 就写 `dead_at` —— 那会把所有待派的拉号记录误判成死号。
+
+**我方 disable 的语义靠自己的表记**：`credential_ledger` 已经有 `current_group`（`record-<pid>` = 待派）和 `pending_handoff.status`（= handoff 待确认），不需要也拿不到 kiro.rs 侧的 reason。
+
 | `RefreshToken` | `POST /credentials/{id}/refresh` | 强制刷新 |
 | `ListGroups` | `GET /groups` | |
 | `CreateGroup` | `POST /groups` | |

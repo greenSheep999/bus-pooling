@@ -33,6 +33,11 @@ CREATE TABLE passenger (
   password_hash          TEXT NOT NULL,                  -- Argon2id
   role                   TEXT NOT NULL DEFAULT 'user',   -- user | admin
   status                 TEXT NOT NULL DEFAULT 'active', -- active | disabled
+  -- 注册时填过**系统**邀请码（decisions §8.20 §8.29）· 个人码不置这个
+  -- true  = 社群：看 vendor 真名 + 跳过区域附加费那一层
+  -- false = 零售：看 Vendor 0N 编号 + 照加区域附加费
+  invited                INTEGER NOT NULL DEFAULT 0,
+  invite_code_used       TEXT,                            -- 注册时用的码（留痕 · 便于追来源）
   created_at             TEXT NOT NULL,
   updated_at             TEXT NOT NULL,
   last_login_at          TEXT,
@@ -116,7 +121,7 @@ CREATE TABLE wallet (
 );
 ```
 
-**并发控制**（见 `09-transactions.md § 7`）：
+**并发控制**（见 `09-transactions.md § 8`）：
 
 - 用 `BEGIN IMMEDIATE` 拿写锁（SQLite 无行级锁）
 - 冻结：条件更新 `WHERE balance >= ?`，`rowsAffected == 0` 视为余额不足或冲突
@@ -592,7 +597,7 @@ CREATE TABLE passenger_daily_counter (
 ```
 passenger ──┬─ passenger_api_key
             ├─ passenger_downstream
-            ├─ passenger_strategy
+            ├─ passenger_strategy_default
             ├─ passenger_daily_counter
             ├─ wallet ─── wallet_ledger
             ├─ payment_order
@@ -609,15 +614,18 @@ capability_slot / pull_round_capability （阶段 2c 起写）
 
 ## Migration 顺序（1a 首批）
 
-**首批 migration 覆盖阶段 1a 所需 17 张表**（其余延后）：
+**首批 migration 覆盖阶段 1a 所需 19 张表**（其余延后）：
 
-1. `passenger`, `passenger_api_key`, `passenger_downstream`, **`session`**
+1. `passenger`（**含 invited**）, `passenger_api_key`, `passenger_downstream`, **`session`**
 2. `wallet`（**含 reserved 字段**）, `wallet_ledger`
-3. `bus`, `bus_member`
-4. `pull_intent`, `pull_round`, `credential_ledger`（**含 owner_bus_id / owner_record_passenger_id**）
-5. `vendor_account`, `passenger_daily_counter`
+3. `bus`, `bus_member`（**含 share_pct / status / skipped_count** —— 2a 才用但 1a 建列，见 §8）
+4. `pull_intent`, `pull_round`, `credential_ledger`（**含 owner_bus_id / owner_record_passenger_id / push_error_* / warranty_until**）
+5. `vendor_account`, `passenger_daily_counter`, **`passenger_strategy_default`**（§16 · `GET/PUT /me/strategy` 是 1a 必做）
 6. `idempotency_record`（HTTP 幂等）
-7. `pending_purchase`, `pending_assignment`, **`pending_handoff`**（handoff 是 1a 交付内容；`pending_topup` 是 1b；`pending_dissolution` 也是 1a）
+7. `pending_purchase`, `pending_assignment`, **`pending_handoff`**, **`pending_dissolution`**（都是 1a；`pending_topup` 是 1b）
+
+**数 19 的口径**：1(4) + 2(2) + 3(2) + 4(3) + 5(3) + 6(1) + 7(4) = **19**。
+`sprint-1a-backend.md` Iss #3 和「交付验收」都已同步成 19 —— 早先那边写 12 / 16 是漏表（漏的 `session` / `idempotency_record` / 四张 `pending_*` 是后面 issue 的硬依赖）。
 
 **1b 加**：`cdk`, `cdk_redemption`, `payment_order`
 
@@ -631,7 +639,7 @@ capability_slot / pull_round_capability （阶段 2c 起写）
 
 ## 19. HTTP 幂等 · `idempotency_record`
 
-见 `09-transactions.md § 6` 完整说明。
+见 `09-transactions.md § 7` 完整说明。
 
 ```sql
 CREATE TABLE idempotency_record (
@@ -658,7 +666,7 @@ CREATE TABLE idempotency_record (
 
 ## 20. 状态机持久化表 · `pending_purchase` / `pending_assignment` / `pending_topup`
 
-见 `09-transactions.md § 2/3/4/5` 完整状态定义。
+见 `09-transactions.md § 2/3/4/5/6` 完整状态定义。
 
 ### `pending_purchase`
 
@@ -673,7 +681,9 @@ CREATE TABLE pending_purchase (
   client_order_id          TEXT NOT NULL,                 -- vendor 幂等键 (32 hex)
   count_requested          INTEGER NOT NULL,
   reserved_amount          INTEGER NOT NULL,              -- 冻结的积分
-  status                   TEXT NOT NULL,                 -- initial | reserved | purchased | imported | completed | cancelled_reserve | need_recover_vendor | need_manual
+  status                   TEXT NOT NULL,                 -- initial | reserved | purchasing | purchased | imported | completed | cancelled_reserve | need_recover_vendor | need_manual
+                                                            -- ★ purchasing = 请求已发 vendor、响应未确认（09-transactions §2.1 · P0-1）
+                                                            --   崩在这个状态**不能直接释放冻结** —— vendor 可能已扣款
   vendor_order_id          TEXT,                          -- purchased 后填
   pull_round_id            TEXT,                          -- completed 时关联到 pull_round
   error                    TEXT,
@@ -712,7 +722,7 @@ CREATE TABLE pending_assignment (
 
 **索引**：`(status, updated_at)`, `(passenger_id, created_at)`。
 
-### `pending_handoff` （P0 修补 · 两阶段 token 交付）
+### `pending_handoff` （P0 修补 · 三段式 token 交付）
 
 见 `09-transactions.md § 4` 完整状态定义。
 

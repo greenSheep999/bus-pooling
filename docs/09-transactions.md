@@ -14,7 +14,7 @@
 |---|---|
 | **拉号** (`bus.pull` / `me/pull`) | §2 `pending_purchase` |
 | **派去向 · 进车 / 推 passengerpool** (`pull-records/assign`) | §3 `pending_assignment` |
-| **handoff · 拿走**（两阶段 token） | §4 `pending_handoff` |
+| **handoff · 拿走**（三段式 token） | §4 `pending_handoff` |
 | **充值** (`me/topup`) | §5 `pending_topup` |
 | **Bus 解散**（批量号迁移） | §5.5 `pending_dissolution` |
 
@@ -136,27 +136,27 @@ initial → external_done → status_updated → completed
 
 **幂等**：客户端带 `X-Idempotency-Key`；服务端查 `idempotency_record`（§6）判是否重放。
 
-## 4. handoff 状态机 · `pending_handoff` · 两阶段 Token 交付（P0-3 修补）
+## 4. handoff 状态机 · `pending_handoff` · 三段式 Token 交付（P0-3 修补）
 
 **问题背景**（codex P0-3）：单次调用 handoff 有可靠交付漏洞——HTTP 响应可能在网络中断线，服务端已 DELETE credential + 返回明文但客户端没收到 → **明文永久丢失**。
 
-**解决方案**：**两阶段 token 交付**——先发放 download_token；用户显式 fulfill；客户端显式 confirm 才真 DELETE。
+**解决方案**：**三段式 token 交付**——先发放 download_token；用户显式 fulfill；客户端显式 confirm 才真 DELETE。
 
 ### 状态
 
 ```
                     ┌──────────────┐
-                    │   initial    │  API 收到 handoff-init 请求
+                    │   initial    │  API 收到 POST /me/handoff 请求
                     └──────┬───────┘
                            ▼
                     ┌──────────────┐
                     │  token_issued│  已生成 download_token（32 hex）+ TTL 5 分钟
                     └──────┬───────┘   housepool 保留 credential，disabled=true
-                           ▼ (用户 GET /handoff-fulfill/{token})
+                           ▼ (用户 GET /me/handoff/{token})
                     ┌──────────────┐
                     │  fulfilled   │  明文已返回（幂等：token TTL 内可多次 GET）
                     └──────┬───────┘   credential 仍在 housepool
-                           ▼ (客户端 POST /handoff-confirm/{token})
+                           ▼ (客户端 POST /me/handoff/{token}/confirm)
                     ┌──────────────┐
                     │  confirmed   │  客户端确认已收到 → 触发 DELETE
                     └──────┬───────┘
@@ -166,14 +166,14 @@ initial → external_done → status_updated → completed
                     └──────────────┘
 
 失败分支：
-   token_issued  ─5min TTL 到期→  expired          （credential 复原 disabled，用户可重发 handoff-init）
+   token_issued  ─5min TTL 到期→  expired          （credential 复原 disabled，用户可重新 POST /me/handoff）
    fulfilled     ─5min 未 confirm→ expired_after_fulfill  （同上，credential 仍在，可重来）
    confirmed     ─DELETE fail 3次→ need_manual     （报警）
 ```
 
 ### 三个 API 端点
 
-- `POST /api/me/pull-records/{id}/handoff-init` · 发放 token
+- `POST /api/me/handoff` · 发放 token
   - 请求：`{ credential_ids: [...] }`
   - 返回：`{ download_token: "01H...", expires_at: "..." }`
   - 生成 `pending_handoff` 行，`status: token_issued`
@@ -204,7 +204,7 @@ initial → external_done → status_updated → completed
 
 **推荐流**：
 ```javascript
-const { download_token } = await POST('/pull-records/X/handoff-init', { credential_ids })
+const { download_token } = await POST('/me/handoff', { credential_ids })
 const { keys } = await GET(`/handoff/${download_token}`)  // 明文（可断线重试）
 displayToUser(keys)
 await POST(`/handoff/${download_token}/confirm`)  // 确认，触发 DELETE
@@ -254,7 +254,7 @@ CREATE TABLE pending_dissolution (
 
 **恢复**：janitor 扫 `moving` 超时 → 继续未完成的号迁移；`failed_count > 3` → `need_manual`。
 
-## 5. 充值状态机 · `pending_topup`
+## 6. 充值状态机 · `pending_topup`
 
 **跨系统**：payment-gateway（外部）· wallet（SQLite）。
 
@@ -269,7 +269,7 @@ initial → gateway_ordered → gateway_paid → credited → completed
 
 payment-gateway webhook 是主推进器；我方 janitor 兜底轮询状态。
 
-## 6. `idempotency_record` 表设计
+## 7. `idempotency_record` 表设计
 
 ```sql
 CREATE TABLE idempotency_record (
@@ -294,7 +294,7 @@ CREATE TABLE idempotency_record (
 
 **handoff 特殊**：`response_body` 里**永远不含 credential 明文**；重放时只回状态和 `credential_ids`。
 
-## 7. wallet 并发控制
+## 8. wallet 并发控制
 
 **旧设计（错）**：`SELECT balance FROM wallet ... → 判够 → UPDATE`（并发多请求可能都通过检查）。
 
@@ -323,7 +323,7 @@ ALTER TABLE wallet ADD COLUMN reserved INTEGER NOT NULL DEFAULT 0;
 **冻结释放**：`reserved -= X; balance += X`（原子）。
 **冻结转消费**：`reserved -= X; ledger 落 -X`（原子）。
 
-## 8. janitor / 恢复任务
+## 9. janitor / 恢复任务
 
 **目的**：应对进程崩溃、网络中断、外部系统超时。
 
@@ -342,31 +342,39 @@ ALTER TABLE wallet ADD COLUMN reserved INTEGER NOT NULL DEFAULT 0;
 
 **报警**：任何状态 → `need_manual` 时立即报警（阶段 1 简单：写 log + 邮件）。
 
-## 9. `06-db-schema.md` 要新增的表
+## 10. `06-db-schema.md` 要新增的表
 
 （`06-db-schema.md` 会同步补上，本文只列必需）
 
-- `pending_purchase`（拉号状态机）
-- `pending_assignment`（派去向状态机；含 handoff）
-- `pending_topup`（充值状态机）
+- `pending_purchase`（拉号状态机 · **含 `purchasing` 中间态**）
+- `pending_assignment`（派去向状态机 · **只管 into_bus / push_pool**，handoff 独立成表）
+- **`pending_handoff`**（handoff 三段式 · §4 · 原来这里漏了）
+- **`pending_dissolution`**（Bus 解散批量迁移 · §5 · 原来这里漏了）
+- `pending_topup`（充值状态机 · 1b）
 - `idempotency_record`（HTTP 幂等）
 - `wallet.reserved` 字段（并发控制）
 
-## 10. 不做的事（阶段 1）
+> `06-db-schema.md §Migration 1a` 已按 **19 张表**同步（含上面五张 `pending_*` 里的四张，`pending_topup` 是 1b）。
+
+## 11. 不做的事（阶段 1）
 
 - **不实现两阶段提交** / **不引入分布式事务库** —— SQLite 单机，状态机 + janitor + 幂等足够
 - **不做 Saga 框架** —— 状态机是"轻量 Saga"，直接写不用框架
 - **不做多进程消费** —— 阶段 1 单进程；janitor 是单个 goroutine
 
-## 11. 阶段推进
+## 12. 阶段推进
 
-- **1a**（sprint-1a-frontend 前端 + sprint-1a-backend 后端）：`pending_purchase`（含 `purchasing` 中间态）+ `wallet.reserved` + `idempotency_record` + `pending_handoff` + `pending_dissolution` + janitor
-- **1a**（同）：`pending_handoff`（阶段 1a 唯一的 assign 场景）
+- **1a**：`pending_purchase`（含 `purchasing` 中间态）+ `wallet.reserved` + `idempotency_record` + `pending_handoff` + `pending_dissolution` + janitor
+- **1a**：**`pending_assignment` 的 `into_bus` 分支**（进车要改 housepool group，是跨系统写，没状态机就没有崩溃恢复）
 - **1b**：`pending_topup`（充值渠道）
-- **1c**：`pending_assignment` 全形态（进车 / 推 passengerpool）
+- **1c**：`pending_assignment` 的 `push_pool` 分支（推 passengerpool 是真的外部 HTTP，1a 走 mock 通道）
 - **1d 之后**：状态机应对补车链条（deathwatch → new pending_purchase）
 
-## 12. 参考
+> **修订**：本节原写「1a 唯一的 assign 场景是 handoff」+「`pending_assignment` 全形态 1c」，
+> 但 `sprint-1a-backend` 矩阵把 `POST /me/pull-records/assign` 标成 1a 必做且「501 不可接受」，
+> Iss #11 也要实现 into_bus 分支。两处对立 —— 按 sprint 走：**into_bus 是 1a，push_pool 是 1c**。
+
+## 13. 参考
 
 - codex review 的 5 个真问题里的 #1 · #2 · #3 都在本文档解决
 - 补偿设计参考：Sagas Pattern · Outbox Pattern（但本项目不引入框架，手写状态机）

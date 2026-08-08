@@ -130,7 +130,7 @@
  │        │              │              │                                           │
  │        │              │              │  号价 P × 5 pass-through                  │
  │        │              │              │  按 bus 成员比例分摊                       │
- │        │              │              │  服务费固定 × 成员数                       │
+ │        │              │              │  服务费按 §3 那条链算（各成员按 share_pct 分摊）                       │
  │        │              │              │  → wallet 扣 + ledger 落                   │
  │        │              │              │                                           │
  │        │              │              │  BatchImport → housepool                  │
@@ -393,7 +393,7 @@ delivery       passengerpool.kirors      乘客的号池（外部）
  │              │              │◄───────────┤                            │
  │              │              │                                         │
  │              │              │  号价 × 10 pass-through                 │
- │              │              │  服务费 1 × 10（每号一轮）              │
+ │              │              │  服务费 = 链上最后一层的增量（`decisions §8.34`）              │
  │              │              │  → wallet 扣 + ledger 落                │
  │              │              │                                         │
  │              │              │  BatchImport → housepool                │
