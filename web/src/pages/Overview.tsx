@@ -5,7 +5,7 @@ import {
   TrendingDown, Users, Wallet,
 } from "lucide-react";
 import {
-  useActivities, useOverview, useStock, useTrend, useVendorStats,
+  useActivities, useMe, useOverview, useStock, useTrend, useVendorStats,
 } from "@/api/hooks";
 import { KpiCard } from "@/components/KpiCard";
 import { TrendChart, TrendLegend } from "@/components/TrendChart";
@@ -14,14 +14,12 @@ import {
   BareHead, BareList, BareRow, Card, Chip, Label, Meter, Muted, SectionHead, Segmented, Stat,
 } from "@/components/ui/primitives";
 import { MicroStat, OwnerBadge } from "@/components/ui/tags";
-import { Button } from "@/components/ui/button";
 import { LoadMoreButton } from "@/components/ui/load-more-button";
 import {
   Popover, PopoverContent, PopoverItem, PopoverSectionLabel, PopoverSeparator, PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  cn, fmtCredits, fmtDelta, fmtK, fmtLifespan, signedToneClass, toCredits,
-  vendorColor, vendorName,
+  cn, fmtCredits, fmtDelta, fmtK, fmtLifespan, signedToneClass, toCredits, vendorColor, vendorLabel,
 } from "@/lib/utils";
 import type { Activity, Destination, TimeRange, TrendMetric } from "@/types";
 
@@ -229,6 +227,7 @@ function useNowSecond() {
 }
 
 export default function Overview() {
+  const { data: me } = useMe();
   const [range, setRange] = useState<TimeRange>("30d");
   const [metric, setMetric] = useState<TrendMetric>("credits");
   const [scope, setScope] = useState<Scope>({ kind: "all" });
@@ -522,7 +521,7 @@ export default function Overview() {
                 buses={(ov?.buses.items ?? []).map((b) => ({ id: b.id, name: b.name }))}
                 vendors={(vendors?.stats ?? [])
                   .filter((v) => !v.out_of_stock)
-                  .map((v) => ({ id: v.vendor_id, name: vendorName(v.vendor_id) }))}
+                  .map((v) => ({ id: v.vendor_id, name: vendorLabel(v.vendor_id, !!me?.invited) }))}
               />
               <Segmented options={METRICS} value={metric} onChange={setMetric} />
             </div>
@@ -579,7 +578,7 @@ export default function Overview() {
                         v.out_of_stock && "text-fg-tertiary",
                       )}
                     >
-                      {vendorName(v.vendor_id)}
+                      {vendorLabel(v.vendor_id, !!me?.invited)}
                     </span>
                     {v.rank === 1 && <MicroStat tone="ok">最优</MicroStat>}
                     {v.out_of_stock && <MicroStat tone="danger">缺货</MicroStat>}
@@ -737,7 +736,7 @@ export default function Overview() {
                       noData ? "text-fg-tertiary" : "text-fg-secondary",
                     )}
                   >
-                    {vendorName(s.vendor_id)}
+                    {vendorLabel(s.vendor_id, !!me?.invited)}
                   </span>
                   <span
                     className={cn(

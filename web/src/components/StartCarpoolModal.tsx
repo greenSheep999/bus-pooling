@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Info, Sparkles, Zap } from "lucide-react";
-import { useCreateBus, useVendorStats } from "@/api/hooks";
+import {
+  useCreateBus, useMe, useVendorStats,
+} from "@/api/hooks";
 import {
   Dialog,
   DialogBody,
@@ -24,7 +26,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { vendorName } from "@/lib/utils";
+import {
+  vendorLabel,
+} from "@/lib/utils";
 
 /** 发起拼车模态：建车 + 首次拉号一步完成
     - 基本：车名 · 数量 · vendor（可让系统选 · 同时作为策略里的 preferred_vendor）· count=1 单价提示
@@ -33,6 +37,7 @@ import { vendorName } from "@/lib/utils";
 export function StartCarpoolModal({
   open, onClose,
 }: { open: boolean; onClose: () => void }) {
+  const { data: me } = useMe();
   const nav = useNavigate();
   const createBus = useCreateBus();
   const { data: vendors } = useVendorStats();
@@ -120,7 +125,7 @@ export function StartCarpoolModal({
                     <SelectItem value="auto">让系统选（按有效成本比价）</SelectItem>
                     {availableVendors.map((v) => (
                       <SelectItem key={v.vendor_id} value={v.vendor_id}>
-                        {vendorName(v.vendor_id)}
+                        {vendorLabel(v.vendor_id, !!me?.invited)}
                       </SelectItem>
                     ))}
                   </SelectContent>

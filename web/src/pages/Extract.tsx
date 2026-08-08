@@ -1,31 +1,146 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, KeyRound } from "lucide-react";
-import { useDownstream, usePullRecords } from "@/api/hooks";
+import {
+  AlertTriangle, ArrowRight, Bus as BusIcon, Check, Download, KeyRound, Send,
+} from "lucide-react";
+/** 品牌幽灵 · viewBox 精确 = 幽灵实际边界（无透明留白）· 外层 className 控大小和位置
+ *  viewBox 56×75（比例 ≈ 3:4）· className 传 w/h 保持这个比例 */
+const BrandGhost = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="22 14 59 77" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+    {/* 脸 · 白 */}
+    <path d="M34.4585 71.0686C27.2879 86.9479 42.5607 90.934 53.8257 81.6404C57.1402 92.0605 69.5533 84.2833 74.016 76.2029C83.8296 58.3955 79.8652 40.2415 78.847 36.4937C71.8713 10.9525 36.9932 10.9092 30.9924 36.6237C29.5843 41.1297 29.5626 46.2423 28.7827 51.5498C28.3928 54.2361 28.0895 55.9475 27.0713 58.7638C26.4647 60.3885 25.6632 61.8183 24.3634 64.2446C22.3703 68.0141 23.2152 75.2713 33.527 71.5019L34.5019 71.0686H34.4585Z" fill="#fff" />
+    {/* 左眼 · 黑 */}
+    <path d="M55.1688 47.5639C52.3092 47.5639 51.876 44.1411 51.876 42.1047C51.876 40.2633 52.2009 38.8119 52.8292 37.8804C53.3708 37.0571 54.1723 36.6455 55.1688 36.6455C56.1653 36.6455 57.0319 37.0571 57.6385 37.902C58.3317 38.8552 58.7 40.3067 58.7 42.1047C58.7 45.5276 57.3785 47.5639 55.1905 47.5639H55.1688Z" fill="#000" />
+    {/* 右眼 · 黑 */}
+    <path d="M66.9319 47.5639C64.0723 47.5639 63.6391 44.1411 63.6391 42.1047C63.6391 40.2633 63.964 38.8119 64.5922 37.8804C65.1338 37.0571 65.9354 36.6455 66.9319 36.6455C67.9284 36.6455 68.795 37.0571 69.4015 37.902C70.0948 38.8552 70.463 40.3067 70.463 42.1047C70.463 45.5276 69.1416 47.5639 66.9536 47.5639H66.9319Z" fill="#000" />
+  </svg>
+);
+import {
+  useAssignEvents, useDownstream, useExtractEvents, useMe, usePullRecords,
+} from "@/api/hooks";
 import { AssignModal } from "@/components/AssignModal";
-import { PullExtractModal } from "@/components/PullExtractModal";
+import { PullExtractForm } from "@/components/PullExtractForm";
 import {
   BareHead, BareList, BareRow, Card, Chip, SectionHead,
 } from "@/components/ui/primitives";
 import { Alert } from "@/components/ui/alert";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TokenTag, VendorTag } from "@/components/ui/tags";
-import { cn, fmtCredits, fmtLifespan, fmtTime, vendorName } from "@/lib/utils";
-import type { Credential } from "@/types";
+import {
+  cn, fmtCredits, fmtLifespan, fmtTime, vendorLabel,
+} from "@/lib/utils";
+import type { AssignEvent, Credential, ExtractEvent, PullResult } from "@/types";
+
+type TabKey = "pending" | "extract-history" | "assign-history";
+
+const TABS: { value: TabKey; label: string }[] = [
+  { value: "pending", label: "待派" },
+  { value: "extract-history", label: "提取历史" },
+  { value: "assign-history", label: "派发历史" },
+];
+
 export default function Extract() {
   const { data: records } = usePullRecords();
   const { data: downstream } = useDownstream();
   const items = records?.items ?? [];
 
-  const [pullOpen, setPullOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [tab, setTab] = useState<TabKey>("pending");
 
   const selectedRecords = useMemo(
     () => items.filter((c) => selected.has(c.id)),
     [items, selected],
   );
 
+  const passengerpoolOk = !!downstream?.connected;
+
+  return (
+    <div className="space-y-section">
+      <AssignModal
+        open={assignOpen}
+        onClose={() => { setAssignOpen(false); setSelected(new Set()); }}
+        records={selectedRecords}
+        passengerpoolConnected={passengerpoolOk}
+      />
+
+      {/* Hero */}
+      <div className="min-w-0 space-y-2">
+        <h1 className="text-hero font-semibold">提取 key</h1>
+        <p className="text-fg-tertiary">
+          拉出来的 key 进"待派"列表 · 派 3 种去向：
+          <span className="mx-1"><TokenTag>进车</TokenTag></span>
+          <span className="mx-1"><TokenTag>推我的号池</TokenTag></span>
+          <span className="mx-1"><TokenTag>下载 txt · 拿走</TokenTag></span>
+        </p>
+      </div>
+
+      {/* 提号 · focal 大 card · 页面主操作面板 · 右上白色 K 幽灵半露出 card */}
+      <Card focal focalTone="brand" className="relative p-7">
+        {/* 品牌幽灵 · viewBox 56x75 (3:4) · 外框 w-40 h-52 · 右上角 · 装饰不可点 */}
+        <BrandGhost
+          aria-hidden
+          className="pointer-events-none absolute right-6 top-4 z-0 h-52 w-40 opacity-90"
+        />
+        {/* 内容层 · z-10 叠在幽灵上但 · 幽灵通过下方 form 卡的透明背景透出 */}
+        <div className="relative z-10">
+          <div className="mb-5 flex items-center gap-2.5">
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-subtle">
+              <KeyRound className="size-4 text-brand-strong" />
+            </span>
+            <div>
+              <h2 className="text-section font-semibold">提取新 key</h2>
+              <p className="text-label text-fg-tertiary">选 vendor 看上游 · 定数量和区域 · 拉一批</p>
+            </div>
+          </div>
+          <PullExtractForm />
+        </div>
+      </Card>
+
+      {!passengerpoolOk && (
+        <Alert tone="warn" icon={AlertTriangle} title="还没配置我的号池">
+          "推我的号池" 需要先在{" "}
+          <a href="/settings/downstream" className="font-semibold text-brand-strong hover:underline">
+            设置 · 我的号池
+          </a>
+          {" "}里配 URL 和 token
+        </Alert>
+      )}
+
+      {/* Tabs · 3 段 */}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className="space-y-6">
+        <TabsList>
+          {TABS.map((t) => (
+            <TabsTrigger key={t.value} value={t.value}>{t.label}</TabsTrigger>
+          ))}
+        </TabsList>
+
+        <TabsContent value="pending">
+          <PendingTab
+            items={items}
+            selected={selected}
+            setSelected={setSelected}
+            onAssign={() => setAssignOpen(true)}
+          />
+        </TabsContent>
+        <TabsContent value="extract-history"><ExtractHistoryTab /></TabsContent>
+        <TabsContent value="assign-history"><AssignHistoryTab /></TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+/* ─────────────── Tab · 待派 ─────────────── */
+
+function PendingTab({
+  items, selected, setSelected, onAssign,
+}: {
+  items: Credential[];
+  selected: Set<string>;
+  setSelected: React.Dispatch<React.SetStateAction<Set<string>>>;
+  onAssign: () => void;
+}) {
   const toggle = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -39,100 +154,79 @@ export default function Extract() {
     else setSelected(new Set(items.map((c) => c.id)));
   };
 
-  const passengerpoolOk = !!downstream?.connected;
+  const totalCredits = items.reduce((s, c) => s + c.credits_used, 0);
+  const vendors = new Set(items.map((c) => c.vendor_id)).size;
 
   return (
-    <div className="space-y-section">
-      <PullExtractModal open={pullOpen} onClose={() => setPullOpen(false)} />
-      <AssignModal
-        open={assignOpen}
-        onClose={() => { setAssignOpen(false); setSelected(new Set()); }}
-        records={selectedRecords}
-        passengerpoolConnected={passengerpoolOk}
-      />
-
-      {/* Hero */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div className="min-w-0 space-y-2">
-          <h1 className="text-hero font-semibold">提取 key</h1>
-          <p className="text-fg-tertiary">
-            单独拉号 · 拉出来的 key 进"待派"列表 · 之后你派 3 种去向：
-            <span className="mx-1"><TokenTag>进车</TokenTag></span>
-            <span className="mx-1"><TokenTag>推我的号池</TokenTag></span>
-            <span className="mx-1"><TokenTag>拿走</TokenTag></span>
-          </p>
-        </div>
-        <Button variant="brand" onClick={() => setPullOpen(true)} className="shrink-0">
-          <KeyRound />
-          提取 key
-        </Button>
-      </div>
-
-      {/* 待派列表 */}
-      <div className="space-y-5">
+    <Card className="p-7">
+      <div className="mb-4 flex items-baseline justify-between gap-4">
         <SectionHead
           title="待派 key"
-          sub={`共 ${items.length} 个 · 选中后派去向`}
+          sub={
+            items.length > 0 ? (
+              <>共 <span className="font-semibold tnum text-fg-secondary">{items.length}</span> 个 · 来自{" "}
+              <span className="font-semibold tnum">{vendors}</span> 家 vendor · 累计冻结{" "}
+              <span className="font-semibold tnum">{fmtCredits(totalCredits)}</span> 积分</>
+            ) : (
+              "选中后派去向"
+            )
+          }
           right={
             selected.size > 0 && (
-              <Button variant="brand" onClick={() => setAssignOpen(true)}>
+              <Button variant="brand" onClick={onAssign}>
                 派去向（<span className="tnum">{selected.size}</span>）
               </Button>
             )
           }
         />
-
-        {!passengerpoolOk && (
-          <Alert tone="warn" icon={AlertTriangle} title="还没配置我的号池">
-            "推我的号池" 需要先在{" "}
-            <a href="/settings/downstream" className="font-semibold text-brand-strong hover:underline">
-              设置 · 我的号池
-            </a>
-            {" "}里配 URL 和 token
-          </Alert>
-        )}
-
-        {items.length === 0 ? (
-          <Card className="p-12 text-center">
-            <p className="text-fg-tertiary">还没有待派 key · 点右上"提取 key"拉一批</p>
-          </Card>
-        ) : (
-          <Card className="p-4">
-            <div className="overflow-x-auto">
-              <div className="min-w-[640px]">
-                <BareHead>
-                  <span className="w-8 shrink-0 pl-2">
-                    <Checkbox
-                      checked={selected.size === items.length && items.length > 0}
-                      onCheckedChange={toggleAll}
-                    />
-                  </span>
-                  <span className="min-w-0 flex-1">key · vendor</span>
-                  <span className="w-20 shrink-0 text-center">寿命</span>
-                  <span className="w-24 shrink-0 text-center">已消耗</span>
-                  <span className="w-24 shrink-0 text-right">拉入时间</span>
-                </BareHead>
-                <BareList>
-                  {items.map((c) => (
-                    <RecordRow
-                      key={c.id} c={c}
-                      picked={selected.has(c.id)}
-                      onToggle={() => toggle(c.id)}
-                    />
-                  ))}
-                </BareList>
-              </div>
-            </div>
-          </Card>
-        )}
       </div>
-    </div>
+
+      {items.length === 0 ? (
+        <div className="grid place-items-center gap-3 py-12 text-center">
+          <span className="grid size-10 place-items-center rounded-full bg-bg-elevated">
+            <KeyRound className="size-4 text-fg-tertiary" />
+          </span>
+          <div>
+            <div className="font-semibold">还没有待派 key</div>
+            <p className="mt-0.5 text-label text-fg-tertiary">点右上「提取 key」拉一批</p>
+          </div>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <div className="min-w-[720px]">
+            <BareHead>
+              <span className="w-8 shrink-0 pl-2">
+                <Checkbox
+                  checked={selected.size === items.length && items.length > 0}
+                  onCheckedChange={toggleAll}
+                />
+              </span>
+              <span className="min-w-0 flex-1">key · vendor</span>
+              <span className="w-14 shrink-0 text-center">区域</span>
+              <span className="w-16 shrink-0 text-center">寿命</span>
+              <span className="w-20 shrink-0 text-center">已消耗</span>
+              <span className="w-24 shrink-0 text-right">拉入</span>
+            </BareHead>
+            <BareList>
+              {items.map((c) => (
+                <RecordRow
+                  key={c.id} c={c}
+                  picked={selected.has(c.id)}
+                  onToggle={() => toggle(c.id)}
+                />
+              ))}
+            </BareList>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 
 function RecordRow({
   c, picked, onToggle,
 }: { c: Credential; picked: boolean; onToggle: () => void }) {
+  const { data: me } = useMe();
   return (
     <BareRow onClick={onToggle} className={cn(picked && "bg-brand-subtle/40")}>
       <span className="w-8 shrink-0 pl-2">
@@ -146,13 +240,21 @@ function RecordRow({
         <span className="truncate font-mono text-label font-medium text-fg-secondary">
           {c.key_masked}
         </span>
-        <VendorTag name={vendorName(c.vendor_id)} />
-        <Chip tone="warn" className="shrink-0">待派</Chip>
+        <VendorTag name={vendorLabel(c.vendor_id, !!me?.invited)} />
       </span>
-      <span className="w-20 shrink-0 text-center text-label font-medium tnum text-fg-secondary">
+      <span className="w-14 shrink-0 text-center">
+        {c.region ? (
+          <span className="text-label font-medium text-fg-secondary">
+            {c.region.startsWith("us") ? "us" : c.region.startsWith("eu") ? "eu" : c.region}
+          </span>
+        ) : (
+          <span className="text-fg-tertiary">—</span>
+        )}
+      </span>
+      <span className="w-16 shrink-0 text-center text-label font-medium tnum text-fg-secondary">
         {fmtLifespan(c.lifespan_seconds)}
       </span>
-      <span className="w-24 shrink-0 text-center text-label font-semibold tnum">
+      <span className="w-20 shrink-0 text-center text-label font-semibold tnum">
         {fmtCredits(c.credits_used)}
         <span className="ml-0.5 font-medium text-fg-tertiary">积分</span>
       </span>
@@ -163,3 +265,203 @@ function RecordRow({
   );
 }
 
+/* ─────────────── Tab · 提取历史 ─────────────── */
+
+const EXTRACT_RESULT: Record<PullResult, { label: string; tone: "ok" | "warn" | "danger" | "brand" }> = {
+  success: { label: "成功", tone: "ok" },
+  partial: { label: "部分", tone: "warn" },
+  failed: { label: "失败", tone: "danger" },
+  refunded: { label: "退款", tone: "brand" },
+};
+
+function ExtractHistoryTab() {
+  const { data } = useExtractEvents();
+  const events = data?.items ?? [];
+
+  return (
+    <Card className="p-7">
+      <div className="mb-4">
+        <h2 className="text-section font-semibold">提取历史</h2>
+        <p className="text-label text-fg-tertiary">
+          每次拉号操作 · 共 <span className="font-semibold tnum text-fg-secondary">{events.length}</span> 次
+        </p>
+      </div>
+
+      {events.length === 0 ? (
+        <div className="py-12 text-center text-label text-fg-tertiary">还没有提取历史</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <div className="min-w-[760px]">
+            <BareHead>
+              <span className="w-[92px] shrink-0">时间</span>
+              <span className="w-16 shrink-0">结果</span>
+              <span className="min-w-0 flex-1">vendor · 区域</span>
+              <span className="w-24 shrink-0 text-center">数量</span>
+              <span className="w-24 shrink-0 text-center">派发进度</span>
+              <span className="w-24 shrink-0 text-right">花费</span>
+            </BareHead>
+            <BareList>
+              {events.map((e) => <ExtractEventRow key={e.id} e={e} />)}
+            </BareList>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ExtractEventRow({ e }: { e: ExtractEvent }) {
+  const { data: me } = useMe();
+  const res = EXTRACT_RESULT[e.result];
+  const failed = e.result === "failed";
+  return (
+    <BareRow>
+      <span className="w-[92px] shrink-0 text-label font-medium tnum text-fg-tertiary">
+        {fmtTime(e.created_at)}
+      </span>
+      <span className="w-16 shrink-0">
+        <Chip tone={res.tone} dot>{res.label}</Chip>
+      </span>
+      <span className="flex min-w-0 flex-1 items-center gap-2">
+        <VendorTag name={vendorLabel(e.vendor_id, !!me?.invited)} size="sm" />
+        {e.zone && (
+          <TokenTag>
+            {e.zone}
+          </TokenTag>
+        )}
+        {!e.zone && <span className="text-label text-fg-tertiary">全区</span>}
+      </span>
+      <span className="w-24 shrink-0 text-center text-label font-medium tnum">
+        {failed ? (
+          <span className="text-fg-tertiary">
+            0 / <span className="text-fg-secondary">{e.count_requested}</span>
+          </span>
+        ) : (
+          <>
+            <span className="font-semibold text-fg">{e.count_purchased}</span>
+            {e.count_purchased !== e.count_requested && (
+              <span className="text-fg-tertiary"> / {e.count_requested}</span>
+            )}
+            <span className="ml-0.5 text-fg-tertiary"> 个</span>
+          </>
+        )}
+      </span>
+      <span className="w-24 shrink-0 text-center text-label">
+        {failed ? (
+          <span className="text-fg-tertiary">—</span>
+        ) : e.pending_count > 0 ? (
+          <span className="text-fg-secondary">
+            待派 <span className="font-semibold tnum">{e.pending_count}</span>
+          </span>
+        ) : (
+          <span className="text-ok-fg">已全派</span>
+        )}
+      </span>
+      <span
+        className={cn(
+          "w-24 shrink-0 text-right font-semibold tnum",
+          e.total_cost < 0 ? "text-fg" : "text-fg-tertiary",
+        )}
+      >
+        {e.total_cost === 0 ? "—" : fmtCredits(e.total_cost, { sign: true })}
+        {e.total_cost !== 0 && <span className="ml-0.5 font-medium text-fg-tertiary">积分</span>}
+      </span>
+    </BareRow>
+  );
+}
+
+/* ─────────────── Tab · 派发历史 ─────────────── */
+
+const DEST_META: Record<
+  AssignEvent["destination"],
+  { label: string; icon: React.ComponentType<{ className?: string }>; tone: "brand" | "neutral" | "danger" }
+> = {
+  into_bus:  { label: "进车",       icon: BusIcon,  tone: "brand" },
+  push_pool: { label: "推我的号池", icon: Send,     tone: "neutral" },
+  handoff:   { label: "下载拿走",   icon: Download, tone: "danger" },
+};
+
+function AssignHistoryTab() {
+  const { data } = useAssignEvents();
+  const events = data?.items ?? [];
+
+  return (
+    <Card className="p-7">
+      <div className="mb-4">
+        <h2 className="text-section font-semibold">派发历史</h2>
+        <p className="text-label text-fg-tertiary">
+          每次派动作 · 共 <span className="font-semibold tnum text-fg-secondary">{events.length}</span> 次
+        </p>
+      </div>
+
+      {events.length === 0 ? (
+        <div className="py-12 text-center text-label text-fg-tertiary">还没有派发历史</div>
+      ) : (
+        <div className="space-y-3">
+          {events.map((e) => <AssignEventCard key={e.id} e={e} />)}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function AssignEventCard({ e }: { e: AssignEvent }) {
+  const { data: me } = useMe();
+  const meta = DEST_META[e.destination];
+  const Icon = meta.icon;
+
+  return (
+    <div className="rounded-xl border border-hairline bg-bg p-4">
+      <div className="flex flex-wrap items-center gap-3">
+        {/* 去向 icon 底 · tone 区分视觉 */}
+        <span
+          className={cn(
+            "grid size-8 shrink-0 place-items-center rounded-lg",
+            meta.tone === "brand" && "bg-brand-subtle text-brand-strong",
+            meta.tone === "danger" && "bg-danger-bg text-danger-fg",
+            meta.tone === "neutral" && "bg-bg-elevated text-fg-secondary",
+          )}
+        >
+          <Icon className="size-4" />
+        </span>
+
+        {/* 主信息：去向 label + bus 名（如果有） */}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <span className="font-semibold">{meta.label}</span>
+            {e.bus_name && (
+              <>
+                <ArrowRight className="size-3.5 text-fg-tertiary" />
+                <span className="font-medium text-fg-secondary">「{e.bus_name}」</span>
+              </>
+            )}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-label text-fg-tertiary">
+            <span className="tnum font-semibold text-fg-secondary">{e.count}</span> 个号 ·
+            {e.vendors.map((v) => (
+              <VendorTag key={v} name={vendorLabel(v, !!me?.invited)} />
+            ))}
+            <span>· {fmtTime(e.created_at)}</span>
+          </div>
+        </div>
+
+        {/* 状态标记 · handoff 特殊 */}
+        {e.destination === "handoff" && (
+          <Chip tone="danger" icon={<Check className="size-3" />}>已下载</Chip>
+        )}
+      </div>
+
+      {/* 号明细（默认收起 · 点开展开）· 阶段 1a 先直接展开 · 后续加折叠 */}
+      <div className="mt-3 flex flex-wrap gap-1.5 border-t border-hairline pt-3">
+        {e.credential_maskeds.map((m, i) => (
+          <span
+            key={i}
+            className="inline-flex items-center gap-1 rounded-lg bg-bg-elevated px-2 py-0.5 text-[10px] font-mono font-medium text-fg-secondary"
+          >
+            {m}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}

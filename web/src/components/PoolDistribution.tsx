@@ -1,6 +1,9 @@
 import type { Credential } from "@/types";
+import { useMe } from "@/api/hooks";
 import { Label } from "./ui/primitives";
-import { vendorColor, vendorName } from "@/lib/utils";
+import {
+  vendorColor, vendorLabel,
+} from "@/lib/utils";
 
 /** 号池分布 · 按 vendor 分段 · 沿用概览拼车卡的紫渐深条
     - full · 展示分段条 + 明细分行（BusCard 紧凑卡用）
@@ -12,6 +15,7 @@ export function PoolDistribution({
   variant?: "full" | "compact";
   label?: string;
 }) {
+  const { data: me } = useMe();
   const alive = (credentials ?? []).filter((c) => c.status === "alive");
   const total = alive.length;
 
@@ -51,7 +55,7 @@ export function PoolDistribution({
                   className="size-[7px] shrink-0 rounded-full"
                   style={{ backgroundColor: shadeFor(i) }}
                 />
-                <span className="font-medium text-fg-secondary">{vendorName(v.id)}</span>
+                <span className="font-medium text-fg-secondary">{vendorLabel(v.id, !!me?.invited)}</span>
                 <span className="font-semibold tnum text-fg-tertiary">{v.n}</span>
               </span>
             ))}
@@ -86,7 +90,7 @@ export function PoolDistribution({
                 style={{ backgroundColor: shadeFor(i) }}
               />
               <span className="min-w-0 flex-1 truncate font-medium text-fg-secondary">
-                {vendorName(v.id)}
+                {vendorLabel(v.id, !!me?.invited)}
               </span>
               <span className="font-semibold tnum">{v.n} 个</span>
             </div>

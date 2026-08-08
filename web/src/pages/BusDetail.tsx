@@ -4,7 +4,7 @@ import {
   Activity as ActivityIcon, ArrowLeft, Bus as BusIcon, Check, KeyRound, Send, Settings, X, Zap, ZapOff,
 } from "lucide-react";
 import {
-  useBus, useBusCredentials, useBusPulls, useDownstream,
+  useBus, useBusCredentials, useBusPulls, useDownstream, useMe,
 } from "@/api/hooks";
 import {
   BareHead, BareList, BareRow, Card, Chip,
@@ -18,7 +18,7 @@ import { BusSettingsModal } from "@/components/BusSettingsModal";
 import { BusStats } from "@/components/BusStats";
 import { EditStrategyPanel } from "@/components/EditStrategyPanel";
 import {
-  cn, fmtCredits, fmtLifespan, fmtTime, vendorName,
+  cn, fmtCredits, fmtLifespan, fmtTime, vendorLabel,
 } from "@/lib/utils";
 import type { Credential, PullResult, PullRound, PushState } from "@/types";
 
@@ -200,6 +200,7 @@ function TabCredentials({ busId }: { busId: string }) {
 }
 
 function CredentialRow({ c }: { c: Credential }) {
+  const { data: me } = useMe();
   const alive = c.status === "alive";
   return (
     <BareRow>
@@ -213,7 +214,7 @@ function CredentialRow({ c }: { c: Credential }) {
         <span className="truncate font-mono text-label font-medium text-fg-secondary">
           {c.key_masked}
         </span>
-        <VendorTag name={vendorName(c.vendor_id)} />
+        <VendorTag name={vendorLabel(c.vendor_id, !!me?.invited)} />
       </span>
 
       <span className="w-20 shrink-0 text-center text-label font-medium tnum text-fg-secondary">
@@ -290,6 +291,7 @@ function TabPulls({ busId }: { busId: string }) {
 }
 
 function PullRow({ r }: { r: PullRound }) {
+  const { data: me } = useMe();
   const res = RESULT[r.result];
   const failed = r.result === "failed";
   return (
@@ -304,14 +306,14 @@ function PullRow({ r }: { r: PullRound }) {
       <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
         {failed ? (
           <span className="truncate text-fg-tertiary">
-            未拉到号 · 尝试 {vendorName(r.vendor_id)} · {r.fail_reason ?? "缺货"}
+            未拉到号 · 尝试 {vendorLabel(r.vendor_id, !!me?.invited)} · {r.fail_reason ?? "缺货"}
           </span>
         ) : (
           <>
             <span className="shrink-0 text-fg-secondary">共入车</span>
             <span className="shrink-0 font-semibold tnum text-fg">{r.count_purchased}</span>
             <span className="shrink-0 text-fg-secondary">个号，从</span>
-            <VendorTag name={vendorName(r.vendor_id)} size="sm" />
+            <VendorTag name={vendorLabel(r.vendor_id, !!me?.invited)} size="sm" />
           </>
         )}
       </span>
@@ -447,6 +449,7 @@ function TabPushes({ busId }: { busId: string }) {
 function PushRow({
   e, targetHost,
 }: { e: PushEvent; targetHost: string | null }) {
+  const { data: me } = useMe();
   return (
     <BareRow>
       <span className="w-[92px] shrink-0 text-label font-medium tnum text-fg-tertiary">
@@ -463,7 +466,7 @@ function PushRow({
         <span className="truncate font-mono text-label font-medium text-fg-secondary">
           {e.keyMasked}
         </span>
-        <VendorTag name={vendorName(e.vendorId)} />
+        <VendorTag name={vendorLabel(e.vendorId, !!me?.invited)} />
       </span>
       <span className="flex min-w-0 flex-[1.1] items-center gap-2 text-label">
         <span className="text-fg-tertiary">→</span>

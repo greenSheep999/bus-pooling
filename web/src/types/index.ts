@@ -21,6 +21,10 @@ export interface Passenger {
   email: string;
   email_verified: boolean;
   created_at: ISOTime;
+  /** 注册时填过邀请码 · decisions §8.20
+   *  true  = 社群：看 vendor 真名 + 无加价
+   *  false = 散客：看 Vendor 01/02 + 默认加价（拉号时填消费码可免） */
+  invited: boolean;
 }
 
 export interface Wallet {
@@ -127,6 +131,85 @@ export interface PullRound {
   total_cost: Money; // 负=支出 正=退款
   fail_reason: string | null; // "缺货" / "vendor 500"
   created_at: ISOTime;
+}
+
+// ── 区域 · 上游 vendor 的 us/eu 区（有的 vendor 无区域）
+export type Zone = "us" | "eu";
+
+/** 系统派号推荐结果（auto 模式）· decisions §8.20
+ *  散客默认走这个 · 必须展示推荐到谁 + 最终价 + 库存质保成活率 · 不留空占位 */
+export interface AutoPickResult {
+  /** 推荐到的 vendor · 显示名已按身份处理（真名 or Vendor 0N） */
+  vendor_label: string;
+  /** 内部 id · 仅用于取色，不展示 */
+  vendor_id: string;
+  zone: Zone | null;
+  available: number;
+  /** 最终单价（已含所有附加费）· 不下发原价 */
+  unit_price: Money;
+  warranty_minutes: number;
+  max_per_order: number;
+  min_per_order: number;
+  avg_lifespan_seconds: number;
+  alive_rate_30d: number;
+  /** 为什么推荐它 · 一句人话（"库存足 · 成活率最高"） */
+  reason: string;
+}
+
+// ── 上游即时快照（PullExtractModal 展示 · docs/14 §4.3）
+export interface VendorStock {
+  vendor_id: string;
+  currency: "credits" | "cny_usd";         // 大多数是 credits · drop-kiro-ss 是混币
+  warranty_minutes: number;                 // 0 = 无质保
+  max_per_order: number;
+  min_per_order: number;
+  hold_cap_remaining: number | null;        // 91kiro 才有 · 其他家 null
+  zones: {
+    zone: Zone;
+    label: string;                          // "美国区" / "欧洲区"
+    enabled: boolean;
+    available: number;                      // 缺货 = 0
+    unit_price: Money;                      // microunit · 该区最便宜一档
+  }[];
+}
+
+// ── 我方历史统计（近 30 天 · UpstreamStatusPanel 展示）
+export interface VendorHistory {
+  vendor_id: string;
+  avg_lifespan_seconds: number;             // 平均活多久
+  alive_rate_30d: number;                   // 0-100 · 30 天成活率
+  total_pulled_30d: number;                 // 30 天累计拉过多少号
+}
+
+// ── 提取事件 · 每次拉号操作一条 · docs/14 §6.5
+export interface ExtractEvent {
+  id: string;
+  created_at: ISOTime;
+  vendor_id: string;
+  zone: Zone | null;                        // null = kiroapp-cc 无区域
+  count_requested: number;
+  count_purchased: number;
+  total_cost: Money;                        // 负 = 支出 · 0 = 缺货未扣
+  result: PullResult;                       // success / partial / failed / refunded
+  fail_reason: string | null;
+  /** 派发进度 · UI 派发历史 tab 展开明细用 */
+  assigned_count: number;                   // 已派几个
+  pending_count: number;                    // 待派几个
+}
+
+// ── 派发事件 · 每次派动作一条 · docs/14 §6.5
+export interface AssignEvent {
+  id: string;
+  created_at: ISOTime;
+  destination: "into_bus" | "push_pool" | "handoff";
+  bus_id: string | null;                    // into_bus 时的车 id
+  bus_name: string | null;
+  count: number;
+  /** credential id 数组 · 只是引用不含明文 · handoff 后 credential 已删也留元数据 */
+  credential_ids: string[];
+  /** UI 展示的 masked 数组（handoff 前的 masked · 拿走后仍能显示） */
+  credential_maskeds: string[];
+  vendors: string[];                        // 派的号涉及哪些 vendor
 }
 
 // ── 提取记录去向

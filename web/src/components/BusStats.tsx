@@ -4,10 +4,14 @@ import {
   Tooltip, XAxis, YAxis,
 } from "recharts";
 import { Users } from "lucide-react";
-import { useBusCredentials, useBusPulls, useDownstream } from "@/api/hooks";
+import {
+  useBusCredentials, useBusPulls, useDownstream, useMe,
+} from "@/api/hooks";
 import { Card, SectionHead } from "@/components/ui/primitives";
 import { Alert } from "@/components/ui/alert";
-import { fmtCredits, toCredits, vendorColor, vendorName } from "@/lib/utils";
+import {
+  fmtCredits, toCredits, vendorColor, vendorLabel,
+} from "@/lib/utils";
 import type { Credential, PullRound } from "@/types";
 
 /** BusDetail「数据」tab · 阶段 1a 时间维度 4 图 · decisions §8.19
@@ -69,6 +73,7 @@ function shortDay(dateISO: string): string {
 /* ─────────────── 图 1 · 拉号量柱图 · 按 vendor 分色堆叠 ─────────────── */
 
 function PullVolumeChart({ pulls }: { pulls: PullRound[] }) {
+  const { data: me } = useMe();
   /* 30 天按 vendor 分组 · Recharts 需要每天一个 row · 每个 vendor 一列 */
   const { data, vendors } = useMemo(() => {
     const days = last30DaysKeys();
@@ -133,7 +138,7 @@ function PullVolumeChart({ pulls }: { pulls: PullRound[] }) {
             {vendors.map((v) => (
               <span key={v} className="flex items-center gap-1.5 text-fg-secondary">
                 <span className="size-2 rounded-sm" style={{ backgroundColor: vendorColor(v) }} />
-                {vendorName(v)}
+                {vendorLabel(v, !!me?.invited)}
               </span>
             ))}
           </div>
@@ -417,6 +422,7 @@ function TooltipShell({ label, children }: { label?: string; children: React.Rea
 function StackedTooltip({
   active, payload, label, vendors, unit,
 }: TooltipProps & { vendors: string[]; unit: string }) {
+  const { data: me } = useMe();
   if (!active || !payload?.length) return null;
   const total = payload.reduce((s, p) => s + p.value, 0);
   if (total === 0) return null;
@@ -430,7 +436,7 @@ function StackedTooltip({
             return (
               <div key={v} className="flex items-center gap-2">
                 <span className="size-1.5 rounded-sm" style={{ backgroundColor: vendorColor(v) }} />
-                <span className="text-fg-secondary">{vendorName(v)}</span>
+                <span className="text-fg-secondary">{vendorLabel(v, !!me?.invited)}</span>
                 <span className="ml-auto font-semibold tnum">{val} {unit}</span>
               </div>
             );

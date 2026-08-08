@@ -1,7 +1,10 @@
 import { ArrowRight, Check, X } from "lucide-react";
+import { useMe } from "@/api/hooks";
 import { BareRow, Chip } from "./ui/primitives";
 import { TokenTag } from "./ui/tags";
-import { cn, fmtCredits, fmtLifespan, fmtTime, vendorName } from "@/lib/utils";
+import {
+  cn, fmtCredits, fmtLifespan, fmtTime, vendorLabel,
+} from "@/lib/utils";
 import type { Activity, PullResult, PullRound, PushState } from "@/types";
 
 /* ── 拉号轮次行 · 6 列 ── */
@@ -21,6 +24,7 @@ function PushCell({ state, ratio }: { state: PushState; ratio: string | null }) 
 }
 
 export function PullRow({ r }: { r: PullRound }) {
+  const { data: me } = useMe();
   const res = RESULT[r.result];
   const failed = r.result === "failed";
 
@@ -40,13 +44,13 @@ export function PullRow({ r }: { r: PullRound }) {
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {failed ? (
           <span className="truncate text-fg-tertiary">
-            未拉到号 · 尝试 {vendorName(r.vendor_id)} · {r.fail_reason}
+            未拉到号 · 尝试 {vendorLabel(r.vendor_id, !!me?.invited)} · {r.fail_reason}
           </span>
         ) : (
           <>
             <span className="font-semibold tnum">+{r.count_purchased}</span>
             <span className="text-fg-secondary">号</span>
-            <span className="text-fg-secondary">{vendorName(r.vendor_id)}</span>
+            <span className="text-fg-secondary">{vendorLabel(r.vendor_id, !!me?.invited)}</span>
             <ArrowRight className="size-3 shrink-0 text-fg-tertiary" />
             <span className="truncate font-medium">{r.bus_name}</span>
             {r.result === "refunded" && (

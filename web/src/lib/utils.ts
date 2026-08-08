@@ -78,6 +78,23 @@ export function vendorName(id: string): string {
   return VENDOR_NAME[id] ?? id;
 }
 
+/** vendor 匿名编号（散客视角）· decisions §8.20
+    无注册邀请码的用户看不到真名，只看 "AWS-Q Kiro Vendor 01"
+    编号顺序 = VENDOR_NAME 键顺序（跟 CLAUDE.md §1.1 六家列表一致）· 同一用户每次看到的编号一致 */
+const VENDOR_ANON_INDEX: Record<string, string> = Object.fromEntries(
+  Object.keys(VENDOR_NAME).map((id, i) => [
+    id,
+    `AWS-Q Kiro Vendor ${String(i + 1).padStart(2, "0")}`,
+  ]),
+);
+
+/** vendor 显示名 · 按身份决定真名还是匿名编号
+    @param invited 是否有注册邀请码（社群成员） */
+export function vendorLabel(id: string, invited: boolean): string {
+  if (invited) return vendorName(id);
+  return VENDOR_ANON_INDEX[id] ?? "AWS-Q Kiro Vendor";
+}
+
 export function vendorColor(id: string): string {
   return VENDOR_COLOR[id] ?? "#9147FF";
 }

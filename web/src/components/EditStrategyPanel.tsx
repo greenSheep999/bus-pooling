@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Save, Zap, ZapOff } from "lucide-react";
-import { useUpdateStrategy, useVendorStats } from "@/api/hooks";
+import {
+  useMe, useUpdateStrategy, useVendorStats,
+} from "@/api/hooks";
 import { Card, Chip } from "./ui/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +11,9 @@ import { Switch } from "@/components/ui/switch";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { toCredits, vendorName } from "@/lib/utils";
+import {
+  toCredits, vendorLabel,
+} from "@/lib/utils";
 import type { BusStrategy } from "@/types";
 
 /** 补车策略编辑 · decisions §8.6 · 策略跟车绑不是全局
@@ -17,6 +21,7 @@ import type { BusStrategy } from "@/types";
 export function EditStrategyPanel({
   busId, strategy,
 }: { busId: string; strategy: BusStrategy }) {
+  const { data: me } = useMe();
   const upd = useUpdateStrategy(busId);
   const { data: vendors } = useVendorStats();
   const availableVendors = (vendors?.stats ?? []).filter((v) => !v.out_of_stock);
@@ -168,7 +173,7 @@ export function EditStrategyPanel({
               <SelectItem value="auto">让系统比价选</SelectItem>
               {availableVendors.map((v) => (
                 <SelectItem key={v.vendor_id} value={v.vendor_id}>
-                  {vendorName(v.vendor_id)}
+                  {vendorLabel(v.vendor_id, !!me?.invited)}
                 </SelectItem>
               ))}
             </SelectContent>

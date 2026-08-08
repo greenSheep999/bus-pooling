@@ -1,10 +1,14 @@
 import { ArrowUpRight, Bus as BusIcon, Zap, ZapOff } from "lucide-react";
 import type { Bus } from "@/types";
-import { useBusCredentials } from "@/api/hooks";
+import {
+  useBusCredentials, useMe,
+} from "@/api/hooks";
 import { Card, Chip } from "./ui/primitives";
 import { OwnerBadge } from "./ui/tags";
 import { PoolDistribution } from "./PoolDistribution";
-import { avatarColor, avatarLetter, cn, fmtCredits, fmtLifespan, toCredits, vendorName } from "@/lib/utils";
+import {
+  avatarColor, avatarLetter, cn, fmtCredits, fmtLifespan, toCredits, vendorLabel,
+} from "@/lib/utils";
 
 /** 车卡 · 紧凑版（展开所有车时用）· 跟 Focal 大卡共享信息模块，只是密度更高
     - 头：kind chip + 活跃 · 车名 · 「我发起」· 头像 · 「查看→」
@@ -12,6 +16,7 @@ import { avatarColor, avatarLetter, cn, fmtCredits, fmtLifespan, toCredits, vend
     - 号池分布区（vendor 段条 + 明细）
     - 策略区（分区隔离，不跟 vendor 混）· 自动补车 · 单价 · 日限 */
 export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) {
+  const { data: me } = useMe();
   const { data: creds } = useBusCredentials(bus.id);
   const s = bus.strategy;
   const kindLabel =
@@ -128,7 +133,7 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
             )}
             {s.preferred_vendor && (
               <span>
-                首选 <span className="font-medium text-fg-secondary">{vendorName(s.preferred_vendor)}</span>
+                首选 <span className="font-medium text-fg-secondary">{vendorLabel(s.preferred_vendor, !!me?.invited)}</span>
               </span>
             )}
           </div>

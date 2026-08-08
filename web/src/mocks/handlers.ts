@@ -1,9 +1,18 @@
 import { http, HttpResponse, delay } from "msw";
+import { vendorLabel } from "@/lib/utils";
 import * as fx from "./fixtures";
 
 const ok = async (data: any, ms = 120) => {
   await delay(ms);
   return HttpResponse.json(data);
+};
+
+/** 是否免加价 · decisions §8.20
+    有注册邀请码 → 永久免 · 或本次请求带了优惠码 → 单次免 */
+const isWaived = (request: Request): boolean => {
+  if (fx.passenger.invited) return true;
+  const code = new URL(request.url).searchParams.get("coupon_code");
+  return !!code && code.trim().length > 0;
 };
 
 export const handlers = [
@@ -62,6 +71,8 @@ export const handlers = [
 
   // ── 提取 key
   http.get("/api/me/extract/records", () => ok({ items: fx.extractRecords, total: fx.extractRecords.length, page: 1, page_size: 20 })),
+  http.get("/api/me/extract/events", () => ok({ items: fx.extractEvents, total: fx.extractEvents.length, page: 1, page_size: 20 })),
+  http.get("/api/me/assign/events", () => ok({ items: fx.assignEvents, total: fx.assignEvents.length, page: 1, page_size: 20 })),
   http.post("/api/me/extract/estimate", async ({ request }) => {
     const b = (await request.json()) as { count: number };
     const unit = 20_000_000;
@@ -71,6 +82,35 @@ export const handlers = [
     return ok({ key_cost: keyCost, single_pull_fee: single, service_fee: service, total: keyCost + single + service }, 80);
   }),
   http.post("/api/me/extract", () => ok({ round_id: "rd_new", status: "initiated" }, 800)),
+
+  // ── 上游即时快照 + 我方历史（PullExtractModal）· docs/14 §4.3
+  //    单价按身份返回**最终价**（含附加费）· 绝不下发原价 · decisions §8.20
+  http.get("/api/me/vendors/:vendor_id/stock", ({ params, request }) => {
+    const s = fx.vendorStocks[params.vendor_id as string];
+    if (!s) return HttpResponse.json({ error: "not_found" }, { status: 404 });
+    const waived = isWaived(request);
+    return ok({
+      ...s,
+      zones: s.zones.map((z) => ({ ...z, unit_price: fx.finalPrice(z.unit_price, waived) })),
+    });
+  }),
+
+  // ── 系统派号推荐（auto 模式 · 散客默认）· decisions §8.20
+  http.get("/api/me/vendors/auto-pick", ({ request }) => {
+    const u = new URL(request.url);
+    const zone = (u.searchParams.get("zone") ?? "auto") as "us" | "eu" | "auto";
+    const waived = isWaived(request);
+    const pick = fx.autoPick(zone, waived);
+    return ok({
+      ...pick,
+      /* 显示名按身份 · 有注册码看真名 · 散客看 Vendor 0N */
+      vendor_label: vendorLabel(pick.vendor_id, fx.passenger.invited),
+    });
+  }),
+  http.get("/api/me/vendors/:vendor_id/history", ({ params }) => {
+    const h = fx.vendorHistories[params.vendor_id as string];
+    return h ? ok(h) : HttpResponse.json({ error: "not_found" }, { status: 404 });
+  }),
 
   // ── 配置
   http.get("/api/me/downstream", () => ok(fx.downstream)),

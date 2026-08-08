@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowRight, Bus, Copy, Download, Send } from "lucide-react";
-import { useAssign, useBuses } from "@/api/hooks";
+import {
+  useAssign, useBuses, useMe,
+} from "@/api/hooks";
 import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -12,7 +14,9 @@ import { VendorTag } from "@/components/ui/tags";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { cn, vendorName } from "@/lib/utils";
+import {
+  cn, vendorLabel,
+} from "@/lib/utils";
 import type { Credential } from "@/types";
 
 type Kind = "into_bus" | "push_pool" | "handoff";
@@ -26,6 +30,7 @@ export function AssignModal({
   records: Credential[];
   passengerpoolConnected: boolean;
 }) {
+  const { data: me } = useMe();
   const assign = useAssign();
   const { data: buses } = useBuses();
   const [kind, setKind] = useState<Kind>("into_bus");
@@ -87,7 +92,7 @@ export function AssignModal({
               <div className="mt-3 max-h-60 space-y-2 overflow-y-auto rounded-xl border border-hairline bg-bg-elevated p-3">
                 {handoffPreview.map((r) => (
                   <div key={r.id} className="flex items-center gap-3 text-label">
-                    <VendorTag name={vendorName(r.vendor_id)} />
+                    <VendorTag name={vendorLabel(r.vendor_id, !!me?.invited)} />
                     <code className="min-w-0 flex-1 truncate font-mono">{r.key_masked}</code>
                     <Button
                       variant="ghost"

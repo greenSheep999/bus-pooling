@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Check, ChevronDown, Plus, Ticket, UserPlus, Users, X } from "lucide-react";
-import { useBuses, useBusPulls } from "@/api/hooks";
+import {
+  useBusPulls, useBuses, useMe,
+} from "@/api/hooks";
 import { BusCard } from "@/components/BusCard";
 import { BusFocalCard } from "@/components/BusFocalCard";
 import { BusMiniCard } from "@/components/BusMiniCard";
@@ -11,7 +13,9 @@ import { Button } from "@/components/ui/button";
 import { LoadMoreButton } from "@/components/ui/load-more-button";
 import { Popover, PopoverContent, PopoverItem, PopoverTrigger } from "@/components/ui/popover";
 import { TokenTag, VendorTag } from "@/components/ui/tags";
-import { cn, fmtCredits, fmtTime, vendorName } from "@/lib/utils";
+import {
+  cn, fmtCredits, fmtTime, vendorLabel,
+} from "@/lib/utils";
 import type { Bus, PullResult, PullRound, PushState } from "@/types";
 
 export default function Buses() {
@@ -274,6 +278,7 @@ function PoolingPullHistory({ buses }: { buses: string[] }) {
   );
 }
 function PullHistRow({ r }: { r: PullRound }) {
+  const { data: me } = useMe();
   const res = RESULT[r.result];
   const failed = r.result === "failed";
   return (
@@ -288,7 +293,7 @@ function PullHistRow({ r }: { r: PullRound }) {
       <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
         {failed ? (
           <span className="truncate text-fg-tertiary">
-            未拉到号 · 尝试 <span className="font-medium">{vendorName(r.vendor_id)}</span>{" "}
+            未拉到号 · 尝试 <span className="font-medium">{vendorLabel(r.vendor_id, !!me?.invited)}</span>{" "}
             · {r.fail_reason ?? "缺货"}
           </span>
         ) : (
@@ -296,7 +301,7 @@ function PullHistRow({ r }: { r: PullRound }) {
             <span className="shrink-0 text-fg-secondary">共拉取</span>
             <span className="shrink-0 font-semibold tnum text-fg">{r.count_purchased}</span>
             <span className="shrink-0 text-fg-secondary">个号，从</span>
-            <VendorTag name={vendorName(r.vendor_id)} size="sm" />
+            <VendorTag name={vendorLabel(r.vendor_id, !!me?.invited)} size="sm" />
             <span className="shrink-0 text-fg-tertiary">→</span>
             <TokenTag size="sm">{r.bus_name}</TokenTag>
           </>

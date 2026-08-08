@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { KeyRound, Sparkles } from "lucide-react";
-import { usePullForBus, useVendorStats } from "@/api/hooks";
+import {
+  useMe, usePullForBus, useVendorStats,
+} from "@/api/hooks";
 import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -11,7 +13,9 @@ import { Field } from "@/components/ui/field";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { toCredits, vendorName } from "@/lib/utils";
+import {
+  toCredits, vendorLabel,
+} from "@/lib/utils";
 
 /** 车详情立即拉号模态 · 参数用车策略默认，允许覆盖 */
 export function PullNowModal({
@@ -24,6 +28,7 @@ export function PullNowModal({
   preferredVendor: string | null;
   maxUnitPrice: number | null;
 }) {
+  const { data: me } = useMe();
   const pull = usePullForBus(busId);
   const { data: vendors } = useVendorStats();
   const availableVendors = (vendors?.stats ?? []).filter((v) => !v.out_of_stock);
@@ -84,7 +89,7 @@ export function PullNowModal({
                   <SelectItem value="auto">让系统选（按有效成本比价）</SelectItem>
                   {availableVendors.map((v) => (
                     <SelectItem key={v.vendor_id} value={v.vendor_id}>
-                      {vendorName(v.vendor_id)}
+                      {vendorLabel(v.vendor_id, !!me?.invited)}
                     </SelectItem>
                   ))}
                 </SelectContent>

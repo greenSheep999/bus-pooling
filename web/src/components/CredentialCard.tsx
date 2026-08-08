@@ -1,7 +1,8 @@
 import { Clock3, CloudCheck } from "lucide-react";
+import { useMe } from "@/api/hooks";
 import { Card, Chip, Meter, Stat } from "./ui/primitives";
 import {
-  QUOTA_COLOR, QUOTA_MAX, fmtK, fmtLifespan, quotaLevel, toCredits, vendorColor, vendorName,
+  QUOTA_COLOR, QUOTA_MAX, fmtK, fmtLifespan, quotaLevel, toCredits, vendorColor, vendorLabel,
 } from "@/lib/utils";
 import type { Credential } from "@/types";
 
@@ -17,6 +18,7 @@ export function CredentialCard({
   cred: Credential;
   onClick?: () => void;
 }) {
+  const { data: me } = useMe();
   const alive = cred.status === "alive";
   const used = toCredits(cred.credits_used);
   const level = quotaLevel(used);
@@ -42,7 +44,7 @@ export function CredentialCard({
                   : "font-semibold text-fg-tertiary"
               }
             >
-              {vendorName(cred.vendor_id)}
+              {vendorLabel(cred.vendor_id, !!me?.invited)}
             </span>
           </div>
 
