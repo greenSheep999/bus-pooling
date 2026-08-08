@@ -49,12 +49,21 @@ export default function Prices() {
     [trends],
   );
 
-  /* 日期刻度 · 取 5 个 */
+  /* 日期刻度 · 位置按**竖条槽位中心**算（跟箱线图里的 X 网格严格对齐）
+     不能用百分比均分 —— 那样跟竖条位置错开，日期对不上数据 */
   const dateTicks = useMemo(() => {
     const d = trends[0]?.days ?? [];
     if (d.length === 0) return [];
     const step = Math.max(1, Math.floor(d.length / 5));
-    return d.filter((_, i) => i % step === 0).map((x) => x.date);
+    const slotPct = 100 / d.length;
+    return d
+      .map((x, i) => ({ date: x.date, i }))
+      .filter(({ i }) => i % step === 0)
+      .map(({ date, i }) => ({
+        date,
+        /* 槽位中心 = i * slot + slot/2 */
+        leftPct: slotPct * i + slotPct / 2,
+      }));
   }, [trends]);
 
   /* 标记 · 跨家比较才能算 · 可并存 */
@@ -208,7 +217,7 @@ export default function Prices() {
             </div>
 
             {/* 6 行 · 每行一家 */}
-            <div className="divide-y divide-hairline">
+            <div className="mb-1.5 divide-y divide-hairline">
               {sorted.map((t) => (
                 <VendorRow
                   key={t.vendor_id}
@@ -225,33 +234,28 @@ export default function Prices() {
               ))}
             </div>
 
-            {/* 日期轴 */}
-            <div className="flex gap-4 pt-2">
+            {/* 日期轴 · 刻度位置跟图内 X 网格严格对齐 · 带小刻度线 */}
+            <div className="flex gap-4 border-t border-hairline pt-1.5">
               <span className="w-[300px] shrink-0" />
-              <div className="relative min-w-0 flex-1">
-                {dateTicks.map((d, i) => (
+              <div className="relative h-4 min-w-0 flex-1">
+                {dateTicks.map(({ date, leftPct }) => (
                   <span
-                    key={d}
-                    className="absolute text-label tnum text-fg-tertiary"
-                    style={{
-                      left: `${(i / Math.max(1, dateTicks.length - 1)) * 100}%`,
-                      transform:
-                        i === 0
-                          ? "none"
-                          : i === dateTicks.length - 1
-                            ? "translateX(-100%)"
-                            : "translateX(-50%)",
-                    }}
+                    key={date}
+                    className="absolute top-0 flex flex-col items-center"
+                    style={{ left: `${leftPct}%`, transform: "translateX(-50%)" }}
                   >
-                    {d.slice(5).replace("-", "/")}
+                    <span className="h-1 w-px bg-hairline" />
+                    <span className="mt-0.5 whitespace-nowrap text-label tnum text-fg-tertiary">
+                      {date.slice(5).replace("-", "/")}
+                    </span>
                   </span>
                 ))}
               </div>
               <span className="w-24 shrink-0" />
             </div>
 
-            {/* 图例 */}
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-label text-fg-tertiary">
+            {/* 图例 · 跟日期轴拉开距离（之前贴太近混在一起） */}
+            <div className="mt-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 border-t border-hairline pt-4 text-label text-fg-tertiary">
               <span className="flex items-center gap-1.5">
                 <span
                   className="inline-block w-[6px] rounded-full"

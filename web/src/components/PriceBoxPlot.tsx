@@ -48,6 +48,9 @@ export function PriceBoxPlot({
   const slot = w / Math.max(1, days.length);
   const barW = Math.min(9, Math.max(3, slot * 0.55));
 
+  /* X 网格 · 跟日期轴刻度同位置（每 N 天一条）· 让竖条能对上日期 */
+  const xStep = Math.max(1, Math.floor(days.length / 5));
+
   return (
     <svg
       className="w-full"
@@ -55,6 +58,36 @@ export function PriceBoxPlot({
       ref={(el) => { if (el) setW(el.clientWidth || 800); }}
       onMouseLeave={() => onHoverDate(null)}
     >
+      {/* Y 网格 · 上中下三条横虚线 · 给竖条一个高度参考 */}
+      {[0, 0.5, 1].map((f) => (
+        <line
+          key={`y${f}`}
+          x1={0}
+          x2={w}
+          y1={height * f}
+          y2={height * f}
+          stroke="#F2F2F2"
+          strokeWidth={1}
+          strokeDasharray={f === 0.5 ? "4 4" : "0"}
+        />
+      ))}
+
+      {/* X 网格 · 竖虚线 · 跟下方日期刻度对齐 */}
+      {days.map((d, i) =>
+        i % xStep === 0 ? (
+          <line
+            key={`x${d.date}`}
+            x1={slot * i + slot / 2}
+            x2={slot * i + slot / 2}
+            y1={0}
+            y2={height}
+            stroke="#F2F2F2"
+            strokeWidth={1}
+            strokeDasharray="3 3"
+          />
+        ) : null,
+      )}
+
       {days.map((d, i) => {
         const cx = slot * i + slot / 2;
         const hovered = hoveredDate === d.date;
