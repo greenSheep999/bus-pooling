@@ -1,6 +1,6 @@
 import { MICRO, vendorLabel } from "@/lib/utils";
 import type {
-  Activity, ApiKey, AssignEvent, AssignedKey, AutoPickResult, Bus, Credential, DownstreamConfig,
+  Activity, ApiKey, AssignEvent, AssignedKey, AutoPickResult, PushError, Bus, Credential, DownstreamConfig,
   ExtractEvent, ExtractRecord, LedgerEntry, Overview, Passenger, PullRound,
   StockSummary, TrendPoint, VendorDayRounds, VendorHistory, VendorPriceTrend, VendorRound,
   VendorShare, VendorStat, VendorStock, Wallet, WebhookConfig, WebhookDelivery, Zone,
@@ -89,11 +89,27 @@ export const buses: Bus[] = [
 
 /* ── 号 ── */
 
-/** 推送失败的真实原因样本 · 售后追溯用（decisions §8.24） */
-const PUSH_ERRORS = [
-  "目标号池返回 401 · token 可能已失效",
-  "连接超时（10s）· 目标号池无响应",
-  "目标号池返回 409 · 该 key 已存在",
+/** 推送失败样本 · 结构化（带 code / status / 可重试）· decisions §8.24
+    注意都是**用户号池**返回的错 —— 推送不扣钱，不会有余额类错误 */
+const PUSH_ERRORS: PushError[] = [
+  {
+    code: "unauthorized", status: 401,
+    message: "号池拒绝：token 无效或已过期",
+    retriable: false,          // 要用户先去改 token
+    attempts: 3, last_attempt_at: ago(0.4),
+  },
+  {
+    code: "timeout", status: null,
+    message: "连接超时（10s 无响应）",
+    retriable: true,
+    attempts: 3, last_attempt_at: ago(0.2),
+  },
+  {
+    code: "conflict", status: 409,
+    message: "号池里已有同一个 key",
+    retriable: false,          // 重试也还是冲突
+    attempts: 1, last_attempt_at: ago(1.1),
+  },
 ];
 
 const mkCred = (
@@ -111,7 +127,9 @@ const mkCred = (
   issuer_url: vendor === "91kiro" ? "auth.91kiro.com" : vendor === "kiroceo" ? "api.kiro.ceo" : "",
   credits_used: C(used),
   pulled_at: ago(lifeH),
-  warranty_until: ago(lifeH - 48),
+  /* 质保窗口 = 拉号后 30 分钟（vendor 档案里各家 10-30 分钟）
+     原来写 ago(lifeH - 48) 是 bug —— lifeH < 48 时传负数，ago 算出未来时间，导致永远在质保内 */
+  warranty_until: ago(lifeH - 0.5),
   dead_at: alive ? null : ago(2),
   lifespan_seconds: lifeH * 3600,
   paid: C(vendor === "kirodrop" ? 15 : vendor === "kiroceo" ? 18.5 : 20),
@@ -149,6 +167,11 @@ export const credentials: Credential[] = [
   mkCred(23, "91kiro",  2200, 8,  true, false, null),
   mkCred(24, "kiroceo", 600,  2,  true, false, null),
   mkCred(25, "kirodrop",1450, 6,  true, false, null),
+  /* 待派里的失效号 · decisions §8.25 —— 这两种是真实场景，必须能在 UI 上区分:
+     26: 拉下来放了 9 小时没派，中途挂了（质保早过期）
+     27: 刚拉下来 12 分钟就挂了（质保内 · 可退） */
+  mkCred(26, "kirooo",  3200, 9,  false, false, null),
+  mkCred(27, "kiroceo",  120, 0.2, false, false, null),
 ];
 
 /* ── 拉号历史 ── */

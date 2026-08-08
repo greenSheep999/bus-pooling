@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   Activity as ActivityIcon, AlertTriangle, ArrowLeft, Bus as BusIcon, Check,
-  KeyRound, Send, Settings, X, Zap, ZapOff,
+  KeyRound, RefreshCw, Send, Settings, X, Zap, ZapOff,
 } from "lucide-react";
 import {
   useBus, useBusCredentials, useBusPulls, useDownstream, useMe,
@@ -439,7 +439,8 @@ function TabPushes({ busId }: { busId: string }) {
               <span className="w-[92px] shrink-0">时间</span>
               <span className="w-24 shrink-0">状态</span>
               <span className="min-w-0 flex-1">号 · vendor</span>
-              <span className="min-w-0 flex-[1.1]">去向</span>
+              <span className="min-w-0 flex-[1.1]">去向 / 失败原因</span>
+              <span className="w-28 shrink-0" />
             </BareHead>
             <BareList>
               {events.map((e) => <PushRow key={e.id} e={e} targetHost={targetHost} />)}
@@ -475,11 +476,15 @@ function PushRow({
       </span>
       <span className="flex min-w-0 flex-[1.1] items-center gap-2 text-label">
         {e.status === "failed" && e.error ? (
-          /* 失败原因直接显示 · 售后追溯要的就是这个（decisions §8.24）
-             不用点开 —— 出错时用户最需要知道为什么 */
-          <span className="flex min-w-0 items-center gap-1.5 text-warn-fg" title={e.error}>
+          /* 失败原因 + 状态码 · 售后追溯要的就是这个（decisions §8.24） */
+          <span className="flex min-w-0 items-center gap-1.5 text-warn-fg">
             <AlertTriangle className="size-3.5 shrink-0" />
-            <span className="truncate">{e.error}</span>
+            <span className="truncate" title={e.error.message}>{e.error.message}</span>
+            {e.error.status && (
+              <span className="shrink-0 rounded bg-warn-bg px-1 py-px text-[10px] font-semibold tnum">
+                {e.error.status}
+              </span>
+            )}
           </span>
         ) : (
           <>
@@ -493,6 +498,25 @@ function PushRow({
               <span className="text-fg-tertiary">我的号池</span>
             )}
           </>
+        )}
+      </span>
+
+      {/* 失败行的操作 · 按 retriable 分：能重试的给「重试」，不能的引导去改配置 */}
+      <span className="flex w-28 shrink-0 items-center justify-end gap-1">
+        {e.status === "failed" && e.error && (
+          e.error.retriable ? (
+            <Button variant="ghost" size="sm" title={`已试 ${e.error.attempts} 次`}>
+              <RefreshCw />
+              重试
+            </Button>
+          ) : (
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/settings/downstream">
+                <Settings />
+                去检查
+              </Link>
+            </Button>
+          )
         )}
       </span>
     </BareRow>

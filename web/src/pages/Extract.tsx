@@ -146,7 +146,7 @@ export default function Extract() {
       >
         <Button variant="brand" size="sm" onClick={() => startAssign("into_bus")}>
           <BusIcon />
-          进车
+          加入拼车
         </Button>
         <Button
           variant="ghost"
@@ -184,9 +184,11 @@ function PendingTab({
       return next;
     });
 
+  /* 全选只选可用的 · 失效号不能派 · decisions §8.25 */
+  const usable = items.filter((c) => c.status !== "dead");
   const toggleAll = () => {
-    if (selected.size === items.length) setSelected(new Set());
-    else setSelected(new Set(items.map((c) => c.id)));
+    if (selected.size === usable.length) setSelected(new Set());
+    else setSelected(new Set(usable.map((c) => c.id)));
   };
 
   const totalCredits = items.reduce((s, c) => s + c.credits_used, 0);
@@ -201,10 +203,18 @@ function PendingTab({
           title="待派 key"
           sub={
             items.length > 0 ? (
-              <>共 <span className="font-semibold tnum text-fg-secondary">{items.length}</span> 个 · 来自{" "}
-              <span className="font-semibold tnum">{vendors}</span> 家 vendor · 累计冻结{" "}
-              <span className="font-semibold tnum">{fmtCredits(totalCredits)}</span> 积分 ·
-              勾选后底部出操作栏</>
+              <>
+                可用 <span className="font-semibold tnum text-fg-secondary">{usable.length}</span> 个
+                {items.length > usable.length && (
+                  <> · <span className="font-semibold tnum text-danger-fg">
+                    {items.length - usable.length}
+                  </span> 个已失效（不能派）</>
+                )}
+                {" · 来自 "}
+                <span className="font-semibold tnum">{vendors}</span> 家 vendor · 累计冻结{" "}
+                <span className="font-semibold tnum">{fmtCredits(totalCredits)}</span> 积分 ·
+                勾选后底部出操作栏
+              </>
             ) : (
               "拉一批 key 后在这里派去向"
             )
@@ -228,11 +238,11 @@ function PendingTab({
             <BareHead>
               <span className="w-8 shrink-0 pl-2">
                 <Checkbox
-                  checked={selected.size === items.length && items.length > 0}
+                  checked={selected.size === usable.length && usable.length > 0}
                   onCheckedChange={toggleAll}
                 />
               </span>
-              <span className="min-w-0 flex-1">key · vendor</span>
+              <span className="min-w-0 flex-1">key · vendor · 状态</span>
               <span className="w-14 shrink-0 text-center">区域</span>
               <span className="w-16 shrink-0 text-center">寿命</span>
               <span className="w-20 shrink-0 text-center">已消耗</span>
@@ -258,20 +268,45 @@ function RecordRow({
   c, picked, onToggle,
 }: { c: Credential; picked: boolean; onToggle: () => void }) {
   const { data: me } = useMe();
+  /* 失效的号不能派（推不上去、进车也没意义）· checkbox disable · decisions §8.25 */
+  const dead = c.status === "dead";
+  /* 质保内失效 = 可退 · 过了质保只能认（拉下来放太久没派的情况） */
+  const inWarranty =
+    dead && c.warranty_until != null && new Date(c.warranty_until) > new Date();
+
   return (
-    <BareRow onClick={onToggle} className={cn(picked && "bg-brand-subtle/40")}>
+    <BareRow
+      onClick={dead ? undefined : onToggle}
+      className={cn(picked && "bg-brand-subtle/40", dead && "opacity-55")}
+    >
       <span className="w-8 shrink-0 pl-2">
         <Checkbox
           checked={picked}
+          disabled={dead}
           onCheckedChange={onToggle}
           onClick={(e) => e.stopPropagation()}
         />
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="truncate font-mono text-label font-medium text-fg-secondary">
+        <span
+          className={cn(
+            "truncate font-mono text-label font-medium",
+            dead ? "text-fg-tertiary line-through" : "text-fg-secondary",
+          )}
+        >
           {c.key_masked}
         </span>
         <VendorTag name={vendorLabel(c.vendor_id, !!me?.invited)} />
+        {/* 状态标记 · 正常 / 已失效（质保内的标出来，能退） */}
+        {dead ? (
+          inWarranty ? (
+            <Chip tone="warn" dot>质保内失效 · 可退</Chip>
+          ) : (
+            <Chip tone="danger" dot>已失效</Chip>
+          )
+        ) : (
+          <Chip tone="ok" dot>正常</Chip>
+        )}
       </span>
       <span className="w-14 shrink-0 text-center">
         {c.region ? (

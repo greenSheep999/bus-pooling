@@ -110,9 +110,35 @@ export interface Credential {
   owner_bus_id: string | null;
   pushed_at: ISOTime | null; // 推 passengerpool 时间，null=未推
   push_failed: boolean;
-  /** 推送失败原因 · 售后追溯用（decisions §8.24）· 重试成功后仍保留历史痕迹
-   *  客服靠这个判断是用户 URL 配错还是我方问题 */
-  push_error: string | null;
+  /** 推送失败详情 · 售后追溯用（decisions §8.24）· 重试成功后仍保留历史痕迹
+   *  注意：这是**推 passengerpool** 的失败（用户自己号池返回的错），
+   *  跟拉号时 vendor 侧的 insufficient_balance 是两个域，不会混 */
+  push_error: PushError | null;
+}
+
+/** 推送到 passengerpool 失败的详情 · decisions §8.24
+ *  这是**用户自己号池**返回的错误，跟拉号时 vendor 侧的错（insufficient_balance / no_stock）
+ *  是两个完全不同的域 —— 推送不扣钱，所以永远不会出现余额类错误 */
+export interface PushError {
+  /** 内部稳定标识 · 判这个不判文案（文案会改） */
+  code:
+    | "unauthorized"        // 401/403 · token 失效或权限不足
+    | "not_found"           // 404 · URL 路径不对
+    | "conflict"            // 409 · 该 key 已存在
+    | "timeout"             // 连接/读取超时
+    | "unreachable"         // DNS 解析失败 / 连接被拒
+    | "rate_limited"        // 429
+    | "server_error"        // 5xx · 对方服务问题
+    | "bad_response";       // 返回体不符合预期
+  /** 目标号池返回的 HTTP 状态码 · null = 没连上（超时/DNS） */
+  status: number | null;
+  /** 给用户看的人话 */
+  message: string;
+  /** 重试有没有意义 · false 的要用户先去改配置 */
+  retriable: boolean;
+  /** 已重试几次 */
+  attempts: number;
+  last_attempt_at: ISOTime;
 }
 
 // ── 拉号轮次 · UI: 成功 / 部分 / 失败 / 已退款

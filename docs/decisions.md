@@ -364,6 +364,60 @@
 - **失败行**：**不用 "—" 占位**，改写文案"未拉到号 · 尝试 X vendor"（vendor 灰化），花费"0 积分"整体灰化
 - **参考**：`design/mockups/05-home.pen` OLSh3 · ILhPn
 
+### 8.25 待派 key 的可用性 + 推送失败的结构化错误 ✅
+
+#### 决定 1 · 待派列表必须标可用性，失效的禁止选中
+
+**真实场景**（车主提出）：
+- 拉下来的号**放半天没派**，中途挂了
+- 号**刚拉下来就挂了**（走质保退款）
+
+失效的号推不上去、进车也没意义，所以：
+- 列表每行标状态 Chip：**正常**（ok）/ **质保内失效 · 可退**（warn）/ **已失效**（danger）
+- 失效行 `checkbox disabled` + 整行 `opacity-55` + key 加删除线 + 整行不可点
+- **全选只选可用的**（`items.filter(status !== 'dead')`）
+- 副标显示「可用 N 个 · K 个已失效（不能派）」
+
+**质保区分**：`warranty_until > now` 的失效号标「可退」—— 这是刚拉就挂的情况，用户能拿回积分；过了质保只能认（放太久没派）。
+
+#### 决定 2 · 推送失败要结构化，不能只给一句文案
+
+**原来**：`push_error: string`（一句人话）· 客服/用户都判不了该干什么。
+
+**改成** `PushError` 结构（`web/src/types/index.ts`）：
+
+| 字段 | 用途 |
+|---|---|
+| `code` | 内部稳定标识 · **判 code 不判文案**（跟 vendor 档案 §12 同原则） |
+| `status` | 目标号池返回的 HTTP 码 · `null` = 没连上（超时/DNS） |
+| `message` | 给用户看的人话 |
+| `retriable` | **重试有没有意义** —— 决定 UI 给「重试」还是「去检查配置」 |
+| `attempts` / `last_attempt_at` | 已试几次 · 什么时候 |
+
+`code` 枚举：`unauthorized`（401/403 token 失效）· `not_found`（404 路径错）· `conflict`（409 已存在）· `timeout` · `unreachable`（DNS/拒连）· `rate_limited`（429）· `server_error`（5xx）· `bad_response`
+
+**UI**（推送记录 tab）：
+- 失败行直接显示 `message` + 状态码 badge
+- `retriable: true` → 给「重试」按钮（title 显示已试几次）
+- `retriable: false` → 给「去检查」跳 `/settings/downstream`（重试无用，要先改配置）
+
+#### 决定 3 · 余额不足不会跟推送失败混（车主的顾虑，澄清）
+
+两个**完全不同的域**，不可能误判：
+
+| 域 | 谁返回的错 | 典型 code |
+|---|---|---|
+| **拉号** | vendor | `insufficient_balance` 402（我方在 vendor 余额不足）· `no_stock` 409 · `purchase_cap_reached` 409 |
+| **推送** | 用户自己的号池 | 401 token 失效 · timeout · 409 已存在 |
+
+**推送不涉及任何扣款** —— 号价在提取时已付（§8.21），推送只是把号复制给用户号池。所以 `insufficient_balance` 在推送域**永远不会出现**。
+
+#### 决定 4 · 术语：悬浮栏「进车」改「加入拼车」
+
+「进车」太简省，用户看不出是加入哪个东西。统一成「加入拼车」（跟顶栏「拼车」tab 呼应）。弹窗标题同步改「确认加入拼车」。
+
+**参考**：`docs/vendors/91kiro.md §12`（错误码表 · 判 code 不判文案）· `§8.24`（售后追溯）· `§8.21`（通道费只在充值收）
+
 ### 8.24 号交付后的售后追溯 · 台账永不删 + masked 可查 ✅（补 `09-transactions.md §4` 的缺口）
 
 **车主提出**：号不能立马清理干净，数据库起码得有记录 —— 万一没推成功、或者号有问题，用户找客服时无据可查。

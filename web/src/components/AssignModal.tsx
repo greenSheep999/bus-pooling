@@ -82,7 +82,7 @@ export function AssignModal({
         <DialogHeader>
           {/* preset 模式（从悬浮栏带去向进来）· 标题直接说要做什么，不再说"选一种去向" */}
           <DialogTitle>
-            {presetKind === "into_bus" && "确认进车"}
+            {presetKind === "into_bus" && "确认加入拼车"}
             {presetKind === "push_pool" && "确认推我的号池"}
             {presetKind === "handoff" && "确认下载拿走"}
             {!presetKind && "派去向"}
@@ -147,7 +147,7 @@ export function AssignModal({
                           : Download
                     }
                   >
-                    {presetKind === "into_bus" && "号池由车管理 · 车内成员共享 · 我方持续监控存活"}
+                    {presetKind === "into_bus" && "号进车后由车管理 · 车内成员共享 · 我方持续监控存活"}
                     {presetKind === "push_pool" && "双写到你配的号池 · 我方仍监控存活"}
                     {presetKind === "handoff" && "下载明文 key 后号离开系统 · 我方不再监控，也无法重新下载"}
                   </Alert>
