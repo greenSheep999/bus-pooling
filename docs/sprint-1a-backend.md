@@ -23,14 +23,32 @@
 
 ## Sprint 1a Endpoint Matrix（冻结）
 
-**只有下面明列的端点在 Sprint 1b 实现**；其余延后。**前端 mock 已覆盖但未列在这里的端点** = Sprint 1b **保留骨架 + 返回 501**，等 1c/1d 再补真实实现。
+> **2026-08-08 修订**：前端 16 条路由全部落地后，拿实际调用逐条对过这张表，改了三类东西 ——
+> ① 补上 15 个前端在调但表里没有的端点（不补的话概览 / 提取 key / 价格 三个主页面返 501 就是空白页）
+> ② 统一路径命名（见下面「路径命名规则」）
+> ③ 删掉前端不需要的形状（`GET /buses/{id}/members` 并进 bus 详情返回）
+>
+> **原则：契约向已定的界面对齐**，不是反过来。界面上看不到的端点不留。
+
+### 路径命名规则（统一后）
+
+| 规则 | 说明 |
+|---|---|
+| `GET /api/me` | 账号对象本身 ~~`/api/me/profile`~~ · 跟前端 `/me` 页面同名 |
+| `/api/vendors/*` | vendor 目录 / 库存 / 行情 · **不带 `/me`** —— 是公共数据 |
+| 定价个性化在服务端做 | 同一个 `/api/vendors/{id}/stock` 对不同调用者返不同**最终价**（按 `passenger.invited` 加不加价 · `?coupon_code=` 单次减免）· 客户端不需要换路径 |
+| `/api/me/*` | 只放"属于这个乘客的东西"（车 / 号 / 钱包 / 配置） |
+
+**已废弃的写法**（前端已改）：~~`/api/me/vendors/{id}/stock`~~ · ~~`/api/me/extract`~~（→ `/api/me/pull`）· ~~`/api/me/profile`~~
+
+**只有下面明列的端点在 Sprint 1b 实现**；其余延后。标 ⚙️ 的 = **保留骨架 + 返回 501**，等 1c/1d/1e 再补真实实现。
 
 | 端点 | Sprint 1b | 备注 |
 |---|---|---|
 | `POST /api/register` | ✅ 实现 | Argon2id 密码 hash |
 | `POST /api/login` | ✅ 实现 | session cookie |
 | `POST /api/logout` | ✅ 实现 | 清 session |
-| `GET /api/me/profile` | ✅ 实现 | |
+| `GET /api/me` | ✅ 实现 | 账号对象（原 `/me/profile`，改名对齐前端） |
 | `POST /api/me/password` | ⚙️ 骨架 501 | 邮箱验证阶段 3+ |
 | `GET /api/me/api-keys` | ✅ 实现 | |
 | `POST /api/me/api-keys` | ✅ 实现 | 明文返回一次 |
@@ -48,17 +66,23 @@
 | `POST /api/me/buses/{id}/leave` | ✅ 实现 | 1 人 bus 不允许 leave（要 delete 解散） |
 | `DELETE /api/me/buses/{id}` | ✅ 实现 | 解散 |
 | `POST /api/me/buses/{id}/pull` | ✅ 实现 | **走 `pending_purchase` 状态机** |
-| `GET /api/me/buses/{id}/members` | ✅ 实现 | 1 人 bus 只有 owner |
+| `PUT /api/me/buses/{id}/strategy` | ✅ 实现 | 每车补车策略（§8.6）· 车详情「补车策略」tab |
 | `GET /api/me/buses/{id}/credentials` | ✅ 实现 | 显示号列表 + 用量占位 |
 | `GET /api/me/buses/{id}/pulls` | ✅ 实现 | 拉号历史 |
 | `GET /api/me/buses/{id}/stats` | ⚙️ 骨架 501 | 平均寿命是 1d |
-| `POST /api/me/pull` | ✅ 实现 | 单独拉号 → record group |
+| ~~`GET /api/me/buses/{id}/members`~~ | ❌ 不做 | **成员并进 `GET /me/buses/{id}` 的 `members[]`** —— 成员 tab 打开就有数据，不多一次请求 + loading 态。1 人车 `members` 只有 owner 一条 |
+| `PUT /api/me/buses/{id}/members/{pid}` | ⚙️ 骨架 501 | 挂起 / 解挂（§8.26）· 阶段 2a |
+| `DELETE /api/me/buses/{id}/members/{pid}` | ⚙️ 骨架 501 | 移除成员（要全员确认 §8.18）· 阶段 2a |
+| `POST /api/me/buses/{id}/invite-code` | ⚙️ 骨架 501 | 换邀请码 · team bus 是 2a |
+| `POST /api/me/pull` | ✅ 实现 | 单独拉号 → record group（前端「提取 key」页的主动作） |
+| `POST /api/me/pull/estimate` | ✅ 实现 | 提取确认窗的费用预估（**不下单**）· 含优惠码折后价 |
 | `GET /api/me/pull-records` | ✅ 实现 | |
 | `GET /api/me/pull-records/{id}` | ✅ 实现 | |
-| `POST /api/me/pull-records/assign` | ✅ 实现 | 进车 + 推 passengerpool 分支实现（passengerpool 走 mock 通道）；handoff 分支返回 download_token |
-| `POST /api/me/pull-records/{id}/handoff-init` | ✅ 实现 | **两阶段 token 阶段 1** |
-| `GET /api/me/handoff/{token}` | ✅ 实现 | **两阶段 token 阶段 2 · fulfill** |
-| `POST /api/me/handoff/{token}/confirm` | ✅ 实现 | **两阶段 token 阶段 3 · 触发 DELETE** |
+| `POST /api/me/pull-records/assign` | ✅ 实现 | **只管进车 + 推 passengerpool 两个去向**（passengerpool 走 mock 通道）· handoff **不走这里** |
+| `GET /api/me/assign/events` | ✅ 实现 | 派发历史（提取页第 3 个 tab）· 可展开看每个号 |
+| `POST /api/me/handoff` | ✅ 实现 | **三段式 ①** 发 token · 不返明文 · 号仍在池里（原 `/pull-records/{id}/handoff-init`，改成不绑单条 record） |
+| `GET /api/me/handoff/{token}` | ✅ 实现 | **三段式 ②** fulfill 取明文 · TTL 内可反复取（断线重试） |
+| `POST /api/me/handoff/{token}/confirm` | ✅ 实现 | **三段式 ③** 确认收到 → 这时才 DELETE |
 | `GET /api/me/credentials` | ✅ 实现 | |
 | `GET /api/me/credentials/{id}` | ✅ 实现 | 含 usage 字段（concurrency_avg 常态 null） |
 | `GET /api/me/strategy` | ✅ 实现 | 存空对象即可 |
@@ -69,11 +93,44 @@
 | `POST /api/me/downstream/webhook/test` | ⚙️ 骨架 501 | 同上 |
 | `GET /api/me/downstream/webhook/deliveries` | ⚙️ 骨架 501 | 同上 |
 | `GET /api/vendors` | ✅ 实现 | 单家 91kiro + 5 家标 disabled |
-| `GET /api/vendors/{id}/stock` | ✅ 实现 | 只 91kiro 通 |
+| `GET /api/vendors/stock` | ✅ 实现 | **聚合**总可拉数 + 按 vendor 明细 · 顶栏库存徽标（每页都在用） |
+| `GET /api/vendors/{id}/stock` | ✅ 实现 | 单家即时快照 · 返**最终价**（按调用者 invited / `?coupon_code=` 定价） |
+| `GET /api/vendors/stats` | ✅ 实现 | 概览「Vendor 监测」表 + 占比 · 单价/寿命/存活率/今日拉 |
+| `GET /api/vendors/auto-pick` | ✅ 实现 | auto 档推荐结果（推哪家 + 价 + 库存）· 散客默认就是 auto，没这个下不了单 |
+| `GET /api/vendors/prices` | ⚙️ 骨架 501 | 价格走势页（§8.22）· 要轮次级历史，1d 采集后才有 |
+| `GET /api/vendors/{id}/history` | ⚙️ 骨架 501 | 同上 |
 | `GET /api/vendors/{id}/health` | ⚙️ 骨架 501 | 1d 有平均寿命才做 |
 | `POST /webhook/vendor/91kiro` | ⚙️ 骨架 501 | 1d 才做 |
 
-**共 43 端点，Sprint 1a 后端实现 31 + 骨架 12。**
+### 概览页（原表整段漏了 · 返 501 概览就是空白页）
+
+| 端点 | Sprint 1b | 备注 |
+|---|---|---|
+| `GET /api/me/overview?range=` | ✅ 实现 | KPI 4 项 + 3 业务线汇总 |
+| `GET /api/me/trend?range=&metric=` | ✅ 实现 | 趋势序列（消耗 / 拉号 / 寿命）· metric 三选一 |
+| `GET /api/me/activities?range=` | ✅ 实现 | 活动记录混流（§8.4）· 入车 / 提取 打平按时序 |
+
+### 设置
+
+| 端点 | Sprint 1b | 备注 |
+|---|---|---|
+| `GET /api/me/strategy` | ✅ 实现 | **全局**策略（§8.27）· 每日上限 + 单价上限 + 新车默认值 |
+| `PUT /api/me/strategy` | ✅ 实现 | 上限 1b 就要**真的生效**（拉号 / 提取前校验），不是存着等 1d |
+| `POST /api/me/downstream/webhook/secret` | ⚙️ 骨架 501 | 重新生成签名密钥 · webhook out 是 1e |
+
+**共 51 端点，Sprint 1b 实现 34 + 骨架 17。**
+
+### 前端有界面但后端 501 时的表现（明确接受）
+
+| 页面 | 501 后什么样 | 可接受？ |
+|---|---|---|
+| 价格走势 `/prices` | 整页空态「暂无数据」 | ✅ 这页本来就标了「需求待定」（§8.22） |
+| 机器人通知 `/settings/webhook` | 配置存不了 · 投递记录空 | ✅ webhook out 是 1e |
+| 钱包充值 / 兑换 | 按钮点了报错 | ✅ payment 是 1c · 兑换要 CDK 表 |
+| 成员挂起 / 移除 / 换邀请码 | 按钮点了报错 | ✅ 多人车整体是 2a |
+| 车详情「数据」tab | 空态 | ✅ 平均寿命是 1d |
+
+**不可接受 501 的**（1b 必须真实现）：概览三个端点 · `vendors/stock` · `vendors/stats` · `vendors/auto-pick` · `me/pull` + `estimate` · `assign` · handoff 三段 · `me/strategy`。这些一挂，阶段 1a 的主流程（拉号 → 派去向）就跑不起来。
 
 ## 阶段 1a 的"必须做" 12 项模块
 

@@ -95,23 +95,25 @@ await POST(`/handoff/${download_token}/confirm`)
 | POST | `/api/register` | 注册（邮箱 + 密码 · 密码 Argon2id 哈希 · Go 自建） | 1a |
 | POST | `/api/login` | 登录（返 session cookie） | 1a |
 | POST | `/api/logout` | 登出（清 session） | 1a |
-| GET | `/api/me/profile` | 当前账号信息 | 1a |
+| GET | `/api/me` | 当前账号信息（原 `/api/me/profile` · 改名对齐前端 `/me` 页面） | 1a |
 | POST | `/api/me/password` | 改密码（会话鉴权强制） | 1a |
 
-### `GET /api/me/profile` 响应示例
+### `GET /api/me` 响应示例
 
 ```json
 {
-  "profile": {
-    "id": "01H8...",
-    "username": "alice",
-    "email": "alice@example.com",
-    "balance": 1400000000,
-    "created_at": "2026-08-07T12:00:00Z"
-  },
-  "auth_mode": "session"
+  "id": "01H8...",
+  "username": "alice",
+  "email": "alice@example.com",
+  "email_verified": false,
+  "created_at": "2026-08-07T12:00:00Z",
+  "invited": true
 }
 ```
+
+**`invited`**：注册时填过邀请码（`decisions §8.20`）· `true` = 看 vendor 真名 + 免加价；`false` = 看 `AWS-Q Kiro Vendor 0N` + 默认加价（提号时填优惠码可单次免）。
+
+**余额不在这里** —— 走 `GET /api/me/wallet`（前端顶栏积分 pill 和钱包页都用那个，避免两处返回同一个数字导致不一致）。
 
 ## 2. API Key
 
@@ -177,10 +179,15 @@ await POST(`/handoff/${download_token}/confirm`)
 | POST | `/api/me/buses/{bus_id}/leave` | 退出 bus | 1a |
 | DELETE | `/api/me/buses/{bus_id}` | 解散 bus（创建人 or 最后一位成员） | 1a |
 | POST | `/api/me/buses/{bus_id}/pull` | 给这个 bus 拉一次号 | 1a |
-| GET | `/api/me/buses/{bus_id}/members` | bus 成员列表 | 1a |
+| PUT | `/api/me/buses/{bus_id}/strategy` | 该车的补车策略（`decisions §8.6` 跟车绑） | 1a |
 | GET | `/api/me/buses/{bus_id}/credentials` | 该 bus 的号列表（含存活状态 + 用量） | 1a |
 | GET | `/api/me/buses/{bus_id}/pulls` | 该 bus 的拉号历史（分页） | 1a |
 | GET | `/api/me/buses/{bus_id}/stats` | 该 bus 号池的聚合统计（跨窗口） | 1d |
+| PUT | `/api/me/buses/{bus_id}/members/{pid}` | 挂起 / 解挂成员（`§8.26`） | 2a |
+| DELETE | `/api/me/buses/{bus_id}/members/{pid}` | 移除成员（要全员确认 `§8.18`） | 2a |
+| POST | `/api/me/buses/{bus_id}/invite-code` | 重新生成邀请码（旧码立即失效） | 2a |
+
+**没有 `GET /buses/{id}/members`** —— 成员数组**内嵌在 `GET /api/me/buses/{bus_id}` 的 `members[]`** 里。理由：车详情的成员 tab 切过去就该有数据，不值得为它多一次请求 + loading 态；成员数量天然很小（1 人车 1 条、多人车个位数）。1 人车 `members` 只有 owner 一条，`share_pct=100`。
 
 ### `POST /api/me/buses`
 
@@ -230,10 +237,13 @@ await POST(`/handoff/${download_token}/confirm`)
 | POST | `/api/me/pull` | 单独拉一批号（不指定 bus） | 1a |
 | GET | `/api/me/pull-records` | 我的拉号记录（分页；含状态、去向历史） | 1a |
 | GET | `/api/me/pull-records/{record_id}` | 单条详情 | 1a |
-| POST | `/api/me/pull-records/assign` | 派去向（进车 · 推自己号池；handoff 分支走 handoff-init 两阶段） | 1a |
-| POST | `/api/me/pull-records/{record_id}/handoff-init` | 拿走 · 阶段 1 · 发放 download_token | 1a |
-| GET | `/api/me/handoff/{token}` | 拿走 · 阶段 2 · fulfill · 拿明文（断线可重试） | 1a |
-| POST | `/api/me/handoff/{token}/confirm` | 拿走 · 阶段 3 · 客户端确认，触发 DELETE | 1a |
+| POST | `/api/me/pull/estimate` | 提取确认窗的费用预估（**不下单**）· 含优惠码折后价 | 1a |
+| GET | `/api/me/pull/events` | 提取历史（每次拉号一条） | 1a |
+| GET | `/api/me/assign/events` | 派发历史（每次派动作一条 · 可展开看每个号） | 1a |
+| POST | `/api/me/pull-records/assign` | 派去向 · **只管进车 / 推自己号池** | 1a |
+| POST | `/api/me/handoff` | 拿走 ① 发 token（见 §5b） | 1a |
+| GET | `/api/me/handoff/{token}` | 拿走 ② fulfill 取明文 | 1a |
+| POST | `/api/me/handoff/{token}/confirm` | 拿走 ③ 确认 → 触发 DELETE | 1a |
 
 ### `POST /api/me/pull`
 
@@ -259,32 +269,59 @@ await POST(`/handoff/${download_token}/confirm`)
 
 **注意**：`service_fee = 1 元`（一次动作一轮，跟 count 无关）；`single_pull_fee` 只在 `count==1` 才有。
 
-### `POST /api/me/pull-records/assign` （核心派去向）
+### `POST /api/me/pull-records/assign` （派去向 · 只管进车 / 推号池）
 
 ```json
-// req
+// req · 一次一个去向（界面上就是"勾一批 → 点一个动作"）
 {
-  "assignments": [
-    { "record_ids": ["01H8a", "01H8b", ...5 个], "target": "to-bus", "bus_id": "01H8..." },
-    { "record_ids": ["01H8f", "01H8g"], "target": "to-passengerpool" },
-    { "record_ids": ["01H8h", "01H8i", "01H8j"], "target": "handoff" }
-  ]
+  "credential_ids": ["01H8a", "01H8b"],
+  "destination": "into_bus",       // into_bus | push_pool
+  "bus_id": "01H8..."              // destination=into_bus 时必填
 }
 // resp
-{
-  "assigned": 10,
-  "handoff_credentials": [   // 拿走的 credential 明文，仅这次返回
-    { "record_id": "01H8h", "key": "ksk_...", "account": "...", "password": "...", "issuer_url": "..." },
-    ...
-  ],
-  "errors": []   // 部分失败时列出
-}
+{ "assigned": 2, "errors": [] }    // 部分失败时 errors 列出哪几个
 ```
 
-**关键**：
-- 一次调用可**混合三种去向**（进车 / 推 passengerpool / handoff）
-- 顺序：**先做外部动作（handoff 明文返回、推 passengerpool 完成），再改 housepool 状态**
-- handoff 的 credential 明文**只在这个响应里返回一次**，之后 API 不再回
+**修订说明**（2026-08-08）：本节原来的形状是 `assignments[]` 混合三种去向、并在响应里直接返 handoff 明文。两处都改了：
+
+1. **不做混合去向** —— 一次请求一个 `destination`。`CLAUDE.md §2` 已废「混合上车 / allocation 组件」，原形状跟它冲突；界面上也是"勾一批 → 点一个动作"，没有混合入口
+2. **handoff 不走这个端点** —— 明文不能在普通响应里返回（响应断线 = 号已删但明文丢失）。走 §5b 三段式
+
+**顺序**：先做外部动作（推 passengerpool 完成），再改 housepool 状态 —— 防止"号推出去了但状态没改"（`CLAUDE.md §7.1`）。
+
+### 5b. 拿走 handoff · 三段式（`09-transactions §4` P0-3）
+
+| Method | Path | 阶段 | 说明 |
+|---|---|---|---|
+| POST | `/api/me/handoff` | ① | 发 `download_token`（TTL 5 min）· **不返明文** · 号仍在池里 |
+| GET | `/api/me/handoff/{token}` | ② | fulfill 取明文 · **TTL 内可反复取**（断线重试） |
+| POST | `/api/me/handoff/{token}/confirm` | ③ | 确认收到 → 这时才 DELETE + 台账标 `handed_off` |
+
+```json
+// ① POST /api/me/handoff
+// req
+{ "credential_ids": ["01H8h", "01H8i"] }
+// resp
+{ "download_token": "a3f2…（32 hex）", "expires_at": "2026-08-08T12:05:00Z" }
+
+// ② GET /api/me/handoff/{token}
+{
+  "keys": [
+    { "credential_id": "01H8h", "key": "ksk_live_…", "vendor_id": "91kiro", "account": "aws-…@kiro.tmp" }
+  ]
+}
+
+// ③ POST /api/me/handoff/{token}/confirm
+{ "ok": true }
+```
+
+**为什么非要三段**：号交出去不可逆。一次性做法（删号 + 同响应返明文）在响应断线时 → 号已删、明文没收到、**钱白花**。三段式把"取明文"和"删号"分开，②可以重试，③之前号一直在。
+
+**明文永不落我方库** —— 每次 fulfill 从 housepool 实时读（`pending_handoff` 表没有明文字段）。
+
+**前端映射**（`AssignModal`）：点「下载拿走」→ ①+② 一起做完并展示明文 → 用户点「我已保存 · 确认拿走」→ ③。点「返回」= 不 confirm，号留在池里可以重来。**用户感知只有两步**。
+
+**原 `POST /pull-records/{id}/handoff-init` 已废** —— 改成 `POST /me/handoff` 不绑单条 record（界面上是批量勾选，token 天然对应一批号）。
 
 ## 6. 号池 / credential 查询（跨 bus + 拉号记录）
 
@@ -386,25 +423,36 @@ await POST(`/handoff/${download_token}/confirm`)
 
 ## 7. 策略参数
 
-| Method | Path | 说明 | 阶段 |
-|---|---|---|---|
-| GET | `/api/me/strategy` | 我的策略 | 1a |
-| PUT | `/api/me/strategy` | 更新策略 | 1a → 1d |
+**两层，别混**（`decisions §8.27`）：
 
-### `PUT /api/me/strategy`
+| 层 | 端点 | 管什么 |
+|---|---|---|
+| **全局** | `GET/PUT /api/me/strategy` | ① 硬上限（每日轮数 / 每日消费 / **单价**）② 建新车的默认值 |
+| **每车** | `PUT /api/me/buses/{id}/strategy` | 那辆车的自动补车（watermark / 车级限额）· `decisions §8.6` |
+
+前端入口：全局在「设置 › 拉号偏好」· 每车在「车详情 › 补车策略」tab。
+
+### `GET /api/me/strategy`
 
 ```json
 {
-  "auto_enabled": false,
-  "per_round_count": 5,
-  "min_count": 1,
-  "keep_safety_stock": 3,
-  "max_unit_price": 30000000,      // 号价上限（microunit）
-  "daily_round_limit": 20,
-  "daily_spend_limit": 500000000,
-  "target_bus_id": "01H8..."       // 自动拉号进哪辆 bus
+  "max_unit_price": 30000000,       // 硬上限 · 超了拒绝拉号 · null = 不限
+  "daily_round_limit": 20,          // 硬上限 · 跨所有车累加 · null = 不限
+  "daily_spend_limit": 500000000,   // 硬上限 · null = 不限
+  "per_round_count": 3,             // 新车默认值
+  "preferred_vendor": null,         // 新车默认值 · null = 让系统比价
+  "default_zone": "auto",           // 新车默认值
+  "used_today": { "rounds": 6, "spend": 45000000 }   // 只读 · UI 画用量进度条
 }
 ```
+
+`PUT` 收上面除 `used_today` 外的字段（部分更新）。
+
+**上限的执行点**（1b 就要真生效，不是存着等 1d）：
+- `daily_*` 在 `POST /me/pull` 和 `POST /me/buses/{id}/pull` 入口校验 · 超了返 `daily_limit_reached`
+- `max_unit_price` 在**下单前**比价阶段校验 · 超了返 `price_over_cap`（带 `cap` 和 `current` 便于前端提示"超了多少"）
+- 跟车级同名字段取**更严**的（AND）
+- **提取 key 只受全局管** —— record group 没有车级限额
 
 ## 8. 下游配置
 
@@ -436,15 +484,48 @@ await POST(`/handoff/${download_token}/confirm`)
 // secret 用来给我方推的 webhook 签名，pass 给你验签
 ```
 
-## 9. Vendor 状态（公开只读）
+## 9. Vendor 状态
 
 | Method | Path | 说明 | 阶段 |
 |---|---|---|---|
 | GET | `/api/vendors` | 6 家 vendor 列表 + 当前 stock / price 快照 | 1a |
-| GET | `/api/vendors/{vendor_id}/stock` | 单家实时快照 | 1a |
+| GET | `/api/vendors/stock` | **聚合**总可拉数 + 按 vendor 明细（顶栏库存徽标） | 1a |
+| GET | `/api/vendors/{vendor_id}/stock` | 单家实时快照 · 支持 `?coupon_code=` | 1a |
+| GET | `/api/vendors/stats` | 概览「Vendor 监测」表 + 占比 | 1a |
+| GET | `/api/vendors/auto-pick` | auto 档的推荐结果（推哪家 + 价 + 库存） | 1a |
+| GET | `/api/vendors/prices?days=&zone=` | 价格走势（**轮次级**历史 · `decisions §8.22`） | 1d |
+| GET | `/api/vendors/{vendor_id}/history` | 单家历史 | 1d |
 | GET | `/api/vendors/{vendor_id}/health` | 单家健康（平均寿命等） | 1d |
 
-**匿名可访问**（不含敏感）。
+**不带 `/me` 前缀** —— vendor 是公共数据。但**返回的价格是按调用者个性化的**：
+
+| 调用者 | 看到的 |
+|---|---|
+| 有注册邀请码 | vendor **真名** + 不加价 |
+| 无邀请码 | `AWS-Q Kiro Vendor 0N` **编号** + 默认加价 |
+| 无邀请码但带 `?coupon_code=` | 编号（**码不解锁真名**）+ 本次免加价 |
+
+**只下发最终价**，不下发原价和加价明细（`decisions §8.20`）。所以这几个端点**要鉴权**（拿不到身份就没法定价）—— 原本写的"匿名可访问"作废。
+
+**`auto-pick` 为什么必须 1a 有**：散客默认就走 auto 档，界面上 auto 项要显示"推荐到哪家 + 单价 + 库存 + 预估费用"才能下单（`decisions §8.20`）。没有它，无邀请码用户根本下不了单。
+
+**`/api/vendors/prices` 是 1d**：要轮次级历史数据，得先采集。1b 返 501 → 价格走势页显示空态，可接受（那页本来标了"需求待定"）。
+
+## 9b. 概览页数据
+
+原契约整段漏了这三个，但概览是登录后的首页 —— 它们返 501 就是白屏。
+
+| Method | Path | 说明 | 阶段 |
+|---|---|---|---|
+| GET | `/api/me/overview?range=` | KPI 4 项 + 3 业务线汇总 | 1a |
+| GET | `/api/me/trend?range=&metric=` | 趋势序列 · `metric ∈ {credits, pulls, lifespan}` | 1a |
+| GET | `/api/me/activities?range=` | 活动记录**混流**（`decisions §8.4`） | 1a |
+
+`range ∈ {today, 7d, 30d, 90d}`。
+
+**`/me/trend` 的 scope**：可选 `?bus_id=` 或 `?vendor=`（二选一，不同时传）· 车详情「数据」tab 和 vendor 下钻都复用这个端点，不另开。
+
+**`/me/activities` 混流**：入车 / 提取 打平按时序排，每条带 `kind` 让前端上 tag chip。不分组（`§8.4` 明确否决过"最近拼车 / 最近提取"两小节）。
 
 ## 10. Webhook 入向（vendor 推我方）
 
@@ -520,6 +601,9 @@ X-Bus-Signature: sha256=<hex HMAC-SHA256(secret, timestamp + "." + body)>
 | 400 | `bad_assignment_plan` | 派去向 plan 校验失败（record_id 不属于该乘客 / target 未知等） |
 | 401 | `unauthenticated` / `invalid_api_key` | 未登录 / key 无效 |
 | 402 | `insufficient_balance` | 余额不足 |
+| 409 | `price_over_cap` | 单价超过全局上限（`§7`）· 带 `cap` / `current` 便于提示"超了多少" |
+| 409 | `daily_limit_reached` | 今日轮数或消费达上限 · 带 `limit` / `used` |
+| 404 | `token_expired` | handoff 的 `download_token` 过期（TTL 5 min）· 重新发起即可 |
 | 403 | `disabled` | 账号停用 |
 | 403 | `session_required` | 该操作只能会话鉴权（改密码 / API key 创建等） |
 | 403 | `csrf_failed` | cookie 写操作缺 CSRF |

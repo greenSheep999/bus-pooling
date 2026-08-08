@@ -322,20 +322,6 @@ export interface AssignEvent {
 // ── 提取记录去向
 export type Destination = "pending" | "into_bus" | "push_pool" | "handoff";
 
-export interface ExtractRecord {
-  id: string;
-  vendor_id: string;
-  count: number;
-  destination: Destination;
-  destination_label: string; // "周末拼车局" / "我的号池" / "已 handoff"
-  alive_count: number;
-  dead_count: number;
-  credits_used: Money;
-  lifespan_seconds: number;
-  total_cost: Money;
-  created_at: ISOTime;
-}
-
 // ── 活动流（混流）
 export type ActivityKind =
   | "into_bus"

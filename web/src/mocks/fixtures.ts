@@ -1,7 +1,7 @@
 import { MICRO, vendorLabel } from "@/lib/utils";
 import type {
   Activity, ApiKey, AssignEvent, AssignedKey, AutoPickResult, BusMember, PushError, Bus, Credential, DownstreamConfig,
-  ExtractEvent, ExtractRecord, GlobalStrategy, LedgerEntry, Overview, Passenger, PullRound,
+  ExtractEvent, GlobalStrategy, LedgerEntry, Overview, Passenger, PullRound,
   StockSummary, TrendPoint, VendorDayRounds, VendorHistory, VendorPriceTrend, VendorRound,
   VendorShare, VendorStat, VendorStock, Wallet, WebhookConfig, WebhookDelivery, Zone,
 } from "@/types";
@@ -235,16 +235,6 @@ export const pullRounds: PullRound[] = [
   /* Kiro 常驻车 · bus_kiro · 手动模式，拉号频率低 */
   { id: "rd_30", vendor_id: "91kiro",  bus_id: "bus_kiro",  bus_name: "Kiro 常驻车", result: "success", count_requested: 2, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(8),  fail_reason: null, created_at: ago(18) },
   { id: "rd_31", vendor_id: "kirodrop", bus_id: "bus_kiro",  bus_name: "Kiro 常驻车", result: "success", count_requested: 3, count_purchased: 3, alive_count: 3, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(9),  fail_reason: null, created_at: ago(52) },
-];
-
-/* ── 提取记录 ── */
-
-export const extractRecords: ExtractRecord[] = [
-  { id: "ex_01", vendor_id: "kirodrop", count: 2, destination: "push_pool", destination_label: "我的号池", alive_count: 2, dead_count: 0, credits_used: C(6400), lifespan_seconds: 6 * 3600, total_cost: -C(6), created_at: ago(0.5) },
-  { id: "ex_02", vendor_id: "kirooo", count: 10, destination: "pending", destination_label: "待派去向", alive_count: 10, dead_count: 0, credits_used: C(1600), lifespan_seconds: 4 * 3600, total_cost: -C(25), created_at: ago(4.3) },
-  { id: "ex_03", vendor_id: "91kiro", count: 1, destination: "into_bus", destination_label: "周末拼车局", alive_count: 1, dead_count: 0, credits_used: C(8200), lifespan_seconds: 31 * 3600, total_cost: -C(22), created_at: ago(7.9) },
-  { id: "ex_04", vendor_id: "kiroceo", count: 3, destination: "handoff", destination_label: "已 handoff", alive_count: 0, dead_count: 0, credits_used: 0, lifespan_seconds: 0, total_cost: -C(18), created_at: ago(26) },
-  { id: "ex_05", vendor_id: "kiroappio", count: 5, destination: "push_pool", destination_label: "我的号池", alive_count: 5, dead_count: 0, credits_used: C(4500), lifespan_seconds: 27 * 3600, total_cost: -C(15), created_at: ago(31) },
 ];
 
 /* ── 上游库存（PullExtractModal 上游即时状态面板） · docs/14 §4.3 ── */

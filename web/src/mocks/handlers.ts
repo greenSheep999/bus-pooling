@@ -15,6 +15,11 @@ const isWaived = (request: Request): boolean => {
   return !!code && code.trim().length > 0;
 };
 
+/* handoff 三段式的进程内状态（真实后端是 pending_handoff 表 · 09-transactions §4）
+   token → credential_ids · confirm 后进 handedOff 并从待派列表消失 */
+const handoffTokens = new Map<string, string[]>();
+const handedOff = new Set<string>();
+
 export const handlers = [
   // ── 账号 / 钱包
   http.get("/api/me", () => ok(fx.passenger)),
@@ -92,16 +97,53 @@ export const handlers = [
 
   // ── 拉号记录（record group · 未派去向号）· 派去向
   http.get("/api/me/pull-records", () => {
-    const items = fx.credentials.filter((c) => c.owner_bus_id === null);
+    // 拿走过的号不再出现在「待派」（台账行仍在 fx.credentials 里，供追溯）
+    const items = fx.credentials.filter((c) => c.owner_bus_id === null && !handedOff.has(c.id));
     return ok({ items, total: items.length, page: 1, page_size: 20 });
   }),
   http.post("/api/me/pull-records/assign", () => ok({ ok: true, assigned: 0 }, 400)),
 
-  // ── 提取 key
-  http.get("/api/me/extract/records", () => ok({ items: fx.extractRecords, total: fx.extractRecords.length, page: 1, page_size: 20 })),
-  http.get("/api/me/extract/events", () => ok({ items: fx.extractEvents, total: fx.extractEvents.length, page: 1, page_size: 20 })),
+  /* 拿走 · 三段式（09-transactions §4）· 号在 confirm 之前都还在池里 */
+  http.post("/api/me/handoff", async ({ request }) => {
+    const { credential_ids } = (await request.json()) as { credential_ids: string[] };
+    const token = crypto.randomUUID().replace(/-/g, "");
+    handoffTokens.set(token, credential_ids);
+    return ok({
+      download_token: token,
+      expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+    }, 400);
+  }),
+  http.get("/api/me/handoff/:token", ({ params }) => {
+    const ids = handoffTokens.get(String(params.token));
+    if (!ids) return HttpResponse.json({ code: "token_expired", message: "下载链接已过期，请重新发起" }, { status: 404 });
+    const keys = ids.map((id) => {
+      const c = fx.credentials.find((x) => x.id === id);
+      return {
+        credential_id: id,
+        // 真实环境是后端从号池实时读的明文；mock 造一个完整形状的假 key
+        key: `ksk_live_${crypto.randomUUID().replace(/-/g, "")}`,
+        vendor_id: c?.vendor_id ?? "91kiro",
+        account: c?.account ?? "unknown",
+      };
+    });
+    return ok({ keys }, 500);
+  }),
+  http.post("/api/me/handoff/:token/confirm", ({ params }) => {
+    const token = String(params.token);
+    const ids = handoffTokens.get(token);
+    if (!ids) return HttpResponse.json({ code: "token_expired", message: "下载链接已过期" }, { status: 404 });
+    /* 这一步才真删。台账行**不删**（§8.24 售后要能追溯），只是号离开系统、
+       不再出现在「待派」列表里 —— 所以记一个 handed_off 集合去过滤，
+       而不是改 owner_bus_id 塞魔法值 */
+    ids.forEach((id) => handedOff.add(id));
+    handoffTokens.delete(token);
+    return ok({ ok: true }, 400);
+  }),
+
+  // ── 提取 key（端点在 /me/pull* 名下 · 待派列表就是上面那个 pull-records，不另开一个）
+  http.get("/api/me/pull/events", () => ok({ items: fx.extractEvents, total: fx.extractEvents.length, page: 1, page_size: 20 })),
   http.get("/api/me/assign/events", () => ok({ items: fx.assignEvents, total: fx.assignEvents.length, page: 1, page_size: 20 })),
-  http.post("/api/me/extract/estimate", async ({ request }) => {
+  http.post("/api/me/pull/estimate", async ({ request }) => {
     const b = (await request.json()) as { count: number };
     const unit = 20_000_000;
     const keyCost = unit * b.count;
@@ -109,11 +151,11 @@ export const handlers = [
     const service = 1_000_000;
     return ok({ key_cost: keyCost, single_pull_fee: single, service_fee: service, total: keyCost + single + service }, 80);
   }),
-  http.post("/api/me/extract", () => ok({ round_id: "rd_new", status: "initiated" }, 800)),
+  http.post("/api/me/pull", () => ok({ round_id: "rd_new", status: "initiated" }, 800)),
 
   // ── 上游即时快照 + 我方历史（PullExtractModal）· docs/14 §4.3
   //    单价按身份返回**最终价**（含附加费）· 绝不下发原价 · decisions §8.20
-  http.get("/api/me/vendors/:vendor_id/stock", ({ params, request }) => {
+  http.get("/api/vendors/:vendor_id/stock", ({ params, request }) => {
     const s = fx.vendorStocks[params.vendor_id as string];
     if (!s) return HttpResponse.json({ error: "not_found" }, { status: 404 });
     const waived = isWaived(request);
@@ -124,7 +166,7 @@ export const handlers = [
   }),
 
   // ── 系统派号推荐（auto 模式 · 散客默认）· decisions §8.20
-  http.get("/api/me/vendors/auto-pick", ({ request }) => {
+  http.get("/api/vendors/auto-pick", ({ request }) => {
     const u = new URL(request.url);
     const zone = (u.searchParams.get("zone") ?? "auto") as "us" | "eu" | "auto";
     const waived = isWaived(request);
@@ -137,7 +179,7 @@ export const handlers = [
   }),
   // ── vendor 价格走势（Prices 页多线图）· decisions §8.22
   //    单价按身份返回**最终价**（含附加费）· 显示名按身份匿名化
-  http.get("/api/me/vendors/prices", ({ request }) => {
+  http.get("/api/vendors/prices", ({ request }) => {
     const u = new URL(request.url);
     const days = Number(u.searchParams.get("days") ?? "30");
     const zone = (u.searchParams.get("zone") ?? "auto") as "us" | "eu" | "auto";
@@ -148,7 +190,7 @@ export const handlers = [
     });
     return ok({ trends });
   }),
-  http.get("/api/me/vendors/:vendor_id/history", ({ params }) => {
+  http.get("/api/vendors/:vendor_id/history", ({ params }) => {
     const h = fx.vendorHistories[params.vendor_id as string];
     return h ? ok(h) : HttpResponse.json({ error: "not_found" }, { status: 404 });
   }),

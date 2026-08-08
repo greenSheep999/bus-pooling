@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, del, post, put } from "./client";
 import type {
   Activity, ApiKey, ApiKeyCreated, AssignEvent, AutoPickResult, Bus, Credential, DownstreamConfig,
-  ExtractEvent, ExtractRecord, GlobalStrategy, LedgerEntry, Money, Overview, Paged, Passenger,
-  PullRound,
+  ExtractEvent, GlobalStrategy, ISOTime, LedgerEntry, Money, Overview, Paged,
+  Passenger, PullRound,
   RedeemResult, StockSummary, TimeRange, TopupOrder, TrendMetric, TrendPoint,
   VendorHistory, VendorPriceTrend, VendorShare, VendorStat, VendorStock, Wallet, WebhookConfig,
   WebhookDelivery,
@@ -167,19 +167,15 @@ export const useDissolveBus = () => {
   });
 };
 
-/* ── 提取 key ── */
-
-export const useExtractRecords = () =>
-  useQuery({
-    queryKey: ["extractRecords"],
-    queryFn: () => api<Paged<ExtractRecord>>("/me/extract/records"),
-  });
+/* ── 提取 key ──
+   端点都在 /me/pull* 名下（跟后端矩阵一致）· "extract" 只是这个页面的中文叫法，
+   不是独立资源 —— 单独拉号和拼车拉号是同一个动作，去向不同而已 */
 
 export const useEstimate = () =>
   useMutation({
     mutationFn: (body: { vendor_id: string; count: number }) =>
       post<{ key_cost: number; single_pull_fee: number; service_fee: number; total: number }>(
-        "/me/extract/estimate",
+        "/me/pull/estimate",
         body,
       ),
   });
@@ -191,7 +187,7 @@ export const useExtract = () => {
       vendor_id: string; zone?: string; count: number;
       /** 优惠码 · 本次减免 · decisions §8.20（注册时叫邀请码 · 这里叫优惠码） */
       coupon_code?: string;
-    }) => post("/me/extract", body),
+    }) => post("/me/pull", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["extractRecords"] });
       qc.invalidateQueries({ queryKey: ["extractEvents"] });
@@ -204,7 +200,7 @@ export const useExtract = () => {
 export const useExtractEvents = () =>
   useQuery({
     queryKey: ["extractEvents"],
-    queryFn: () => api<Paged<ExtractEvent>>("/me/extract/events"),
+    queryFn: () => api<Paged<ExtractEvent>>("/me/pull/events"),
   });
 
 /** 派发事件 · 每次派动作一条 · Extract 页"派发历史"tab */
@@ -222,7 +218,7 @@ export const useVendorStock = (vendorId: string | undefined, couponCode?: string
     queryKey: ["vendorStock", vendorId, couponCode || null],
     queryFn: () =>
       api<VendorStock>(
-        `/me/vendors/${vendorId}/stock${couponCode ? `?coupon_code=${encodeURIComponent(couponCode)}` : ""}`,
+        `/vendors/${vendorId}/stock${couponCode ? `?coupon_code=${encodeURIComponent(couponCode)}` : ""}`,
       ),
     enabled: !!vendorId && vendorId !== "auto",
   });
@@ -235,7 +231,7 @@ export const useAutoPick = (zone: string, couponCode?: string) =>
     queryFn: () => {
       const p = new URLSearchParams({ zone });
       if (couponCode) p.set("coupon_code", couponCode);
-      return api<AutoPickResult>(`/me/vendors/auto-pick?${p}`);
+      return api<AutoPickResult>(`/vendors/auto-pick?${p}`);
     },
   });
 
@@ -244,14 +240,14 @@ export const useVendorPrices = (days: number, zone: string = "auto") =>
   useQuery({
     queryKey: ["vendorPrices", days, zone],
     queryFn: () =>
-      api<{ trends: VendorPriceTrend[] }>(`/me/vendors/prices?days=${days}&zone=${zone}`),
+      api<{ trends: VendorPriceTrend[] }>(`/vendors/prices?days=${days}&zone=${zone}`),
   });
 
 /** 我方历史统计 · 近 30 天 · PullExtractModal 上游状态面板 */
 export const useVendorHistory = (vendorId: string | undefined) =>
   useQuery({
     queryKey: ["vendorHistory", vendorId],
-    queryFn: () => api<VendorHistory>(`/me/vendors/${vendorId}/history`),
+    queryFn: () => api<VendorHistory>(`/vendors/${vendorId}/history`),
     enabled: !!vendorId && vendorId !== "auto",
   });
 
@@ -263,10 +259,11 @@ export const usePullRecords = () =>
     queryFn: () => api<Paged<Credential>>("/me/pull-records"),
   });
 
-/* 派去向 · 三种：进车（into_bus + bus_id）· 推池（push_pool）· 拿走（handoff） */
+/* 派去向 · 两种走 assign：进车（into_bus + bus_id）· 推池（push_pool）
+   拿走（handoff）**不走这里** —— 它是三段式，见下面 useHandoff（09-transactions §4） */
 export type AssignBody = {
   credential_ids: string[];
-  destination: "into_bus" | "push_pool" | "handoff";
+  destination: "into_bus" | "push_pool";
   bus_id?: string; // into_bus 才带
 };
 
@@ -281,12 +278,54 @@ export const useAssign = () => {
   });
 };
 
+/* ── 拿走 handoff · 三段式（09-transactions §4 · P0-3）──
+   为什么不能一次性：号交出去不可逆。一次性做法是「删号 + 同一个响应返明文」，
+   响应在网络上断线 → 号已删、明文没收到 → **明文永久丢失，钱白花**。
+   三段式把「取明文」和「删号」分开，取明文那步 TTL 内可以反复重试。
+
+   UI 上仍然只有两步（点「下载拿走」→ 看到明文 → 点「我已保存」），
+   init + fulfill 合在打开弹窗那一下做完，用户感知不到三段。 */
+
+export interface HandoffToken {
+  download_token: string;
+  expires_at: ISOTime;
+}
+
+export interface HandoffKeys {
+  keys: { credential_id: string; key: string; vendor_id: string; account: string }[];
+}
+
+/** ① 发 token · 号还在池里（disabled），这步**不返回明文** */
+export const useHandoffInit = () =>
+  useMutation({
+    mutationFn: (credential_ids: string[]) =>
+      post<HandoffToken>("/me/handoff", { credential_ids }),
+  });
+
+/** ② 用 token 取明文 · TTL 内可反复取（断线重试就靠这个） */
+export const useHandoffFulfill = () =>
+  useMutation({
+    mutationFn: (token: string) => api<HandoffKeys>(`/me/handoff/${token}`),
+  });
+
+/** ③ 确认收到 → 这时才真删号 · 幂等 */
+export const useHandoffConfirm = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (token: string) => post(`/me/handoff/${token}/confirm`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pullRecords"] });
+      qc.invalidateQueries({ queryKey: ["assignEvents"] });
+    },
+  });
+};
+
 /* ── 单独拉号（次入口） · 跟 bus 无关 · 拉完进 record group ── */
 
 export const usePull = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { vendor_id?: string; count: number }) => post("/me/extract", body),
+    mutationFn: (body: { vendor_id?: string; count: number }) => post("/me/pull", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pullRecords"] });
       qc.invalidateQueries({ queryKey: ["wallet"] });

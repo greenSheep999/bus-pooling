@@ -514,18 +514,21 @@
 
 有命中 = 违反 `CLAUDE.md §12` = review 打回。
 
-## 待补 API 端点（mockup 已画 · `05-api-contract.md` 未定义）
+## API 端点 · 已全部进契约 ✅
 
-概览页和 Vendor 监测需要这些，1a 用 MSW mock，落码前补进契约：
+原来这节叫「待补 API 端点」，列了 6 个 mockup 画了但契约没定义的。**2026-08-08 已全部补进 `05-api-contract.md` 并同步到 `sprint-1a-backend.md` 的端点矩阵**（`decisions §8.28`），不再是"待补"。
 
-| 端点 | 用途 |
+前端实际调用的完整清单以 `web/src/api/hooks.ts` 为准。几条**命名铁律**（改过，别用旧的）：
+
+| 用 | 不用 |
 |---|---|
-| `GET /api/me/overview?range=` | KPI 4 项 + 3 业务线汇总 |
-| `GET /api/me/trend?range=&metric=` | 趋势序列（消耗 / 拉号 / 寿命） |
-| `GET /api/me/activities?range=` | 活动记录（跨类型混流） |
-| `GET /api/vendors/stats` | Vendor 监测（单价/寿命/有效成本/存活率/今日拉/fallback）+ 占比 |
-| `GET /api/vendors/stock` | 上游库存汇总（header badge） |
-| `PUT /api/me/buses/{id}/strategy` | 补车策略（跟车绑） |
+| `GET /api/me` | ~~`/api/me/profile`~~ |
+| `/api/vendors/*`（公共数据 · 定价由服务端按调用者个性化） | ~~`/api/me/vendors/*`~~ |
+| `/api/me/pull` `/api/me/pull/estimate` `/api/me/pull/events` | ~~`/api/me/extract*`~~ |
+| `POST /api/me/handoff` + `GET /handoff/{token}` + `POST /handoff/{token}/confirm` | ~~`assign` 里带 `destination:"handoff"`~~ |
+| `GET /api/me/buses/{id}` 返回内嵌 `members[]` | ~~`GET /api/me/buses/{id}/members`~~ |
+
+**拿走是三段式**（`09-transactions §4`）：界面上只有两步（点「下载拿走」→ 看明文 → 点「我已保存」），但底层是 ①发token ②取明文 ③confirm 才删号。**点「返回」不 confirm，号留在池里可以重来** —— 这正是三段式存在的意义，改这块前先读 `decisions §8.28`。
 
 ---
 

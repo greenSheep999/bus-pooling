@@ -3,8 +3,9 @@ import {
   AlertTriangle, ArrowRight, Bus, Coins, Copy, Download, Send, UserMinus,
 } from "lucide-react";
 import {
-  useAssign, useBuses, useMe,
+  useAssign, useBuses, useHandoffConfirm, useHandoffFulfill, useHandoffInit, useMe,
 } from "@/api/hooks";
+import type { HandoffKeys } from "@/api/hooks";
 import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -107,13 +108,21 @@ export function AssignModal({
   const { data: buses } = useBuses();
   const [kind, setKind] = useState<Kind>(presetKind ?? "into_bus");
   const [busId, setBusId] = useState("");
-  const [handoffPreview, setHandoffPreview] = useState<Credential[] | null>(null);
+  /* 拿走三段式的中间态 · token 留着给第 ③ 步 confirm 用
+     keys 是**后端实时从号池读出来的明文**，不落我方库（09-transactions §4） */
+  const [handoff, setHandoff] = useState<{
+    token: string;
+    keys: HandoffKeys["keys"];
+  } | null>(null);
+  const handoffInit = useHandoffInit();
+  const handoffFulfill = useHandoffFulfill();
+  const handoffConfirm = useHandoffConfirm();
 
   useEffect(() => {
     if (open) {
       setKind(presetKind ?? "into_bus");
       setBusId("");
-      setHandoffPreview(null);
+      setHandoff(null);
     }
   }, [open, presetKind]);
 
@@ -135,10 +144,17 @@ export function AssignModal({
 
   const onSubmit = async () => {
     if (!canSubmit || records.length === 0) return;
+
+    /* 拿走走三段式（09-transactions §4）：这一步做 ① 发 token + ② 取明文，
+       号此刻**还在池里** —— 用户点「我已保存」才 ③ confirm 触发删除。
+       ② 失败（比如断线）可以重试，因为号没删。 */
     if (kind === "handoff") {
-      setHandoffPreview(records);
+      const t = await handoffInit.mutateAsync(records.map((r) => r.id));
+      const got = await handoffFulfill.mutateAsync(t.download_token);
+      setHandoff({ token: t.download_token, keys: got.keys });
       return;
     }
+
     await assign.mutateAsync({
       credential_ids: records.map((r) => r.id),
       destination: kind,
@@ -147,12 +163,11 @@ export function AssignModal({
     onClose();
   };
 
+  /** ③ 用户说"我已保存" → 这时才真删号 */
   const onConfirmHandoff = async () => {
-    await assign.mutateAsync({
-      credential_ids: records.map((r) => r.id),
-      destination: "handoff",
-    });
-    setHandoffPreview(null);
+    if (!handoff) return;
+    await handoffConfirm.mutateAsync(handoff.token);
+    setHandoff(null);
     onClose();
   };
 
@@ -181,21 +196,23 @@ export function AssignModal({
           </p>
         </DialogHeader>
 
-        {handoffPreview ? (
+        {handoff ? (
           <>
             <DialogBody>
+              {/* 号此刻**还没删** —— 点下面「我已保存」才删。所以这里说"确认后删除"而不是"已删除" */}
               <Alert tone="danger" icon={AlertTriangle} title="这是唯一一次可见，请立即复制保存">
-                拿走后我方立即删除 · 之后再也拿不到明文
+                确认后我方立即删除 · 之后再也拿不到明文
               </Alert>
               <div className="mt-3 max-h-60 space-y-2 overflow-y-auto rounded-xl border border-hairline bg-bg-elevated p-3">
-                {handoffPreview.map((r) => (
-                  <div key={r.id} className="flex items-center gap-3 text-label">
-                    <VendorTag name={vendorLabel(r.vendor_id, !!me?.invited)} />
-                    <code className="min-w-0 flex-1 truncate font-mono">{r.key_masked}</code>
+                {handoff.keys.map((k) => (
+                  <div key={k.credential_id} className="flex items-center gap-3 text-label">
+                    <VendorTag name={vendorLabel(k.vendor_id, !!me?.invited)} />
+                    {/* 真明文（不是打码版）· 后端从号池实时读，不落我方库 */}
+                    <code className="min-w-0 flex-1 truncate font-mono">{k.key}</code>
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => navigator.clipboard.writeText(r.key_masked)}
+                      onClick={() => navigator.clipboard.writeText(k.key)}
                       aria-label="复制"
                     >
                       <Copy />
@@ -203,12 +220,26 @@ export function AssignModal({
                   </div>
                 ))}
               </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-2"
+                onClick={() => navigator.clipboard.writeText(handoff.keys.map((k) => k.key).join("\n"))}
+              >
+                <Copy />
+                复制全部
+              </Button>
             </DialogBody>
             <DialogFooter>
-              <Button variant="ghost" onClick={() => setHandoffPreview(null)}>返回</Button>
-              <Button variant="danger" onClick={onConfirmHandoff}>
+              {/* 「返回」不 confirm → 号留在池里，可以重来（这正是三段式的意义） */}
+              <Button variant="ghost" onClick={() => setHandoff(null)}>返回</Button>
+              <Button
+                variant="danger"
+                onClick={onConfirmHandoff}
+                disabled={handoffConfirm.isPending}
+              >
                 <ArrowRight />
-                我已保存 · 确认拿走
+                {handoffConfirm.isPending ? "处理中…" : "我已保存 · 确认拿走"}
               </Button>
             </DialogFooter>
           </>

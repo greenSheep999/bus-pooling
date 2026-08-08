@@ -472,6 +472,41 @@
 
 **参考**：`09-transactions.md §4`（两阶段交付）· `06-db-schema.md §11 §11.1`（台账）· `CLAUDE.md §1.2`（handoff 语义）
 
+### 8.28 契约向已定的界面对齐 ✅（后端动工前的核对结论）
+
+**背景**：前端 16 条路由全部落地后，拿实际调用逐条对 `sprint-1a-backend.md` 那张「冻结」的端点矩阵，发现**实质出入**（不是措辞问题）。原则定为：**界面已经跑通并验证过，契约向界面对齐**；文档里更早的设想若跟界面冲突，改文档。
+
+**改了五类**：
+
+1. **handoff 前后端不一致 → 前端改成三段式**（不降级）
+   - `09-transactions §4` 定的两阶段 token 是 **P0**，理由是"响应断线 → 号已删、明文丢失、钱白花"
+   - 前端原来一次性做完，把这个 P0 绕过去了
+   - **界面一个像素没改** —— 点「下载拿走」= ①发token + ②取明文（号还在），点「我已保存」= ③confirm 才删。点「返回」不 confirm，号留池里可重来
+   - 端点从 `POST /pull-records/{id}/handoff-init` 改成 **`POST /me/handoff`**（不绑单条 record —— 界面是批量勾选，token 天然对应一批号）
+
+2. **矩阵补 15 个前端在调但表里没有的端点**
+   - 概览三件套（`/me/overview` `/me/trend` `/me/activities`）· vendor 四件套（`stock` 聚合 / `stats` / `auto-pick` / `{id}/stock`）· 提取三件套（`/me/pull` `/me/pull/estimate` `/me/pull/events`）· `/me/assign/events` · `PUT /me/buses/{id}/strategy` 等
+   - 原表写「未列出的 = 501」，但这些 501 掉的是**主流程和首页**
+   - 同时明确列出「哪些页面 501 可接受」（价格走势 / webhook / 充值兑换 / 成员管理 / 数据 tab）和「哪些 1b 必须真实现」
+
+3. **路径命名统一**
+   - `GET /api/me/profile` → **`GET /api/me`**（跟前端 `/me` 页同名）
+   - `/api/me/vendors/*` → **`/api/vendors/*`**（vendor 是公共数据，不该挂 `/me`）· 定价个性化**在服务端按调用者做**，客户端不换路径
+   - `/api/me/extract*` → **`/api/me/pull*`**（"提取"是页面的中文叫法，不是独立资源 —— 单独拉号和拼车拉号是同一个动作，只是去向不同）
+   - **副作用**：vendor 端点原写"匿名可访问"**作废** —— 要按 `invited` 定价就必须鉴权
+
+4. **schema 补前端已在用的字段**
+   - `credential_ledger`：`push_error_code / status / message / retriable` + `push_attempts` + `push_last_attempt_at`（结构化推送失败 · §8.24 §8.25 售后追溯靠它）· `warranty_until`（UI「质保内失效·可退」判据）
+   - `bus_member`：`share_pct` / `status` / `skipped_count` / `last_skipped_at`（§8.18 §8.23 §8.26）· **1a 就建列**（SQLite ALTER 加不了 CHECK，且 1 人车语义天然成立：100% / active / 0）
+   - `passenger_strategy_default`：加 `preferred_vendor` / `default_zone`，并把两类字段（硬上限 vs 新车默认值）在文档里分开标注
+
+5. **`assign` 的形状改成"一次一个去向"**
+   - 原契约是 `assignments[]` 混合三种去向 —— 跟 `CLAUDE.md §2` 已废的「混合上车 / allocation 组件」冲突，界面上也没有混合入口
+   - handoff 从 `assign` 摘出去（明文不能在普通响应里返）
+   - **删掉 `GET /buses/{id}/members`** —— 成员并进 `GET /me/buses/{id}` 的 `members[]`：成员 tab 切过去就该有数据，不值得多一次请求 + loading；数量天然极小
+
+**参考**：`sprint-1a-backend.md` Endpoint Matrix（已重写）· `05-api-contract.md` §1/§4/§5/§5b/§7/§9/§9b · `06-db-schema.md` §8/§13/§16
+
 ### 8.27 设置是主入口 · 全局上限归设置 · 每车策略归车 ✅（前端已做）
 
 **背景**：`§8.6` 定了"补车策略跟 bus 绑，不放全局设置"。这条**没错但被过度引用** —— 它说的是**每车的补车策略**，不是**全局上限**。两者被混成一件事，结果全局那半边一直没有入口。

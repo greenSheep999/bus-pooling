@@ -244,11 +244,23 @@ CREATE TABLE bus_member (
   role                   TEXT NOT NULL DEFAULT 'member',  -- member | owner
   joined_at              TEXT NOT NULL,
   left_at                TEXT,                             -- 退出后不删行，留历史
+  -- ↓ 阶段 2a 才用（多人车）· 1a 全是 1 人车，owner 恒 share_pct=100 / status=active
+  -- 列在 1a 就建好，免得 2a 改表（SQLite ALTER 受限）
+  share_pct              INTEGER NOT NULL DEFAULT 100,     -- 分摊比例 · 全车加起来 = 100（§8.18 §8.23）
+  status                 TEXT NOT NULL DEFAULT 'active',   -- active | suspended（§8.26）
+  skipped_count          INTEGER NOT NULL DEFAULT 0,       -- 连续因余额不足被跳过几次 · 到 3 自动挂起 · 充值归零
+  last_skipped_at        TEXT,
   PRIMARY KEY (bus_id, passenger_id, joined_at),
   FOREIGN KEY (bus_id) REFERENCES bus(id),
-  FOREIGN KEY (passenger_id) REFERENCES passenger(id)
+  FOREIGN KEY (passenger_id) REFERENCES passenger(id),
+  CHECK (share_pct BETWEEN 0 AND 100),
+  CHECK (status IN ('active', 'suspended'))
 );
 ```
+
+**为什么 2a 的列现在就建**：SQLite 的 `ALTER TABLE` 只能加列不能加 CHECK / 改约束，而且这几列有默认值、1 人车语义天然成立（100% / active / 0 次）。1a 建好 = 2a 只写逻辑不动表。
+
+**挂起语义**（§8.26）：`status='suspended'` 的成员**不参与分摊**、也**没有 client_key**（取不到号），但 `share_pct` **保留** —— 这正是"挂起"跟"移除"的区别。移除要改其他人的 share_pct，得全员确认。
 
 **索引**：`bus(creator_passenger_id, status)`, `bus(invite_code)`, `bus(kind, status)`, `bus_member(passenger_id, left_at)`, `bus_member(bus_id, left_at)`。
 
@@ -324,7 +336,17 @@ CREATE TABLE credential_ledger (
   death_source                TEXT,                        -- housepool_probe | vendor_webhook | vendor_poll
   handed_off_at               TEXT,                        -- handoff 时间
   pushed_to_passengerpool_at  TEXT,                        -- 号是否推给了乘客 passengerpool（双写状态）· NULL = 未推 · 有值 = 已推
-  passengerpool_push_error    TEXT,                        -- 推送失败原因；NULL = 无失败 / 未推
+  -- 推送失败 · **结构化**（decisions §8.24 §8.25）· 原来只有一个 TEXT 存不下，
+  -- 但售后要靠这几个字段判断"是用户配错还是我方问题"、以及能不能重试
+  push_error_code             TEXT,                        -- unauthorized | timeout | conflict | server_error | …
+  push_error_status           INTEGER,                     -- HTTP 状态码 · 超时类为 NULL
+  push_error_message          TEXT,                        -- 人话原因（对外展示）
+  push_error_retriable        INTEGER,                     -- 0/1 · 决定 UI 给「重试」还是「去检查配置」
+  push_attempts               INTEGER NOT NULL DEFAULT 0,  -- 已试次数（退避 5s/30s/5min 共 3 次）
+  push_last_attempt_at        TEXT,
+  -- 质保窗口截止 · 各 vendor 10-30 分钟不等（docs/vendors/*.md §13）
+  -- 号在这之前死 → 跟随上游退款（00 §7.5 规则 B）· UI 上「质保内失效·可退」就靠它判
+  warranty_until              TEXT,
   FOREIGN KEY (owner_bus_id) REFERENCES bus(id),
   FOREIGN KEY (owner_record_passenger_id) REFERENCES passenger(id),
   FOREIGN KEY (source_pull_round_id) REFERENCES pull_round(id),
@@ -506,19 +528,29 @@ CREATE TABLE pull_round_capability (
 ```sql
 CREATE TABLE passenger_strategy_default (
   passenger_id             TEXT PRIMARY KEY,
+  -- ↓ 硬上限（decisions §8.27）· 超了**拒绝拉号**，不是"建车时的默认值"
+  max_unit_price           INTEGER,                      -- microunit · 单价超这个数就不拉 · NULL = 不限
+  daily_round_limit        INTEGER,                      -- 全局 · 跨所有 bus 累加 · NULL = 不限
+  daily_spend_limit        INTEGER,                      -- microunit · 全局 · NULL = 不限
+  -- ↓ 建新车时的默认值（改它不影响已有的车）
   per_round_count          INTEGER,
-  max_unit_price           INTEGER,                      -- microunit
-  daily_round_limit        INTEGER,                      -- 全局 · 跨所有 bus 累加
-  daily_spend_limit        INTEGER,                      -- microunit · 全局
+  preferred_vendor         TEXT,                         -- NULL = 让系统比价
+  default_zone             TEXT NOT NULL DEFAULT 'auto', -- us | eu | auto
   updated_at               TEXT NOT NULL,
   FOREIGN KEY (passenger_id) REFERENCES passenger(id)
 );
 ```
 
-**含义**：
-- 建新 bus 时 · 若不填字段 · 从此表取默认值
-- 提取 key（record group）走全局限额（此表 `daily_round_limit` / `daily_spend_limit`）
-- Bus 级限额（`bus.daily_round_limit` / `bus.daily_spend_limit`）** 车内**  · 跟全局是**AND** 关系（两个都不超才允许）
+**两类字段语义不同，别混**（§8.27）：
+
+| 字段 | 性质 | 行为 |
+|---|---|---|
+| `max_unit_price` / `daily_round_limit` / `daily_spend_limit` | **硬上限** | 每次拉号 / 提取前校验，超了拒绝。跟车级同名字段取**更严**的（AND） |
+| `per_round_count` / `preferred_vendor` / `default_zone` | **新车默认值** | 只在建车时填初值，改它不动已有的车 |
+
+- **提取 key（record group）只受全局限额管** —— 车级限额管不到 record group
+- `max_unit_price` **手动拉号也拦**：提取确认窗超限时禁用确认按钮（判优惠码折后价）· 不给"就这次放行"的口子
+- 1b 就要**真的生效**（拉号 / 提取前校验），不是存着等 1d
 
 ## 17. Vendor 账户凭证（我方在 vendor 那的账号）· `vendor_account`
 
