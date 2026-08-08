@@ -44,7 +44,7 @@
 | 号价 | `key_cost` | vendor pass-through |
 | 单次议价 | `single_pull_fee` | 我方（`count==1` 时号价 × 20%） |
 | 附加能力费 | `capability_fee` | 我方（**插槽**，阶段 1 无实例） |
-| 服务费 | `service_fee` | 我方（每人每次拉号动作固定 · **两档**：有系统邀请码 1 积分 / 无 7 积分 ≈ 1 USD · 见 `decisions §8.31`） |
+| 服务费 | `service_fee` | 我方（**每个号 1 积分** · 按号不按次：拉 10 个 = 10 积分 · 单一费率不分社群/零售 · 见 `decisions §8.33`） |
 | 通道费 | `channel_fee` | waffo（`pass-through` 5%） |
 
 **加法顺序（不许改）**：

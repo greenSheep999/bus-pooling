@@ -148,8 +148,8 @@ export const handlers = [
     const unit = 20_000_000;
     const keyCost = unit * b.count;
     const single = b.count === 1 ? keyCost * 0.2 : 0;
-    // 服务费两档（§8.31）· 由服务端按调用者身份裁定，不信客户端传的
-    const service = serviceFee(fx.passenger.invited);
+    // 服务费 = 号数 × 1 积分（§8.33）· 服务端裁定
+    const service = serviceFee(b.count);
     return ok({ key_cost: keyCost, single_pull_fee: single, service_fee: service, total: keyCost + single + service }, 80);
   }),
   http.post("/api/me/pull", () => ok({ round_id: "rd_new", status: "initiated" }, 800)),

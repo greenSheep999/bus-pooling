@@ -217,10 +217,10 @@ await POST(`/handoff/${download_token}/confirm`)
   "purchased": 5,
   "key_cost": 100000000,        // 号价（pass-through）
   "single_pull_fee": 0,          // count==5 → 0
-  "service_fee_total": 7000000,  // 参与人各自档位求和 · 本例 1 人零售 → 7（社群则 1 · §8.31）
+  "service_fee_total": 5000000,  // 号数 × 1 积分 = 5 × 1（§8.33 · 按号不按次）
   "channel_fee": 0,              // 拉号动作不涉及通道费
-  "total_debit": 107000000,      // 号价 100 + 服务费 7
-  "balance_remaining": 893000000
+  "total_debit": 105000000,      // 号价 100 + 服务费 5
+  "balance_remaining": 895000000
 }
 // resp (错误)
 { "code": "insufficient_balance", "message": "余额不足 X" }
@@ -261,15 +261,16 @@ await POST(`/handoff/${download_token}/confirm`)
   ],
   "key_cost": 200000000,
   "single_pull_fee": 0,             // count>=2 → 0
-  "service_fee": 7000000,           // 一次动作 · 本例调用者是零售（社群则 1000000）
-  "total_debit": 207000000,         // 号价 200 + 服务费 7
-  "balance_remaining": 793000000
+  "service_fee": 10000000,          // 号数 × 1 积分 = 10 × 1（§8.33）
+  "total_debit": 210000000,         // 号价 200 + 服务费 10
+  "balance_remaining": 790000000
 }
 ```
 
 **注意**：
-- `service_fee` **两档**（`decisions §8.31`）：社群 **1 积分** / 零售 **7 积分**（≈ 1 USD）· 按 `passenger.invited` 判 · **一次动作一轮，跟 count 无关**
-- 档位**只看注册时的系统邀请码** · 优惠码不改档位（优惠码只免零售附加费 §8.20）
+- `service_fee` = **号数 × 1 积分**（`decisions §8.33`）· **按号不按次**：拉 10 个 = 10 积分
+  - ~~"一次动作一轮，跟 count 无关"~~ —— 这句原来是错的，会让拉 10 个只收 1 积分
+  - **单一费率**，不分社群 / 零售（区分那两类是**区域附加费 20%** 的职责，有系统邀请码就免）
 - **服务端裁定**，客户端传什么都不信
 - `single_pull_fee` 只在 `count==1` 才有
 
@@ -397,7 +398,7 @@ await POST(`/handoff/${download_token}/confirm`)
       "count_purchased": 5,
       "participants_split": { "01H_alice": 2, "01H_bob": 3 },  // 谁分几个
       "key_cost_total": 100000000,
-      "service_fee_total": 8000000,   // alice 零售 7 + bob 社群 1（各自档位 · §8.31）
+      "service_fee_total": 5000000,   // 号数 × 1 = 5 × 1 · 按 share_pct 在 alice/bob 之间分摊
       "single_pull_fee_total": 0,
       "created_at": "..."
     },

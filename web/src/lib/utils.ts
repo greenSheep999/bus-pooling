@@ -60,19 +60,21 @@ export const SUSPEND_AFTER = 3;
  *  **只在充值时收一次**（§8.21）—— 拉号 / 提取 / 派号都是积分抵扣，那些页面不许显示通道费 */
 export const CHANNEL_FEE_RATE = 0.05;
 
-/** 服务费 · 每人每次拉号动作 · **两档固定费**（decisions §8.31）
- *  - 有系统邀请码（社群）：1 积分 = 1 RMB
- *  - 无系统邀请码（零售）：7 积分 ≈ 1 USD
+/** 服务费 · **每个号 1 积分**（decisions §8.33）
  *
- *  仍是**固定费不是百分比** —— `00 §3` 的对齐激励（我方没有动机加价号成本）靠这个。
- *  7 是**定价档位不是实时汇率**：汇率波动不该让用户看到服务费每天变。
- *  真实汇率只用于 vendor 成本换算（`vendor_pricing.credits_per_unit`），两回事。 */
-export const SERVICE_FEE_COMMUNITY = 1 * MICRO;
-export const SERVICE_FEE_RETAIL = 7 * MICRO;
+ *  两个要点（都纠正过早先的错）：
+ *  1. **按号算，不是按次** —— 拉 10 个号 = 10 积分。早先文档写「一次动作一轮，
+ *     跟 count 无关」是错的（拉 10 个只收 1 积分，服务费跟工作量脱钩）
+ *  2. **单一费率，不分社群 / 零售** —— §8.31 那个 1/7 两档已废：区分社群和零售
+ *     是**区域附加费 20%** 的职责（有系统邀请码就免），服务费再分一次是重复计价
+ *
+ *  1 积分/号 在号价 20 积分时约等于 5% —— 车主说的"按百分比更合理"，
+ *  按号计费天然就实现了（跟量挂钩），又不用引入百分比制的浮动。 */
+export const SERVICE_FEE_PER_KEY = 1 * MICRO;
 
-/** 按身份取服务费 · invited = 注册时填过**系统**邀请码（个人码不算 · §8.29） */
-export function serviceFee(invited: boolean | undefined): number {
-  return invited ? SERVICE_FEE_COMMUNITY : SERVICE_FEE_RETAIL;
+/** 服务费 = 号数 × 1 积分 */
+export function serviceFee(count: number): number {
+  return Math.max(0, Math.round(count)) * SERVICE_FEE_PER_KEY;
 }
 
 /** 充值：付款额 → 通道费 + 实际到账 */

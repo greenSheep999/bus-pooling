@@ -73,10 +73,10 @@ export function PullExtractForm({
     if (unitPrice == null) return null;
     const keyCost = unitPrice * count;
     const singlePullFee = count === 1 ? keyCost * 0.2 : 0;
-    /* 服务费两档（§8.31）· 社群 1 积分 / 零售 7 积分 · 看有没有**系统**邀请码 */
-    const svcFee = serviceFee(me?.invited);
+    /* 服务费 = 号数 × 1 积分（§8.33）· 按号不按次 */
+    const svcFee = serviceFee(count);
     return { keyCost, singlePullFee, svcFee, total: keyCost + singlePullFee + svcFee };
-  }, [unitPrice, count, me?.invited]);
+  }, [unitPrice, count]);
 
   const bargain = count === 1;
   const outOfStock = available === 0;
@@ -165,7 +165,7 @@ export function PullExtractForm({
                       muted
                     />
                   )}
-                  <FeeRow label="服务费" value={`${toCredits(estimate.svcFee)} 积分`} muted />
+                  <FeeRow label={`服务费 · 1 × ${count}`} value={`${toCredits(estimate.svcFee)} 积分`} muted />
                   {/* 通道费只在充值积分时收 · 拉号/提取都是抵扣积分 · decisions §8.21 · 不显示 */}
                 </div>
               </div>
