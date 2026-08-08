@@ -24,6 +24,8 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/api"
 	"github.com/bus-pooling/bus-pooling/internal/config"
 	"github.com/bus-pooling/bus-pooling/internal/db"
+	"github.com/bus-pooling/bus-pooling/internal/decider"
+	"github.com/bus-pooling/bus-pooling/internal/housepool/kirors"
 	"github.com/bus-pooling/bus-pooling/internal/httpx"
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
 	"github.com/bus-pooling/bus-pooling/internal/providers"
@@ -175,6 +177,61 @@ func buildVendorRegistry(cfg config.Config) (*providers.Registry, error) {
 	return r, nil
 }
 
+// buildDecider 装配拉号编排器。
+//
+// **默认走内存 mock**（`DryRunVendor` + `DryRunPool`）—— vendor 侧是真积分，
+// 阶段 1a 只跑通接口。切真链路需要**同时**：
+//   - `cfg.DryRun == false`
+//   - env `BP_ALLOW_LIVE_PULL=1`（第二把锁，防意外配错）
+//
+// 单靠 `DRY_RUN=false` 不够 —— 那个变量在很多地方影响行为，一处误配会全线通到真扣款。
+func buildDecider(cfg config.Config, sqldb *db.DB, reg *providers.Registry) (*decider.Orchestrator, error) {
+	live := !cfg.DryRun && os.Getenv("BP_ALLOW_LIVE_PULL") == "1"
+
+	var vendor decider.VendorClient
+	var pool decider.PoolClient
+	if !live {
+		vendor = &decider.DryRunVendor{VendorID: providers.Vendor91Kiro}
+		pool = &decider.DryRunPool{}
+		if !cfg.DryRun {
+			slog.Warn("拉号走 mock · 要接真链路请显式设 BP_ALLOW_LIVE_PULL=1")
+		}
+	} else {
+		v, err := reg.Get(providers.Vendor91Kiro)
+		if err != nil {
+			return nil, fmt.Errorf("live 模式但未启用 kiro91 vendor: %w", err)
+		}
+		hc, err := httpx.New(httpx.Config{
+			Timeout: cfg.HTTPX.Timeout, MaxRetries: cfg.HTTPX.MaxRetries,
+			RetryBaseWait: cfg.HTTPX.RetryBaseWait,
+			Proxy:         cfg.HTTPX.Proxy, NoProxy: cfg.HTTPX.NoProxy,
+		})
+		if err != nil {
+			return nil, err
+		}
+		poolClient, err := kirors.New(kirors.Config{
+			BaseURL: cfg.Housepool.BaseURL, AdminKey: cfg.Secrets.HousepoolAdminKey,
+		}, hc)
+		if err != nil {
+			return nil, fmt.Errorf("装配号池客户端: %w", err)
+		}
+		vendor = v
+		pool = poolClient
+		slog.Warn("拉号走 LIVE 链路 · 会产生真扣款", "vendor", providers.Vendor91Kiro)
+	}
+
+	// Rates 阶段 1a 暂零 · 生产前从后台配置注入（`decisions §8.34`）
+	rates := decider.Rates{}
+
+	return decider.New(decider.Config{
+		DB:     sqldb.DB,
+		State:  decider.NewStore(sqldb.DB),
+		Vendor: vendor,
+		Pool:   pool,
+		Rates:  rates,
+	}), nil
+}
+
 func runServe(ctx context.Context, cfg config.Config) error {
 	// serve 需要主密钥（vendor 凭证 / 号池 token 都要解密）
 	if err := cfg.RequireSecrets(); err != nil {
@@ -223,16 +280,29 @@ func runServe(ctx context.Context, cfg config.Config) error {
 
 	// secureCookie：生产走 HTTPS 要 true；本地 http 调试必须 false，否则浏览器不存 cookie
 	secureCookie := os.Getenv("BP_INSECURE_COOKIE") == ""
+	orch, err := buildDecider(cfg, database, vendorRegistry)
+	if err != nil {
+		return err
+	}
+
 	apiSrv := api.NewServer(api.ServerDeps{
 		DB:           database.DB,
 		Passengers:   passenger.NewStore(database.DB),
 		Wallets:      wallet.NewStore(database.DB),
 		Strategies:   strategy.NewStore(database.DB),
-		Decider:      nil, // 阶段 1a：拉号需要 vendor + 号池装配，Iss #9 剩余部分接
+		Decider:      orch,
 		SecureCookie: secureCookie,
 	})
-	_ = vendorRegistry // 已在启动日志打过；下一步接 decider 时用
 	apiSrv.Routes(mux)
+
+	// janitor 后台扫超时单 · orch 为 nil 时跳过（不装配拉号就没超时可扫）
+	if orch != nil {
+		janitor := decider.NewJanitor(decider.JanitorConfig{
+			Orchestrator: orch, State: decider.NewStore(database.DB),
+		})
+		go janitor.Run(ctx)
+		slog.Info("janitor 已启动")
+	}
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := database.PingContext(r.Context()); err != nil {
