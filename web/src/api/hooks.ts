@@ -205,10 +205,11 @@ export const useAutoPick = (zone: string, couponCode?: string) =>
   });
 
 /** vendor 价格走势 · Prices 页多线图 · decisions §8.22 */
-export const useVendorPrices = (days: number) =>
+export const useVendorPrices = (days: number, zone: string = "auto") =>
   useQuery({
-    queryKey: ["vendorPrices", days],
-    queryFn: () => api<{ trends: VendorPriceTrend[] }>(`/me/vendors/prices?days=${days}`),
+    queryKey: ["vendorPrices", days, zone],
+    queryFn: () =>
+      api<{ trends: VendorPriceTrend[] }>(`/me/vendors/prices?days=${days}&zone=${zone}`),
   });
 
 /** 我方历史统计 · 近 30 天 · PullExtractModal 上游状态面板 */

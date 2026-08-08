@@ -343,24 +343,41 @@ function mulberry32(seed: number) {
   };
 }
 
-/** 每 vendor 波动率不同（3%-10%）· 缺货率不同 · 便于线看出差异 */
+/** 每 vendor 波动率不同（3%-10%）· 缺货率保持低位（线不能断太碎否则看不出走势） */
 const VOL: Record<string, { vol: number; outage: number }> = {
-  "91kiro":    { vol: 0.06, outage: 0.05 },
-  kiroceo:    { vol: 0.04, outage: 0.08 },
-  kirooo:     { vol: 0.10, outage: 0.22 },      // 波动大 + 常缺货
-  kiroappio:  { vol: 0.03, outage: 0.02 },      // 稳
-  kiroappcc:  { vol: 0.05, outage: 0.15 },
-  kirodrop:   { vol: 0.08, outage: 0.10 },
+  "91kiro":    { vol: 0.06, outage: 0.02 },
+  kiroceo:    { vol: 0.04, outage: 0.03 },
+  kirooo:     { vol: 0.10, outage: 0.07 },      // 波动最大 + 偶尔缺货
+  kiroappio:  { vol: 0.03, outage: 0.00 },      // 最稳 · 从不缺货
+  kiroappcc:  { vol: 0.05, outage: 0.05 },
+  kirodrop:   { vol: 0.08, outage: 0.03 },
 };
 
-export function vendorPriceTrend(vendorId: string, days = 30, waived = false): VendorPriceTrend {
+/** 生成某 vendor 某区的价格走势
+ *  @param zone 要看哪个区 · "auto" = 该 vendor 首选区（zones[0]）· 无区域 vendor 忽略此参数 */
+export function vendorPriceTrend(
+  vendorId: string,
+  days = 30,
+  waived = false,
+  zone: Zone | "auto" = "auto",
+): VendorPriceTrend {
   const stock = vendorStocks[vendorId];
   if (!stock) throw new Error(`unknown vendor ${vendorId}`);
-  /* 基准价 · 该 vendor 首选区（默认 us）的当前单价（未加附加费） */
-  const base = stock.zones[0].unit_price;
-  const zone = stock.zones.length === 1 ? null : stock.zones[0].zone;
-  const cfg = VOL[vendorId] ?? { vol: 0.05, outage: 0.05 };
-  const rnd = mulberry32(fnv1a(vendorId));
+
+  /* 无区域 vendor（zones 只有一条 label="全区"）· 忽略 zone 参数 */
+  const noRegion = stock.zones.length === 1;
+  const picked = noRegion
+    ? stock.zones[0]
+    : zone === "auto"
+      ? stock.zones[0]
+      : stock.zones.find((z) => z.zone === zone) ?? stock.zones[0];
+
+  /* 基准价 = 该区当前单价（未加附加费）· 不同区价格不同，走势自然分离 */
+  const base = picked.unit_price;
+  const zoneOut = noRegion ? null : picked.zone;
+  const cfg = VOL[vendorId] ?? { vol: 0.05, outage: 0.03 };
+  /* 种子带上区 · 同 vendor 的 us / eu 走势互相独立 */
+  const rnd = mulberry32(fnv1a(`${vendorId}:${zoneOut ?? "all"}`));
 
   const points: VendorPricePoint[] = [];
   let cur = base * (0.9 + rnd() * 0.2);           // 起点 ±10%
@@ -394,7 +411,7 @@ export function vendorPriceTrend(vendorId: string, days = 30, waived = false): V
   return {
     vendor_id: vendorId,
     vendor_label: "",            // handler 按身份填
-    zone,
+    zone: zoneOut,
     points,
     current_price,
     price_high,

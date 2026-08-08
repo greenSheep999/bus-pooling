@@ -112,9 +112,10 @@ export const handlers = [
   http.get("/api/me/vendors/prices", ({ request }) => {
     const u = new URL(request.url);
     const days = Number(u.searchParams.get("days") ?? "30");
+    const zone = (u.searchParams.get("zone") ?? "auto") as "us" | "eu" | "auto";
     const waived = isWaived(request);
     const trends = Object.keys(fx.vendorStocks).map((id) => {
-      const t = fx.vendorPriceTrend(id, days, waived);
+      const t = fx.vendorPriceTrend(id, days, waived, zone);
       return { ...t, vendor_label: vendorLabel(id, fx.passenger.invited) };
     });
     return ok({ trends });
