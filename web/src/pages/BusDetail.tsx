@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  Activity as ActivityIcon, ArrowLeft, Bus as BusIcon, Check, KeyRound, Send, Settings, X, Zap, ZapOff,
+  Activity as ActivityIcon, AlertTriangle, ArrowLeft, Bus as BusIcon, Check,
+  KeyRound, Send, Settings, X, Zap, ZapOff,
 } from "lucide-react";
 import {
   useBus, useBusCredentials, useBusPulls, useDownstream, useMe,
@@ -363,6 +364,8 @@ type PushEvent = {
   keyMasked: string;
   vendorId: string;
   status: "success" | "failed";
+  /** 失败原因 · 售后追溯（decisions §8.24）· 客服靠这个判断是用户配错还是我方问题 */
+  error: string | null;
 };
 
 /** 把 URL 简化成 host 展示（"https://pool.foo.com/api" → "pool.foo.com"）· 失败回退原串 */
@@ -386,12 +389,14 @@ function TabPushes({ busId }: { busId: string }) {
         out.push({
           id: `${c.id}-failed`, time: c.pulled_at, credId: c.id,
           keyMasked: c.key_masked, vendorId: c.vendor_id, status: "failed",
+          error: c.push_error,
         });
       }
       if (c.pushed_at) {
         out.push({
           id: `${c.id}-pushed`, time: c.pushed_at, credId: c.id,
           keyMasked: c.key_masked, vendorId: c.vendor_id, status: "success",
+          error: null,
         });
       }
     }
@@ -469,14 +474,25 @@ function PushRow({
         <VendorTag name={vendorLabel(e.vendorId, !!me?.invited)} />
       </span>
       <span className="flex min-w-0 flex-[1.1] items-center gap-2 text-label">
-        <span className="text-fg-tertiary">→</span>
-        {targetHost ? (
-          <TokenTag size="sm">
-            <Send className="size-3" />
-            <span className="ml-1 truncate">{targetHost}</span>
-          </TokenTag>
+        {e.status === "failed" && e.error ? (
+          /* 失败原因直接显示 · 售后追溯要的就是这个（decisions §8.24）
+             不用点开 —— 出错时用户最需要知道为什么 */
+          <span className="flex min-w-0 items-center gap-1.5 text-warn-fg" title={e.error}>
+            <AlertTriangle className="size-3.5 shrink-0" />
+            <span className="truncate">{e.error}</span>
+          </span>
         ) : (
-          <span className="text-fg-tertiary">我的号池</span>
+          <>
+            <span className="text-fg-tertiary">→</span>
+            {targetHost ? (
+              <TokenTag size="sm">
+                <Send className="size-3" />
+                <span className="ml-1 truncate">{targetHost}</span>
+              </TokenTag>
+            ) : (
+              <span className="text-fg-tertiary">我的号池</span>
+            )}
+          </>
         )}
       </span>
     </BareRow>

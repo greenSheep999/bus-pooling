@@ -89,9 +89,18 @@ export const buses: Bus[] = [
 
 /* ── 号 ── */
 
+/** 推送失败的真实原因样本 · 售后追溯用（decisions §8.24） */
+const PUSH_ERRORS = [
+  "目标号池返回 401 · token 可能已失效",
+  "连接超时（10s）· 目标号池无响应",
+  "目标号池返回 409 · 该 key 已存在",
+];
+
 const mkCred = (
   i: number, vendor: string, used: number, lifeH: number,
   alive: boolean, pushed: boolean, busId: string | null,
+  /** 推送失败 · 传 index 指定错误原因 */
+  pushFailIdx?: number,
 ): Credential => ({
   id: `cred_01H8Z3M${String(i).padStart(3, "0")}`,
   vendor_id: vendor,
@@ -108,20 +117,21 @@ const mkCred = (
   paid: C(vendor === "kirodrop" ? 15 : vendor === "kiroceo" ? 18.5 : 20),
   owner_bus_id: busId,
   pushed_at: pushed ? ago(lifeH - 0.05) : null,
-  push_failed: false,
+  push_failed: pushFailIdx != null,
+  push_error: pushFailIdx != null ? PUSH_ERRORS[pushFailIdx % PUSH_ERRORS.length] : null,
 });
 
 export const credentials: Credential[] = [
   mkCred(1, "91kiro", 6400, 42, true, true, "bus_weekend"),
   mkCred(2, "91kiro", 5800, 42, true, true, "bus_weekend"),
   mkCred(3, "kiroceo", 4100, 38, true, true, "bus_weekend"),
-  mkCred(4, "kiroceo", 3700, 38, true, false, "bus_weekend"),
+  mkCred(4, "kiroceo", 3700, 38, true, false, "bus_weekend", 0),   // 推送失败 · 401
   mkCred(5, "kirodrop", 8200, 31, true, true, "bus_weekend"),
   mkCred(6, "kirodrop", 10000, 22, false, false, "bus_weekend"),
   mkCred(7, "91kiro", 2900, 28, true, true, "bus_weekend"),
   mkCred(8, "kiroceo", 5200, 24, true, true, "bus_weekend"),
   mkCred(9, "kiroceo", 4700, 24, true, true, "bus_weekend"),
-  mkCred(10, "91kiro", 7100, 19, true, false, "bus_weekend"),
+  mkCred(10, "91kiro", 7100, 19, true, false, "bus_weekend", 1),  // 推送失败 · 超时
   mkCred(11, "kirodrop", 3300, 16, true, true, "bus_weekend"),
   mkCred(12, "kirodrop", 2600, 16, true, true, "bus_weekend"),
   mkCred(13, "kirooo", 1800, 12, true, false, "bus_weekend"),

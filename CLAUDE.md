@@ -32,7 +32,7 @@
 | **拉号** | 从 vendor 取号进 housepool。主入口拼车拉的号直接进 `bus-<id>`；次入口单独拉号进 `record-<pid>` |
 | **上车（进车）** | 号进 `bus-<id>` group |
 | **推乘客号池** | 复制到 passengerpool（**双写**：housepool 保留监控副本） |
-| **拿走（handoff）** | 号数据交给乘客 + `DELETE /credentials/{id}`；**唯一"发出去不管"的路径** |
+| **拿走（handoff）** | 号数据交给乘客 + `DELETE /credentials/{id}`；**唯一"发出去不管"的路径**。注意："不管"指**不再监控存活、不留明文**，**不等于不留记录** —— `credential_ledger` 台账行永不删（含 masked / vendor / 时间 / 已耗额度），供售后追溯，见 `decisions §8.24` |
 | **补车** | bus 内号死后自动触发新一轮拉号 |
 | **集单** | 同 bus 内多成员补车意图在窗口内合流 |
 | **发车** | 阶段 3b/3c 才做：乘客上 AWS → 我方转发 vendor 开号 |

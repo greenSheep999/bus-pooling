@@ -340,6 +340,21 @@ CREATE TABLE credential_ledger (
 **注意**：
 - **credential 明文永不落库**（在 housepool = kiro.rs 里）。本表只是我方的**台账**（who / when / where / dead？）
 - **handoff 后 `status = handed_off`**，明文早已交给乘客、housepool 里已 DELETE
+- **台账行永不删** —— housepool 里的 credential 删了，本表的行留着（售后追溯的唯一依据，见 `decisions §8.24`）
+
+### 11.1 售后追溯字段（`decisions §8.24`）
+
+handoff / 推送失败后用户找客服，客服必须能定位到具体是哪个号。原表只有内部 id，对不上用户说的「我那个 xxx 结尾的号」，所以补：
+
+```sql
+ALTER TABLE credential_ledger ADD COLUMN key_masked   TEXT;    -- ksk_live_xxxx…xxx · 客服/用户对号的唯一凭据
+ALTER TABLE credential_ledger ADD COLUMN region       TEXT;    -- us-east-1 | eu-central-1
+ALTER TABLE credential_ledger ADD COLUMN credits_used INTEGER; -- 交付/失效那一刻已耗额度（microunit）
+```
+
+- `key_masked` **不是明文**（只有前缀 + 后 3 位），可以安全长期保留
+- 三个字段在**号入池时写入**，handoff / dead 后**不再变更**（快照语义）
+- 客服工作流：用户报「ksk_live_9f4a…vn6 有问题」→ 按 `key_masked` 查台账 → 看到 vendor / 拉号时间 / 交付时间 / 已耗额度 / 死亡来源 → 判断是否质保内、要不要退款
 - **权限查询**：拼车 bus 里的号，成员通过 `bus_member` 表能拿访问权；1 人 bus 也走同一 join
 - **号在 record group 时** `owner_bus_id IS NULL`，走 `owner_record_passenger_id`
 

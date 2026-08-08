@@ -110,6 +110,9 @@ export interface Credential {
   owner_bus_id: string | null;
   pushed_at: ISOTime | null; // 推 passengerpool 时间，null=未推
   push_failed: boolean;
+  /** 推送失败原因 · 售后追溯用（decisions §8.24）· 重试成功后仍保留历史痕迹
+   *  客服靠这个判断是用户 URL 配错还是我方问题 */
+  push_error: string | null;
 }
 
 // ── 拉号轮次 · UI: 成功 / 部分 / 失败 / 已退款
