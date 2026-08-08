@@ -13,15 +13,15 @@ import type { VendorPriceTrend } from "@/types";
 
 /** 折线图专用调色板 · decisions §8.22
  *  全站 VENDOR_COLOR 是「同色系紫深浅」· 那套给饼图 / 分段条用（相邻色块能对比）
- *  6 条重叠折线上完全失效（3 个浅紫 + 2 个灰认不出）· 这里单独一套明确区分的色相
- *  品牌紫打头 · 其余 5 色低饱和不刺眼 · 不动全站规范 */
+ *  6 条重叠折线上失效（3 个浅紫 + 2 个灰认不出哪条）· 这里单独一套
+ *  取色：品牌紫起手 · 沿色相环走一圈到粉红 · 全部明亮清透（不掺灰）· 明度一致视觉平权 */
 const LINE_COLOR: Record<string, string> = {
   "91kiro":   "#9147FF",   // 品牌紫
-  kiroceo:    "#0EA5E9",   // 青
-  kirooo:     "#F59E0B",   // 橙
-  kiroappio:  "#10B981",   // 绿
-  kiroappcc:  "#EC4899",   // 玫
-  kirodrop:   "#64748B",   // 石板灰
+  kiroceo:    "#4F7CFF",   // 蓝
+  kirooo:     "#00A9E0",   // 天青
+  kiroappio:  "#00BFA5",   // 青绿
+  kiroappcc:  "#F5A524",   // 琥珀
+  kirodrop:   "#F5518E",   // 粉红
 };
 
 const lineColor = (id: string) => LINE_COLOR[id] ?? "#9147FF";
@@ -38,17 +38,21 @@ export default function Prices() {
   const { data, isLoading } = useVendorPrices(days, zone);
   const trends = data?.trends ?? [];
 
-  /* 构造 recharts 需要的 · 每天一行 · 每 vendor 一列 · 缺货日期该 vendor 列为 null */
+  /* 构造 recharts 需要的 · 每天一行 · 每 vendor 一列
+     价格连续（缺货日沿用上次报价）· 另存 `<id>__oos` 标记那天缺货，tooltip 用 */
   const chartData = useMemo(() => {
     if (trends.length === 0) return [];
     const dateSet = new Set<string>();
     for (const t of trends) for (const p of t.points) dateSet.add(p.date);
     const dates = Array.from(dateSet).sort();
     return dates.map((date) => {
-      const row: Record<string, number | string | null> = { date: shortDay(date) };
+      const row: Record<string, number | string | boolean> = { date: shortDay(date) };
       for (const t of trends) {
         const point = t.points.find((p) => p.date === date);
-        row[t.vendor_id] = point?.price ?? null;
+        if (point) {
+          row[t.vendor_id] = point.price;
+          row[`${t.vendor_id}__oos`] = !point.in_stock;
+        }
       }
       return row;
     });
@@ -56,9 +60,7 @@ export default function Prices() {
 
   /* Y 轴范围 · 贴数据区间上下各留 8% · 不从 0 起（否则 25-70 的波动被压在图上半部分看不出） */
   const yDomain = useMemo<[number, number]>(() => {
-    const all = trends.flatMap((t) =>
-      t.points.map((p) => p.price).filter((v): v is number => v != null),
-    );
+    const all = trends.flatMap((t) => t.points.map((p) => p.price));
     if (all.length === 0) return [0, 100];
     const lo = Math.min(...all);
     const hi = Math.max(...all);
@@ -66,11 +68,12 @@ export default function Prices() {
     return [Math.max(0, lo - pad), hi + pad];
   }, [trends]);
 
-  /* 当前最低价 · 给用户一个"现在下单最划算"的锚点 */
+  /* 当前最便宜且有货的 · 给用户一个"现在下单最划算"的锚点 */
   const cheapest = useMemo(() => {
-    const withPrice = trends.filter((t) => t.current_price != null);
-    if (withPrice.length === 0) return null;
-    return withPrice.reduce((a, b) => (a.current_price! <= b.current_price! ? a : b));
+    const available = trends.filter((t) => t.in_stock_now);
+    const pool = available.length > 0 ? available : trends;
+    if (pool.length === 0) return null;
+    return pool.reduce((a, b) => (a.current_price <= b.current_price ? a : b));
   }, [trends]);
 
   return (
@@ -89,8 +92,8 @@ export default function Prices() {
           <div className="min-w-0 space-y-2">
             <h1 className="text-hero font-semibold">价格走势</h1>
             <p className="text-fg-tertiary">
-              各 vendor {days} 天单价变化 · 缺货日期在线上断开 ·{" "}
-              {cheapest && cheapest.current_price != null ? (
+              各 vendor {days} 天单价变化 ·{" "}
+              {cheapest ? (
                 <>
                   当前最便宜：
                   <span className="font-semibold text-fg-secondary"> {cheapest.vendor_label}</span>
@@ -99,7 +102,7 @@ export default function Prices() {
                   </span>
                 </>
               ) : (
-                "全网缺货"
+                "暂无数据"
               )}
             </p>
           </div>
@@ -213,11 +216,7 @@ export default function Prices() {
               </BareHead>
               <BareList>
                 {[...trends]
-                  .sort((a, b) => {
-                    if (a.current_price == null) return 1;
-                    if (b.current_price == null) return -1;
-                    return a.current_price - b.current_price;
-                  })
+                  .sort((a, b) => a.current_price - b.current_price)
                   .map((t) => (
                     <PriceRow
                       key={t.vendor_id}
@@ -251,7 +250,6 @@ function PriceRow({
   onEnter: () => void;
   onLeave: () => void;
 }) {
-  const outOfStock = t.current_price == null;
   return (
     <BareRow
       className={cn("transition-opacity", dim && "opacity-30")}
@@ -268,22 +266,18 @@ function PriceRow({
         {t.zone ?? <span className="text-fg-tertiary">全区</span>}
       </span>
       <span className="w-20 shrink-0 text-right font-semibold tnum">
-        {outOfStock ? (
-          <span className="text-danger-fg">缺货</span>
-        ) : (
-          <>
-            {toCredits(t.current_price!)}
-            <span className="ml-0.5 font-medium text-fg-tertiary">积分</span>
-          </>
+        {toCredits(t.current_price)}
+        <span className="ml-0.5 font-medium text-fg-tertiary">积分</span>
+        {/* 当前缺货 · 价格还在（只是买不到）· 标个点提示 */}
+        {!t.in_stock_now && (
+          <span className="ml-1 font-medium text-warn-fg" title="当前缺货">·</span>
         )}
       </span>
       <span className="w-24 shrink-0 text-right">
         <PctBadge pct={t.change_30d_pct} />
       </span>
       <span className="w-28 shrink-0 text-right text-label tnum text-fg-tertiary">
-        {t.price_low != null && t.price_high != null
-          ? `${toCredits(t.price_low)} - ${toCredits(t.price_high)}`
-          : "—"}
+        {toCredits(t.price_low)} - {toCredits(t.price_high)}
       </span>
       <span className="w-20 shrink-0 text-right text-label tnum">
         {t.outage_days > 0 ? (
@@ -296,8 +290,7 @@ function PriceRow({
   );
 }
 
-function PctBadge({ pct }: { pct: number | null }) {
-  if (pct == null) return <span className="text-label text-fg-tertiary">—</span>;
+function PctBadge({ pct }: { pct: number }) {
   if (pct === 0) {
     return (
       <span className="inline-flex items-center gap-0.5 text-label font-medium text-fg-tertiary">
@@ -331,7 +324,12 @@ function shortDay(iso: string): string {
 
 type TooltipProps = {
   active?: boolean;
-  payload?: { value: number | null; dataKey: string; color: string }[];
+  payload?: {
+    value: number;
+    dataKey: string;
+    color: string;
+    payload?: Record<string, unknown>;
+  }[];
   label?: string;
 };
 
@@ -339,17 +337,19 @@ function PriceTooltip({
   active, payload, label, trends,
 }: TooltipProps & { trends: VendorPriceTrend[] }) {
   if (!active || !payload?.length) return null;
-  /* 按价格升序 · null 排最后 */
+  /* 按价格升序 · 缺货的那天标出来（价格照常显示 —— 缺货不代表价格变了） */
+  const row0 = payload[0]?.payload ?? {};
   const rows = payload
     .map((p) => {
       const t = trends.find((x) => x.vendor_id === p.dataKey);
-      return { label: t?.vendor_label ?? p.dataKey, value: p.value, color: p.color };
+      return {
+        label: t?.vendor_label ?? p.dataKey,
+        value: p.value,
+        color: p.color,
+        oos: row0[`${p.dataKey}__oos`] === true,
+      };
     })
-    .sort((a, b) => {
-      if (a.value == null) return 1;
-      if (b.value == null) return -1;
-      return a.value - b.value;
-    });
+    .sort((a, b) => a.value - b.value);
   return (
     <div className="rounded-lg border border-hairline bg-bg px-3 py-2 text-label shadow-pop">
       <div className="mb-1 font-semibold">{label}</div>
@@ -358,12 +358,10 @@ function PriceTooltip({
           <div key={r.label} className="flex items-center gap-2">
             <span className="size-1.5 rounded-sm" style={{ backgroundColor: r.color }} />
             <span className="text-fg-secondary">{r.label}</span>
+            {r.oos && <span className="text-warn-fg">缺货</span>}
             <span className="ml-auto font-semibold tnum">
-              {r.value == null ? (
-                <span className="text-fg-tertiary">缺货</span>
-              ) : (
-                <>{fmtCredits(r.value)} <span className="font-medium text-fg-tertiary">积分</span></>
-              )}
+              {fmtCredits(r.value)}{" "}
+              <span className="font-medium text-fg-tertiary">积分</span>
             </span>
           </div>
         ))}

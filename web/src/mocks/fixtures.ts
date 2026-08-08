@@ -343,14 +343,17 @@ function mulberry32(seed: number) {
   };
 }
 
-/** 每 vendor 波动率不同（3%-10%）· 缺货率保持低位（线不能断太碎否则看不出走势） */
-const VOL: Record<string, { vol: number; outage: number }> = {
-  "91kiro":    { vol: 0.06, outage: 0.02 },
-  kiroceo:    { vol: 0.04, outage: 0.03 },
-  kirooo:     { vol: 0.10, outage: 0.07 },      // 波动最大 + 偶尔缺货
-  kiroappio:  { vol: 0.03, outage: 0.00 },      // 最稳 · 从不缺货
-  kiroappcc:  { vol: 0.05, outage: 0.05 },
-  kirodrop:   { vol: 0.08, outage: 0.03 },
+/** 每 vendor 的走势特征
+ *  range = 价格振幅（相对基准价的 ±%）· outage = 缺货率
+ *  不用「每天随机游走」—— 那样会累积成锯齿状抖动，不像真实价格走势
+ *  改用「低频正弦叠加（趋势）+ 极小噪声」· 线平滑有方向感 */
+const VOL: Record<string, { range: number; outage: number }> = {
+  "91kiro":   { range: 0.14, outage: 0.02 },
+  kiroceo:    { range: 0.09, outage: 0.03 },
+  kirooo:     { range: 0.22, outage: 0.07 },     // 振幅最大 · 偶尔缺货
+  kiroappio:  { range: 0.06, outage: 0.00 },     // 最稳 · 从不缺货
+  kiroappcc:  { range: 0.11, outage: 0.05 },
+  kirodrop:   { range: 0.18, outage: 0.03 },
 };
 
 /** 生成某 vendor 某区的价格走势
@@ -375,12 +378,22 @@ export function vendorPriceTrend(
   /* 基准价 = 该区当前单价（未加附加费）· 不同区价格不同，走势自然分离 */
   const base = picked.unit_price;
   const zoneOut = noRegion ? null : picked.zone;
-  const cfg = VOL[vendorId] ?? { vol: 0.05, outage: 0.03 };
+  const cfg = VOL[vendorId] ?? { range: 0.10, outage: 0.03 };
   /* 种子带上区 · 同 vendor 的 us / eu 走势互相独立 */
   const rnd = mulberry32(fnv1a(`${vendorId}:${zoneOut ?? "all"}`));
 
+  /* 走势 = 3 个不同周期的正弦波叠加（低频趋势）+ 极小噪声
+     每 vendor 的相位 / 周期由种子决定 · 所以各家形态不同但都平滑 */
+  const phase1 = rnd() * Math.PI * 2;
+  const phase2 = rnd() * Math.PI * 2;
+  const phase3 = rnd() * Math.PI * 2;
+  const period1 = 18 + rnd() * 14;        // 主趋势 · 18-32 天一个周期
+  const period2 = 7 + rnd() * 5;          // 次级 · 7-12 天
+  const period3 = 3.5 + rnd() * 2;        // 短周期 · 3.5-5.5 天
+  /* 整体漂移 · 让 30 天有个方向（涨 or 跌），不是纯震荡 */
+  const drift = (rnd() - 0.5) * cfg.range * 0.8;
+
   const points: VendorPricePoint[] = [];
-  let cur = base * (0.9 + rnd() * 0.2);           // 起点 ±10%
   const today = new Date();
 
   for (let i = days - 1; i >= 0; i--) {
@@ -388,25 +401,32 @@ export function vendorPriceTrend(
     d.setDate(today.getDate() - i);
     const date = d.toISOString().slice(0, 10);
 
-    /* 缺货概率 · 缺货日 price=null */
-    if (rnd() < cfg.outage) {
-      points.push({ date, price: null });
-      continue;
-    }
-    /* 随机游走 · 限制在 ±35% 基准价 */
-    const step = (rnd() - 0.5) * 2 * cfg.vol;
-    cur = Math.max(base * 0.65, Math.min(base * 1.35, cur * (1 + step)));
-    points.push({ date, price: Math.round(finalPrice(cur, waived)) });
+    const x = days - 1 - i;                       // 0 .. days-1
+    const t = days > 1 ? x / (days - 1) : 0;      // 0 .. 1 归一化
+
+    /* 三层正弦 · 权重递减（0.55 / 0.3 / 0.15）· 合成平滑波形 */
+    const wave =
+      Math.sin((x / period1) * Math.PI * 2 + phase1) * 0.55 +
+      Math.sin((x / period2) * Math.PI * 2 + phase2) * 0.30 +
+      Math.sin((x / period3) * Math.PI * 2 + phase3) * 0.15;
+
+    /* 极小噪声 · ±0.4% · 只做"不完全光滑"的质感，不产生锯齿 */
+    const noise = (rnd() - 0.5) * 0.008;
+
+    const factor = 1 + wave * cfg.range + drift * t + noise;
+    const price = Math.round(finalPrice(base * factor, waived));
+
+    /* 缺货日 · 价格照常报（forward fill 语义：价格不因缺货变化）· 只标 in_stock=false
+       —— 缺货不代表价格变了，只是那天买不到 · 线不断、不归零 */
+    points.push({ date, price, in_stock: rnd() >= cfg.outage });
   }
 
-  const priced = points.filter((p): p is { date: string; price: number } => p.price !== null);
-  const current_price = priced.length ? priced[priced.length - 1].price : null;
-  const price_high = priced.length ? Math.max(...priced.map((p) => p.price)) : null;
-  const price_low = priced.length ? Math.min(...priced.map((p) => p.price)) : null;
-  const change_30d_pct = priced.length >= 2
-    ? Math.round(((priced[priced.length - 1].price - priced[0].price) / priced[0].price) * 100)
-    : null;
-  const outage_days = points.length - priced.length;
+  const prices = points.map((p) => p.price);
+  const current_price = prices[prices.length - 1];
+  const price_high = Math.max(...prices);
+  const price_low = Math.min(...prices);
+  const change_30d_pct = Math.round(((current_price - prices[0]) / prices[0]) * 100);
+  const outage_days = points.filter((p) => !p.in_stock).length;
 
   return {
     vendor_id: vendorId,
@@ -418,6 +438,7 @@ export function vendorPriceTrend(
     price_low,
     change_30d_pct,
     outage_days,
+    in_stock_now: points[points.length - 1].in_stock,
   };
 }
 

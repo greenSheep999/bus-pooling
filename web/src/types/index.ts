@@ -182,10 +182,12 @@ export interface VendorHistory {
 }
 
 /** vendor 价格走势 · Prices 页多线图 · decisions §8.22
- *  price=null 表示当日缺货 · 图上线断开不连 */
+ *  缺货日 price 维持上次报价（不断线、不归零 —— 缺货不代表价格变了，只是买不到）
+ *  in_stock=false 标记那天没货 · 缺货天数走表格列表达，不在线上做视觉断裂 */
 export interface VendorPricePoint {
   date: string;              // YYYY-MM-DD
-  price: Money | null;       // null = 缺货
+  price: Money;              // 缺货日 = 沿用上一个有货日的价
+  in_stock: boolean;         // false = 当日缺货
 }
 
 export interface VendorPriceTrend {
@@ -193,15 +195,17 @@ export interface VendorPriceTrend {
   vendor_label: string;      // 按身份显示 · 真名 or AWS-Q Kiro Vendor 0N
   zone: Zone | null;
   points: VendorPricePoint[];  // 按日期升序
-  /** 当前最新有效价（跳过缺货日）· 已含附加费 */
-  current_price: Money | null;
-  /** 30 天最高/最低有效价 */
-  price_high: Money | null;
-  price_low: Money | null;
-  /** 30 天涨跌 · 百分比 · 相对最早有效价 · null = 数据不足 */
-  change_30d_pct: number | null;
-  /** 30 天缺货天数 */
+  /** 最新价 · 已含附加费 */
+  current_price: Money;
+  /** 区间最高/最低价 */
+  price_high: Money;
+  price_low: Money;
+  /** 区间涨跌 · 百分比 · 相对最早那天 */
+  change_30d_pct: number;
+  /** 区间内缺货天数（价格仍连续，只是这些天买不到） */
   outage_days: number;
+  /** 当前是否有货 */
+  in_stock_now: boolean;
 }
 
 // ── 提取事件 · 每次拉号操作一条 · docs/14 §6.5
