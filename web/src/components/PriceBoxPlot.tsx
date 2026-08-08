@@ -55,20 +55,17 @@ export function PriceBoxPlot({
       ref={(el) => { if (el) setW(el.clientWidth || 800); }}
       onMouseLeave={() => onHoverDate(null)}
     >
-      {/* Y 网格 · 该行的价格参考线（每行 Y 域独立，所以必须画在行内）
-          X 网格不在这画 —— 那是贯穿 6 行的整体背景层，见 Prices.tsx GridOverlay */}
-      {[0, 0.5, 1].map((f) => (
-        <line
-          key={`y${f}`}
-          x1={0}
-          x2={w}
-          y1={height * f}
-          y2={height * f}
-          stroke="#F2F2F2"
-          strokeWidth={1}
-          strokeDasharray={f === 0.5 ? "4 4" : "0"}
-        />
-      ))}
+      {/* Y 网格 · 只画中位虚线（上下两条边界线多余 —— 行间已有 divide-y 分隔）
+          每行 Y 域独立，所以这条必须画在行内 · X 网格是贯穿 6 行的整体层，见 Prices.tsx */}
+      <line
+        x1={0}
+        x2={w}
+        y1={height / 2}
+        y2={height / 2}
+        stroke="#F2F2F2"
+        strokeWidth={1}
+        strokeDasharray="4 4"
+      />
 
       {days.map((d, i) => {
         const cx = slot * i + slot / 2;
