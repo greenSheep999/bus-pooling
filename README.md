@@ -83,13 +83,57 @@
 | **阶段 2** | 邀请码组队 + 列队策略 + 压车治理 |
 | **阶段 3** | 数据图表 + 发车（乘客 AWS 转发 vendor）+ 市场分成 |
 
-## 开发（占位）
+## 开发
+
+**栈**：Go 1.26 + SQLite（WAL 单节点）+ kiro.rs client · 前端 React 19 + Vite + Tailwind。
+
+### 后端
+
+```bash
+# 首次：生成主密钥（AES-256-GCM · 加密 vendor 凭证和号池 token 用）
+go run ./cmd/bus-pooling genkey        # 输出 BP_MASTER_KEY=...，存进 env 别进 git
+
+cp config.example.yaml config.yaml     # config.yaml 已在 .gitignore
+go run ./cmd/bus-pooling migrate up    # 建表（19 张 · 阶段 1a）
+go run ./cmd/bus-pooling migrate status
+BP_MASTER_KEY=<上面那个> go run ./cmd/bus-pooling serve
+
+curl localhost:8080/healthz
+```
+
+其他子命令：`migrate down [n]` 回滚最近 n 个。
+
+**`DRY_RUN` 默认 true** —— vendor 调用走 mock 不扣真钱。上线才显式 `DRY_RUN=0`。
+
+### 前端
+
+```bash
+cd web
+npm install
+npm run dev        # localhost:3000 · MSW mock 全部 API，不依赖后端
+npm run build      # tsc -b + vite build
+npm run lint
+```
+
+> **前端类型检查必须用 `npm run build`（内含 `tsc -b`）** —— 根 `tsconfig.json` 用
+> project references 且 `files` 为空，单跑 `npx tsc --noEmit` 什么都不检查。
+
+### 测试
+
+```bash
+go test ./...              # 后端
+go test -race ./...        # 并发相关（wallet / 状态机）建议带 -race
+```
+
+### 目录
 
 ```
-Go + SQLite + kiro.rs client + SPA 前端（栈待定，见 §00.9 未决）
+cmd/bus-pooling/     入口（serve / migrate / genkey）
+internal/            后端包 · 上限 15 个业务包（见 §4.1 铁律）
+  config db httpx secrets    基础设施（不算业务包）
+web/                 前端 SPA
+docs/                设计文档（改代码前先读，见下面文档索引）
 ```
-
-具体命令待 P1a 编码时补。
 
 ## 项目原则（防止重蹈旧项目 kiro-auto 覆辙）
 

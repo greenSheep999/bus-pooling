@@ -30,3 +30,22 @@ web/.vite/
 
 # TypeScript 增量构建缓存 · 不入库
 web/*.tsbuildinfo
+
+# ── 后端（Go）
+# 编译产物
+/bus-pooling
+/dist/
+# SQLite 数据文件 + WAL/SHM · 含真实乘客数据，永不入库
+/data/
+*.db
+*.db-wal
+*.db-shm
+# 本地配置 · 可能含真实 housepool 地址 / vendor 账号
+config.local.yaml
+config.yaml
+.env
+.env.*
+!.env.example
+# Go 测试产物
+*.test
+coverage.out

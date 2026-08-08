@@ -1,0 +1,39 @@
+# bus-pooling 配置示例
+#
+# 复制成 config.yaml 后改（config.yaml 已在 .gitignore 里）。
+#
+# ⚠️ 敏感值不在这里 —— 只从环境变量读：
+#   BP_MASTER_KEY           AES-256-GCM 主密钥（64 位 hex · 用 `bus-pooling genkey` 生成）
+#   BP_HOUSEPOOL_ADMIN_KEY  我方 kiro.rs 的 admin key
+# 理由：yaml 会进 git，env 不会。
+
+server:
+  addr: ":8080"
+  read_timeout: 15s
+  write_timeout: 30s
+  shutdown_timeout: 20s
+
+db:
+  # SQLite WAL 单节点（CLAUDE.md §7.2）
+  path: "data/bus-pooling.db"
+  # 留空 = 用编译进二进制的迁移；填目录 = 从磁盘读（改 sql 不用重编译）
+  migrations_dir: ""
+
+httpx:
+  timeout: 20s
+  max_retries: 3
+  retry_base_wait: 500ms
+  # 出向代理 · 留空不走代理
+  proxy: ""
+  # 这些 host 不走代理（逗号分隔）
+  no_proxy: "localhost,127.0.0.1"
+
+housepool:
+  # 我方运维的 kiro.rs 实例
+  base_url: "https://kiro.aibbq.xyz"
+  # 绑 kiro.rs 版本防契约漂移（sprint Iss #13）· 留空不校验
+  expected_sha: ""
+
+# true = vendor 调用走 mock，不产生真实扣款
+# 默认 true —— 宁可开发时忘了关而不扣钱，也不要上线时忘了开而误扣
+dry_run: true
