@@ -213,7 +213,7 @@ export default function Prices() {
                   {/* 单选某 vendor 时 · 底下垫渐变 Area（跟概览趋势图同款） */}
                   {hoveredVendor && (
                     <Area
-                      type="linear"
+                      type="stepAfter"
                       dataKey={hoveredVendor}
                       stroke="none"
                       fill={`url(#grad-${hoveredVendor})`}
@@ -228,8 +228,9 @@ export default function Prices() {
                     return (
                       <Line
                         key={t.vendor_id}
-                        /* linear 折线 · 不用 monotone 曲线（曲线会造出数据里没有的圆弧） */
-                        type="linear"
+                        /* stepAfter 阶梯 · 报价数据的正确画法：调价日跳变、之间恒定
+                           不用 monotone（造圆弧）· 也不用 linear（斜线暗示"每天连续变化"，不符实） */
+                        type="stepAfter"
                         dataKey={t.vendor_id}
                         stroke={lineColor(t.vendor_id)}
                         strokeWidth={focused ? 2.5 : 1.75}

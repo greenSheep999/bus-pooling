@@ -382,43 +382,40 @@ export function vendorPriceTrend(
   /* 种子带上区 · 同 vendor 的 us / eu 走势互相独立 */
   const rnd = mulberry32(fnv1a(`${vendorId}:${zoneOut ?? "all"}`));
 
-  /* 走势 = 3 个不同周期的正弦波叠加（低频趋势）+ 极小噪声
-     每 vendor 的相位 / 周期由种子决定 · 所以各家形态不同但都平滑 */
-  const phase1 = rnd() * Math.PI * 2;
-  const phase2 = rnd() * Math.PI * 2;
-  const phase3 = rnd() * Math.PI * 2;
-  const period1 = 18 + rnd() * 14;        // 主趋势 · 18-32 天一个周期
-  const period2 = 7 + rnd() * 5;          // 次级 · 7-12 天
-  const period3 = 3.5 + rnd() * 2;        // 短周期 · 3.5-5.5 天
-  /* 整体漂移 · 让 30 天有个方向（涨 or 跌），不是纯震荡 */
-  const drift = (rnd() - 0.5) * cfg.range * 0.8;
-
+  /* 走势 = 阶梯式调价 · 真实报价就是这样：vendor 调一次价 → 维持几天 → 再调
+     不用正弦叠加 / 不加随机噪声 —— 那是在编造数据
+     价格是明确的报价数字，不是传感器读数，不存在"每天微小抖动" */
   const points: VendorPricePoint[] = [];
   const today = new Date();
+
+  /* 每 vendor 的调价节奏 · 3-8 天调一次（range 大的调得勤） */
+  const changeEvery = Math.round(3 + (1 - cfg.range / 0.25) * 5);
+  let price = Math.round(base * (1 + (rnd() - 0.5) * cfg.range));
+  let holdLeft = 1 + Math.floor(rnd() * changeEvery);
 
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
     const date = d.toISOString().slice(0, 10);
 
-    const x = days - 1 - i;                       // 0 .. days-1
-    const t = days > 1 ? x / (days - 1) : 0;      // 0 .. 1 归一化
+    if (holdLeft === 0) {
+      /* 调价 · 幅度 range 的 30%-100% · 方向随机 · 限制在基准价 ±range 内 */
+      const magnitude = cfg.range * (0.3 + rnd() * 0.7);
+      const dir = rnd() < 0.5 ? -1 : 1;
+      const next = price * (1 + dir * magnitude);
+      price = Math.round(
+        Math.max(base * (1 - cfg.range), Math.min(base * (1 + cfg.range), next)),
+      );
+      holdLeft = 1 + Math.floor(rnd() * changeEvery);
+    }
+    holdLeft -= 1;
 
-    /* 三层正弦 · 权重递减（0.55 / 0.3 / 0.15）· 合成平滑波形 */
-    const wave =
-      Math.sin((x / period1) * Math.PI * 2 + phase1) * 0.55 +
-      Math.sin((x / period2) * Math.PI * 2 + phase2) * 0.30 +
-      Math.sin((x / period3) * Math.PI * 2 + phase3) * 0.15;
-
-    /* 极小噪声 · ±0.4% · 只做"不完全光滑"的质感，不产生锯齿 */
-    const noise = (rnd() - 0.5) * 0.008;
-
-    const factor = 1 + wave * cfg.range + drift * t + noise;
-    const price = Math.round(finalPrice(base * factor, waived));
-
-    /* 缺货日 · 价格照常报（forward fill 语义：价格不因缺货变化）· 只标 in_stock=false
-       —— 缺货不代表价格变了，只是那天买不到 · 线不断、不归零 */
-    points.push({ date, price, in_stock: rnd() >= cfg.outage });
+    /* 缺货日 · 价格照常报（缺货不代表价格变了，只是那天买不到）· 只标 in_stock=false */
+    points.push({
+      date,
+      price: Math.round(finalPrice(price, waived)),
+      in_stock: rnd() >= cfg.outage,
+    });
   }
 
   const prices = points.map((p) => p.price);
