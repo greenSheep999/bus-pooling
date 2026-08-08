@@ -7,19 +7,23 @@ import (
 	"testing"
 )
 
-// 19 张业务表（不含 schema_migration）· 跟 docs/06-db-schema.md §Migration 1a 一致。
+// 业务表清单（不含 schema_migration）· 跟 docs/06-db-schema.md §Migration 1a 一致。
 // 这个清单是**故意硬编码**的：迁移少建一张表是后面 issue 的硬故障
 // （少 session → Iss #4 跑不了 / 少 idempotency_record → 所有写端点跑不了），
 // 所以要在这里锁死，而不是从迁移文件反推。
+// 002 加了 redeem_code / topup_order（Iss #6）；003 加了 outbound_webhook_delivery（Iss #5）。
 var wantTables = []string{
 	"bus", "bus_member",
 	"credential_ledger",
 	"idempotency_record",
+	"outbound_webhook_delivery",
 	"passenger", "passenger_api_key", "passenger_daily_counter",
 	"passenger_downstream", "passenger_strategy_default",
 	"pending_assignment", "pending_dissolution", "pending_handoff", "pending_purchase",
 	"pull_intent", "pull_round",
+	"redeem_code",
 	"session",
+	"topup_order",
 	"vendor_account",
 	"wallet", "wallet_ledger",
 }
@@ -61,7 +65,7 @@ func tableNames(t *testing.T, d *DB) []string {
 	return out
 }
 
-func TestMigrateUpCreatesAll19Tables(t *testing.T) {
+func TestMigrateUpCreatesAllTables(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
 
@@ -111,7 +115,8 @@ func TestMigrateDownDropsEverything(t *testing.T) {
 	if _, err := d.MigrateUp(ctx, ""); err != nil {
 		t.Fatalf("up: %v", err)
 	}
-	if _, err := d.MigrateDown(ctx, "", 1); err != nil {
+	// 回滚所有迁移（数量随迁移文件数长，用足够大的值一次拆完）
+	if _, err := d.MigrateDown(ctx, "", 1000); err != nil {
 		t.Fatalf("down: %v", err)
 	}
 
