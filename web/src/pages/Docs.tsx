@@ -186,14 +186,15 @@ function PullSection() {
   "purchased": 5,
   "key_cost": 100000000,        // 号价 · 原样转给上游
   "single_pull_fee": 0,          // 只拉 1 个时才有
-  "service_fee_total": 5000000,  // 每人每次 1 积分
+  "service_fee_total": 5000000,  // 每人每次 · 社群 1 / 零售 7 积分
   "total_debit": 105000000,
   "balance_remaining": 895000000
 }`}
           />
           <Alert tone="neutral" icon={Terminal}>
             <code className="font-mono">count == 1</code> 会触发单次议价（号价 × 20%）·
-            多拉几个更划算 · 拉号不涉及通道费，那个只在充值时收
+            多拉几个更划算 · 服务费按注册时有没有邀请码分两档 ·
+            拉号不涉及通道费，那个只在充值时收
           </Alert>
         </div>
       </Card>

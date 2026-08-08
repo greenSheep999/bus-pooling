@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, KeyRound, ShieldAlert, Tag } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useGlobalStrategy } from "@/api/hooks";
+import { useGlobalStrategy, useMe } from "@/api/hooks";
 import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -9,7 +9,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
-import { fmtCredits, toCredits } from "@/lib/utils";
+import { fmtCredits, serviceFee, toCredits } from "@/lib/utils";
 import type { Money, Zone } from "@/types";
 
 export interface ExtractConfirmInfo {
@@ -38,6 +38,7 @@ export function ExtractConfirmModal({
 }) {
   const [coupon, setCoupon] = useState("");
   const [applied, setApplied] = useState<string | null>(null);
+  const { data: me } = useMe();
 
   useEffect(() => {
     if (open) { setCoupon(""); setApplied(null); }
@@ -53,8 +54,10 @@ export function ExtractConfirmModal({
 
   const keyCost = (discounted ?? 0) * info.count;
   const singlePullFee = info.count === 1 ? keyCost * 0.2 : 0;
-  const serviceFee = 1_000_000;
-  const total = keyCost + singlePullFee + serviceFee;
+  /* 服务费两档（§8.31）· 社群 1 积分 / 零售 7 积分
+     注意用 me.invited（系统邀请码），**不看优惠码** —— 优惠码只免加价，不改服务费档位 */
+  const svcFee = serviceFee(me?.invited);
+  const total = keyCost + singlePullFee + svcFee;
 
   /* 全局单价上限（decisions §8.27）· 超了不给确认
      判的是**优惠码折后价** —— 用码压到线内就该放行 */
@@ -153,7 +156,7 @@ export function ExtractConfirmModal({
             {singlePullFee > 0 && (
               <FeeRow label="拉 1 个偏高" value={`+${fmtCredits(singlePullFee)} 积分`} muted />
             )}
-            <FeeRow label="服务费" value="1 积分" muted />
+            <FeeRow label="服务费" value={`${toCredits(svcFee)} 积分`} muted />
             <div className="mt-2 border-t border-hairline pt-2">
               <FeeRow
                 label="合计扣除"

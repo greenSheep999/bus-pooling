@@ -60,6 +60,21 @@ export const SUSPEND_AFTER = 3;
  *  **只在充值时收一次**（§8.21）—— 拉号 / 提取 / 派号都是积分抵扣，那些页面不许显示通道费 */
 export const CHANNEL_FEE_RATE = 0.05;
 
+/** 服务费 · 每人每次拉号动作 · **两档固定费**（decisions §8.31）
+ *  - 有系统邀请码（社群）：1 积分 = 1 RMB
+ *  - 无系统邀请码（零售）：7 积分 ≈ 1 USD
+ *
+ *  仍是**固定费不是百分比** —— `00 §3` 的对齐激励（我方没有动机加价号成本）靠这个。
+ *  7 是**定价档位不是实时汇率**：汇率波动不该让用户看到服务费每天变。
+ *  真实汇率只用于 vendor 成本换算（`vendor_pricing.credits_per_unit`），两回事。 */
+export const SERVICE_FEE_COMMUNITY = 1 * MICRO;
+export const SERVICE_FEE_RETAIL = 7 * MICRO;
+
+/** 按身份取服务费 · invited = 注册时填过**系统**邀请码（个人码不算 · §8.29） */
+export function serviceFee(invited: boolean | undefined): number {
+  return invited ? SERVICE_FEE_COMMUNITY : SERVICE_FEE_RETAIL;
+}
+
 /** 充值：付款额 → 通道费 + 实际到账 */
 export function topupBreakdown(paid: number): { fee: number; credits: number } {
   const fee = Math.round(paid * CHANNEL_FEE_RATE);
