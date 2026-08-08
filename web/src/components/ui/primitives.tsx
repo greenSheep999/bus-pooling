@@ -248,14 +248,20 @@ export function BareRow({
   className,
   children,
   onClick,
+  onMouseEnter,
+  onMouseLeave,
 }: {
   className?: string;
   children: ReactNode;
   onClick?: () => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }) {
   return (
     <div
       onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       className={cn(
         "flex items-center gap-4 px-1 py-3.5",
         onClick && "cursor-pointer transition-colors hover:bg-bg-elevated/60",

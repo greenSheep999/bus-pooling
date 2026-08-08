@@ -2,8 +2,8 @@ import { MICRO, vendorLabel } from "@/lib/utils";
 import type {
   Activity, ApiKey, AssignEvent, AutoPickResult, Bus, Credential, DownstreamConfig,
   ExtractEvent, ExtractRecord, LedgerEntry, Overview, Passenger, PullRound,
-  StockSummary, TrendPoint, VendorHistory, VendorShare, VendorStat, VendorStock,
-  Wallet, WebhookConfig, WebhookDelivery, Zone,
+  StockSummary, TrendPoint, VendorHistory, VendorPricePoint, VendorPriceTrend,
+  VendorShare, VendorStat, VendorStock, Wallet, WebhookConfig, WebhookDelivery, Zone,
 } from "@/types";
 
 const C = (n: number) => n * MICRO;
@@ -317,6 +317,90 @@ export function autoPick(zone: Zone | "auto", waived: boolean): AutoPickResult {
     avg_lifespan_seconds: best.hist?.avg_lifespan_seconds ?? 0,
     alive_rate_30d: best.hist?.alive_rate_30d ?? 0,
     reason,
+  };
+}
+
+/* ── vendor 价格走势 · Prices 页多线图 · decisions §8.22 ──
+   前端 mock · mulberry32 + FNV-1a 生成稳定伪随机 · 每 vendor 不同波动率 · 每次刷新结果一致 */
+
+function fnv1a(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed: number) {
+  let t = seed >>> 0;
+  return () => {
+    t = (t + 0x6d2b79f5) >>> 0;
+    let x = t;
+    x = Math.imul(x ^ (x >>> 15), x | 1);
+    x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** 每 vendor 波动率不同（3%-10%）· 缺货率不同 · 便于线看出差异 */
+const VOL: Record<string, { vol: number; outage: number }> = {
+  "91kiro":    { vol: 0.06, outage: 0.05 },
+  kiroceo:    { vol: 0.04, outage: 0.08 },
+  kirooo:     { vol: 0.10, outage: 0.22 },      // 波动大 + 常缺货
+  kiroappio:  { vol: 0.03, outage: 0.02 },      // 稳
+  kiroappcc:  { vol: 0.05, outage: 0.15 },
+  kirodrop:   { vol: 0.08, outage: 0.10 },
+};
+
+export function vendorPriceTrend(vendorId: string, days = 30, waived = false): VendorPriceTrend {
+  const stock = vendorStocks[vendorId];
+  if (!stock) throw new Error(`unknown vendor ${vendorId}`);
+  /* 基准价 · 该 vendor 首选区（默认 us）的当前单价（未加附加费） */
+  const base = stock.zones[0].unit_price;
+  const zone = stock.zones.length === 1 ? null : stock.zones[0].zone;
+  const cfg = VOL[vendorId] ?? { vol: 0.05, outage: 0.05 };
+  const rnd = mulberry32(fnv1a(vendorId));
+
+  const points: VendorPricePoint[] = [];
+  let cur = base * (0.9 + rnd() * 0.2);           // 起点 ±10%
+  const today = new Date();
+
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const date = d.toISOString().slice(0, 10);
+
+    /* 缺货概率 · 缺货日 price=null */
+    if (rnd() < cfg.outage) {
+      points.push({ date, price: null });
+      continue;
+    }
+    /* 随机游走 · 限制在 ±35% 基准价 */
+    const step = (rnd() - 0.5) * 2 * cfg.vol;
+    cur = Math.max(base * 0.65, Math.min(base * 1.35, cur * (1 + step)));
+    points.push({ date, price: Math.round(finalPrice(cur, waived)) });
+  }
+
+  const priced = points.filter((p): p is { date: string; price: number } => p.price !== null);
+  const current_price = priced.length ? priced[priced.length - 1].price : null;
+  const price_high = priced.length ? Math.max(...priced.map((p) => p.price)) : null;
+  const price_low = priced.length ? Math.min(...priced.map((p) => p.price)) : null;
+  const change_30d_pct = priced.length >= 2
+    ? Math.round(((priced[priced.length - 1].price - priced[0].price) / priced[0].price) * 100)
+    : null;
+  const outage_days = points.length - priced.length;
+
+  return {
+    vendor_id: vendorId,
+    vendor_label: "",            // handler 按身份填
+    zone,
+    points,
+    current_price,
+    price_high,
+    price_low,
+    change_30d_pct,
+    outage_days,
   };
 }
 

@@ -107,6 +107,18 @@ export const handlers = [
       vendor_label: vendorLabel(pick.vendor_id, fx.passenger.invited),
     });
   }),
+  // ── vendor 价格走势（Prices 页多线图）· decisions §8.22
+  //    单价按身份返回**最终价**（含附加费）· 显示名按身份匿名化
+  http.get("/api/me/vendors/prices", ({ request }) => {
+    const u = new URL(request.url);
+    const days = Number(u.searchParams.get("days") ?? "30");
+    const waived = isWaived(request);
+    const trends = Object.keys(fx.vendorStocks).map((id) => {
+      const t = fx.vendorPriceTrend(id, days, waived);
+      return { ...t, vendor_label: vendorLabel(id, fx.passenger.invited) };
+    });
+    return ok({ trends });
+  }),
   http.get("/api/me/vendors/:vendor_id/history", ({ params }) => {
     const h = fx.vendorHistories[params.vendor_id as string];
     return h ? ok(h) : HttpResponse.json({ error: "not_found" }, { status: 404 });

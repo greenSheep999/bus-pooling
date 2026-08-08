@@ -5,6 +5,7 @@ import Overview from "./pages/Overview";
 import Buses from "./pages/Buses";
 import BusDetail from "./pages/BusDetail";
 import Extract from "./pages/Extract";
+import Prices from "./pages/Prices";
 import Dispatch from "./pages/Dispatch";
 import Docs from "./pages/Docs";
 import WalletPage from "./pages/WalletPage";
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
       { path: "/buses", element: <Buses /> },
       { path: "/buses/:id", element: <BusDetail /> },
       { path: "/extract", element: <Extract /> },
+      { path: "/prices", element: <Prices /> },
       { path: "/dispatch", element: <Dispatch /> },
       { path: "/docs", element: <Docs /> },
       { path: "/wallet", element: <WalletPage /> },

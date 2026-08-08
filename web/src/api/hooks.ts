@@ -3,8 +3,8 @@ import { api, del, post, put } from "./client";
 import type {
   Activity, ApiKey, AssignEvent, AutoPickResult, Bus, Credential, DownstreamConfig, ExtractEvent,
   ExtractRecord, LedgerEntry, Overview, Paged, Passenger, PullRound, StockSummary,
-  TimeRange, TrendMetric, TrendPoint, VendorHistory, VendorShare, VendorStat,
-  VendorStock, Wallet, WebhookConfig, WebhookDelivery,
+  TimeRange, TrendMetric, TrendPoint, VendorHistory, VendorPriceTrend, VendorShare,
+  VendorStat, VendorStock, Wallet, WebhookConfig, WebhookDelivery,
 } from "@/types";
 
 /* ── 账号 / 钱包 / 库存 ── */
@@ -202,6 +202,13 @@ export const useAutoPick = (zone: string, couponCode?: string) =>
       if (couponCode) p.set("coupon_code", couponCode);
       return api<AutoPickResult>(`/me/vendors/auto-pick?${p}`);
     },
+  });
+
+/** vendor 价格走势 · Prices 页多线图 · decisions §8.22 */
+export const useVendorPrices = (days: number) =>
+  useQuery({
+    queryKey: ["vendorPrices", days],
+    queryFn: () => api<{ trends: VendorPriceTrend[] }>(`/me/vendors/prices?days=${days}`),
   });
 
 /** 我方历史统计 · 近 30 天 · PullExtractModal 上游状态面板 */

@@ -181,6 +181,29 @@ export interface VendorHistory {
   total_pulled_30d: number;                 // 30 天累计拉过多少号
 }
 
+/** vendor 价格走势 · Prices 页多线图 · decisions §8.22
+ *  price=null 表示当日缺货 · 图上线断开不连 */
+export interface VendorPricePoint {
+  date: string;              // YYYY-MM-DD
+  price: Money | null;       // null = 缺货
+}
+
+export interface VendorPriceTrend {
+  vendor_id: string;
+  vendor_label: string;      // 按身份显示 · 真名 or AWS-Q Kiro Vendor 0N
+  zone: Zone | null;
+  points: VendorPricePoint[];  // 按日期升序
+  /** 当前最新有效价（跳过缺货日）· 已含附加费 */
+  current_price: Money | null;
+  /** 30 天最高/最低有效价 */
+  price_high: Money | null;
+  price_low: Money | null;
+  /** 30 天涨跌 · 百分比 · 相对最早有效价 · null = 数据不足 */
+  change_30d_pct: number | null;
+  /** 30 天缺货天数 */
+  outage_days: number;
+}
+
 // ── 提取事件 · 每次拉号操作一条 · docs/14 §6.5
 export interface ExtractEvent {
   id: string;

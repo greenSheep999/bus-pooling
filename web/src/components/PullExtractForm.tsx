@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { KeyRound, Sparkles } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ArrowUpRight, KeyRound, Sparkles, TrendingUp } from "lucide-react";
 import { useAutoPick, useExtract, useMe, useVendorStats, useVendorStock } from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -164,7 +165,7 @@ export function PullExtractForm({
                     />
                   )}
                   <FeeRow label="服务费" value="1 积分" muted />
-                  <FeeRow label="通道费" value="充值时收" muted />
+                  {/* 通道费只在充值积分时收 · 拉号/提取都是抵扣积分 · decisions §8.21 · 不显示 */}
                 </div>
               </div>
               <div className="mt-3 border-t border-hairline pt-2">
@@ -189,11 +190,22 @@ export function PullExtractForm({
           </Alert>
         )}
 
-        {/* 底行 · 左下角波动提示（灰小字）· 右侧提交 */}
+        {/* 底行 · 左下角：价格趋势入口 + 波动提示 · 右侧提交 */}
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <p className="max-w-md text-label leading-relaxed text-fg-tertiary">
-            价格受市场波动影响，会有波动，提取前请仔细核对提取信息。
-          </p>
+          <div className="max-w-md space-y-1.5">
+            {/* 查看历史价格趋势 · 跳独立页看 vendor 价格走势 · decisions §8.22 */}
+            <Link
+              to="/prices"
+              className="inline-flex items-center gap-1 text-label font-medium text-brand-strong transition-colors hover:text-brand"
+            >
+              <TrendingUp className="size-3.5" />
+              查看历史价格趋势
+              <ArrowUpRight className="size-3" />
+            </Link>
+            <p className="text-label leading-relaxed text-fg-tertiary">
+              价格受市场波动影响，会有波动，提取前请仔细核对提取信息。
+            </p>
+          </div>
           <Button
             type="submit"
             variant={submitVariant}
