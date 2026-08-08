@@ -181,37 +181,52 @@ export interface VendorHistory {
   total_pulled_30d: number;                 // 30 天累计拉过多少号
 }
 
-/** vendor 价格走势 · Prices 页多线图 · decisions §8.22
- *  缺货日 price 维持上次报价（不断线、不归零 —— 缺货不代表价格变了，只是买不到）
- *  in_stock=false 标记那天没货 · 缺货天数走表格列表达，不在线上做视觉断裂 */
-export interface VendorPricePoint {
+/** vendor 的一轮车 · decisions §8.22 · docs/15-prices-page-design.md
+ *  上游一天发多轮车，每轮单价按整车产出量查阶梯表 —— 所以价格是**轮次级**数据
+ *  存轮次不存每日聚合：聚合值（min/max/avg/轮数）前端派生，信息不丢 */
+export interface VendorRound {
+  /** 发车时刻 · ISO */
+  time: ISOTime;
+  zone: Zone | null;         // null = 该 vendor 不分区
+  /** 这轮的单价 · 已含附加费 */
+  unit_price: Money;
+  /** 这轮产出多少个号（产量越大单价越低 —— 阶梯表） */
+  keys_count: number;
+}
+
+/** vendor 某天的全部轮次 · rounds 空数组 = 那天没发车（缺货） */
+export interface VendorDayRounds {
   date: string;              // YYYY-MM-DD
-  price: Money;              // 缺货日 = 沿用上一个有货日的价
-  in_stock: boolean;         // false = 当日缺货
+  rounds: VendorRound[];
 }
 
 export interface VendorPriceTrend {
   vendor_id: string;
   vendor_label: string;      // 按身份显示 · 真名 or AWS-Q Kiro Vendor 0N
   zone: Zone | null;
-  points: VendorPricePoint[];  // 按日期升序
-  /** 最新价 · 已含附加费 */
+  /** 按日期升序 · 每天带该天全部轮次（空 = 那天没发车） */
+  days: VendorDayRounds[];
+
+  /* ── 以下都是从 days 派生的汇总 · 后端算好下发省前端遍历 ── */
+
+  /** 最新一轮的单价 */
   current_price: Money;
-  /** 区间最高/最低价 */
+  /** 区间内**轮次单价**的最高 / 最低（用户要知道实际能买到的最好 / 最差价） */
   price_high: Money;
   price_low: Money;
-  /** 区间涨跌 · 百分比 · 相对最早那天 */
+  /** 区间均价（所有轮次的简单均值） */
+  price_avg: Money;
+  /** 区间总轮数 · 日均轮数（发车密度 —— 判断这家活跃不活跃） */
+  total_rounds: number;
+  avg_rounds_per_day: number;
+  /** 区间涨跌 · 百分比 · 末轮 vs 首轮 */
   change_30d_pct: number;
-  /** 区间内缺货天数（价格仍连续，只是这些天买不到） */
-  outage_days: number;
-  /** 当前是否有货 */
-  in_stock_now: boolean;
-  /** 最高价那天 · 图上打点标注 */
-  peak_date: string;
-  /** 最低价那天 · 图上打点标注 */
-  trough_date: string;
-  /** 最长连续有货天数 · 供货持续性指标 */
+  /** 没发车的天数 */
+  no_service_days: number;
+  /** 最长连续发车天数 */
   longest_streak_days: number;
+  /** 当前是否有车（最后一天发过） */
+  in_stock_now: boolean;
 }
 
 // ── 提取事件 · 每次拉号操作一条 · docs/14 §6.5

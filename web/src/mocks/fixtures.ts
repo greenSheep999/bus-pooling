@@ -2,7 +2,7 @@ import { MICRO, vendorLabel } from "@/lib/utils";
 import type {
   Activity, ApiKey, AssignEvent, AutoPickResult, Bus, Credential, DownstreamConfig,
   ExtractEvent, ExtractRecord, LedgerEntry, Overview, Passenger, PullRound,
-  StockSummary, TrendPoint, VendorHistory, VendorPricePoint, VendorPriceTrend,
+  StockSummary, TrendPoint, VendorDayRounds, VendorHistory, VendorPriceTrend, VendorRound,
   VendorShare, VendorStat, VendorStock, Wallet, WebhookConfig, WebhookDelivery, Zone,
 } from "@/types";
 
@@ -343,21 +343,27 @@ function mulberry32(seed: number) {
   };
 }
 
-/** 每 vendor 的走势特征
- *  range = 价格振幅（相对基准价的 ±%）· outage = 缺货率
- *  不用「每天随机游走」—— 那样会累积成锯齿状抖动，不像真实价格走势
- *  改用「低频正弦叠加（趋势）+ 极小噪声」· 线平滑有方向感 */
-const VOL: Record<string, { range: number; outage: number }> = {
-  "91kiro":   { range: 0.14, outage: 0.02 },
-  kiroceo:    { range: 0.09, outage: 0.03 },
-  kirooo:     { range: 0.22, outage: 0.07 },     // 振幅最大 · 偶尔缺货
-  kiroappio:  { range: 0.06, outage: 0.00 },     // 最稳 · 从不缺货
-  kiroappcc:  { range: 0.11, outage: 0.05 },
-  kirodrop:   { range: 0.18, outage: 0.03 },
+/** 每 vendor 的发车特征
+ *  range     = 单价振幅（相对基准价的 ±%）
+ *  noService = 某天完全不发车的概率
+ *  roundsB   = 日均发车轮数基线（有的家车多，有的家一天就一两轮） */
+const VOL: Record<string, { range: number; noService: number; roundsB: number }> = {
+  "91kiro":   { range: 0.14, noService: 0.02, roundsB: 4 },
+  kiroceo:    { range: 0.09, noService: 0.03, roundsB: 2 },
+  kirooo:     { range: 0.22, noService: 0.07, roundsB: 6 },   // 振幅最大 · 车最多
+  kiroappio:  { range: 0.06, noService: 0.00, roundsB: 1 },   // 最稳 · 一天基本 1 轮
+  kiroappcc:  { range: 0.11, noService: 0.05, roundsB: 3 },
+  kirodrop:   { range: 0.18, noService: 0.03, roundsB: 5 },
 };
 
-/** 生成某 vendor 某区的价格走势
- *  @param zone 要看哪个区 · "auto" = 该 vendor 首选区（zones[0]）· 无区域 vendor 忽略此参数 */
+/** 生成某 vendor 某区的**轮次级**价格数据
+ *  @param zone "auto" = 该 vendor 首选区 · 无区域 vendor 忽略此参数
+ *
+ *  模型（不加随机噪声、不用正弦造走势 —— 那是编造数据）：
+ *  1. 基准价慢速漂移：3-8 天调一次目标价（range 大的调得勤）
+ *  2. 每天发 N 轮车（roundsB 附近波动 · 几何分布尾部，偶尔爆发多轮）
+ *  3. 每轮单价 = 该轮产出量查阶梯（产量大 → 单价低）· 所以同一天各轮价格不同
+ */
 export function vendorPriceTrend(
   vendorId: string,
   days = 30,
@@ -375,65 +381,97 @@ export function vendorPriceTrend(
       ? stock.zones[0]
       : stock.zones.find((z) => z.zone === zone) ?? stock.zones[0];
 
-  /* 基准价 = 该区当前单价（未加附加费）· 不同区价格不同，走势自然分离 */
   const base = picked.unit_price;
   const zoneOut = noRegion ? null : picked.zone;
-  const cfg = VOL[vendorId] ?? { range: 0.10, outage: 0.03 };
-  /* 种子带上区 · 同 vendor 的 us / eu 走势互相独立 */
+  const cfg = VOL[vendorId] ?? { range: 0.10, noService: 0.03, roundsB: 3 };
+  /* 种子带上区 · 同 vendor 的 us / eu 数据互相独立 */
   const rnd = mulberry32(fnv1a(`${vendorId}:${zoneOut ?? "all"}`));
 
-  /* 走势 = 阶梯式调价 · 真实报价就是这样：vendor 调一次价 → 维持几天 → 再调
-     不用正弦叠加 / 不加随机噪声 —— 那是在编造数据
-     价格是明确的报价数字，不是传感器读数，不存在"每天微小抖动" */
-  const points: VendorPricePoint[] = [];
-  const today = new Date();
-
-  /* 每 vendor 的调价节奏 · 3-8 天调一次（range 大的调得勤） */
+  /* 基准价漂移节奏 · range 大的调得勤 */
   const changeEvery = Math.round(3 + (1 - cfg.range / 0.25) * 5);
-  let price = Math.round(base * (1 + (rnd() - 0.5) * cfg.range));
+  let dayBase = base * (1 + (rnd() - 0.5) * cfg.range);
   let holdLeft = 1 + Math.floor(rnd() * changeEvery);
+
+  const dayList: VendorDayRounds[] = [];
+  const today = new Date();
 
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
     const date = d.toISOString().slice(0, 10);
 
+    /* 基准价到期调整 */
     if (holdLeft === 0) {
-      /* 调价 · 幅度 range 的 30%-100% · 方向随机 · 限制在基准价 ±range 内 */
       const magnitude = cfg.range * (0.3 + rnd() * 0.7);
       const dir = rnd() < 0.5 ? -1 : 1;
-      const next = price * (1 + dir * magnitude);
-      price = Math.round(
-        Math.max(base * (1 - cfg.range), Math.min(base * (1 + cfg.range), next)),
+      dayBase = Math.max(
+        base * (1 - cfg.range),
+        Math.min(base * (1 + cfg.range), dayBase * (1 + dir * magnitude)),
       );
       holdLeft = 1 + Math.floor(rnd() * changeEvery);
     }
     holdLeft -= 1;
 
-    /* 缺货日 · 价格照常报（缺货不代表价格变了，只是那天买不到）· 只标 in_stock=false */
-    points.push({
-      date,
-      price: Math.round(finalPrice(price, waived)),
-      in_stock: rnd() >= cfg.outage,
-    });
+    /* 那天完全不发车 */
+    if (rnd() < cfg.noService) {
+      dayList.push({ date, rounds: [] });
+      continue;
+    }
+
+    /* 当天轮数 · 基线 ±1，再按几何分布追加（偶尔爆发多轮） */
+    let n = Math.max(1, cfg.roundsB + Math.floor((rnd() - 0.5) * 3));
+    while (rnd() < 0.45 && n < cfg.roundsB + 3) n += 1;
+
+    const rounds: VendorRound[] = [];
+    for (let r = 0; r < n; r++) {
+      /* 该轮产出量 5-40 个号 · 产量越大单价越低（阶梯表语义）
+         intra 用 0.9 系数：日内价差接近日间波动量级，各轮价格才有可见差异 */
+      const keys = 5 + Math.floor(rnd() * 36);
+      const intra = cfg.range * 0.9;
+      const tierFactor = 1 + intra * (1 - ((keys - 5) / 35) * 2);
+      const unit = dayBase * tierFactor;
+
+      /* 发车时刻 · 08:00-23:00（本地时区 · 用 ISO 字面量避开 toISOString 的 UTC 偏移） */
+      const hh = String(8 + Math.floor(rnd() * 15)).padStart(2, "0");
+      const mm = String(Math.floor(rnd() * 60)).padStart(2, "0");
+
+      rounds.push({
+        time: `${date}T${hh}:${mm}:00`,
+        zone: zoneOut,
+        unit_price: Math.round(finalPrice(unit, waived)),
+        keys_count: keys,
+      });
+    }
+    rounds.sort((a, b) => a.time.localeCompare(b.time));
+    dayList.push({ date, rounds });
   }
 
-  const prices = points.map((p) => p.price);
-  const current_price = prices[prices.length - 1];
-  const price_high = Math.max(...prices);
-  const price_low = Math.min(...prices);
-  const change_30d_pct = Math.round(((current_price - prices[0]) / prices[0]) * 100);
-  const outage_days = points.filter((p) => !p.in_stock).length;
+  /* ── 汇总（从轮次派生） ── */
+  const allRounds = dayList.flatMap((d) => d.rounds);
+  const allPrices = allRounds.map((r) => r.unit_price);
+  const servedDays = dayList.filter((d) => d.rounds.length > 0);
 
-  /* 最高 / 最低价那天 · 图上打点标注 */
-  const peak_date = points[prices.indexOf(price_high)].date;
-  const trough_date = points[prices.indexOf(price_low)].date;
+  const price_high = allPrices.length ? Math.max(...allPrices) : 0;
+  const price_low = allPrices.length ? Math.min(...allPrices) : 0;
+  const price_avg = allPrices.length
+    ? Math.round(allPrices.reduce((a, b) => a + b, 0) / allPrices.length)
+    : 0;
+  const current_price = allRounds.length ? allRounds[allRounds.length - 1].unit_price : 0;
+  const firstPrice = allRounds.length ? allRounds[0].unit_price : 0;
+  const change_30d_pct = firstPrice
+    ? Math.round(((current_price - firstPrice) / firstPrice) * 100)
+    : 0;
 
-  /* 最长连续有货天数 · 供货持续性 */
+  const no_service_days = dayList.length - servedDays.length;
+  const total_rounds = allRounds.length;
+  const avg_rounds_per_day = servedDays.length
+    ? Math.round((total_rounds / servedDays.length) * 10) / 10
+    : 0;
+
   let longest_streak_days = 0;
   let streak = 0;
-  for (const p of points) {
-    if (p.in_stock) {
+  for (const d of dayList) {
+    if (d.rounds.length > 0) {
       streak += 1;
       longest_streak_days = Math.max(longest_streak_days, streak);
     } else {
@@ -445,16 +483,17 @@ export function vendorPriceTrend(
     vendor_id: vendorId,
     vendor_label: "",            // handler 按身份填
     zone: zoneOut,
-    points,
+    days: dayList,
     current_price,
     price_high,
     price_low,
+    price_avg,
+    total_rounds,
+    avg_rounds_per_day,
     change_30d_pct,
-    outage_days,
-    in_stock_now: points[points.length - 1].in_stock,
-    peak_date,
-    trough_date,
+    no_service_days,
     longest_streak_days,
+    in_stock_now: dayList[dayList.length - 1].rounds.length > 0,
   };
 }
 
