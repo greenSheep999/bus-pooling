@@ -1,6 +1,6 @@
 import { MICRO, vendorLabel } from "@/lib/utils";
 import type {
-  Activity, ApiKey, AssignEvent, AutoPickResult, Bus, Credential, DownstreamConfig,
+  Activity, ApiKey, AssignEvent, AssignedKey, AutoPickResult, Bus, Credential, DownstreamConfig,
   ExtractEvent, ExtractRecord, LedgerEntry, Overview, Passenger, PullRound,
   StockSummary, TrendPoint, VendorDayRounds, VendorHistory, VendorPriceTrend, VendorRound,
   VendorShare, VendorStat, VendorStock, Wallet, WebhookConfig, WebhookDelivery, Zone,
@@ -512,14 +512,83 @@ export const extractEvents: ExtractEvent[] = [
 
 /* ── 派发事件（每次派动作） · docs/14 §3.4 派发历史 tab ── */
 
+/** key 打码格式必须跟 Credential.key_masked 一致 —— 上游 kiro 的 key 前缀是 ksk_
+    之前 mock 写成 sk-****9a12 是凭空造的，跟系统其他地方对不上 */
+const mkKey = (
+  vendorId: string,
+  suffix: string,
+  region: string,
+  creditsK: number,
+  lifeH: number,
+): AssignedKey => ({
+  credential_id: `cred_${suffix}`,
+  key_masked: `ksk_live_${suffix.slice(0, 4)}…${suffix.slice(-3)}`,
+  vendor_id: vendorId,
+  region,
+  credits_used: C(creditsK * 1000),
+  lifespan_seconds: Math.round(lifeH * 3600),
+});
+
 export const assignEvents: AssignEvent[] = [
-  { id: "ae_01", created_at: ago(0.2),  destination: "into_bus",  bus_id: "bus_weekend", bus_name: "周末拼车局", count: 3, credential_ids: ["cred_x1", "cred_x2", "cred_x3"], credential_maskeds: ["sk-****9a12", "sk-****4b57", "sk-****2c88"], vendors: ["kiroceo"] },
-  { id: "ae_02", created_at: ago(0.4),  destination: "push_pool", bus_id: null,          bus_name: null,          count: 2, credential_ids: ["cred_x4", "cred_x5"],             credential_maskeds: ["sk-****7d3f", "sk-****1e02"],                 vendors: ["kiroappcc"] },
-  { id: "ae_03", created_at: ago(4.1),  destination: "handoff",   bus_id: null,          bus_name: null,          count: 1, credential_ids: ["cred_x6"],                        credential_maskeds: ["sk-****9f4a"],                                vendors: ["kirodrop"] },
-  { id: "ae_04", created_at: ago(22.0), destination: "into_bus",  bus_id: "bus_kiro",    bus_name: "Kiro 常驻车", count: 2, credential_ids: ["cred_x7", "cred_x8"],             credential_maskeds: ["sk-****3a91", "sk-****8b6c"],                 vendors: ["kirodrop"] },
-  { id: "ae_05", created_at: ago(28.0), destination: "push_pool", bus_id: null,          bus_name: null,          count: 2, credential_ids: ["cred_x9", "cred_x10"],            credential_maskeds: ["sk-****4c22", "sk-****5d8e"],                 vendors: ["91kiro"] },
-  { id: "ae_06", created_at: ago(50.2), destination: "into_bus",  bus_id: "bus_daily",   bus_name: "日常小车",   count: 1, credential_ids: ["cred_x11"],                       credential_maskeds: ["sk-****6e40"],                                vendors: ["kiroappio"] },
-  { id: "ae_07", created_at: ago(74.1), destination: "handoff",   bus_id: null,          bus_name: null,          count: 3, credential_ids: ["cred_x12", "cred_x13", "cred_x14"], credential_maskeds: ["sk-****7f31", "sk-****8a20", "sk-****9b15"],  vendors: ["kiroceo"] },
+  {
+    id: "ae_01", created_at: ago(0.2), destination: "into_bus",
+    bus_id: "bus_weekend", bus_name: "周末拼车局", count: 3,
+    target_host: null, vendors: ["kiroceo"],
+    keys: [
+      mkKey("kiroceo", "9a12kf3", "us-east-1", 1.2, 0.3),
+      mkKey("kiroceo", "4b57mq8", "us-east-1", 0.8, 0.3),
+      mkKey("kiroceo", "2c88rt5", "eu-central-1", 2.1, 0.4),
+    ],
+  },
+  {
+    id: "ae_02", created_at: ago(0.4), destination: "push_pool",
+    bus_id: null, bus_name: null, count: 2,
+    target_host: "kiro-my.example.com", vendors: ["kiroappcc"],
+    keys: [
+      mkKey("kiroappcc", "7d3fpw1", "us-east-1", 3.4, 1.1),
+      mkKey("kiroappcc", "1e02zx9", "us-east-1", 2.9, 1.1),
+    ],
+  },
+  {
+    id: "ae_03", created_at: ago(4.1), destination: "handoff",
+    bus_id: null, bus_name: null, count: 1,
+    target_host: null, vendors: ["kirodrop"],
+    keys: [mkKey("kirodrop", "9f4avn6", "eu-central-1", 6.2, 4.5)],
+  },
+  {
+    id: "ae_04", created_at: ago(22.0), destination: "into_bus",
+    bus_id: "bus_kiro", bus_name: "Kiro 常驻车", count: 2,
+    target_host: null, vendors: ["kirodrop", "91kiro"],
+    keys: [
+      mkKey("kirodrop", "3a91hb4", "us-east-1", 4.8, 18.2),
+      mkKey("91kiro", "8b6cjd7", "us-east-1", 5.5, 18.2),
+    ],
+  },
+  {
+    id: "ae_05", created_at: ago(28.0), destination: "push_pool",
+    bus_id: null, bus_name: null, count: 2,
+    target_host: "kiro-my.example.com", vendors: ["91kiro"],
+    keys: [
+      mkKey("91kiro", "4c22ls0", "us-east-1", 7.1, 24.6),
+      mkKey("91kiro", "5d8eqf2", "us-east-1", 6.4, 24.6),
+    ],
+  },
+  {
+    id: "ae_06", created_at: ago(50.2), destination: "into_bus",
+    bus_id: "bus_daily", bus_name: "日常小车", count: 1,
+    target_host: null, vendors: ["kiroappio"],
+    keys: [mkKey("kiroappio", "6e40tk8", "eu-central-1", 8.9, 47.1)],
+  },
+  {
+    id: "ae_07", created_at: ago(74.1), destination: "handoff",
+    bus_id: null, bus_name: null, count: 3,
+    target_host: null, vendors: ["kiroceo"],
+    keys: [
+      mkKey("kiroceo", "7f31wm5", "us-east-1", 9.6, 70.3),
+      mkKey("kiroceo", "8a20cv1", "us-east-1", 9.9, 70.3),
+      mkKey("kiroceo", "9b15np7", "eu-central-1", 8.2, 70.3),
+    ],
+  },
 ];
 
 /* ── 活动流 ── */

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  AlertTriangle, ArrowRight, Bus as BusIcon, Check, Download, KeyRound, Send,
+  AlertTriangle, Bus as BusIcon, Check, ChevronRight, Download, KeyRound, Send,
 } from "lucide-react";
 /** 品牌幽灵 · viewBox 精确 = 幽灵实际边界（无透明留白）· 外层 className 控大小和位置
  *  viewBox 56×75（比例 ≈ 3:4）· className 传 w/h 保持这个比例 */
@@ -390,78 +390,127 @@ function AssignHistoryTab() {
       <div className="mb-4">
         <h2 className="text-section font-semibold">派发历史</h2>
         <p className="text-label text-fg-tertiary">
-          每次派动作 · 共 <span className="font-semibold tnum text-fg-secondary">{events.length}</span> 次
+          每次派动作 · 共 <span className="font-semibold tnum text-fg-secondary">{events.length}</span> 次 · 点行展开看每个号
         </p>
       </div>
 
       {events.length === 0 ? (
         <div className="py-12 text-center text-label text-fg-tertiary">还没有派发历史</div>
       ) : (
-        <div className="space-y-3">
-          {events.map((e) => <AssignEventCard key={e.id} e={e} />)}
+        <div className="overflow-x-auto">
+          <div className="min-w-[760px]">
+            <BareHead>
+              <span className="w-6 shrink-0" />
+              <span className="w-[92px] shrink-0">时间</span>
+              <span className="w-24 shrink-0">去向</span>
+              <span className="min-w-0 flex-1">目标</span>
+              <span className="w-16 shrink-0 text-center">数量</span>
+              <span className="min-w-0 flex-[0.9]">vendor</span>
+            </BareHead>
+            <BareList>
+              {events.map((e) => <AssignEventRow key={e.id} e={e} />)}
+            </BareList>
+          </div>
         </div>
       )}
     </Card>
   );
 }
 
-function AssignEventCard({ e }: { e: AssignEvent }) {
+/** 派发事件行 · 点开看每个号的明细（masked / 区 / 已耗额度 / 派发时寿命） */
+function AssignEventRow({ e }: { e: AssignEvent }) {
   const { data: me } = useMe();
+  const [open, setOpen] = useState(false);
   const meta = DEST_META[e.destination];
   const Icon = meta.icon;
 
   return (
-    <div className="rounded-xl border border-hairline bg-bg p-4">
-      <div className="flex flex-wrap items-center gap-3">
-        {/* 去向 icon 底 · tone 区分视觉 */}
-        <span
-          className={cn(
-            "grid size-8 shrink-0 place-items-center rounded-lg",
-            meta.tone === "brand" && "bg-brand-subtle text-brand-strong",
-            meta.tone === "danger" && "bg-danger-bg text-danger-fg",
-            meta.tone === "neutral" && "bg-bg-elevated text-fg-secondary",
-          )}
-        >
-          <Icon className="size-4" />
+    <div>
+      <BareRow onClick={() => setOpen((v) => !v)}>
+        {/* 展开箭头 */}
+        <span className="w-6 shrink-0">
+          <ChevronRight
+            className={cn(
+              "size-3.5 text-fg-tertiary transition-transform",
+              open && "rotate-90",
+            )}
+          />
         </span>
 
-        {/* 主信息：去向 label + bus 名（如果有） */}
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-2">
-            <span className="font-semibold">{meta.label}</span>
-            {e.bus_name && (
-              <>
-                <ArrowRight className="size-3.5 text-fg-tertiary" />
-                <span className="font-medium text-fg-secondary">「{e.bus_name}」</span>
-              </>
+        <span className="w-[92px] shrink-0 text-label font-medium tnum text-fg-tertiary">
+          {fmtTime(e.created_at)}
+        </span>
+
+        {/* 去向 · icon + label · tone 区分 */}
+        <span className="flex w-24 shrink-0 items-center gap-1.5">
+          <Icon
+            className={cn(
+              "size-3.5 shrink-0",
+              meta.tone === "brand" && "text-brand-strong",
+              meta.tone === "danger" && "text-danger-fg",
+              meta.tone === "neutral" && "text-fg-secondary",
             )}
+          />
+          <span className="text-label font-medium">{meta.label}</span>
+        </span>
+
+        {/* 目标 · 进车给车名 · 推池给 host · 拿走给"已下载" chip */}
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          {e.bus_name ? (
+            <TokenTag size="sm">{e.bus_name}</TokenTag>
+          ) : e.target_host ? (
+            <TokenTag size="sm">
+              <Send className="size-3" />
+              <span className="ml-1">{e.target_host}</span>
+            </TokenTag>
+          ) : (
+            <Chip tone="danger" icon={<Check className="size-3" />}>已下载</Chip>
+          )}
+        </span>
+
+        <span className="w-16 shrink-0 text-center text-label font-semibold tnum">
+          {e.count}
+          <span className="ml-0.5 font-medium text-fg-tertiary">个</span>
+        </span>
+
+        <span className="flex min-w-0 flex-[0.9] flex-wrap items-center gap-1">
+          {e.vendors.map((v) => (
+            <VendorTag key={v} name={vendorLabel(v, !!me?.invited)} />
+          ))}
+        </span>
+      </BareRow>
+
+      {/* 展开 · 每个号的明细 */}
+      {open && (
+        <div className="border-t border-hairline bg-bg-elevated/40 px-1 py-2">
+          <div className="flex items-center gap-4 px-1 pb-1.5 text-[10px] font-semibold text-fg-tertiary">
+            <span className="min-w-0 flex-1">key</span>
+            <span className="w-24 shrink-0">区域</span>
+            <span className="w-24 shrink-0 text-right">已耗额度</span>
+            <span className="w-24 shrink-0 text-right">派发时存活</span>
           </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-label text-fg-tertiary">
-            <span className="tnum font-semibold text-fg-secondary">{e.count}</span> 个号 ·
-            {e.vendors.map((v) => (
-              <VendorTag key={v} name={vendorLabel(v, !!me?.invited)} />
+          <div className="space-y-0.5">
+            {e.keys.map((k) => (
+              <div
+                key={k.credential_id}
+                className="flex items-center gap-4 px-1 py-1 text-label"
+              >
+                <span className="min-w-0 flex-1 truncate font-mono text-fg-secondary">
+                  {k.key_masked}
+                </span>
+                <span className="w-24 shrink-0 tnum text-fg-tertiary">{k.region}</span>
+                <span className="w-24 shrink-0 text-right font-semibold tnum">
+                  {fmtCredits(k.credits_used)}
+                  <span className="ml-0.5 font-medium text-fg-tertiary">积分</span>
+                </span>
+                <span className="w-24 shrink-0 text-right tnum text-fg-secondary">
+                  {k.lifespan_seconds > 0 ? fmtLifespan(k.lifespan_seconds) : "刚拉"}
+                </span>
+              </div>
             ))}
-            <span>· {fmtTime(e.created_at)}</span>
           </div>
         </div>
-
-        {/* 状态标记 · handoff 特殊 */}
-        {e.destination === "handoff" && (
-          <Chip tone="danger" icon={<Check className="size-3" />}>已下载</Chip>
-        )}
-      </div>
-
-      {/* 号明细（默认收起 · 点开展开）· 阶段 1a 先直接展开 · 后续加折叠 */}
-      <div className="mt-3 flex flex-wrap gap-1.5 border-t border-hairline pt-3">
-        {e.credential_maskeds.map((m, i) => (
-          <span
-            key={i}
-            className="inline-flex items-center gap-1 rounded-lg bg-bg-elevated px-2 py-0.5 text-[10px] font-mono font-medium text-fg-secondary"
-          >
-            {m}
-          </span>
-        ))}
-      </div>
+      )}
     </div>
   );
 }

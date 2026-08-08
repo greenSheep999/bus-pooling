@@ -245,6 +245,20 @@ export interface ExtractEvent {
   pending_count: number;                    // 待派几个
 }
 
+/** 派发时某个号的快照 · docs/14 §6.5
+ *  记派发那一刻的状态 —— handoff 后 credential 已从 housepool 删除，靠这份快照留痕 */
+export interface AssignedKey {
+  credential_id: string;
+  /** 打码 key · 格式跟 Credential.key_masked 一致（ksk_live_xxxx…xxx） */
+  key_masked: string;
+  vendor_id: string;
+  region: string;
+  /** 派发那一刻已消耗的额度 */
+  credits_used: Money;
+  /** 派发那一刻的存活时长（秒）· 0 = 刚拉的 */
+  lifespan_seconds: number;
+}
+
 // ── 派发事件 · 每次派动作一条 · docs/14 §6.5
 export interface AssignEvent {
   id: string;
@@ -253,11 +267,12 @@ export interface AssignEvent {
   bus_id: string | null;                    // into_bus 时的车 id
   bus_name: string | null;
   count: number;
-  /** credential id 数组 · 只是引用不含明文 · handoff 后 credential 已删也留元数据 */
-  credential_ids: string[];
-  /** UI 展示的 masked 数组（handoff 前的 masked · 拿走后仍能显示） */
-  credential_maskeds: string[];
-  vendors: string[];                        // 派的号涉及哪些 vendor
+  /** 派的号快照 · 不含明文 · 每个号的 masked / vendor / 区 / 额度 / 寿命 */
+  keys: AssignedKey[];
+  /** 推我的号池时的目标 host（从 passengerpool_url 取）· 其他去向 null */
+  target_host: string | null;
+  /** 这批号涉及哪些 vendor（去重）· 卡片头部标注用 */
+  vendors: string[];
 }
 
 // ── 提取记录去向
