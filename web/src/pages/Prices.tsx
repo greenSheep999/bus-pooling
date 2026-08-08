@@ -342,8 +342,7 @@ export default function Prices() {
             <div className="min-w-[720px]">
               <BareHead>
                 <span className="w-3 shrink-0" />
-                <span className="min-w-0 flex-[1.4]">vendor</span>
-                <span className="min-w-0 flex-1">标记</span>
+                <span className="min-w-0 flex-1">vendor</span>
                 <span className="w-14 shrink-0 text-center">区域</span>
                 <span className="w-20 shrink-0 text-right">当前价</span>
                 <span className="w-24 shrink-0 text-right">{days} 天涨跌</span>
@@ -405,17 +404,14 @@ function PriceRow({
         className="w-3 shrink-0 rounded-sm"
         style={{ backgroundColor: lineColor(t.vendor_id), height: 12 }}
       />
-      <span className="min-w-0 flex-[1.4] truncate font-medium">{t.vendor_label}</span>
-      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-        {tags.length > 0 ? (
-          tags.map((tag) => (
-            <Chip key={tag} tone={TAG_TONE[tag] ?? "neutral"} className="text-[10px]">
-              {tag}
-            </Chip>
-          ))
-        ) : (
-          <span className="text-label text-fg-tertiary">—</span>
-        )}
+      {/* vendor 名 + 标记同格 · 不单独占列 */}
+      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+        <span className="truncate font-medium">{t.vendor_label}</span>
+        {tags.map((tag) => (
+          <Chip key={tag} tone={TAG_TONE[tag] ?? "neutral"} className="text-[10px]">
+            {tag}
+          </Chip>
+        ))}
       </span>
       <span className="w-14 shrink-0 text-center text-label font-medium text-fg-secondary">
         {/* zone=null 的 vendor 不分区域 · 一档到底 · 任何区筛选下都显示它 */}
