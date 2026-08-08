@@ -9,15 +9,12 @@ import { cn } from "@/lib/utils";
 export function BulkActionBar({
   open,
   count,
-  summary,
   onClear,
   children,
 }: {
   open: boolean;
   /** 选中数量 */
   count: number;
-  /** 选中项的汇总（几家 vendor / 冻结多少积分 之类）· 让用户确认选对了 */
-  summary?: ReactNode;
   onClear: () => void;
   /** 动作按钮 */
   children: ReactNode;
@@ -37,17 +34,12 @@ export function BulkActionBar({
           "rounded-2xl border border-hairline bg-bg/95 px-4 py-3 shadow-modal backdrop-blur-md",
         )}
       >
-        {/* 选中数 · 圆形计数 */}
+        {/* 选中数 · 圆形计数 · 不放汇总（vendor 数 / 额度这些看列表就行，悬浮栏只管操作） */}
         <span className="flex items-center gap-2.5">
           <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand text-label font-semibold tnum text-white">
             {count}
           </span>
-          <span className="text-label">
-            <span className="font-semibold">已选 {count} 个</span>
-            {summary && (
-              <span className="ml-1.5 text-fg-tertiary">{summary}</span>
-            )}
-          </span>
+          <span className="text-label font-semibold">已选 {count} 个</span>
         </span>
 
         <span className="h-5 w-px bg-hairline" />

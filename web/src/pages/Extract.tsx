@@ -59,14 +59,6 @@ export default function Extract() {
 
   const passengerpoolOk = !!downstream?.connected;
 
-  /** 选中项汇总 · 让用户在悬浮栏上确认选对了（不只看数量） */
-  const selSummary = useMemo(() => {
-    if (selectedRecords.length === 0) return null;
-    const vendors = new Set(selectedRecords.map((c) => c.vendor_id)).size;
-    const credits = selectedRecords.reduce((s, c) => s + c.credits_used, 0);
-    return `${vendors} 家 vendor · 已耗 ${fmtCredits(credits)} 积分`;
-  }, [selectedRecords]);
-
   /** 从悬浮栏挑去向 → 开弹窗确认 */
   const startAssign = (kind: "into_bus" | "push_pool" | "handoff") => {
     setAssignKind(kind);
@@ -150,7 +142,6 @@ export default function Extract() {
       <BulkActionBar
         open={tab === "pending" && selected.size > 0}
         count={selected.size}
-        summary={selSummary}
         onClear={() => setSelected(new Set())}
       >
         <Button variant="brand" size="sm" onClick={() => startAssign("into_bus")}>

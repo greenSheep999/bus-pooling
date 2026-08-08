@@ -1,5 +1,19 @@
 import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
+
+/** tailwind-merge 必须知道项目自定义的 fontSize 名字
+ *  否则它把 `text-label` 当成**颜色类**，跟 `text-white` 判定冲突后覆盖掉
+ *  症状：brand 按钮在带 size="sm"（含 text-label）时变成紫底黑字
+ *  自定义字号来自 tailwind.config.ts fontSize */
+const twMerge = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      "font-size": [
+        { text: ["label", "body", "body-lg", "section", "stat", "num", "hero", "giant"] },
+      ],
+    },
+  },
+});
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
