@@ -428,6 +428,22 @@ export function vendorPriceTrend(
   const change_30d_pct = Math.round(((current_price - prices[0]) / prices[0]) * 100);
   const outage_days = points.filter((p) => !p.in_stock).length;
 
+  /* 最高 / 最低价那天 · 图上打点标注 */
+  const peak_date = points[prices.indexOf(price_high)].date;
+  const trough_date = points[prices.indexOf(price_low)].date;
+
+  /* 最长连续有货天数 · 供货持续性 */
+  let longest_streak_days = 0;
+  let streak = 0;
+  for (const p of points) {
+    if (p.in_stock) {
+      streak += 1;
+      longest_streak_days = Math.max(longest_streak_days, streak);
+    } else {
+      streak = 0;
+    }
+  }
+
   return {
     vendor_id: vendorId,
     vendor_label: "",            // handler 按身份填
@@ -439,6 +455,9 @@ export function vendorPriceTrend(
     change_30d_pct,
     outage_days,
     in_stock_now: points[points.length - 1].in_stock,
+    peak_date,
+    trough_date,
+    longest_streak_days,
   };
 }
 

@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, CartesianGrid, ComposedChart, Label, Line, ReferenceDot,
+  ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { ArrowDown, ArrowLeft, ArrowUp, Minus } from "lucide-react";
 import { useVendorPrices } from "@/api/hooks";
 import {
-  BareHead, BareList, BareRow, Card, SectionHead, Segmented,
+  BareHead, BareList, BareRow, Card, Chip, SectionHead, Segmented,
 } from "@/components/ui/primitives";
 import { cn, fmtCredits, toCredits } from "@/lib/utils";
 import type { VendorPriceTrend } from "@/types";
@@ -76,6 +77,26 @@ export default function Prices() {
     return pool.reduce((a, b) => (a.current_price <= b.current_price ? a : b));
   }, [trends]);
 
+  /* vendor 标记 · 跨家比较才能算 · 可并存（一家可能同时"货最稳"+"最便宜"）
+     - 货稳：区间内没缺过货
+     - 最便宜：当前价全网最低
+     - 供货最久：最长连续有货天数全网第一（且不止一天） */
+  const tags = useMemo(() => {
+    if (trends.length === 0) return {} as Record<string, string[]>;
+    const minPrice = Math.min(...trends.map((t) => t.current_price));
+    const maxStreak = Math.max(...trends.map((t) => t.longest_streak_days));
+    const out: Record<string, string[]> = {};
+    for (const t of trends) {
+      const list: string[] = [];
+      if (t.outage_days === 0) list.push("货稳");
+      if (t.current_price === minPrice) list.push("最便宜");
+      /* 供货最久只在有区分度时给（大家都满勤就不给了，"货稳"已经表达了） */
+      if (t.longest_streak_days === maxStreak && maxStreak < days) list.push("供货最久");
+      out[t.vendor_id] = list;
+    }
+    return out;
+  }, [trends, days]);
+
   return (
     <div className="space-y-section">
       {/* Hero · 返回入口 + 标题 + 说明 */}
@@ -135,58 +156,171 @@ export default function Prices() {
           </div>
         ) : (
           <>
-            <div className="h-72">
+            <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart
+                {/* ComposedChart：单选某 vendor 时叠一层渐变 Area（跟 TrendChart 视觉一致）
+                    margin.top 给高低点 label 留位 · 不留会被裁 */}
+                <ComposedChart
                   data={chartData}
-                  margin={{ top: 6, right: 12, bottom: 0, left: -10 }}
+                  margin={{ top: 28, right: 16, bottom: 0, left: -20 }}
                 >
+                  <defs>
+                    {trends.map((t) => (
+                      <linearGradient
+                        key={t.vendor_id}
+                        id={`grad-${t.vendor_id}`}
+                        x1="0" y1="0" x2="0" y2="1"
+                      >
+                        <stop offset="0%" stopColor={lineColor(t.vendor_id)} stopOpacity={0.22} />
+                        <stop offset="100%" stopColor={lineColor(t.vendor_id)} stopOpacity={0} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+
+                  {/* 网格 · 虚线横向 · 跟 TrendChart 同色系但用虚线（多线图需要更强的读值参考） */}
                   <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="hsl(var(--hairline))"
+                    strokeDasharray="4 4"
+                    stroke="#F2F2F2"
                     vertical={false}
                   />
                   <XAxis
                     dataKey="date"
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fontSize: 11, fill: "hsl(var(--fg-tertiary))" }}
-                    /* 30 天全显会挤成一坨 · 每 N 天一个刻度 · 7 天时全显 */
+                    tick={{ fontSize: 11, fill: "#A3A3A3" }}
                     interval={days > 7 ? Math.floor(days / 6) : 0}
                     minTickGap={16}
                   />
                   <YAxis
                     tickLine={false}
                     axisLine={false}
+                    width={52}
                     tickFormatter={(v: number) => String(toCredits(v))}
-                    tick={{ fontSize: 11, fill: "hsl(var(--fg-tertiary))" }}
+                    tick={{ fontSize: 11, fill: "#A3A3A3" }}
                     /* 不从 0 起 · 贴着数据区间上下留 8% 余量 · 否则波动被压扁看不出 */
                     domain={yDomain}
                     allowDecimals={false}
                   />
-                  <Tooltip content={<PriceTooltip trends={trends} />} />
+                  <Tooltip
+                    cursor={{
+                      stroke: hoveredVendor ? lineColor(hoveredVendor) : "#9147FF",
+                      strokeWidth: 1,
+                      strokeDasharray: "4 4",
+                    }}
+                    content={<PriceTooltip trends={trends} focus={hoveredVendor} />}
+                  />
+
+                  {/* 单选某 vendor 时 · 底下垫渐变 Area（跟概览趋势图同款） */}
+                  {hoveredVendor && (
+                    <Area
+                      type="linear"
+                      dataKey={hoveredVendor}
+                      stroke="none"
+                      fill={`url(#grad-${hoveredVendor})`}
+                      isAnimationActive={false}
+                      activeDot={false}
+                    />
+                  )}
+
                   {trends.map((t) => {
                     const dim = hoveredVendor != null && hoveredVendor !== t.vendor_id;
+                    const focused = hoveredVendor === t.vendor_id;
                     return (
                       <Line
                         key={t.vendor_id}
-                        type="monotone"
+                        /* linear 折线 · 不用 monotone 曲线（曲线会造出数据里没有的圆弧） */
+                        type="linear"
                         dataKey={t.vendor_id}
                         stroke={lineColor(t.vendor_id)}
-                        strokeWidth={hoveredVendor === t.vendor_id ? 2.5 : 1.75}
-                        strokeOpacity={dim ? 0.2 : 1}
+                        strokeWidth={focused ? 2.5 : 1.75}
+                        strokeOpacity={dim ? 0.15 : 1}
                         dot={false}
-                        activeDot={{ r: 3 }}
-                        connectNulls={false}
+                        activeDot={
+                          dim
+                            ? false
+                            : { r: 4, fill: lineColor(t.vendor_id), stroke: "#fff", strokeWidth: 2 }
+                        }
                         isAnimationActive={false}
                       />
                     );
                   })}
-                </LineChart>
+
+                  {/* 高低点标注 · 每 vendor 各一对 · 只在单选该 vendor 时显示 label
+                      全览时 6 家 × 2 个 label 会糊成一片 · 只画点不写字 */}
+                  {trends.map((t) => {
+                    const dim = hoveredVendor != null && hoveredVendor !== t.vendor_id;
+                    if (dim) return null;
+                    const focused = hoveredVendor === t.vendor_id;
+                    const c = lineColor(t.vendor_id);
+                    return (
+                      <ReferenceDot
+                        key={`${t.vendor_id}-peak`}
+                        x={shortDay(t.peak_date)}
+                        y={t.price_high}
+                        r={focused ? 4 : 2.5}
+                        fill={c}
+                        stroke="#fff"
+                        strokeWidth={focused ? 2 : 1.5}
+                        ifOverflow="visible"
+                      >
+                        {focused && (
+                          <Label
+                            value={`最高 ${toCredits(t.price_high)} · ${shortDay(t.peak_date)}`}
+                            position="top"
+                            fill={c}
+                            fontSize={11}
+                            fontWeight={600}
+                            offset={10}
+                          />
+                        )}
+                      </ReferenceDot>
+                    );
+                  })}
+                  {trends.map((t) => {
+                    const dim = hoveredVendor != null && hoveredVendor !== t.vendor_id;
+                    if (dim) return null;
+                    const focused = hoveredVendor === t.vendor_id;
+                    const c = lineColor(t.vendor_id);
+                    return (
+                      <ReferenceDot
+                        key={`${t.vendor_id}-trough`}
+                        x={shortDay(t.trough_date)}
+                        y={t.price_low}
+                        r={focused ? 4 : 2.5}
+                        fill="#fff"
+                        stroke={c}
+                        strokeWidth={focused ? 2.5 : 1.5}
+                        ifOverflow="visible"
+                      >
+                        {focused && (
+                          <Label
+                            value={`最低 ${toCredits(t.price_low)} · ${shortDay(t.trough_date)}`}
+                            position="bottom"
+                            fill={c}
+                            fontSize={11}
+                            fontWeight={600}
+                            offset={10}
+                          />
+                        )}
+                      </ReferenceDot>
+                    );
+                  })}
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
 
-            {/* 不做图例 · 下方详情表已有色块 + hover 联动 · 图例是重复信息 */}
+            {/* 图例 · 解释图上标注语义（跟 TrendLegend 同款）· 不重复 vendor 列表（表格里有） */}
+            <div className="flex items-center justify-center gap-5 pt-3 text-label text-fg-tertiary">
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block size-2 rounded-full bg-fg-secondary ring-2 ring-white" />
+                <span>区间最高</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block size-2 rounded-full border-2 border-fg-secondary bg-white" />
+                <span>区间最低</span>
+              </span>
+              <span>hover 表格行看单家详情</span>
+            </div>
           </>
         )}
       </Card>
@@ -198,7 +332,8 @@ export default function Prices() {
           sub={
             <>
               {zone === "us" ? "美国区" : "欧洲区"} ·{" "}
-              <span className="font-semibold tnum">{trends.length}</span> 家 vendor · 按当前价升序 · hover 行高亮图上对应线
+              <span className="font-semibold tnum">{trends.length}</span> 家 vendor · 按当前价升序 ·
+              这里是 {days} 天汇总，每天明细看上面的图 · hover 行看单家走势
             </>
           }
         />
@@ -207,7 +342,8 @@ export default function Prices() {
             <div className="min-w-[720px]">
               <BareHead>
                 <span className="w-3 shrink-0" />
-                <span className="min-w-0 flex-1">vendor</span>
+                <span className="min-w-0 flex-[1.4]">vendor</span>
+                <span className="min-w-0 flex-1">标记</span>
                 <span className="w-14 shrink-0 text-center">区域</span>
                 <span className="w-20 shrink-0 text-right">当前价</span>
                 <span className="w-24 shrink-0 text-right">{days} 天涨跌</span>
@@ -221,6 +357,7 @@ export default function Prices() {
                     <PriceRow
                       key={t.vendor_id}
                       t={t}
+                      tags={tags[t.vendor_id] ?? []}
                       dim={hoveredVendor != null && hoveredVendor !== t.vendor_id}
                       onEnter={() => setHoveredVendor(t.vendor_id)}
                       onLeave={() => setHoveredVendor(null)}
@@ -242,10 +379,18 @@ export default function Prices() {
 
 /* ─────────────── 表格行 ─────────────── */
 
+/** 标记 → Chip tone 映射 · 用统一 Chip 组件不自己造 badge */
+const TAG_TONE: Record<string, "ok" | "brand" | "neutral"> = {
+  货稳: "ok",
+  最便宜: "brand",
+  供货最久: "neutral",
+};
+
 function PriceRow({
-  t, dim, onEnter, onLeave,
+  t, tags, dim, onEnter, onLeave,
 }: {
   t: VendorPriceTrend;
+  tags: string[];
   dim: boolean;
   onEnter: () => void;
   onLeave: () => void;
@@ -260,7 +405,18 @@ function PriceRow({
         className="w-3 shrink-0 rounded-sm"
         style={{ backgroundColor: lineColor(t.vendor_id), height: 12 }}
       />
-      <span className="min-w-0 flex-1 truncate font-medium">{t.vendor_label}</span>
+      <span className="min-w-0 flex-[1.4] truncate font-medium">{t.vendor_label}</span>
+      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+        {tags.length > 0 ? (
+          tags.map((tag) => (
+            <Chip key={tag} tone={TAG_TONE[tag] ?? "neutral"} className="text-[10px]">
+              {tag}
+            </Chip>
+          ))
+        ) : (
+          <span className="text-label text-fg-tertiary">—</span>
+        )}
+      </span>
       <span className="w-14 shrink-0 text-center text-label font-medium text-fg-secondary">
         {/* zone=null 的 vendor 不分区域 · 一档到底 · 任何区筛选下都显示它 */}
         {t.zone ?? <span className="text-fg-tertiary">全区</span>}
@@ -279,7 +435,10 @@ function PriceRow({
       <span className="w-28 shrink-0 text-right text-label tnum text-fg-tertiary">
         {toCredits(t.price_low)} - {toCredits(t.price_high)}
       </span>
-      <span className="w-20 shrink-0 text-right text-label tnum">
+      <span
+        className="w-20 shrink-0 text-right text-label tnum"
+        title={`最长连续有货 ${t.longest_streak_days} 天`}
+      >
         {t.outage_days > 0 ? (
           <span className="text-warn-fg">{t.outage_days} 天</span>
         ) : (
@@ -334,25 +493,29 @@ type TooltipProps = {
 };
 
 function PriceTooltip({
-  active, payload, label, trends,
-}: TooltipProps & { trends: VendorPriceTrend[] }) {
+  active, payload, label, trends, focus,
+}: TooltipProps & { trends: VendorPriceTrend[]; focus: string | null }) {
   if (!active || !payload?.length) return null;
   /* 按价格升序 · 缺货的那天标出来（价格照常显示 —— 缺货不代表价格变了） */
   const row0 = payload[0]?.payload ?? {};
   const rows = payload
+    /* 单选某 vendor 时只显示那家 · Area 层的 dataKey 会重复，去重 */
+    .filter((p, i, arr) => arr.findIndex((x) => x.dataKey === p.dataKey) === i)
+    .filter((p) => (focus ? p.dataKey === focus : true))
     .map((p) => {
       const t = trends.find((x) => x.vendor_id === p.dataKey);
       return {
         label: t?.vendor_label ?? p.dataKey,
         value: p.value,
-        color: p.color,
+        color: lineColor(String(p.dataKey)),
         oos: row0[`${p.dataKey}__oos`] === true,
       };
     })
     .sort((a, b) => a.value - b.value);
+  if (rows.length === 0) return null;
   return (
-    <div className="rounded-lg border border-hairline bg-bg px-3 py-2 text-label shadow-pop">
-      <div className="mb-1 font-semibold">{label}</div>
+    <div className="rounded-xl border border-hairline bg-bg px-3 py-2 text-label shadow-pop">
+      <div className="mb-1 text-fg-tertiary">{label}</div>
       <div className="space-y-0.5">
         {rows.map((r) => (
           <div key={r.label} className="flex items-center gap-2">

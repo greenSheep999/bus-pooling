@@ -206,6 +206,12 @@ export interface VendorPriceTrend {
   outage_days: number;
   /** 当前是否有货 */
   in_stock_now: boolean;
+  /** 最高价那天 · 图上打点标注 */
+  peak_date: string;
+  /** 最低价那天 · 图上打点标注 */
+  trough_date: string;
+  /** 最长连续有货天数 · 供货持续性指标 */
+  longest_streak_days: number;
 }
 
 // ── 提取事件 · 每次拉号操作一条 · docs/14 §6.5
