@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/primitives";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { BulkActionBar } from "@/components/ui/bulk-action-bar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TokenTag, VendorTag } from "@/components/ui/tags";
@@ -46,6 +47,8 @@ export default function Extract() {
   const items = records?.items ?? [];
 
   const [assignOpen, setAssignOpen] = useState(false);
+  /** 从悬浮栏带进弹窗的去向 · 跳过弹窗里再选一遍 */
+  const [assignKind, setAssignKind] = useState<"into_bus" | "push_pool" | "handoff">("into_bus");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<TabKey>("pending");
 
@@ -56,6 +59,20 @@ export default function Extract() {
 
   const passengerpoolOk = !!downstream?.connected;
 
+  /** 选中项汇总 · 让用户在悬浮栏上确认选对了（不只看数量） */
+  const selSummary = useMemo(() => {
+    if (selectedRecords.length === 0) return null;
+    const vendors = new Set(selectedRecords.map((c) => c.vendor_id)).size;
+    const credits = selectedRecords.reduce((s, c) => s + c.credits_used, 0);
+    return `${vendors} 家 vendor · 已耗 ${fmtCredits(credits)} 积分`;
+  }, [selectedRecords]);
+
+  /** 从悬浮栏挑去向 → 开弹窗确认 */
+  const startAssign = (kind: "into_bus" | "push_pool" | "handoff") => {
+    setAssignKind(kind);
+    setAssignOpen(true);
+  };
+
   return (
     <div className="space-y-section">
       <AssignModal
@@ -63,6 +80,7 @@ export default function Extract() {
         onClose={() => { setAssignOpen(false); setSelected(new Set()); }}
         records={selectedRecords}
         passengerpoolConnected={passengerpoolOk}
+        presetKind={assignKind}
       />
 
       {/* Hero */}
@@ -121,12 +139,39 @@ export default function Extract() {
             items={items}
             selected={selected}
             setSelected={setSelected}
-            onAssign={() => setAssignOpen(true)}
           />
         </TabsContent>
         <TabsContent value="extract-history"><ExtractHistoryTab /></TabsContent>
         <TabsContent value="assign-history"><AssignHistoryTab /></TabsContent>
       </Tabs>
+
+      {/* 批量操作悬浮栏 · 只在待派 tab 且有选中时出现
+          三个去向直接给按钮 —— 跳过"先开弹窗再选去向"这一步 */}
+      <BulkActionBar
+        open={tab === "pending" && selected.size > 0}
+        count={selected.size}
+        summary={selSummary}
+        onClear={() => setSelected(new Set())}
+      >
+        <Button variant="brand" size="sm" onClick={() => startAssign("into_bus")}>
+          <BusIcon />
+          进车
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => startAssign("push_pool")}
+          disabled={!passengerpoolOk}
+          title={passengerpoolOk ? undefined : "先在设置里配我的号池"}
+        >
+          <Send />
+          推我的号池
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => startAssign("handoff")}>
+          <Download />
+          下载拿走
+        </Button>
+      </BulkActionBar>
     </div>
   );
 }
@@ -134,12 +179,11 @@ export default function Extract() {
 /* ─────────────── Tab · 待派 ─────────────── */
 
 function PendingTab({
-  items, selected, setSelected, onAssign,
+  items, selected, setSelected,
 }: {
   items: Credential[];
   selected: Set<string>;
   setSelected: React.Dispatch<React.SetStateAction<Set<string>>>;
-  onAssign: () => void;
 }) {
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -159,23 +203,19 @@ function PendingTab({
 
   return (
     <Card className="p-7">
-      <div className="mb-4 flex items-baseline justify-between gap-4">
+      {/* 标题区不放操作按钮 —— 列表长了要滚回来才能点
+          批量操作走底部悬浮栏（BulkActionBar），始终在手边 */}
+      <div className="mb-4">
         <SectionHead
           title="待派 key"
           sub={
             items.length > 0 ? (
               <>共 <span className="font-semibold tnum text-fg-secondary">{items.length}</span> 个 · 来自{" "}
               <span className="font-semibold tnum">{vendors}</span> 家 vendor · 累计冻结{" "}
-              <span className="font-semibold tnum">{fmtCredits(totalCredits)}</span> 积分</>
+              <span className="font-semibold tnum">{fmtCredits(totalCredits)}</span> 积分 ·
+              勾选后底部出操作栏</>
             ) : (
-              "选中后派去向"
-            )
-          }
-          right={
-            selected.size > 0 && (
-              <Button variant="brand" onClick={onAssign}>
-                派去向（<span className="tnum">{selected.size}</span>）
-              </Button>
+              "拉一批 key 后在这里派去向"
             )
           }
         />
