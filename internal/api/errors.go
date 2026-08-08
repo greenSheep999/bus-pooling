@@ -30,6 +30,10 @@ const (
 	CodeBodyTooLarge        Code = "body_too_large"
 	CodeRateLimited         Code = "rate_limited"
 	CodeInternal            Code = "internal"
+	// CodePriceOverCap 单价超全局/车级上限（契约 §7）· 带 cap / current
+	CodePriceOverCap Code = "price_over_cap"
+	// CodeDailyLimitReached 今日轮数或消费达上限 · 带 limit / used
+	CodeDailyLimitReached Code = "daily_limit_reached"
 )
 
 // Error 是统一的错误响应形状。
@@ -38,6 +42,13 @@ type Error struct {
 	Message string `json:"message"`
 	// RetryAfter 秒 · 只在限流 / 上游临时不可用时给
 	RetryAfter int `json:"retry_after,omitempty"`
+
+	// ── 上限类错误的细节（契约 §7 要求，前端要提示"超了多少" / 画进度条）──
+	// 用指针是因为 0 是有意义的值（上限设成 0 = 全拦），omitempty 会把它吞掉。
+	Limit   *int64 `json:"limit,omitempty"`
+	Used    *int64 `json:"used,omitempty"`
+	Cap     *int64 `json:"cap,omitempty"`
+	Current *int64 `json:"current,omitempty"`
 }
 
 func (e *Error) Error() string { return string(e.Code) + ": " + e.Message }
@@ -101,6 +112,26 @@ func ErrInsufficientBalance(msg string) *Fail {
 		msg = "积分不足"
 	}
 	return newFail(http.StatusPaymentRequired, CodeInsufficientBalance, msg)
+}
+
+// ErrPriceOverCap 单价超上限。**不给"就这次放行"的口子**（decisions §8.27）——
+// 要放行就去改上限，否则护栏形同虚设。
+func ErrPriceOverCap(capValue, current int64) *Fail {
+	f := newFail(http.StatusConflict, CodePriceOverCap, "单价超过你设的上限了，去「拉号偏好」调高上限再试")
+	f.Err.Cap = &capValue
+	f.Err.Current = &current
+	return f
+}
+
+// ErrDailyLimitReached 今日轮数 / 消费达上限。
+func ErrDailyLimitReached(msg string, limit, used int64) *Fail {
+	if msg == "" {
+		msg = "今天已经拉满了，明天再来或去「拉号偏好」调高上限"
+	}
+	f := newFail(http.StatusConflict, CodeDailyLimitReached, msg)
+	f.Err.Limit = &limit
+	f.Err.Used = &used
+	return f
 }
 
 func ErrInternal() *Fail {

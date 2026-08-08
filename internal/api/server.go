@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bus-pooling/bus-pooling/internal/decider"
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
+	"github.com/bus-pooling/bus-pooling/internal/strategy"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
 
@@ -18,14 +21,35 @@ import (
 const maxBodyBytes = 1 << 20
 
 type Server struct {
+	db         *sql.DB
 	passengers *passenger.Store
 	wallets    *wallet.Store
+	strategies *strategy.Store
+	decider    *decider.Orchestrator
 	// secureCookie 生产环境要 true（HTTPS）· 本地 http 调试设 false 否则 cookie 不生效
 	secureCookie bool
 }
 
-func NewServer(p *passenger.Store, w *wallet.Store, secureCookie bool) *Server {
-	return &Server{passengers: p, wallets: w, secureCookie: secureCookie}
+// ServerDeps 装配 Server 需要的依赖。decider 允许为 nil（migrate 之类的
+// 子命令不需要跑拉号，主进程 serve 才装配）
+type ServerDeps struct {
+	DB           *sql.DB
+	Passengers   *passenger.Store
+	Wallets      *wallet.Store
+	Strategies   *strategy.Store
+	Decider      *decider.Orchestrator
+	SecureCookie bool
+}
+
+func NewServer(d ServerDeps) *Server {
+	return &Server{
+		db:           d.DB,
+		passengers:   d.Passengers,
+		wallets:      d.Wallets,
+		strategies:   d.Strategies,
+		decider:      d.Decider,
+		secureCookie: d.SecureCookie,
+	}
 }
 
 // Routes 注册所有路由。
@@ -46,6 +70,9 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/me/ledger", handler(s.RequireAuth(s.handleLedger)))
 	mux.Handle("GET /api/me/api-keys", handler(s.RequireAuth(s.handleListAPIKeys)))
 	mux.Handle("DELETE /api/me/api-keys/{id}", handler(s.RequireAuth(s.handleRevokeAPIKey)))
+	mux.Handle("GET /api/me/strategy", handler(s.RequireAuth(s.handleGetStrategy)))
+	mux.Handle("PUT /api/me/strategy", handler(s.RequireAuth(s.handlePutStrategy)))
+	mux.Handle("POST /api/me/pull", handler(s.RequireAuth(s.handlePull)))
 
 	// 只会话 —— API key 不能做这两件事
 	mux.Handle("POST /api/me/password", handler(s.RequireSession(s.handleChangePassword)))
@@ -342,9 +369,9 @@ func (s *Server) handleLedger(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	entries, total, err := s.wallets.List(r.Context(), p.ID, wallet.ListOptions{
-		Reason: wallet.Reason(r.URL.Query().Get("type")),
-		Limit:  pageSize,
-		Offset: (page - 1) * pageSize,
+		Reasons: internalReasonsFor(r.URL.Query().Get("type")),
+		Limit:   pageSize,
+		Offset:  (page - 1) * pageSize,
 	})
 	if err != nil {
 		return err
@@ -354,7 +381,7 @@ func (s *Server) handleLedger(w http.ResponseWriter, r *http.Request) error {
 	for _, e := range entries {
 		items = append(items, map[string]any{
 			"id":            e.ID,
-			"type":          string(e.Reason),
+			"type":          publicLedgerType(e.Reason),
 			"amount":        e.Amount,
 			"balance_after": e.BalanceAfter,
 			"memo":          e.Memo,

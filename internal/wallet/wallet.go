@@ -329,10 +329,12 @@ func ReleaseReservedTx(ctx context.Context, tx *sql.Tx, passengerID string, amou
 // ── 流水查询 ──────────────────────────────────────────
 
 type ListOptions struct {
-	// Reason 空 = 不筛
+	// Reason 空 = 不筛（**内部** reason，单个精确匹配）
 	Reason Reason
-	Limit  int
-	Offset int
+	// Reasons 非空时按 IN (...) 过滤（对外 spend 一个 type 对应内部多个 reason）
+	Reasons []Reason
+	Limit   int
+	Offset  int
 }
 
 func (s *Store) List(ctx context.Context, passengerID string, opt ListOptions) ([]Entry, int, error) {
@@ -345,7 +347,18 @@ func (s *Store) List(ctx context.Context, passengerID string, opt ListOptions) (
 
 	where := `WHERE passenger_id = ?`
 	args := []any{passengerID}
-	if opt.Reason != "" {
+	switch {
+	case len(opt.Reasons) > 0:
+		placeholders := ""
+		for i, r := range opt.Reasons {
+			if i > 0 {
+				placeholders += ","
+			}
+			placeholders += "?"
+			args = append(args, string(r))
+		}
+		where += ` AND reason IN (` + placeholders + `)`
+	case opt.Reason != "":
 		where += ` AND reason = ?`
 		args = append(args, string(opt.Reason))
 	}

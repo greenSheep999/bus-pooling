@@ -26,7 +26,10 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/db"
 	"github.com/bus-pooling/bus-pooling/internal/httpx"
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
+	"github.com/bus-pooling/bus-pooling/internal/providers"
+	"github.com/bus-pooling/bus-pooling/internal/providers/kiro"
 	"github.com/bus-pooling/bus-pooling/internal/secrets"
+	"github.com/bus-pooling/bus-pooling/internal/strategy"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
 
@@ -146,6 +149,32 @@ func runMigrate(ctx context.Context, cfg config.Config, args []string) error {
 	}
 }
 
+// buildVendorRegistry 把配置 + 密钥拼成 vendor registry。
+//
+// 密钥从 env 走到这里就是明文了 —— `internal/secrets` 管的是**落库**的加密，
+// 运行期内存里是明文（要拿它发 HTTP 头）。所以别把 registry 或 cfg.Secrets 打进日志。
+func buildVendorRegistry(cfg config.Config) (*providers.Registry, error) {
+	r := providers.NewRegistry()
+	err := kiro.Register(r, kiro.Config{
+		Kiro91: kiro.VendorConfig{
+			Enabled:       cfg.Vendors.Kiro91.Enabled,
+			BaseURL:       cfg.Vendors.Kiro91.BaseURL,
+			APIKey:        cfg.Secrets.Kiro91APIKey,
+			WebhookSecret: cfg.Secrets.Kiro91WebhookSecret,
+			// vendor 不单独配超时 / 代理 —— 共用 httpx 那套，
+			// 免得"某家慢"要在两个地方调参（CLAUDE.md §7.1 出向统一）
+			Timeout:    cfg.HTTPX.Timeout,
+			MaxRetries: cfg.HTTPX.MaxRetries,
+			ProxyURL:   cfg.HTTPX.Proxy,
+			NoProxy:    cfg.HTTPX.NoProxy,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
 func runServe(ctx context.Context, cfg config.Config) error {
 	// serve 需要主密钥（vendor 凭证 / 号池 token 都要解密）
 	if err := cfg.RequireSecrets(); err != nil {
@@ -162,6 +191,15 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		NoProxy:       cfg.HTTPX.NoProxy,
 	}); err != nil {
 		return err
+	}
+
+	// vendor registry —— 业务层只认 providers.Registry，装配是 main 的事（契约 §10）
+	vendorRegistry, err := buildVendorRegistry(cfg)
+	if err != nil {
+		return err
+	}
+	for _, e := range vendorRegistry.All() {
+		slog.Info("vendor 已注册", "vendor", e.VendorID, "enabled", e.Enabled)
 	}
 
 	database, err := db.Open(ctx, cfg.DB.Path)
@@ -185,11 +223,15 @@ func runServe(ctx context.Context, cfg config.Config) error {
 
 	// secureCookie：生产走 HTTPS 要 true；本地 http 调试必须 false，否则浏览器不存 cookie
 	secureCookie := os.Getenv("BP_INSECURE_COOKIE") == ""
-	apiSrv := api.NewServer(
-		passenger.NewStore(database.DB),
-		wallet.NewStore(database.DB),
-		secureCookie,
-	)
+	apiSrv := api.NewServer(api.ServerDeps{
+		DB:           database.DB,
+		Passengers:   passenger.NewStore(database.DB),
+		Wallets:      wallet.NewStore(database.DB),
+		Strategies:   strategy.NewStore(database.DB),
+		Decider:      nil, // 阶段 1a：拉号需要 vendor + 号池装配，Iss #9 剩余部分接
+		SecureCookie: secureCookie,
+	})
+	_ = vendorRegistry // 已在启动日志打过；下一步接 decider 时用
 	apiSrv.Routes(mux)
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {

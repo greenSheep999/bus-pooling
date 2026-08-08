@@ -11,7 +11,9 @@ import (
 	"testing"
 
 	"github.com/bus-pooling/bus-pooling/internal/db"
+	"github.com/bus-pooling/bus-pooling/internal/decider"
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
+	"github.com/bus-pooling/bus-pooling/internal/strategy"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
 
@@ -22,6 +24,23 @@ type testEnv struct {
 }
 
 func newEnv(t *testing.T) *testEnv {
+	return newEnvBase(t, nil)
+}
+
+// newEnvWithDecider 装配一个带 decider 的 env（拉号端点用）。
+func newEnvWithDecider(t *testing.T, vendor decider.VendorClient, pool decider.PoolClient) *testEnv {
+	return newEnvBase(t, func(sqldb *db.DB) *decider.Orchestrator {
+		return decider.New(decider.Config{
+			DB:     sqldb.DB,
+			State:  decider.NewStore(sqldb.DB),
+			Vendor: vendor,
+			Pool:   pool,
+			Rates:  decider.Rates{Service: 500}, // 测试用极小服务费率
+		})
+	})
+}
+
+func newEnvBase(t *testing.T, mkDecider func(*db.DB) *decider.Orchestrator) *testEnv {
 	t.Helper()
 	ctx := context.Background()
 
@@ -34,9 +53,19 @@ func newEnv(t *testing.T) *testEnv {
 	}
 
 	wallets := wallet.NewStore(d.DB)
+	var orch *decider.Orchestrator
+	if mkDecider != nil {
+		orch = mkDecider(d)
+	}
 	mux := http.NewServeMux()
-	// secureCookie=false：httptest 是 http，true 的话 cookie 不会被 client 保存
-	NewServer(passenger.NewStore(d.DB), wallets, false).Routes(mux)
+	NewServer(ServerDeps{
+		DB:           d.DB,
+		Passengers:   passenger.NewStore(d.DB),
+		Wallets:      wallets,
+		Strategies:   strategy.NewStore(d.DB),
+		Decider:      orch,
+		SecureCookie: false,
+	}).Routes(mux)
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(func() {
@@ -44,6 +73,14 @@ func newEnv(t *testing.T) *testEnv {
 		_ = d.Close()
 	})
 	return &testEnv{srv: srv, db: d, wallets: wallets}
+}
+
+// walletCreditForTest 造一个测试用的充值 Move。
+func walletCreditForTest(passengerID string, amount int64) wallet.Move {
+	return wallet.Move{
+		PassengerID: passengerID, Reason: wallet.ReasonRecharge,
+		Amount: amount, Memo: "test seed",
+	}
 }
 
 func (e *testEnv) do(t *testing.T, method, path string, body any, mutate ...func(*http.Request)) (int, []byte) {
@@ -318,8 +355,9 @@ func TestWalletAndLedgerEndpoints(t *testing.T) {
 	if l.Total != 1 || len(l.Items) != 1 {
 		t.Fatalf("流水 total=%d len=%d", l.Total, len(l.Items))
 	}
-	if l.Items[0]["type"] != "recharge" {
-		t.Errorf("流水类型 = %v", l.Items[0]["type"])
+	// 对外类型是 topup，不是内部的 recharge（CLAUDE.md §0.1）
+	if l.Items[0]["type"] != "topup" {
+		t.Errorf("流水类型 = %v，want topup（内部 recharge 应映射成对外 topup）", l.Items[0]["type"])
 	}
 }
 
