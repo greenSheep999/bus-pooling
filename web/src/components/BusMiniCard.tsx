@@ -1,8 +1,12 @@
+import { Bus as BusIcon, Zap, ZapOff } from "lucide-react";
 import type { Bus } from "@/types";
+import { Chip } from "@/components/ui/primitives";
+import { OwnerBadge } from "@/components/ui/tags";
 import { avatarColor, avatarLetter, cn, fmtCredits } from "@/lib/utils";
 
 /** 左列车小卡（Buses 页 · 车列表用）· 点选后右侧展示 focal 大卡
-    kind/成员数 · 车名 · 号活着数 · 今日消费 · 车主头像 */
+    - 头：kind Chip + owner badge · 头像靠右（跟 BusCard/BusFocalCard 视觉统一）
+    - 车名 · 大数字 · 底部：补车模式 + 失效数 */
 export function BusMiniCard({
   bus, role, active, onClick,
 }: {
@@ -11,14 +15,19 @@ export function BusMiniCard({
   active: boolean;
   onClick: () => void;
 }) {
-  const kindLabel = bus.kind === "single" ? "独享" : bus.kind === "team" ? "邀请码" : "搭车";
-  const memberLabel =
-    bus.kind === "single" ? "个人" : `${bus.member_count} 车友`;
+  const kindLabel =
+    bus.kind === "single"
+      ? "独享 · 个人"
+      : bus.kind === "team"
+        ? `拼车 · ${bus.member_count} 车友`
+        : `搭车 · ${bus.member_count} 车友`;
 
   // 车主头像 · 用车名当种子出个稳定色
   const seed = bus.name;
   const { bg, fg } = avatarColor(seed);
   const letter = avatarLetter(seed);
+
+  const auto = bus.strategy.auto_refill_enabled;
 
   return (
     <button
@@ -30,23 +39,12 @@ export function BusMiniCard({
           : "border-hairline bg-bg hover:-translate-y-0.5 hover:shadow-hover",
       )}
     >
-      {/* 头 · kind + 成员数 · 头像靠右 */}
+      {/* 头 · kind Chip · 头像靠右 */}
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 space-y-1">
-          <div className="flex flex-wrap items-center gap-1 text-label font-medium">
-            <span className={cn(
-              bus.kind === "single" ? "text-brand-strong" : "text-fg-secondary",
-            )}>{kindLabel}</span>
-            <span className="text-fg-tertiary">·</span>
-            <span className="text-fg-tertiary">{memberLabel}</span>
-            {role === "owner" && (
-              <span className="ml-1 shrink-0 whitespace-nowrap rounded-md bg-brand-subtle px-1.5 py-[1px] text-[10px] font-semibold leading-[1.4] text-brand-strong">
-                我发起
-              </span>
-            )}
-          </div>
-          <div className="truncate text-section font-semibold tracking-tight">{bus.name}</div>
-        </div>
+        <Chip tone="brand">
+          <BusIcon className="size-3" />
+          {kindLabel}
+        </Chip>
         <span
           className="grid size-8 shrink-0 place-items-center rounded-full font-semibold"
           style={{ backgroundColor: bg, color: fg }}
@@ -55,10 +53,21 @@ export function BusMiniCard({
         </span>
       </div>
 
-      {/* 大数字 · 号活着 */}
+      {/* 车名 · 我发起 badge 跟标题一行 */}
+      <div className="flex items-center gap-2">
+        <h3 className="min-w-0 truncate text-section font-semibold tracking-tight">
+          {bus.name}
+        </h3>
+        {role === "owner" && <OwnerBadge />}
+      </div>
+
+      {/* 大数字 · 正常号 */}
       <div className="flex items-baseline justify-between">
         <div className="flex items-baseline gap-1.5">
           <span className="text-num font-semibold tnum">{bus.alive_count}</span>
+          <span className="text-label text-fg-tertiary">
+            个 · 已失效 <span className="font-semibold tnum text-fg-secondary">{bus.dead_count}</span>
+          </span>
         </div>
         {bus.spend_today > 0 && (
           <span className="text-label font-semibold tnum text-danger-fg">
@@ -67,13 +76,23 @@ export function BusMiniCard({
         )}
       </div>
 
-      {/* 底 · 状态点 · 副标 */}
-      <div className="flex items-center justify-between text-label">
-        <span className="flex items-center gap-1.5 text-fg-secondary">
-          <span className="size-1.5 rounded-full bg-ok-solid" />
-          号活着 · 失效 <span className="font-semibold tnum">{bus.dead_count}</span>
-        </span>
-        <span className="text-fg-tertiary">今日</span>
+      {/* 底 · 补车模式 · 跟 BusCard 呼应（简版） */}
+      <div className="flex items-center gap-1.5 text-label">
+        {auto ? (
+          <>
+            <Zap className="size-3.5 text-brand-strong" />
+            <span className="font-semibold text-brand-strong">自动补车</span>
+            <span className="text-fg-tertiary">
+              · 保活 <span className="font-semibold tnum text-fg-secondary">{bus.strategy.refill_watermark}</span>
+            </span>
+          </>
+        ) : (
+          <>
+            <ZapOff className="size-3.5 text-fg-tertiary" />
+            <span className="font-medium text-fg-secondary">手动模式</span>
+            <span className="text-fg-tertiary">· 号少时提醒</span>
+          </>
+        )}
       </div>
     </button>
   );

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, Plus, Ticket, UserPlus, Users } from "lucide-react";
+import { Check, ChevronDown, Plus, Ticket, UserPlus, Users, X } from "lucide-react";
 import { useBuses, useBusPulls } from "@/api/hooks";
 import { BusCard } from "@/components/BusCard";
 import { BusFocalCard } from "@/components/BusFocalCard";
@@ -7,6 +7,10 @@ import { BusMiniCard } from "@/components/BusMiniCard";
 import { StartCarpoolModal } from "@/components/StartCarpoolModal";
 import { PullNowModal } from "@/components/PullNowModal";
 import { BareHead, BareList, BareRow, Card, Chip, SectionHead } from "@/components/ui/primitives";
+import { Button } from "@/components/ui/button";
+import { LoadMoreButton } from "@/components/ui/load-more-button";
+import { Popover, PopoverContent, PopoverItem, PopoverTrigger } from "@/components/ui/popover";
+import { TokenTag, VendorTag } from "@/components/ui/tags";
 import { cn, fmtCredits, fmtTime, vendorName } from "@/lib/utils";
 import type { Bus, PullResult, PullRound, PushState } from "@/types";
 
@@ -65,8 +69,7 @@ export default function Buses() {
 
         <StartCarpoolCTA
           open={ctaOpen}
-          onToggle={() => setCtaOpen((v) => !v)}
-          onClose={() => setCtaOpen(false)}
+          onToggle={setCtaOpen}
           onPickSingle={() => {
             setCtaOpen(false);
             setModalKind("single");
@@ -84,12 +87,7 @@ export default function Buses() {
             <div className="text-body-lg font-semibold">还没有拼车</div>
             <p className="text-fg-tertiary">建一辆自己的车 · 或加入他人的拼车</p>
           </div>
-          <button
-            onClick={() => setModalKind("single")}
-            className="rounded-lg bg-brand px-4 py-2 font-semibold text-white transition-opacity hover:opacity-90"
-          >
-            立即拼车
-          </button>
+          <Button variant="brand" onClick={() => setModalKind("single")}>立即拼车</Button>
         </Card>
       ) : (
         /* 车列表整块 · focal 显示条件（方案 A · 决定见对话）：
@@ -147,18 +145,11 @@ export default function Buses() {
           )}
 
           {/* 按钮 · 永远显示 · pt-6 独立呼吸 */}
-          <div className="flex justify-center pt-6">
-            <button
-              onClick={() => setExpanded((v) => !v)}
-              className="flex items-center gap-2 rounded-lg border border-hairline bg-bg px-4 py-2 font-medium text-fg-secondary shadow-card transition-colors hover:bg-bg-elevated"
-            >
-              {expanded ? (
-                <><ChevronUp className="size-4" />收起</>
-              ) : (
-                <><ChevronDown className="size-4" />查看全部 · <span className="tnum font-semibold">{items.length}</span> 辆车</>
-              )}
-            </button>
-          </div>
+          <LoadMoreButton
+            expanded={expanded}
+            onToggle={() => setExpanded((v) => !v)}
+            labelExpand={<>查看全部 · <span className="tnum font-semibold">{items.length}</span> 辆车</>}
+          />
         </div>
       )}
 
@@ -169,73 +160,59 @@ export default function Buses() {
 }
 /* 立即拼车 ▾ · 3 选一 · 阶段 1a 只有 single 可点 */
 function StartCarpoolCTA({
-  open, onToggle, onClose, onPickSingle,
+  open, onToggle, onPickSingle,
 }: {
   open: boolean;
-  onToggle: () => void;
-  onClose: () => void;
+  onToggle: (v: boolean) => void;
   onPickSingle: () => void;
 }) {
   return (
-    <div className="relative shrink-0">
-      <button
-        onClick={onToggle}
-        className={cn(
-          "flex items-center gap-2 rounded-lg bg-brand px-4 py-2 font-semibold text-white shadow-card transition-opacity hover:opacity-90",
-          open && "opacity-90",
-        )}
-      >
-        <Plus className="size-4" />
-        立即拼车
-        <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
-      </button>
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={onClose} />
-          <div className="absolute right-0 z-50 mt-2 w-72 rounded-[14px] border border-hairline bg-bg p-2 shadow-pop">
-            <button
-              onClick={onPickSingle}
-              className="flex w-full items-start gap-3 rounded-lg p-3 text-left transition-colors hover:bg-bg-elevated"
-            >
-              <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-brand-subtle">
-                <Users className="size-4 text-brand-strong" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="font-semibold">发起拼车</div>
-                <div className="text-label text-fg-tertiary">建一辆自己的车 · 独享号池</div>
-              </div>
-            </button>
-
-            <div className="flex w-full items-start gap-3 rounded-lg p-3 opacity-45">
-              <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-bg-elevated">
-                <UserPlus className="size-4 text-fg-tertiary" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 font-semibold">
-                  搭车
-                  <Chip tone="neutral" className="text-[10px]">阶段 2b</Chip>
-                </div>
-                <div className="text-label text-fg-tertiary">系统撮合他人拼车 · 共享号池摊单价</div>
-              </div>
-            </div>
-
-            <div className="flex w-full items-start gap-3 rounded-lg p-3 opacity-45">
-              <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-bg-elevated">
-                <Ticket className="size-4 text-fg-tertiary" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 font-semibold">
-                  输邀请码加入
-                  <Chip tone="neutral" className="text-[10px]">阶段 2a</Chip>
-                </div>
-                <div className="text-label text-fg-tertiary">用朋友给的邀请码加入他的车</div>
-              </div>
-            </div>
+    <Popover open={open} onOpenChange={onToggle}>
+      <PopoverTrigger asChild>
+        <Button variant="brand" className={cn("shrink-0", open && "opacity-90")}>
+          <Plus />
+          立即拼车
+          <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72">
+        <PopoverItem onSelect={onPickSingle} className="items-start gap-3 p-3">
+          <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-brand-subtle">
+            <Users className="size-4 text-brand-strong" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold">发起拼车</div>
+            <div className="text-label text-fg-tertiary">建一辆自己的车 · 独享号池</div>
           </div>
-        </>
-      )}
-    </div>
+        </PopoverItem>
+
+        <div className="flex w-full items-start gap-3 rounded-xl p-3 opacity-45">
+          <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-bg-elevated">
+            <UserPlus className="size-4 text-fg-tertiary" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 font-semibold">
+              搭车
+              <Chip tone="neutral" className="text-[10px]">阶段 2b</Chip>
+            </div>
+            <div className="text-label text-fg-tertiary">系统撮合他人拼车 · 共享号池摊单价</div>
+          </div>
+        </div>
+
+        <div className="flex w-full items-start gap-3 rounded-xl p-3 opacity-45">
+          <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-bg-elevated">
+            <Ticket className="size-4 text-fg-tertiary" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 font-semibold">
+              输邀请码加入
+              <Chip tone="neutral" className="text-[10px]">阶段 2a</Chip>
+            </div>
+            <div className="text-label text-fg-tertiary">用朋友给的邀请码加入他的车</div>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 /* 底部拼车拉号记录 · decisions §8.13 · 只列拼车相关 */
@@ -247,10 +224,10 @@ const RESULT: Record<PullResult, { label: string; tone: "ok" | "warn" | "danger"
 };
 
 function PushCell({ state, ratio }: { state: PushState; ratio: string | null }) {
-  if (state === "pushed") return <Chip tone="ok">推池 ✓</Chip>;
-  if (state === "partial") return <Chip tone="warn">部分推 {ratio}</Chip>;
-  if (state === "failed") return <Chip tone="danger">推池 ✗</Chip>;
-  return <span className="text-label text-fg-tertiary">未推</span>;
+  if (state === "pushed") return <Chip tone="ok" icon={<Check className="size-3" />}>已推</Chip>;
+  if (state === "partial") return <Chip tone="warn" icon={<Check className="size-3" />}>部分推 {ratio}</Chip>;
+  if (state === "failed") return <Chip tone="danger" icon={<X className="size-3" />}>推失败</Chip>;
+  return <Chip tone="neutral">未推</Chip>;
 }
 
 function PoolingPullHistory({ buses }: { buses: string[] }) {
@@ -288,16 +265,11 @@ function PoolingPullHistory({ buses }: { buses: string[] }) {
           </BareList>
         </div>
       </div>
-      {remain > 0 && (
-        <div className="flex justify-center pt-1">
-          <button
-            onClick={() => setShown((s) => s + 10)}
-            className="rounded-lg border border-hairline bg-bg px-4 py-1.5 font-medium text-fg-secondary shadow-card transition-colors hover:bg-bg-elevated"
-          >
-            加载更多 <span className="text-fg-tertiary">· 还剩 {remain} 轮</span>
-          </button>
-        </div>
-      )}
+      <LoadMoreButton
+        onLoadMore={() => setShown((s) => s + 10)}
+        remain={remain}
+        remainUnit="轮"
+      />
     </div>
   );
 }
@@ -310,7 +282,7 @@ function PullHistRow({ r }: { r: PullRound }) {
         {fmtTime(r.created_at)}
       </span>
       <span className="w-14 shrink-0">
-        <Chip tone={res.tone} className="w-full justify-center">{res.label}</Chip>
+        <Chip tone={res.tone} dot className="w-full justify-center">{res.label}</Chip>
       </span>
 
       <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
@@ -324,13 +296,9 @@ function PullHistRow({ r }: { r: PullRound }) {
             <span className="shrink-0 text-fg-secondary">共拉取</span>
             <span className="shrink-0 font-semibold tnum text-fg">{r.count_purchased}</span>
             <span className="shrink-0 text-fg-secondary">个号，从</span>
-            <span className="shrink-0 whitespace-nowrap rounded-md border border-hairline bg-bg-elevated px-2 py-[2px] text-label font-medium text-fg-secondary shadow-card">
-              {vendorName(r.vendor_id)}
-            </span>
+            <VendorTag name={vendorName(r.vendor_id)} size="sm" />
             <span className="shrink-0 text-fg-tertiary">→</span>
-            <span className="shrink-0 whitespace-nowrap rounded-md border border-hairline bg-bg-elevated px-2 py-[2px] text-label font-medium text-fg-secondary shadow-card">
-              {r.bus_name}
-            </span>
+            <TokenTag size="sm">{r.bus_name}</TokenTag>
           </>
         )}
       </span>

@@ -10,7 +10,7 @@ const CollapsibleTrigger = CollapsiblePrimitive.CollapsibleTrigger;
 const CollapsibleContent = CollapsiblePrimitive.CollapsibleContent;
 
 /** CollapsiblePanel · 项目风格封装 · title 一直可见 · 收起时可显示 subtitle 提示 · chevron 旋转
-    默认样式跟当前风格一致（border-hairline · hover bg-elevated · rounded-lg） */
+    默认样式跟当前风格一致（border-hairline · hover bg-elevated · rounded-xl） */
 type CollapsiblePanelProps = Omit<
   React.ComponentPropsWithoutRef<typeof CollapsiblePrimitive.Root>,
   "title"
@@ -23,7 +23,7 @@ const CollapsiblePanel = React.forwardRef<
   React.ElementRef<typeof CollapsiblePrimitive.Root>,
   CollapsiblePanelProps
 >(({ title, subtitle, children, className, ...props }, ref) => (
-  <Collapsible ref={ref} className={cn("overflow-hidden rounded-lg border border-hairline", className)} {...props}>
+  <Collapsible ref={ref} className={cn("overflow-hidden rounded-xl border border-hairline", className)} {...props}>
     <CollapsibleTrigger
       className={cn(
         "group flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors",

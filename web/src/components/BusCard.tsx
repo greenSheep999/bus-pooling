@@ -1,7 +1,8 @@
-import { ArrowUpRight, Users, Zap, ZapOff } from "lucide-react";
+import { ArrowUpRight, Bus as BusIcon, Zap, ZapOff } from "lucide-react";
 import type { Bus } from "@/types";
 import { useBusCredentials } from "@/api/hooks";
 import { Card, Chip } from "./ui/primitives";
+import { OwnerBadge } from "./ui/tags";
 import { PoolDistribution } from "./PoolDistribution";
 import { avatarColor, avatarLetter, cn, fmtCredits, fmtLifespan, toCredits, vendorName } from "@/lib/utils";
 
@@ -29,7 +30,7 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <Chip tone="brand">
-            <Users className="size-3" />
+            <BusIcon className="size-3" />
             {kindLabel}
           </Chip>
           {bus.status === "active" && <Chip tone="ok" dot>活跃</Chip>}
@@ -51,11 +52,7 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
             <h3 className="min-w-0 truncate text-body-lg font-semibold">
               {bus.name}
             </h3>
-            {role === "owner" && (
-              <span className="shrink-0 whitespace-nowrap rounded-md bg-brand-subtle px-1.5 py-[1px] text-[10px] font-semibold leading-[1.4] text-brand-strong">
-                我发起
-              </span>
-            )}
+            {role === "owner" && <OwnerBadge />}
           </div>
         </div>
         <span className="flex shrink-0 items-center gap-1 text-label font-semibold text-brand-strong">
@@ -69,7 +66,7 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
           <div className="flex items-baseline gap-1.5">
             <span className="text-num font-semibold tnum">{bus.alive_count}</span>
             <span className="text-label text-fg-tertiary">
-              个 · 失效 <span className="font-semibold tnum text-fg-secondary">{bus.dead_count}</span>
+              个 · 已失效 <span className="font-semibold tnum text-fg-secondary">{bus.dead_count}</span>
             </span>
           </div>
           <div className="flex items-center gap-1.5 text-label font-medium text-fg-tertiary">
@@ -96,14 +93,14 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
       <PoolDistribution credentials={creds} label="号池分布 · 按 vendor" variant="compact" />
 
       {/* 策略区 · mt-auto 沉底贴分隔线 · 号池行数不同时中间空档自然变化 */}
-      <div className="mt-auto space-y-1.5 rounded-lg bg-bg-elevated p-3">
+      <div className="mt-auto space-y-1.5 rounded-xl bg-bg-elevated p-3">
         <div className="flex items-center gap-1.5 text-label">
           {s.auto_refill_enabled ? (
             <>
               <Zap className="size-3.5 text-brand-strong" />
               <span className="font-semibold text-brand-strong">自动补车</span>
               <span className="text-fg-tertiary">
-                · 水位 <span className="font-semibold tnum text-fg-secondary">{s.refill_watermark}</span>
+                · 保活 <span className="font-semibold tnum text-fg-secondary">{s.refill_watermark}</span>
                 {s.per_round_count && (
                   <> · 每轮 <span className="font-semibold tnum text-fg-secondary">{s.per_round_count}</span></>
                 )}

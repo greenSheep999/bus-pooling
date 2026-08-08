@@ -6,7 +6,10 @@ import { PullExtractModal } from "@/components/PullExtractModal";
 import {
   BareHead, BareList, BareRow, Card, Chip, SectionHead,
 } from "@/components/ui/primitives";
+import { Alert } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import { TokenTag, VendorTag } from "@/components/ui/tags";
 import { cn, fmtCredits, fmtLifespan, fmtTime, vendorName } from "@/lib/utils";
 import type { Credential } from "@/types";
 export default function Extract() {
@@ -54,18 +57,15 @@ export default function Extract() {
           <h1 className="text-hero font-semibold">提取 key</h1>
           <p className="text-fg-tertiary">
             单独拉号 · 拉出来的 key 进"待派"列表 · 之后你派 3 种去向：
-            <span className="mx-1 rounded-md border border-hairline bg-bg-elevated px-1.5 py-[1px] text-label font-medium text-fg-secondary">进车</span>
-            <span className="mx-1 rounded-md border border-hairline bg-bg-elevated px-1.5 py-[1px] text-label font-medium text-fg-secondary">推我的号池</span>
-            <span className="mx-1 rounded-md border border-hairline bg-bg-elevated px-1.5 py-[1px] text-label font-medium text-fg-secondary">拿走</span>
+            <span className="mx-1"><TokenTag>进车</TokenTag></span>
+            <span className="mx-1"><TokenTag>推我的号池</TokenTag></span>
+            <span className="mx-1"><TokenTag>拿走</TokenTag></span>
           </p>
         </div>
-        <button
-          onClick={() => setPullOpen(true)}
-          className="flex shrink-0 items-center gap-2 rounded-lg bg-brand px-4 py-2 font-semibold text-white shadow-card transition-opacity hover:opacity-90"
-        >
-          <KeyRound className="size-4" />
+        <Button variant="brand" onClick={() => setPullOpen(true)} className="shrink-0">
+          <KeyRound />
           提取 key
-        </button>
+        </Button>
       </div>
 
       {/* 待派列表 */}
@@ -75,30 +75,21 @@ export default function Extract() {
           sub={`共 ${items.length} 个 · 选中后派去向`}
           right={
             selected.size > 0 && (
-              <button
-                onClick={() => setAssignOpen(true)}
-                className="rounded-lg bg-brand px-4 py-2 font-semibold text-white shadow-card transition-opacity hover:opacity-90"
-              >
+              <Button variant="brand" onClick={() => setAssignOpen(true)}>
                 派去向（<span className="tnum">{selected.size}</span>）
-              </button>
+              </Button>
             )
           }
         />
 
         {!passengerpoolOk && (
-          <div className="flex items-start gap-2 rounded-lg border border-warn-fg/20 bg-warn-bg/40 p-3 text-label">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn-fg" />
-            <div className="min-w-0 flex-1">
-              <div className="font-semibold text-warn-fg">未配置 passengerpool</div>
-              <div className="text-fg-secondary">
-                "推我的号池" 需要先在{" "}
-                <a href="/settings/downstream" className="font-semibold text-brand-strong hover:underline">
-                  设置 · 我的号池
-                </a>
-                {" "}里配 URL 和 token
-              </div>
-            </div>
-          </div>
+          <Alert tone="warn" icon={AlertTriangle} title="还没配置我的号池">
+            "推我的号池" 需要先在{" "}
+            <a href="/settings/downstream" className="font-semibold text-brand-strong hover:underline">
+              设置 · 我的号池
+            </a>
+            {" "}里配 URL 和 token
+          </Alert>
         )}
 
         {items.length === 0 ? (
@@ -155,9 +146,7 @@ function RecordRow({
         <span className="truncate font-mono text-label font-medium text-fg-secondary">
           {c.key_masked}
         </span>
-        <span className="shrink-0 whitespace-nowrap rounded-md border border-hairline bg-bg-elevated px-1.5 py-[1px] text-[10px] font-medium text-fg-secondary shadow-card">
-          {vendorName(c.vendor_id)}
-        </span>
+        <VendorTag name={vendorName(c.vendor_id)} />
         <Chip tone="warn" className="shrink-0">待派</Chip>
       </span>
       <span className="w-20 shrink-0 text-center text-label font-medium tnum text-fg-secondary">

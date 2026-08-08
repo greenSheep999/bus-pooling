@@ -1,5 +1,6 @@
 import { ArrowRight, Check, X } from "lucide-react";
 import { BareRow, Chip } from "./ui/primitives";
+import { TokenTag } from "./ui/tags";
 import { cn, fmtCredits, fmtLifespan, fmtTime, vendorName } from "@/lib/utils";
 import type { Activity, PullResult, PullRound, PushState } from "@/types";
 
@@ -13,20 +14,10 @@ const RESULT: Record<PullResult, { label: string; tone: "ok" | "warn" | "danger"
 };
 
 function PushCell({ state, ratio }: { state: PushState; ratio: string | null }) {
-  if (state === "pushed")
-    return (
-      <Chip tone="ok" icon={<Check className="size-2.5" />}>
-        已推
-      </Chip>
-    );
-  if (state === "partial") return <Chip tone="warn">{ratio ?? "部分"} 推</Chip>;
-  if (state === "failed")
-    return (
-      <Chip tone="danger" icon={<X className="size-2.5" />}>
-        失败
-      </Chip>
-    );
-  return <span className="text-label font-medium text-fg-tertiary">未推</span>;
+  if (state === "pushed") return <Chip tone="ok" icon={<Check className="size-3" />}>已推</Chip>;
+  if (state === "partial") return <Chip tone="warn" icon={<Check className="size-3" />}>部分推 {ratio}</Chip>;
+  if (state === "failed") return <Chip tone="danger" icon={<X className="size-3" />}>推失败</Chip>;
+  return <Chip tone="neutral">未推</Chip>;
 }
 
 export function PullRow({ r }: { r: PullRound }) {
@@ -40,7 +31,7 @@ export function PullRow({ r }: { r: PullRound }) {
       </span>
 
       <span className="w-14 shrink-0">
-        <Chip tone={res.tone} className="w-full justify-center">
+        <Chip tone={res.tone} dot className="w-full justify-center">
           {res.label}
         </Chip>
       </span>
@@ -124,13 +115,9 @@ const FLOW_TARGETS: Record<string, boolean> = {
   pending: true,
 };
 
-/** 流转 badge · 中性灰底 + 边框 + 微阴影 · 无语义色（跟左侧类型 badge 明确区分） */
+/** 流转 badge · 走 TokenTag sm · 保持全站 vendor/bus 标签样式一致（避免第三处样式漂移） */
 function FlowBadge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex max-w-[160px] items-center gap-1 rounded-md border border-hairline bg-bg-elevated px-2 py-[2px] text-label font-medium text-fg-secondary shadow-card">
-      <span className="truncate">{children}</span>
-    </span>
-  );
+  return <TokenTag size="sm">{children}</TokenTag>;
 }
 
 /** 内容单元：把活动描述完整渲染在这一列，不做多列拆分

@@ -252,7 +252,7 @@ function MobileNav() {
                   onClick={() => setOpen(false)}
                   className={({ isActive }) =>
                     cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition-colors",
+                      "flex items-center gap-3 rounded-xl px-3 py-2.5 font-medium transition-colors",
                       isActive
                         ? "bg-brand-subtle font-semibold text-brand-strong"
                         : "text-fg-secondary hover:bg-bg-elevated hover:text-fg",
@@ -464,7 +464,10 @@ export default function AppLayout() {
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <StockBadge />
             <CreditPill />
-            <button className="hidden size-9 place-items-center rounded-full transition-colors hover:bg-bg-elevated sm:grid">
+            <button
+              className="hidden size-9 place-items-center rounded-full transition-colors hover:bg-bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 sm:grid"
+              aria-label="通知"
+            >
               <Bell className="size-4 text-fg-secondary" />
             </button>
             <AvatarMenu />
@@ -484,7 +487,7 @@ export default function AppLayout() {
                 end={t.end}
                 className={({ isActive }) =>
                   cn(
-                    "flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 font-medium transition-colors",
+                    "flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 font-medium transition-colors",
                     isActive
                       ? "bg-brand-subtle font-semibold text-brand-strong"
                       : "text-fg-secondary hover:bg-bg-elevated hover:text-fg",

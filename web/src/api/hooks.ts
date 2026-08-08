@@ -99,6 +99,17 @@ export const useUpdateStrategy = (busId: string) => {
   });
 };
 
+export const useRenameBus = (busId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => put(`/me/buses/${busId}`, { name }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bus", busId] });
+      qc.invalidateQueries({ queryKey: ["buses"] });
+    },
+  });
+};
+
 export const usePullForBus = (busId: string) => {
   const qc = useQueryClient();
   return useMutation({

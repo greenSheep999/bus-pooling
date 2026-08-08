@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, KeyRound } from "lucide-react";
+import { KeyRound, Sparkles } from "lucide-react";
 import { usePullForBus, useVendorStats } from "@/api/hooks";
 import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
@@ -91,13 +92,9 @@ export function PullNowModal({
             </Field>
 
             {bargain && (
-              <div className="flex items-start gap-2 rounded-lg bg-warn-bg p-3 text-label">
-                <AlertCircle className="mt-0.5 size-4 shrink-0 text-warn-fg" />
-                <div>
-                  <div className="font-semibold text-warn-fg">单次拉号 · 加 20% 议价</div>
-                  <div className="text-fg-secondary">拉 2 个及以上不收议价费</div>
-                </div>
-              </div>
+              <Alert tone="neutral" icon={Sparkles} title="拉 2 个及以上单价更低">
+                一次只拉 1 个成本偏高
+              </Alert>
             )}
           </form>
         </DialogBody>

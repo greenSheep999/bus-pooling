@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, Info, Zap } from "lucide-react";
+import { Info, Sparkles, Zap } from "lucide-react";
 import { useCreateBus, useVendorStats } from "@/api/hooks";
 import {
   Dialog,
@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
@@ -26,7 +27,7 @@ import {
 import { vendorName } from "@/lib/utils";
 
 /** 发起拼车模态：建车 + 首次拉号一步完成
-    - 基本：车名 · 数量 · vendor（可让系统选 · 同时作为策略里的 preferred_vendor）· count=1 议价提示
+    - 基本：车名 · 数量 · vendor（可让系统选 · 同时作为策略里的 preferred_vendor）· count=1 单价提示
     - 主开关：自动补车（放高级选项外 · 用户先看到关键决策）
     - 高级折叠：3 个上限（单价 · 日轮次 · 日花费） */
 export function StartCarpoolModal({
@@ -127,21 +128,20 @@ export function StartCarpoolModal({
               </Field>
             </div>
 
-            {bargain && (
-              <div className="flex items-start gap-2 rounded-lg bg-warn-bg p-3 text-label">
-                <AlertCircle className="mt-0.5 size-4 shrink-0 text-warn-fg" />
-                <div className="min-w-0 flex-1">
-                  <div className="font-semibold text-warn-fg">单次拉号 · 加 20% 议价</div>
-                  <div className="text-fg-secondary">
-                    拉 1 个号时收 20% 单次议价费。拉 2 个及以上不收。
-                  </div>
-                </div>
-              </div>
+            {/* 单价提示 · 向下省视角（不用"议价费"内部术语） */}
+            {bargain ? (
+              <Alert tone="neutral" icon={Sparkles} title="拉 2 个及以上单价更低">
+                一次只拉 1 个成本偏高 · 建议至少拉 2 个
+              </Alert>
+            ) : (
+              <Alert tone="ok" icon={Sparkles} title="单价更划算">
+                一次拉 <span className="font-semibold tnum">{count}</span> 个号 · 均摊后单价更低
+              </Alert>
             )}
 
             {/* 主开关 · 是否开启自动补车 */}
             <div
-              className="flex cursor-pointer items-center gap-3 rounded-lg border border-hairline bg-bg p-4 transition-colors hover:bg-bg-elevated/40"
+              className="flex cursor-pointer items-center gap-3 rounded-2xl border border-hairline bg-bg p-4 transition-colors hover:bg-bg-elevated/40"
               onClick={() => setAutoRefill((v) => !v)}
             >
               <span className="shrink-0">
@@ -154,7 +154,7 @@ export function StartCarpoolModal({
               <div className="min-w-0 flex-1">
                 <div className="font-semibold">开启自动补车</div>
                 <div className="mt-0.5 text-label text-fg-tertiary">
-                  号池活号跌破水位时，系统自动拉一轮补车。关闭则手动决定何时拉号。
+                  号池活号少于保活数时，系统自动拉一轮补车。关闭则手动决定何时拉号。
                 </div>
               </div>
               <Switch
@@ -166,7 +166,7 @@ export function StartCarpoolModal({
 
             {autoRefill && (
               <div className="grid grid-cols-2 gap-4">
-                <Field label="水位阈值（活号 ≤ 此数触发）">
+                <Field label="保活数（正常号少于此数就补）">
                   <Input
                     type="number"
                     min={1}
@@ -214,13 +214,10 @@ export function StartCarpoolModal({
               </div>
             </CollapsiblePanel>
 
-            <div className="flex items-start gap-2 rounded-lg bg-brand-subtle/50 p-3 text-label">
-              <Info className="mt-0.5 size-4 shrink-0 text-brand-strong" />
-              <div className="text-fg-secondary">
-                建车后自动发首轮车 · <span className="font-semibold text-fg">{count}</span> 个号进池 ·
-                可在车详情页调策略、查看号列表、手动再拉
-              </div>
-            </div>
+            <Alert tone="brand" icon={Info}>
+              建车后自动发首轮车 · <span className="font-semibold text-fg">{count}</span> 个号进池 ·
+              可在车详情页调策略、查看号列表、手动再拉
+            </Alert>
           </form>
         </DialogBody>
 

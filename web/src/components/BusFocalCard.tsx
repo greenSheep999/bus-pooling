@@ -1,7 +1,9 @@
 import { Link } from "react-router-dom";
-import { ArrowUpRight, Clock, Download, UserPlus, Users } from "lucide-react";
+import { ArrowUpRight, Bus as BusIcon, Download, UserPlus, Zap, ZapOff } from "lucide-react";
 import { useBusCredentials } from "@/api/hooks";
 import { Card, Chip } from "./ui/primitives";
+import { OwnerBadge } from "./ui/tags";
+import { Button } from "./ui/button";
 import { PoolDistribution } from "./PoolDistribution";
 import { avatarColor, avatarLetter, fmtCredits, fmtLifespan } from "@/lib/utils";
 import type { Bus } from "@/types";
@@ -38,11 +40,11 @@ export function BusFocalCard({
 
   return (
     <Card focal focalTone="brand" className="flex h-full flex-col gap-4 p-6">
-      {/* 头 · kind chip + 活跃 · 头像组 · 天数 · 一行 */}
+      {/* 头 · kind chip + 活跃 · 头像组 · 天数 */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex flex-wrap items-center gap-2">
           <Chip tone="brand">
-            <Users className="size-3" />
+            <BusIcon className="size-3" />
             {kindLabel}
           </Chip>
           {bus.status === "active" && <Chip tone="ok" dot>活跃</Chip>}
@@ -55,14 +57,17 @@ export function BusFocalCard({
         </div>
       </div>
 
-      {/* 车名 · 成员名副行 · 紧凑不用 space-y */}
+      {/* 车名 hero · 我发起 badge 挂标题右 · 成员副行 */}
       <div>
-        <h2 className="truncate text-hero font-semibold tracking-tight">
-          {bus.name}
-        </h2>
+        <div className="flex items-center gap-2.5">
+          <h2 className="min-w-0 truncate text-hero font-semibold tracking-tight">
+            {bus.name}
+          </h2>
+          {role === "owner" && <OwnerBadge />}
+        </div>
         <p className="mt-0.5 text-label text-fg-tertiary">
           {bus.kind === "single" ? (
-            <>你{role === "owner" && <> · <span className="font-medium text-fg-secondary">我发起</span></>}</>
+            <>独享号池 · 你一个人的车</>
           ) : (
             <>
               你 · <span className="font-medium text-fg-secondary">@wei</span> ·{" "}
@@ -74,7 +79,7 @@ export function BusFocalCard({
 
       {/* 4 KPI 一排 · 数字用 text-num 不用超大 */}
       <div className="grid grid-cols-4 gap-3">
-        <FocalStat value={String(bus.alive_count)} label="号活着" dot="ok" />
+        <FocalStat value={String(bus.alive_count)} label="正常号" dot="ok" />
         <FocalStat
           value={String(bus.dead_count)}
           label="已失效"
@@ -97,36 +102,38 @@ export function BusFocalCard({
       {/* 底部动作行 · mt-auto 沉底 */}
       <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={onPullClick}
-            className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2 font-semibold text-white shadow-card transition-opacity hover:opacity-90"
-          >
-            <Download className="size-4" />
+          <Button onClick={onPullClick}>
+            <Download />
             给这辆车拉号
             <kbd className="ml-0.5 rounded bg-white/20 px-1 py-0.5 text-[10px] font-semibold">P</kbd>
-          </button>
-          <Link
-            to={`/buses/${bus.id}`}
-            className="flex items-center gap-1.5 rounded-lg border border-hairline bg-bg px-4 py-2 font-medium text-fg-secondary transition-colors hover:bg-bg-elevated"
-          >
-            车详情
-            <ArrowUpRight className="size-3.5" />
-          </Link>
+          </Button>
+          <Button variant="ghost" asChild>
+            <Link to={`/buses/${bus.id}`}>
+              车详情
+              <ArrowUpRight />
+            </Link>
+          </Button>
           {bus.kind !== "single" && (
-            <button
-              disabled
-              className="flex items-center gap-1.5 rounded-lg border border-hairline bg-bg px-4 py-2 font-medium text-fg-secondary transition-colors hover:bg-bg-elevated"
-            >
-              <UserPlus className="size-3.5" />
+            <Button variant="ghost" disabled>
+              <UserPlus />
               邀请车友
-            </button>
+            </Button>
           )}
         </div>
 
-        {bus.strategy.auto_refill_enabled && (
+        {bus.strategy.auto_refill_enabled ? (
           <span className="flex items-center gap-1.5 rounded-full border border-hairline bg-bg/60 px-3 py-1 text-label font-medium text-fg-secondary">
-            <Clock className="size-3.5" />
-            下次自动补车 · <span className="font-semibold tnum">{nextRefillMinutes}</span> 分钟后
+            <Zap className="size-3.5 text-brand-strong" />
+            <span className="font-semibold text-brand-strong">自动补车</span>
+            <span className="text-fg-tertiary">
+              · 下次 <span className="font-semibold tnum">{nextRefillMinutes}</span> 分钟后
+            </span>
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5 rounded-full border border-hairline bg-bg/60 px-3 py-1 text-label font-medium text-fg-secondary">
+            <ZapOff className="size-3.5 text-fg-tertiary" />
+            <span className="font-medium">手动模式</span>
+            <span className="text-fg-tertiary">· 号少时提醒</span>
           </span>
         )}
       </div>

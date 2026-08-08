@@ -155,7 +155,7 @@ export function Chip({
     <span
       className={cn(
         /* shrink-0 + whitespace-nowrap：flex 挤压时绝不变形（是 Chip 应有属性 · 别指望调用侧每处都加） */
-        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-0.5 text-label font-semibold",
+        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-0.5 text-label font-semibold",
         CHIP[tone],
         className,
       )}
@@ -167,11 +167,11 @@ export function Chip({
   );
 }
 
-/** 号状态：活 / 已失效（只有两态） */
+/** 号状态：正常 / 已失效（只有两态） · CLAUDE.md §12.5 */
 export function StatusChip({ alive }: { alive: boolean }) {
   return (
     <Chip tone={alive ? "ok" : "danger"} dot>
-      {alive ? "活" : "已失效"}
+      {alive ? "正常" : "已失效"}
     </Chip>
   );
 }
@@ -214,7 +214,7 @@ export function Segmented<T extends string>({
   solid?: boolean;
 }) {
   return (
-    <div className="inline-flex gap-0.5 rounded-lg bg-bg-elevated p-0.5">
+    <div className="inline-flex gap-0.5 rounded-xl bg-bg-elevated p-0.5">
       {options.map((o) => {
         const on = o.value === value;
         return (
@@ -222,7 +222,7 @@ export function Segmented<T extends string>({
             key={o.value}
             onClick={() => onChange(o.value)}
             className={cn(
-              "rounded-[7px] px-3 py-1.5 text-label font-medium transition-colors",
+              "rounded-lg px-3 py-1.5 text-label font-medium transition-colors",
               on
                 ? solid
                   ? "bg-brand text-white font-semibold"

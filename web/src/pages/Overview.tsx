@@ -13,6 +13,12 @@ import { ActivityRow } from "@/components/rows";
 import {
   BareHead, BareList, BareRow, Card, Chip, Label, Meter, Muted, SectionHead, Segmented, Stat,
 } from "@/components/ui/primitives";
+import { MicroStat, OwnerBadge } from "@/components/ui/tags";
+import { Button } from "@/components/ui/button";
+import { LoadMoreButton } from "@/components/ui/load-more-button";
+import {
+  Popover, PopoverContent, PopoverItem, PopoverSectionLabel, PopoverSeparator, PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   cn, fmtCredits, fmtDelta, fmtK, fmtLifespan, signedToneClass, toCredits,
   vendorColor, vendorName,
@@ -114,66 +120,57 @@ function ScopePicker({
       : value.kind === "bus" ? `按车 · ${value.name}`
         : `按 vendor · ${value.name}`;
 
+  const pick = (s: Scope) => { onChange(s); setOpen(false); };
+
   return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          "flex min-w-[200px] items-center justify-between gap-2 rounded-lg border border-hairline bg-bg px-3 py-1.5 font-medium shadow-card transition-colors hover:bg-bg-elevated",
-          open && "bg-bg-elevated",
-        )}
-      >
-        <span className="truncate text-fg-secondary">{label}</span>
-        <ChevronDown className="size-3.5 shrink-0 text-fg-tertiary" />
-      </button>
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-50 mt-2 w-64 rounded-[14px] border border-hairline bg-bg p-2 shadow-pop">
-            <ScopeOption
-              picked={value.kind === "all"}
-              onPick={() => { onChange({ kind: "all" }); setOpen(false); }}
-            >
-              <div className="flex flex-col items-start">
-                <span>全部数据</span>
-                <span className="text-[11px] font-normal text-fg-tertiary">
-                  {buses.length} 车 · {vendors.length} vendor 合计
-                </span>
-              </div>
-            </ScopeOption>
-
-            <div className="my-1 h-px bg-hairline" />
-            <div className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-fg-tertiary">
-              按车
-            </div>
-            {buses.map((b) => (
-              <ScopeOption
-                key={b.id}
-                picked={value.kind === "bus" && value.id === b.id}
-                onPick={() => { onChange({ kind: "bus", id: b.id, name: b.name }); setOpen(false); }}
-              >
-                {b.name}
-              </ScopeOption>
-            ))}
-
-            <div className="my-1 h-px bg-hairline" />
-            <div className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-fg-tertiary">
-              按 vendor
-            </div>
-            {vendors.map((v) => (
-              <ScopeOption
-                key={v.id}
-                picked={value.kind === "vendor" && value.id === v.id}
-                onPick={() => { onChange({ kind: "vendor", id: v.id, name: v.name }); setOpen(false); }}
-              >
-                {v.name}
-              </ScopeOption>
-            ))}
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className={cn(
+            "flex min-w-[200px] items-center justify-between gap-2 rounded-xl border border-hairline bg-bg px-3 py-1.5 font-medium shadow-card transition-colors hover:bg-bg-elevated",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+            open && "bg-bg-elevated",
+          )}
+        >
+          <span className="truncate text-fg-secondary">{label}</span>
+          <ChevronDown className="size-3.5 shrink-0 text-fg-tertiary" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64">
+        <ScopeOption picked={value.kind === "all"} onPick={() => pick({ kind: "all" })}>
+          <div className="flex flex-col items-start">
+            <span>全部数据</span>
+            <span className="text-[11px] font-normal text-fg-tertiary">
+              {buses.length} 车 · {vendors.length} vendor 合计
+            </span>
           </div>
-        </>
-      )}
-    </div>
+        </ScopeOption>
+
+        <PopoverSeparator />
+        <PopoverSectionLabel>按车</PopoverSectionLabel>
+        {buses.map((b) => (
+          <ScopeOption
+            key={b.id}
+            picked={value.kind === "bus" && value.id === b.id}
+            onPick={() => pick({ kind: "bus", id: b.id, name: b.name })}
+          >
+            {b.name}
+          </ScopeOption>
+        ))}
+
+        <PopoverSeparator />
+        <PopoverSectionLabel>按 vendor</PopoverSectionLabel>
+        {vendors.map((v) => (
+          <ScopeOption
+            key={v.id}
+            picked={value.kind === "vendor" && value.id === v.id}
+            onPick={() => pick({ kind: "vendor", id: v.id, name: v.name })}
+          >
+            {v.name}
+          </ScopeOption>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -181,13 +178,10 @@ function ScopeOption({
   picked, onPick, children,
 }: { picked: boolean; onPick: () => void; children: React.ReactNode }) {
   return (
-    <button
-      onClick={onPick}
-      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-bg-elevated"
-    >
+    <PopoverItem onSelect={onPick}>
       <span className="min-w-0 flex-1 truncate font-medium">{children}</span>
       <Check className={cn("size-3.5 shrink-0", picked ? "text-brand-strong" : "invisible")} />
-    </button>
+    </PopoverItem>
   );
 }
 
@@ -216,16 +210,10 @@ function ActivityFeed({ items, total }: { items: Activity[]; total: number }) {
           </BareList>
         </div>
       </div>
-      {remain > 0 && (
-        <div className="flex justify-center pt-1">
-          <button
-            onClick={() => setShown((s) => s + ACT_STEP)}
-            className="rounded-lg border border-hairline bg-bg px-4 py-1.5 font-medium text-fg-secondary shadow-card transition-colors hover:bg-bg-elevated"
-          >
-            加载更多 <span className="text-fg-tertiary">· 还剩 {remain} 条</span>
-          </button>
-        </div>
-      )}
+      <LoadMoreButton
+        onLoadMore={() => setShown((s) => s + ACT_STEP)}
+        remain={remain}
+      />
     </div>
   );
 }
@@ -273,7 +261,7 @@ export default function Overview() {
             {" · "}
             <Num>{ov?.buses.bus_count ?? 0}</Num> 辆拼车正在运转
             {" · "}
-            <Num>{kpi?.alive_count ?? 0}</Num> 个号还活着
+            <Num>{kpi?.alive_count ?? 0}</Num> 个号在池
           </p>
         </div>
         <div className="flex flex-col gap-2 md:items-end">
@@ -337,13 +325,13 @@ export default function Overview() {
         />
         <KpiCard
           icon={ActivityIcon}
-          label="活跃号"
+          label="正常号"
           value={kpi ? String(kpi.alive_count) : "-"}
           unit="个"
           sub={
             kpi ? (
               <>
-                失效 <Num>{kpi.dead_count}</Num>
+                已失效 <Num>{kpi.dead_count}</Num>
                 {" · "}
                 待补 <Num>{kpi.pending_refill}</Num>
               </>
@@ -402,9 +390,7 @@ export default function Overview() {
                   <span className="min-w-0 flex-1 truncate font-medium text-fg-secondary">
                     {b.name}
                     {b.role === "owner" && (
-                      <span className="ml-1.5 inline-flex items-center rounded-[4px] bg-brand-subtle px-1.5 py-[1px] text-[10px] font-semibold leading-[1.4] text-brand-strong">
-                        我发起
-                      </span>
+                      <span className="ml-1.5"><OwnerBadge /></span>
                     )}
                   </span>
                   <span className="font-semibold tnum">{b.alive} 个</span>
@@ -595,16 +581,8 @@ export default function Overview() {
                     >
                       {vendorName(v.vendor_id)}
                     </span>
-                    {v.rank === 1 && (
-                      <span className="shrink-0 whitespace-nowrap rounded-md bg-ok-bg px-1.5 py-[1px] text-[10px] font-semibold leading-[1.4] text-ok-fg">
-                        最优
-                      </span>
-                    )}
-                    {v.out_of_stock && (
-                      <span className="shrink-0 whitespace-nowrap rounded-md bg-danger-bg px-1.5 py-[1px] text-[10px] font-semibold leading-[1.4] text-danger-fg">
-                        缺货
-                      </span>
-                    )}
+                    {v.rank === 1 && <MicroStat tone="ok">最优</MicroStat>}
+                    {v.out_of_stock && <MicroStat tone="danger">缺货</MicroStat>}
                   </span>
 
                   <span

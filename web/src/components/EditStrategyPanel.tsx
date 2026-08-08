@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Save, Zap, ZapOff } from "lucide-react";
 import { useUpdateStrategy, useVendorStats } from "@/api/hooks";
 import { Card, Chip } from "./ui/primitives";
@@ -12,7 +12,8 @@ import {
 import { toCredits, vendorName } from "@/lib/utils";
 import type { BusStrategy } from "@/types";
 
-/** 补车策略编辑 · decisions §8.6 · 策略跟车绑不是全局 */
+/** 补车策略编辑 · decisions §8.6 · 策略跟车绑不是全局
+ *  作为 BusDetail 的一级 tab · 高频编辑（保活 / 每轮 / 单价上限 会日常调）*/
 export function EditStrategyPanel({
   busId, strategy,
 }: { busId: string; strategy: BusStrategy }) {
@@ -35,7 +36,29 @@ export function EditStrategyPanel({
   const [pref, setPref] = useState(strategy.preferred_vendor ?? "auto");
   const [saved, setSaved] = useState(false);
 
+  /* dirty · 逐字段跟原 strategy 比 · 未改动就不显示保存按钮 */
+  const origMaxPrice = strategy.max_unit_price ? String(toCredits(strategy.max_unit_price)) : "";
+  const origDailyRound = strategy.daily_round_limit ? String(strategy.daily_round_limit) : "";
+  const origDailySpend = strategy.daily_spend_limit ? String(toCredits(strategy.daily_spend_limit)) : "";
+  const origPref = strategy.preferred_vendor ?? "auto";
+  const dirty = useMemo(
+    () =>
+      auto !== strategy.auto_refill_enabled ||
+      watermark !== strategy.refill_watermark ||
+      perRound !== (strategy.per_round_count ?? 3) ||
+      maxPrice !== origMaxPrice ||
+      dailyRound !== origDailyRound ||
+      dailySpend !== origDailySpend ||
+      pref !== origPref,
+    [
+      auto, watermark, perRound, maxPrice, dailyRound, dailySpend, pref,
+      strategy.auto_refill_enabled, strategy.refill_watermark, strategy.per_round_count,
+      origMaxPrice, origDailyRound, origDailySpend, origPref,
+    ],
+  );
+
   const onSave = async () => {
+    if (!dirty) return;
     setSaved(false);
     await upd.mutateAsync({
       auto_refill_enabled: auto,
@@ -56,18 +79,21 @@ export function EditStrategyPanel({
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-section font-semibold">补车策略</h2>
-          <p className="text-label text-fg-tertiary">策略跟这辆车绑 · 不影响其他车</p>
+          <p className="text-label text-fg-tertiary">策略跟这辆车绑 · 不影响其他车 · 变更即时生效</p>
         </div>
-        <Button onClick={onSave} disabled={upd.isPending}>
-          <Save />
-          {upd.isPending ? "保存中…" : saved ? "已保存 ✓" : "保存策略"}
-        </Button>
+        {/* 保存按钮 · 只在 dirty 或刚保存完的 2s toast 期间显示 · 未改动零动作零按钮 */}
+        {(dirty || saved) && (
+          <Button onClick={onSave} disabled={!dirty || upd.isPending}>
+            <Save />
+            {upd.isPending ? "保存中…" : saved ? "已保存 ✓" : "保存策略"}
+          </Button>
+        )}
       </div>
 
       <div className="space-y-6">
         {/* 主开关 · 是否自动补车 */}
         <div
-          className="flex cursor-pointer items-center gap-3 rounded-lg border border-hairline bg-bg p-4 transition-colors hover:bg-bg-elevated/40"
+          className="flex cursor-pointer items-center gap-3 rounded-2xl border border-hairline bg-bg p-4 transition-colors hover:bg-bg-elevated/40"
           onClick={() => setAuto((v) => !v)}
         >
           <span className="shrink-0">
@@ -81,7 +107,7 @@ export function EditStrategyPanel({
             <div className="font-semibold">{auto ? "自动补车" : "手动模式"}</div>
             <div className="mt-0.5 text-label text-fg-tertiary">
               {auto
-                ? "号池活号跌破水位 · 系统自动拉一轮补车"
+                ? "号池活号少于保活数 · 系统自动拉一轮补车"
                 : "号少时只提醒 · 不自动拉 · 你手动决定何时拉号"}
             </div>
           </div>
@@ -94,7 +120,7 @@ export function EditStrategyPanel({
 
         {auto && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="水位阈值（活号 ≤ 此数触发）">
+            <Field label="保活数（正常号少于此数就补）">
               <Input
                 type="number" min={1} value={watermark}
                 onChange={(e) => setWatermark(Math.max(1, Number(e.target.value) || 1))}
@@ -149,9 +175,9 @@ export function EditStrategyPanel({
           </Select>
         </Field>
 
-        <p className="rounded-lg bg-bg-elevated p-3 text-label text-fg-tertiary">
+        <p className="rounded-xl bg-bg-elevated p-3 text-label text-fg-tertiary">
           <Chip tone="brand" className="mr-2">Tip</Chip>
-          策略变更立即生效 · 下次自动补车 / 手动拉号都按新策略走
+          策略变更点保存后立即生效 · 下次自动补车 / 手动拉号都按新策略走
         </p>
       </div>
     </Card>

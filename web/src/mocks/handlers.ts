@@ -49,6 +49,7 @@ export const handlers = [
     return HttpResponse.json({ ...fx.buses[0], id: `bus_${Date.now()}`, name: body.name ?? "新车" }, { status: 201 });
   }),
   http.put("/api/me/buses/:id/strategy", () => ok({ ok: true }, 300)),
+  http.put("/api/me/buses/:id", () => ok({ ok: true }, 300)),
   http.post("/api/me/buses/:id/pull", () => ok({ round_id: "rd_new", status: "initiated" }, 600)),
   http.delete("/api/me/buses/:id", () => ok({ ok: true }, 400)),
 

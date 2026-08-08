@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, Bus, Copy, Download, Send } from "lucide-react";
+import { AlertTriangle, ArrowRight, Bus, Copy, Download, Send } from "lucide-react";
 import { useAssign, useBuses } from "@/api/hooks";
 import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Chip } from "@/components/ui/primitives";
+import { VendorTag } from "@/components/ui/tags";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -79,18 +81,13 @@ export function AssignModal({
         {handoffPreview ? (
           <>
             <DialogBody>
-              <div className="rounded-lg bg-danger-bg p-3 text-label">
-                <div className="font-semibold text-danger-fg">⚠️ 这是唯一一次可见，请立即复制保存</div>
-                <div className="mt-0.5 text-fg-secondary">
-                  号数据交给你后我方立即从 housepool 删除 · 之后再也拿不到明文
-                </div>
-              </div>
-              <div className="mt-3 max-h-60 space-y-2 overflow-y-auto rounded-lg border border-hairline bg-bg-elevated p-3">
+              <Alert tone="danger" icon={AlertTriangle} title="这是唯一一次可见，请立即复制保存">
+                拿走后我方立即删除 · 之后再也拿不到明文
+              </Alert>
+              <div className="mt-3 max-h-60 space-y-2 overflow-y-auto rounded-xl border border-hairline bg-bg-elevated p-3">
                 {handoffPreview.map((r) => (
                   <div key={r.id} className="flex items-center gap-3 text-label">
-                    <span className="shrink-0 whitespace-nowrap rounded-md border border-hairline bg-bg px-1.5 py-[1px] text-[10px] font-medium text-fg-secondary">
-                      {vendorName(r.vendor_id)}
-                    </span>
+                    <VendorTag name={vendorName(r.vendor_id)} />
                     <code className="min-w-0 flex-1 truncate font-mono">{r.key_masked}</code>
                     <Button
                       variant="ghost"
@@ -121,7 +118,7 @@ export function AssignModal({
                   picked={kind === "into_bus"} onPick={() => setKind("into_bus")}
                 />
                 {kind === "into_bus" && (
-                  <div className="ml-11 rounded-lg bg-bg-elevated p-3">
+                  <div className="ml-11 rounded-xl bg-bg-elevated p-3">
                     <Field label="选一辆车">
                       <Select value={busId} onValueChange={setBusId}>
                         <SelectTrigger>
@@ -189,7 +186,7 @@ function KindOption({
       onClick={onPick}
       disabled={disabled}
       className={cn(
-        "flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors",
+        "flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors",
         picked
           ? "border-brand bg-brand-subtle/40"
           : "border-hairline hover:bg-bg-elevated",
