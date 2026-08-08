@@ -200,11 +200,7 @@ export default function Prices() {
           <>
             {/* 表头 */}
             <div className="flex items-end gap-4 border-b border-hairline pb-2.5 text-label font-semibold text-fg-tertiary">
-              <span className="flex w-[264px] shrink-0 items-baseline gap-3">
-                <span className="w-[52px] shrink-0">均价</span>
-                <span className="w-[62px] shrink-0">区间</span>
-                <span className="min-w-0 flex-1">发车</span>
-              </span>
+              <span className="w-[300px] shrink-0">vendor · {days} 天概况</span>
               <span className="min-w-0 flex-1">
                 {days} 天价格分布 · 竖条高度 = 当天最低~最高轮价
               </span>
@@ -231,7 +227,7 @@ export default function Prices() {
 
             {/* 日期轴 */}
             <div className="flex gap-4 pt-2">
-              <span className="w-[264px] shrink-0" />
+              <span className="w-[300px] shrink-0" />
               <div className="relative min-w-0 flex-1">
                 {dateTicks.map((d, i) => (
                   <span
@@ -447,8 +443,8 @@ function VendorRow({
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
     >
-      {/* 左：名字行 + 数据行 · 数据行只留 3 个关键量，各占固定宽度对齐（不挤成一串） */}
-      <div className="w-[264px] shrink-0 space-y-1.5">
+      {/* 左：名字行 + 数据行 · 每个数字都带 label 和单位（裸数字没人看得懂） */}
+      <div className="w-[300px] shrink-0 space-y-1.5">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="truncate font-medium">{t.vendor_label}</span>
           {tags.map((tag) => (
@@ -457,22 +453,30 @@ function VendorRow({
             </Chip>
           ))}
         </div>
-        <div className="flex items-baseline gap-3 text-label text-fg-tertiary">
-          {/* 均价 · 最重要 · 放大加粗 */}
-          <span className="w-[52px] shrink-0">
-            <strong className="text-body-lg tnum text-fg">{toCredits(t.price_avg)}</strong>
-          </span>
-          {/* 区间 */}
-          <span className="w-[62px] shrink-0 tnum">
-            {toCredits(t.price_low)}-{toCredits(t.price_high)}
-          </span>
-          {/* 日均轮数 · 没车天数（有才显示） */}
-          <span className="min-w-0 flex-1 truncate">
-            日均 <strong className="tnum text-fg-secondary">{t.avg_rounds_per_day}</strong> 轮
-            {t.no_service_days > 0 && (
-              <span className="ml-1.5 text-warn-fg">{t.no_service_days} 天没车</span>
-            )}
-          </span>
+        <div className="flex items-baseline gap-4 text-label text-fg-tertiary">
+          <MiniStat
+            label="均价"
+            value={<>{toCredits(t.price_avg)} <span className="font-normal text-fg-tertiary">积分</span></>}
+            emphasis
+          />
+          <MiniStat
+            label="区间"
+            value={`${toCredits(t.price_low)}-${toCredits(t.price_high)}`}
+          />
+          <MiniStat
+            label="日均"
+            value={<>{t.avg_rounds_per_day} <span className="font-normal text-fg-tertiary">轮</span></>}
+          />
+          <MiniStat
+            label="断供"
+            value={
+              t.no_service_days > 0 ? (
+                <span className="text-warn-fg">{t.no_service_days} 天</span>
+              ) : (
+                <span className="text-fg-tertiary">无</span>
+              )
+            }
+          />
         </div>
       </div>
 
@@ -494,6 +498,29 @@ function VendorRow({
         <PctBadge pct={t.change_30d_pct} />
       </span>
     </div>
+  );
+}
+
+/** 迷你键值对 · label 在上、值在下 · 裸数字必须带 label 和单位才看得懂 */
+function MiniStat({
+  label, value, emphasis,
+}: {
+  label: string;
+  value: React.ReactNode;
+  emphasis?: boolean;
+}) {
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span className="text-[10px] leading-none text-fg-tertiary">{label}</span>
+      <span
+        className={cn(
+          "whitespace-nowrap font-semibold leading-none tnum",
+          emphasis ? "text-fg" : "text-fg-secondary",
+        )}
+      >
+        {value}
+      </span>
+    </span>
   );
 }
 
