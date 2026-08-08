@@ -46,10 +46,13 @@ export function ExtractConfirmModal({
 
   const code = coupon.trim();
 
-  /* 优惠码折扣 · 阶段 1a 前端按已知规则预览（真实减免由后端裁定）
-     无注册邀请码时默认价含附加费 · 用码可减免那部分 */
+  /* 优惠码折扣 · 阶段 1a 前端按已知规则预览（**真实减免由后端裁定**）
+     §8.32：优惠码是**独立的一档减免**（后台可配 5~20%），跟区域附加费是两回事 ——
+     区域附加费 20% 由**系统邀请码**免（那个在注册时就定了，体现在 info.unitPrice 里已经不含它）。
+     这里按默认 5% 预览；实际额度后端说了算。 */
+  const COUPON_PREVIEW_RATE = 0.05;
   const discounted = applied && info.unitPrice != null
-    ? Math.round(info.unitPrice / 1.2)
+    ? Math.round(info.unitPrice * (1 - COUPON_PREVIEW_RATE))
     : info.unitPrice;
 
   const keyCost = (discounted ?? 0) * info.count;
