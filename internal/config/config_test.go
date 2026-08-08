@@ -192,6 +192,107 @@ func TestValidate(t *testing.T) {
 			t.Fatalf("默认配置应合法: %v", err)
 		}
 	})
+
+	// 开了 vendor 却没 base_url —— 拉号时才炸不如现在就说
+	t.Run("enabled 但空 base_url", func(t *testing.T) {
+		cfg := Default()
+		cfg.Vendors.Kiro91.Enabled = true
+		cfg.Vendors.Kiro91.BaseURL = ""
+		if err := cfg.Validate(); err == nil {
+			t.Fatal("应该校验失败")
+		}
+	})
+
+	// 没开的 vendor 空着不该拦 —— 阶段 1a 只接一家，其余家配置为空是常态
+	t.Run("disabled 时空 base_url 不拦", func(t *testing.T) {
+		cfg := Default()
+		cfg.Vendors.Kiro91.Enabled = false
+		cfg.Vendors.Kiro91.BaseURL = ""
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("没开的 vendor 不该拦: %v", err)
+		}
+	})
+}
+
+// vendor 默认必须是关的 —— 没显式开就不该悄悄开始花钱
+func TestVendorDefaultsDisabled(t *testing.T) {
+	cfg := Default()
+	if cfg.Vendors.Kiro91.Enabled {
+		t.Error("kiro91 默认应为 disabled")
+	}
+	if cfg.Vendors.Kiro91.BaseURL == "" {
+		t.Error("默认应带 91kiro 的官方 base_url（开的时候不用再查文档）")
+	}
+}
+
+// vendor 令牌只从 env 读，绝不进 yaml（yaml 会进 git）
+func TestVendorSecretsFromEnvOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "c.yaml")
+	// 故意在 yaml 里塞 api_key 字段 —— 应该被忽略（struct 里没这个字段）
+	body := "vendors:\n  kiro91:\n    enabled: true\n    api_key: should-be-ignored\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvMasterKey, "mk")
+	t.Setenv(EnvKiro91APIKey, "usr-from-env")
+	t.Setenv(EnvKiro91WebhookSecret, "whsec-from-env")
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Secrets.Kiro91APIKey != "usr-from-env" {
+		t.Errorf("APIKey = %q，应从 env 读", cfg.Secrets.Kiro91APIKey)
+	}
+	if cfg.Secrets.Kiro91WebhookSecret != "whsec-from-env" {
+		t.Errorf("WebhookSecret = %q，应从 env 读", cfg.Secrets.Kiro91WebhookSecret)
+	}
+}
+
+// 开了 vendor 又关了 DryRun 却没给令牌 —— 起服务时就该拦住，
+// 别等到第一次拉号才 401。
+func TestRequireSecretsChecksEnabledVendorKey(t *testing.T) {
+	base := func() Config {
+		c := Default()
+		c.Secrets.MasterKey = "mk"
+		c.Vendors.Kiro91.Enabled = true
+		return c
+	}
+
+	t.Run("真实拉号缺令牌应拦", func(t *testing.T) {
+		c := base()
+		c.DryRun = false
+		if err := c.RequireSecrets(); err == nil {
+			t.Fatal("enabled + 非 DryRun + 无令牌，应该报错")
+		}
+	})
+
+	t.Run("给了令牌就放行", func(t *testing.T) {
+		c := base()
+		c.DryRun = false
+		c.Secrets.Kiro91APIKey = "usr-x"
+		if err := c.RequireSecrets(); err != nil {
+			t.Fatalf("给了令牌不该报错: %v", err)
+		}
+	})
+
+	// DryRun 下不调真 vendor，不该因为没令牌就起不来（本地开发常态）
+	t.Run("DryRun 下不要求令牌", func(t *testing.T) {
+		c := base()
+		c.DryRun = true
+		if err := c.RequireSecrets(); err != nil {
+			t.Fatalf("DryRun 下不该要求 vendor 令牌: %v", err)
+		}
+	})
+
+	t.Run("没开的 vendor 不要求令牌", func(t *testing.T) {
+		c := base()
+		c.DryRun = false
+		c.Vendors.Kiro91.Enabled = false
+		if err := c.RequireSecrets(); err != nil {
+			t.Fatalf("没开的 vendor 不该要求令牌: %v", err)
+		}
+	})
 }
 
 func TestLoadRejectsBadYAML(t *testing.T) {
