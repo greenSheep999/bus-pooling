@@ -78,13 +78,28 @@ export interface Bus {
   spend_today: Money;
   avg_lifespan_seconds: number;
   strategy: BusStrategy;
+  /** 车内成员 + 分摊比例 · single 车只有自己一条
+   *  派号进车时按 share_pct 清算（decisions §8.23） */
+  members: BusMember[];
 }
+
+/** 成员状态 · UI 只有 正常 / 已挂起 二态（§12.5 状态收敛） */
+export type BusMemberStatus = "active" | "suspended";
 
 export interface BusMember {
   passenger_id: string;
   username: string;
   role: "owner" | "member";
   joined_at: ISOTime;
+  /** 分摊比例 · 全车加起来 = 100 · decisions §8.18 / §8.23 */
+  share_pct: number;
+  /** 该成员钱包余额 · 分摊前预检用（不够就这次跳过他，不是拒绝整车） */
+  balance: Money;
+  /** 挂起的人不参与分摊、也没有 client_key（取不到号）· decisions §8.26 */
+  status: BusMemberStatus;
+  /** 连续因余额不足被跳过的次数 · 到 SUSPEND_AFTER 自动挂起 · 充值后归零 */
+  skipped_count: number;
+  last_skipped_at: ISOTime | null;
 }
 
 // ── 号（credential）· UI 只有 活 / 已失效
@@ -479,4 +494,55 @@ export interface ApiKey {
   last_used_at: ISOTime | null;
   created_at: ISOTime;
   revoked: boolean;
+}
+
+/** 新建 api key 的返回 · plaintext 只在这一次返回，之后再也拿不到 */
+export interface ApiKeyCreated {
+  id: string;
+  plaintext: string;
+}
+
+/* ── 充值 ──
+   通道费只在充值时收（decisions §8.21）· 之后所有积分抵扣都不再涉及 */
+export interface TopupOrder {
+  order_id: string;
+  /** 收款二维码内容 · 前端渲染成 QR */
+  qr_payload: string;
+  paid: Money;
+  credits: Money;
+  expires_at: ISOTime;
+}
+
+export interface RedeemResult {
+  credits: Money;
+  memo: string;
+}
+
+/* ── 全局策略（`06-db-schema §16 passenger_strategy_default`）──
+   跟"每车策略"（BusStrategy）是两回事，别混：
+   - 每车策略（decisions §8.6）· 跟 bus 绑 · 在车详情页配 · 只管那辆车的自动补车
+   - 这个全局的 · 两种作用：
+     ① **硬上限**（daily_round_limit / daily_spend_limit）· 跨所有车累加 ·
+        跟车级限额是 **AND**（两个都不超才让拉）· 且**提取 key 只受这个管**
+     ② **新车默认值**（per_round_count / max_unit_price / preferred_vendor / zone）·
+        建新车时的初值，改它不影响已有的车 */
+export interface GlobalStrategy {
+  /** 单价超过这个数就不拉 · null = 不限
+   *  **硬上限**（不是"新车默认值"）· 手动拉号也拦（确认窗里超了就不给点确认）
+   *  跟车级 max_unit_price 是 AND —— 取更严的那个 */
+  max_unit_price: Money | null;
+  /** 每天最多拉几轮 · null = 不限 */
+  daily_round_limit: number | null;
+  /** 每天最多花多少 · null = 不限 */
+  daily_spend_limit: Money | null;
+  /** 以下是建新车时的默认值 */
+  per_round_count: number;
+  preferred_vendor: string | null;
+  /** us | eu | auto */
+  default_zone: string;
+  /** 今日已用 · 只读，用来在 UI 上显示"还剩多少" */
+  used_today: {
+    rounds: number;
+    spend: Money;
+  };
 }

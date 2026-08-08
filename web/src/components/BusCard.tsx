@@ -3,7 +3,7 @@ import type { Bus } from "@/types";
 import {
   useBusCredentials, useMe,
 } from "@/api/hooks";
-import { Card, Chip } from "./ui/primitives";
+import { Card, Chip, Em } from "./ui/primitives";
 import { OwnerBadge } from "./ui/tags";
 import { PoolDistribution } from "./PoolDistribution";
 import {
@@ -71,7 +71,7 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
           <div className="flex items-baseline gap-1.5">
             <span className="text-num font-semibold tnum">{bus.alive_count}</span>
             <span className="text-label text-fg-tertiary">
-              个 · 已失效 <span className="font-semibold tnum text-fg-secondary">{bus.dead_count}</span>
+              个 · 已失效 <Em>{bus.dead_count}</Em>
             </span>
           </div>
           <div className="flex items-center gap-1.5 text-label font-medium text-fg-tertiary">
@@ -105,16 +105,16 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
               <Zap className="size-3.5 text-brand-strong" />
               <span className="font-semibold text-brand-strong">自动补车</span>
               <span className="text-fg-tertiary">
-                · 保活 <span className="font-semibold tnum text-fg-secondary">{s.refill_watermark}</span>
+                · 保活 <Em>{s.refill_watermark}</Em>
                 {s.per_round_count && (
-                  <> · 每轮 <span className="font-semibold tnum text-fg-secondary">{s.per_round_count}</span></>
+                  <> · 每轮 <Em>{s.per_round_count}</Em></>
                 )}
               </span>
             </>
           ) : (
             <>
               <ZapOff className="size-3.5 text-fg-tertiary" />
-              <span className="font-medium text-fg-secondary">手动模式</span>
+              <Em plain>手动模式</Em>
               <span className="text-fg-tertiary">· 号少时提醒</span>
             </>
           )}
@@ -123,17 +123,17 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-label text-fg-tertiary">
             {s.max_unit_price && (
               <span>
-                单价 ≤ <span className="font-semibold tnum text-fg-secondary">{toCredits(s.max_unit_price)}</span>
+                单价 ≤ <Em>{toCredits(s.max_unit_price)}</Em>
               </span>
             )}
             {s.daily_spend_limit && (
               <span>
-                日限 <span className="font-semibold tnum text-fg-secondary">{toCredits(s.daily_spend_limit)}</span>
+                日限 <Em>{toCredits(s.daily_spend_limit)}</Em>
               </span>
             )}
             {s.preferred_vendor && (
               <span>
-                首选 <span className="font-medium text-fg-secondary">{vendorLabel(s.preferred_vendor, !!me?.invited)}</span>
+                首选 <Em plain>{vendorLabel(s.preferred_vendor, !!me?.invited)}</Em>
               </span>
             )}
           </div>
@@ -144,7 +144,7 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
       <div className="flex items-center justify-between border-t border-hairline pt-3 text-label">
         <span className="text-fg-tertiary">
           平均寿命{" "}
-          <span className="font-semibold tnum text-fg-secondary">{fmtLifespan(bus.avg_lifespan_seconds)}</span>
+          <Em>{fmtLifespan(bus.avg_lifespan_seconds)}</Em>
         </span>
         <span className="text-fg-tertiary">
           创建于 {new Date(bus.created_at).toLocaleDateString("zh-CN")}

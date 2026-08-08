@@ -93,6 +93,44 @@ export function SectionHead({
   );
 }
 
+/* ─────────────── 描述里的重点（全站唯一写法） ─────────────── */
+
+/** 描述文字里被强调的数字 / 名字 · 页面 hero 和卡片副标题都用它
+ *
+ *  规则（别再各页手写 span · 之前概览用 text-fg、价格和车详情用 text-fg-secondary，不一致）：
+ *  - 默认 `text-fg`（近黑）· 描述本体是 text-fg-tertiary，重点靠这个跳出来
+ *  - `tone="spend"` 花掉的钱 → 红 · `tone="ok"` 好消息 → 绿 · `tone="warn"` 要注意 → 黄
+ *  - `tnum` 默认开（等宽数字，数字跳动时不抖）· 强调的是名字而非数字时传 `plain` 关掉
+ */
+export function Em({
+  children,
+  tone,
+  plain,
+  className,
+}: {
+  children: ReactNode;
+  tone?: "spend" | "ok" | "warn";
+  /** 强调的是名字 / 文字（不是数字）· 关掉 tabular-nums */
+  plain?: boolean;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "font-semibold",
+        !plain && "tnum",
+        tone === "spend" ? "text-danger-fg"
+          : tone === "ok" ? "text-ok-fg"
+            : tone === "warn" ? "text-warn-fg"
+              : "text-fg",
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
 /* ─────────────── 数字 + 单位（基线对齐） ─────────────── */
 
 export function Stat({
@@ -273,10 +311,14 @@ export function BareRow({
   );
 }
 
-/** 表头（跟 BareList 配套 · 中列居中 · 末列居右） */
+/** 表头（跟 BareList 配套 · 中列居中 · 末列居右）
+ *  `[&+*]:!border-t-0`：head 嵌在 BareList 里时，divide-y 会给紧跟它的那行加 border-t，
+ *  跟 head 自己的 border-b 贴成 2px。把后一行的顶边去掉 —— head 放里放外都恒 1px。
+ *  必须带 `!`：divide-y 生成 `.divide-y > :not([hidden]) ~ :not([hidden])`（特异度 0,3,0），
+ *  普通 `[&+*]` 只有 0,1,0，赢不了 */
 export function BareHead({ children }: { children: ReactNode }) {
   return (
-    <div className="flex items-center gap-4 border-b border-hairline px-1 pb-2.5 text-label font-semibold text-fg-tertiary">
+    <div className="flex items-center gap-4 border-b border-hairline px-1 pb-2.5 text-label font-semibold text-fg-tertiary [&+*]:!border-t-0">
       {children}
     </div>
   );

@@ -26,7 +26,10 @@
 
 - **左对齐** tab（logo 紧邻，非居中）
 - **右侧 4 元素**：上游库存 badge · 积分 pill（绿色）· 通知铃铛 · 头像 dropdown
-- **头像 dropdown**：我的 · API key · 机器人通知 · 设置 · 语言 · 主题 · 登出
+- **头像 dropdown**：用户名（→ `/me`）· 设置（→ `/settings`）· 语言 · 主题 · 登出
+  - 「设置」是**主入口**（索引页），三类设置是它的**下级**，不在 dropdown 里跟它并列
+  - 「我的」在 `/me` —— 账号不是一种设置，且跟 `GET /api/me` 同名
+  - 设置页的面包屑「设置」链回 `/settings`
 
 ## 路由树
 
@@ -46,13 +49,24 @@
 /docs                          → 对接文档（静态帮助页）
 
 /wallet                        → 钱包 · 余额 + 充值 + 兑换 + 流水（积分 pill 点击进入）
-/settings/downstream           → 设置 · 我的号池（passengerpool 配置）
-/settings/webhook              → 机器人通知（webhook 配置 + 投递记录）
-/settings/api-keys             → API key 管理
-/settings/profile              → 我的 · 邮箱 / 改密码 / 危险区
+/me                            → 我的 · 邮箱 / 改密码 / 登出（**不是**设置的下级）
+
+/settings                      → 设置索引 · 四张卡带实时状态（主入口）
+/settings/preferences          → 设置 › 拉号偏好（**全局每日上限** + 新车默认值 · §8.27）
+/settings/downstream           → 设置 › 我的号池（passengerpool 配置）
+/settings/webhook              → 设置 › 机器人通知（webhook 配置 + 投递记录）
+/settings/api-keys             → 设置 › API key 管理
 ```
 
-**共 14 条路由**。补车策略**跟 bus 绑**（`decisions §8.6`），在车详情页内，不做独立 `/settings/strategy`。
+**共 16 条路由**（+ `/settings/profile` → `/me` 兼容跳转）。
+
+**层级铁律**：
+- `/me` 是**账号本身**，不挂在 `/settings` 下 —— 账号不是一种设置
+- `/settings` 是**真索引页**，不是某个具体设置页的别名。任何「设置」入口都指向它
+- **配置归属规则**（`decisions §8.27`）：
+  - **跨对象复用的** → 设置（全局每日上限 / 新车默认值 / 号池 / webhook / API key）
+  - **跟单个对象绑的** → 那个对象自己的页面（每车补车策略、车成员都在车详情里，`§8.6`）
+- 所以**不做** `/settings/strategy`（那是每车的），但**要做** `/settings/preferences`（那是全局的）
 
 ## 概览页结构（`/`）
 
@@ -124,10 +138,13 @@
 **字段**：
 - 邮箱
 - 用户名
-- 密码 + 确认密码（前端 zod 校验强度）
+- 密码 + 确认密码（前端 zod 校验强度：≥8 位 + 含字母和数字）
+- **邀请码**（选填）—— `decisions §8.20` 补的，本节原来漏了。填了 → 永久绑账号：免加价 + 看 vendor 真名。填了之后即时出一行 brand 提示说明这两个好处
+- **命名铁律**：注册这个叫**邀请码**；支付 / 提号窗里那个叫**优惠码**。UI 上不许混用
 
 **动作**：
 - 注册 → POST `/api/register` → 自动登录 → 跳 `/`
+- 校验只在**失焦或提交后**报错，不边打字边红
 
 ---
 
@@ -364,9 +381,55 @@
 
 ---
 
-### 12. `/settings/profile` · 账号资料
+### 12. `/me` · 我的
 
-**只读字段**：邮箱 · 用户名 · 注册时间
+**不用 `SettingsHead`**（它不在设置下，没有「设置 ›」面包屑）· hero 直接叫「我的」。
+
+**只读字段**：邮箱（带已验证 chip）· 用户名 · 注册时间 · 加价状态（有邀请码 = 免加价）
+
+右上角「退出登录」。
+
+---
+
+### 12b. `/settings` · 设置索引
+
+**四张卡**，每张带**实时状态**（不是干巴巴的链接列表）：
+
+| 卡 | 状态 chip | 副行 |
+|---|---|---|
+| **拉号偏好**（第一张） | 已设上限 / 未设上限 | 今日 N/上限 轮 · 花 N/上限 |
+| 我的号池 | 已连通 / 未连通 | 推送成功率 + 累计次数 |
+| 机器人通知 | 启用中 / 已停用 | 已订阅几个事件 |
+| API key | N 个可用 / 还没建 | 共几个 + 已吊销几个 |
+
+拉号偏好排第一：四个里只有它会**拦下操作**，其余是"连了/没连"性质。
+
+整卡可点（`<Card to=...>` 自带 hover 悬浮）· 底部一行说明每车策略跟车绑、账号在 `/me`。
+
+---
+
+### 12c. `/settings/preferences` · 拉号偏好
+
+**全局策略**（`decisions §8.27` · `06-db-schema §16` · API `GET/PUT /api/me/strategy`）。
+
+**两块分开摆**，因为语义不同（混一起会让人以为改默认值就改了上限）：
+
+**① 拉号上限** —— 会真的拦下操作
+- **单价上限**「单价超过 N 就不拉」· **每次都判** · 单独一行，跟下面两个分隔线隔开
+  - **手动拉号也拦**：提取确认窗超了 → 禁用确认按钮 + 「现在 26 / 上限 5 / 超了 21」+ 「去拉号偏好调高上限」链接
+  - 判**优惠码折后价**（用码压到线内就放行）
+  - 不给「就这次放行」的口子 —— 要放行就去改上限
+- **每天最多拉几轮 / 每天最多花多少** · 跨所有车累加 · **单独提取 key 只受这个管**
+  - 每项下面一条今日用量进度条：<80% 绿 · ≥80% 黄 · 满 红 +「已拉满」
+  - **不限时不画进度条** —— 没有分母，画了是假的
+- 三项都跟车级同名字段是 **AND**（取更严的）
+
+**② 新车默认值** —— 只预填新车，改它不动已有的车
+- 每次拉几个 / 默认来源（含"让系统比价"）/ 默认区域
+
+**API**：`GET /api/me/strategy` · `PUT /api/me/strategy`
+
+**enforcement 落点**（前端）：`ExtractConfirmModal`（禁用确认）· `PullNowModal`（hint 显示生效上限 + 来源标注）。真正的拦在后端 —— 前端只是别让用户白点。
 
 **改密码块**（**阶段 1b 才后端支持** · 前端表单先做 mock）：
 - 旧密码 + 新密码 + 确认
@@ -463,6 +526,30 @@
 | `GET /api/vendors/stats` | Vendor 监测（单价/寿命/有效成本/存活率/今日拉/fallback）+ 占比 |
 | `GET /api/vendors/stock` | 上游库存汇总（header badge） |
 | `PUT /api/me/buses/{id}/strategy` | 补车策略（跟车绑） |
+
+---
+
+## 落地状态（阶段 1a 前端）
+
+**14 个路由全部实现，无 stub**。共用组件（别各页重写）：
+
+| 组件 | 用途 |
+|---|---|
+| `components/SettingsHead.tsx` | 4 个设置页的头（面包屑 + hero + 右侧动作）· 间距统一在这里 |
+| `components/ui/secret-field.tsx` | 打码密钥展示 + 复制 · 号池 admin key / webhook secret / 新建 api key 共用 |
+| `components/ui/code-block.tsx` | 对接文档的代码块 + 复制（不上语法高亮，KISS） |
+| `primitives.tsx` 的 `<Em>` | **描述里的重点数字/名字唯一写法** · 见 `13-design-principles §5.2` |
+| `primitives.tsx` 的 `<SectionHead>` | **卡片标题 + 副标题唯一写法** · 见 `§5.2b` |
+
+**通道费只在 `/wallet` 充值卡出现**（`decisions §8.21`）· 费率是 `lib/utils.ts` 的 `CHANNEL_FEE_RATE` 单一来源，`topupBreakdown()` 算拆分。
+
+**技术页例外**（允许内部术语 kiro.rs / credential / event id）：`/docs` · `/settings/downstream` · `/settings/webhook`。其余页面走 `CLAUDE.md §12.6` 人话规则。
+
+**mock 已知局限**：`fixtures.ts` 的 `vl()` 在模块加载时求值，所以注册填邀请码后，**已烘进 memo 字符串**的 vendor 名仍是 `Vendor 0N`（真实后端在响应时打标签，不会有这问题）。新渲染的 vendor 名会正确切成真名。
+
+**登录 / 注册 / 退出后必须清 query 缓存**，否则拿着上一个身份的 `["me"]` 渲染（症状：带邀请码注册完 vendor 还显示编号）。用 `qc.removeQueries()` 而**不是** `qc.clear()` —— 后者连 mutation 缓存一起清，`await mutateAsync()` 永不 resolve，跳转不执行。
+
+---
 
 ## 未来页面（不在 Sprint 1a）
 

@@ -216,27 +216,35 @@ function FlowBadge({ children }: { children: React.ReactNode }) {
 
 **例**：今日消费卡 —— 左「昨日 32（同为积分）」· 右「环比 +41%（比率异类）」。
 
-### 5.2 数字加粗规则
+### 5.2 描述里的重点 · 一律用 `<Em>`（不许各页手写 span）
 
-数字类字段一律：
-- `font-semibold`（加粗，跟叙述文字区分）
-- `tnum`（tabular-nums，等宽对齐）
-- 带 sign 时上 `signedToneClass`（+绿/-红）
-
-在 sub 里嵌数字用 `<Num>` 组件：
+**硬约束**：描述文字（页面 hero 副行 / 卡片 sub / 行内叙述）里被强调的数字或名字，**只能**用 `primitives.tsx` 的 `<Em>`。
 
 ```tsx
-function Num({ children, sign = "" }) {
-  return (
-    <span className={cn("font-semibold tnum", signedToneClass(sign))}>
-      {children}
-    </span>
-  );
-}
+import { Em } from "@/components/ui/primitives";
 
-// 用法
-<>本月 <Num sign="+">+{fmtCredits(topup)}</Num> · <Num sign="-">-{fmtCredits(spend)}</Num></>
+<p className="text-fg-tertiary">
+  <Em>{items.length}</Em> 辆车正在运转 · 今日消费 <Em tone="spend">-{fmtCredits(spend)}</Em> 积分
+</p>
 ```
+
+| 写法 | 用在 |
+|---|---|
+| `<Em>` | 默认 · `font-semibold tnum text-fg`（近黑）· 绝大多数数字 |
+| `<Em tone="spend">` | 花掉的钱 / 失效数 → 红 |
+| `<Em tone="ok">` | 到账 / 正常数 → 绿 |
+| `<Em tone="warn">` | 要注意的数 → 黄 |
+| `<Em plain>` | 强调的是**名字**不是数字（关掉 tabular-nums），如 vendor 名 / "手动模式" |
+
+**为什么收成一个组件**：之前每页各写一遍 span，飘成三套 —— 概览/拼车用 `text-fg`，价格/车详情用 `text-fg-secondary`，卡片里又是另一套。**颜色由 tone 决定，不由页面决定**。
+
+`Overview` 的 `<Num sign>` 是 `<Em>` 的薄包装（`+` → `tone="ok"` · `-` → `tone="spend"`），样式本体不在那里，别在页面里另写一套。
+
+### 5.2b 标题到描述的间距 · 一律走 `SectionHead`
+
+卡片标题 + 副标题**不许**手写 `<h2>` + `<p>` —— 手写的会漏 `space-y-1`，间距变 0px（跟别处 4px 不一致）。用 `<SectionHead title sub right>`，`sub` 收 `ReactNode` 所以能嵌 `<Em>`。
+
+页面 hero（`h1` + 描述）统一 `space-y-2`（8px）· 卡片（`h2` + sub）统一 `space-y-1`（4px）。
 
 ### 5.3 量在句子里读，不孤立右靠
 
@@ -267,6 +275,69 @@ function Num({ children, sign = "" }) {
 **表头也必带量纲**：不写「有效成本」写「积分/小时」；不写「成本」写「积分/时」。表副标补公式。
 
 **图表标注也带单位**：`峰值 62 积分 · 07/18` 不写 `峰值 62 · 07/18`。切 tab 时单位跟着换（`credits → 积分` / `pulls → 次` / `lifespan → h`）。
+
+### 5.6b 显式 grid 轨道**一律写 `minmax(0,1fr)`，不许写 `1fr`**
+
+**硬约束**。`grid-cols-[1fr_400px]` 里的 `1fr` 其实是 `minmax(auto, 1fr)` —— 那个 `auto` 下限等于**轨道的 min-content**。轨道里只要有一个缩不下去的东西（表格 `min-w-[640px]`、`whitespace-nowrap` 的 chip、长 mono 串），轨道就**拒绝**缩到可用宽度，然后把兄弟列**挤出容器外**。
+
+已经踩过两次：
+- 概览 Vendor 监测 + 占比：容器 1248，轨道要 886 + 400 + 24 = **1310**，右边那张卡右边缘跑到容器外 61px
+- 钱包（流水表 `min-w-[560px]`）：1024–1152 宽时**整页出现横向滚动条**
+
+```tsx
+// ❌ 会把兄弟列挤出去
+<div className="grid gap-6 lg:grid-cols-[1fr_400px]">
+
+// ✅ 下限归零，让里面的 overflow-x-auto 去横滚
+<div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
+```
+
+固定宽度那一侧（`400px` / `340px`）不用改 —— 它本来就没有 auto 下限。
+
+**同理**：flex 子项要能收缩必须给 `min-w-0`（`flex-1` 单独用也有同样的 min-content 下限问题）。项目里 `min-w-0 flex-1` 这个组合到处都是，就是这个原因。
+
+**怎么验**（别靠眼睛）：
+```js
+// 任何 display:grid 的容器，scrollWidth 超过自身宽度就是溢出
+document.querySelectorAll('div').forEach(d => {
+  if (getComputedStyle(d).display !== 'grid') return;
+  const w = d.getBoundingClientRect().width;
+  if (d.scrollWidth > Math.ceil(w) + 1) console.log('溢出', d.className);
+});
+// 页面级：
+document.documentElement.scrollWidth > window.innerWidth
+```
+**要在多个宽度下跑**（390 / 768 / 1024 / 1152 / 1280 / 1440 / 1536）—— 这个 bug 只在"轨道被压到比 min-content 还窄"时才现形，宽屏看不出来。
+
+### 5.6c 缩不下去的内容 → 自己横滚，不撑破页面
+
+固定宽度内容（tab 条、300px 标签列的图表矩阵）在窄屏必然超出。**让它自己滚**，别让整页出现横向滚动条：
+
+```tsx
+// 负 margin 抵掉外层 padding，滚动区贴满边缘
+<div className="-mx-7 overflow-x-auto px-7">{宽内容}</div>
+```
+
+- `TabsList` 已内置这层（车详情 6 个 tab 在 390px 上宽 414px）· 滚动条用 `[scrollbar-width:none]` 藏掉
+- **绝对定位的浮层（tooltip）要放在滚动容器外面**，否则被裁掉
+
+### 5.7 分隔线恒 1px · 小心两条贴成 2px
+
+全站分隔线**只有 1px**（`border-hairline`）。没有 2px 分隔线 —— 唯一允许的 2px 是**头像叠圈**（`border-2 border-bg`，那是遮挡不是分隔）。
+
+**看起来像 2px 的，实际都是两条 1px 贴在一起。** 两个已经踩过的坑：
+
+1. **`BareHead` 嵌在 `BareList` 里**：`divide-y` 给第一行加 `border-t`，跟 head 自己的 `border-b` 贴住。
+   → 已在 `BareHead` 里加 `[&+*]:!border-t-0` 兜住（**必须带 `!`**：`divide-y` 生成的选择器特异度 0,3,0，普通 `[&+*]` 只有 0,1,0 赢不了）。head 放 list 里或外都恒 1px。
+
+2. **`divide-y` 容器里混了绝对定位层**（价格页箱线矩阵的 X 网格层 / hover 指示线）：绝对定位**仍算 DOM 子元素**，于是第一个真实行变成"非首个"也拿到 `border-t`。
+   → 把 6 行单独包一个 `divide-y` 容器，绝对层留在外层 `relative` 上。
+
+**改完怎么验**：别靠眼睛，量计算值 ——
+```js
+// 表头下沿 + 首行上沿 应该恒为 1px
+getComputedStyle(head).borderBottomWidth + getComputedStyle(head.nextElementSibling).borderTopWidth
+```
 
 ---
 

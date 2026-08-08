@@ -1,5 +1,5 @@
 import { http, HttpResponse, delay } from "msw";
-import { vendorLabel } from "@/lib/utils";
+import { topupBreakdown, vendorLabel } from "@/lib/utils";
 import * as fx from "./fixtures";
 
 const ok = async (data: any, ms = 120) => {
@@ -61,6 +61,34 @@ export const handlers = [
   http.put("/api/me/buses/:id", () => ok({ ok: true }, 300)),
   http.post("/api/me/buses/:id/pull", () => ok({ round_id: "rd_new", status: "initiated" }, 600)),
   http.delete("/api/me/buses/:id", () => ok({ ok: true }, 400)),
+
+  /* 成员管理 · decisions §8.26
+     mock 直接改 fixtures 里那份对象 · refetch 后 UI 就反映出来了 */
+  http.put("/api/me/buses/:id/members/:memberId", async ({ params, request }) => {
+    const body = (await request.json()) as { suspended?: boolean };
+    const bus = fx.buses.find((b) => b.id === params.id);
+    const m = bus?.members.find((x) => x.passenger_id === params.memberId);
+    if (m) {
+      m.status = body.suspended ? "suspended" : "active";
+      // 解挂 = 认为他已充值 · 跳过计数归零，重新开始数
+      if (!body.suspended) { m.skipped_count = 0; m.last_skipped_at = null; }
+    }
+    return ok({ ok: true }, 300);
+  }),
+  http.delete("/api/me/buses/:id/members/:memberId", ({ params }) => {
+    const bus = fx.buses.find((b) => b.id === params.id);
+    if (bus) {
+      bus.members = bus.members.filter((x) => x.passenger_id !== params.memberId);
+      bus.member_count = bus.members.length;
+    }
+    return ok({ ok: true }, 400);
+  }),
+  http.post("/api/me/buses/:id/invite-code", ({ params }) => {
+    const bus = fx.buses.find((b) => b.id === params.id);
+    const code = `${Math.random().toString(36).slice(2, 5).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+    if (bus) bus.invite_code = code;
+    return ok({ invite_code: code }, 300);
+  }),
 
   // ── 拉号记录（record group · 未派去向号）· 派去向
   http.get("/api/me/pull-records", () => {
@@ -125,22 +153,131 @@ export const handlers = [
     return h ? ok(h) : HttpResponse.json({ error: "not_found" }, { status: 404 });
   }),
 
+  // ── 钱包 · 充值 / 兑换
+  /* 通道费 5% pass-through（decisions §2.13 §8.21）· 只在充值这一步收
+     付 200 元 → 通道费 10 → 到账 190 积分 */
+  http.post("/api/me/topup", async ({ request }) => {
+    const { paid } = (await request.json()) as { paid: number };
+    const { credits } = topupBreakdown(paid);
+    return ok({
+      order_id: `to_${Date.now()}`,
+      // 真实环境是 waffo 返回的收款链接 · mock 拿个假的给 QR 渲染
+      qr_payload: `https://pay.waffo.example/checkout/${Date.now()}?amount=${paid / 1_000_000}`,
+      paid, credits,
+      expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+    }, 600);
+  }),
+  http.post("/api/me/redeem", async ({ request }) => {
+    const { code } = (await request.json()) as { code: string };
+    const c = (code ?? "").trim().toUpperCase();
+    if (!c) return HttpResponse.json({ error: "invalid_code", message: "请输入兑换码" }, { status: 400 });
+    // mock：以 BAD 开头的码当作无效，其他都给 50 积分 —— 让失败态也能演示
+    if (c.startsWith("BAD")) {
+      await delay(400);
+      return HttpResponse.json({ error: "invalid_code", message: "兑换码无效或已被使用" }, { status: 400 });
+    }
+    const credits = 50 * 1_000_000;
+    fx.wallet.balance += credits;
+    fx.ledger.unshift({
+      id: `l_${Date.now()}`, type: "redeem", amount: credits,
+      balance_after: fx.wallet.balance, memo: `兑换码 ${c}`,
+      created_at: new Date().toISOString(),
+    });
+    return ok({ credits, memo: `兑换码 ${c}` }, 500);
+  }),
+
+  // ── 全局策略（06-db-schema §16 · 提取 key 的限额就走这里）
+  http.get("/api/me/strategy", () => ok(fx.globalStrategy)),
+  http.put("/api/me/strategy", async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    for (const k of [
+      "daily_round_limit", "daily_spend_limit", "per_round_count",
+      "max_unit_price", "preferred_vendor", "default_zone",
+    ] as const) {
+      if (k in body) (fx.globalStrategy as any)[k] = body[k];
+    }
+    return ok({ ok: true }, 300);
+  }),
+
   // ── 配置
   http.get("/api/me/downstream", () => ok(fx.downstream)),
-  http.put("/api/me/downstream/passengerpool", () => ok({ ok: true }, 300)),
+  http.put("/api/me/downstream/passengerpool", async ({ request }) => {
+    const body = (await request.json()) as any;
+    if (body.passengerpool_url != null) fx.downstream.passengerpool_url = body.passengerpool_url;
+    if (body.token) {
+      fx.downstream.passengerpool_token_masked =
+        `kiro_admin_${"•".repeat(16)}${body.token.slice(-4)}`;
+    }
+    if (body.rules) fx.downstream.rules = { ...fx.downstream.rules, ...body.rules };
+    return ok({ ok: true }, 300);
+  }),
   http.post("/api/me/downstream/passengerpool/test", () => ok({ ok: true, latency_ms: 87 }, 700)),
   http.get("/api/me/downstream/webhook", () => ok(fx.webhook)),
-  http.put("/api/me/downstream/webhook", () => ok({ ok: true }, 300)),
-  http.post("/api/me/downstream/webhook/test", () => ok({ ok: true, status_code: 200, latency_ms: 132 }, 700)),
+  http.put("/api/me/downstream/webhook", async ({ request }) => {
+    const body = (await request.json()) as any;
+    if (body.url != null) fx.webhook.url = body.url;
+    if (body.enabled != null) fx.webhook.enabled = body.enabled;
+    if (body.events) fx.webhook.events = body.events;
+    return ok({ ok: true }, 300);
+  }),
+  http.post("/api/me/downstream/webhook/test", () => {
+    fx.webhookDeliveries.unshift({
+      id: `w_${Date.now()}`, event: "test.ping", ok: true,
+      status_code: 200, attempt: 1, latency_ms: 132,
+      created_at: new Date().toISOString(),
+    });
+    return ok({ ok: true, status_code: 200, latency_ms: 132 }, 700);
+  }),
+  http.post("/api/me/downstream/webhook/secret", () => {
+    const tail = crypto.randomUUID().replace(/-/g, "").slice(0, 4);
+    fx.webhook.secret_masked = `whsec_${"•".repeat(23)}${tail}`;
+    return ok({ secret: `whsec_${crypto.randomUUID().replace(/-/g, "")}` }, 400);
+  }),
   http.get("/api/me/downstream/webhook/deliveries", () => ok(fx.webhookDeliveries)),
 
   // ── API key
   http.get("/api/me/api-keys", () => ok(fx.apiKeys)),
-  http.post("/api/me/api-keys", () => ok({ id: "k_new", plaintext: "sk_live_" + crypto.randomUUID().replace(/-/g, "") }, 400)),
-  http.delete("/api/me/api-keys/:id", () => ok({ ok: true }, 300)),
+  http.post("/api/me/api-keys", async ({ request }) => {
+    const { name } = (await request.json()) as { name: string };
+    const raw = crypto.randomUUID().replace(/-/g, "");
+    const id = `k_${Date.now()}`;
+    fx.apiKeys.unshift({
+      id, name: name || "未命名", prefix: `sk_live_${raw.slice(0, 4)}`,
+      last_used_at: null, created_at: new Date().toISOString(), revoked: false,
+    });
+    return ok({ id, plaintext: `sk_live_${raw}` }, 400);
+  }),
+  http.delete("/api/me/api-keys/:id", ({ params }) => {
+    const k = fx.apiKeys.find((x) => x.id === params.id);
+    if (k) k.revoked = true;   // 吊销不删行 —— 台账留痕（§8.24 同理）
+    return ok({ ok: true }, 300);
+  }),
 
-  // ── auth
-  http.post("/api/login", () => ok({ ok: true }, 500)),
-  http.post("/api/register", () => ok({ ok: true }, 500)),
+  // ── 账号
+  /* 阶段 1a 前端表单先做 · 后端 1b 才支持（spec 说 501）· mock 给通，好走完流程 */
+  http.post("/api/me/password", async ({ request }) => {
+    const { old_password } = (await request.json()) as { old_password: string };
+    if (old_password !== "1234") {
+      await delay(400);
+      return HttpResponse.json({ error: "wrong_password", message: "旧密码不对" }, { status: 400 });
+    }
+    return ok({ ok: true }, 500);
+  }),
+
+  // ── auth · mock：密码 1234 通过（spec §1）
+  http.post("/api/login", async ({ request }) => {
+    const { password } = (await request.json()) as { password: string };
+    if (password !== "1234") {
+      await delay(500);
+      return HttpResponse.json({ error: "bad_credentials", message: "账号或密码不对" }, { status: 401 });
+    }
+    return ok({ ok: true }, 500);
+  }),
+  http.post("/api/register", async ({ request }) => {
+    const body = (await request.json()) as { invite_code?: string };
+    // 填了邀请码 → 解锁 vendor 真名 + 免加价（§8.20）
+    fx.passenger.invited = !!body.invite_code?.trim();
+    return ok({ ok: true }, 500);
+  }),
   http.post("/api/logout", () => ok({ ok: true }, 200)),
 ];

@@ -1,16 +1,21 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  Activity as ActivityIcon, AlertTriangle, ArrowLeft, Bus as BusIcon, Check,
-  KeyRound, RefreshCw, Send, Settings, X, Zap, ZapOff,
+  Activity as ActivityIcon, AlertTriangle, ArrowLeft, Bus as BusIcon, Check, Copy,
+  KeyRound, RefreshCw, Send, Settings, Trash2, UserCheck, UserMinus, X, Zap, ZapOff,
 } from "lucide-react";
 import {
   useBus, useBusCredentials, useBusPulls, useDownstream, useMe,
+  useRegenInviteCode, useRemoveMember, useSetMemberSuspended,
 } from "@/api/hooks";
 import {
-  BareHead, BareList, BareRow, Card, Chip,
+  BareHead, BareList, BareRow, Card, Chip, Em, SectionHead,
 } from "@/components/ui/primitives";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TokenTag, VendorTag } from "@/components/ui/tags";
 import { KpiCard } from "@/components/KpiCard";
@@ -19,16 +24,19 @@ import { BusSettingsModal } from "@/components/BusSettingsModal";
 import { BusStats } from "@/components/BusStats";
 import { EditStrategyPanel } from "@/components/EditStrategyPanel";
 import {
-  cn, fmtCredits, fmtLifespan, fmtTime, vendorLabel,
+  cn, fmtCredits, fmtLifespan, fmtTime, SUSPEND_AFTER, vendorLabel,
 } from "@/lib/utils";
-import type { Credential, PullResult, PullRound, PushState } from "@/types";
+import type {
+  Bus, BusMember, Credential, PullResult, PullRound, PushError, PushState,
+} from "@/types";
 
-type TabKey = "credentials" | "pulls" | "pushes" | "strategy" | "stats";
+type TabKey = "credentials" | "pulls" | "pushes" | "members" | "strategy" | "stats";
 
 const TABS: { value: TabKey; label: string }[] = [
   { value: "credentials", label: "号列表" },
   { value: "pulls", label: "拉号历史" },
   { value: "pushes", label: "推送记录" },
+  { value: "members", label: "成员" },
   { value: "strategy", label: "补车策略" },
   { value: "stats", label: "数据" },
 ];
@@ -85,7 +93,7 @@ export default function BusDetail() {
             <p className="text-fg-tertiary">
               {bus.kind === "single" ? "1 人车" : bus.kind === "team" ? "邀请码车" : "搭车"} ·{" "}
               创建于 {new Date(bus.created_at).toLocaleDateString("zh-CN")} · 成员{" "}
-              <span className="font-semibold tnum text-fg-secondary">{bus.member_count}</span>
+              <Em>{bus.member_count}</Em>
             </p>
           </div>
 
@@ -154,6 +162,7 @@ export default function BusDetail() {
         <TabsContent value="credentials"><TabCredentials busId={id} /></TabsContent>
         <TabsContent value="pulls"><TabPulls busId={id} /></TabsContent>
         <TabsContent value="pushes"><TabPushes busId={id} /></TabsContent>
+        <TabsContent value="members"><TabMembers bus={bus} /></TabsContent>
         <TabsContent value="strategy">
           <EditStrategyPanel busId={id} strategy={bus.strategy} />
         </TabsContent>
@@ -162,6 +171,280 @@ export default function BusDetail() {
     </div>
   );
 }
+/* ── Tab · 成员 · 挂起 / 移除 / 拉人（decisions §8.26） ── */
+
+function TabMembers({ bus }: { bus: Bus }) {
+  const { data: me } = useMe();
+  const setSuspended = useSetMemberSuspended(bus.id);
+  const removeMember = useRemoveMember(bus.id);
+  const regenCode = useRegenInviteCode(bus.id);
+  const [confirmRemove, setConfirmRemove] = useState<BusMember | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const members = bus.members ?? [];
+
+  /* 1 人车没有成员管理这回事 —— 只有你，没人可挂起也没人可移除 */
+  if (members.length <= 1) {
+    return (
+      <Card className="p-7">
+        <SectionHead title="成员" sub="1 人车 · 只有你 · 号和积分都是你自己的" />
+        <div className="mt-5 flex items-center gap-3 rounded-xl bg-bg-elevated p-4">
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-subtle font-semibold text-brand-strong">
+            我
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold">{me?.username ?? "我"}</div>
+            <div className="text-label text-fg-tertiary">发起人 · 独享 · 无分摊</div>
+          </div>
+          <Chip tone="brand">我发起</Chip>
+        </div>
+      </Card>
+    );
+  }
+
+  const onCopyCode = () => {
+    if (!bus.invite_code) return;
+    navigator.clipboard.writeText(bus.invite_code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="p-7">
+        <div className="mb-4">
+          <SectionHead
+            title="成员"
+            sub={
+              <>
+                共 <Em>{members.length}</Em> 人 · 分摊比例加起来 100% ·
+                拉号和派号时按这个比例从各人钱包扣
+              </>
+            }
+          />
+        </div>
+
+        <BareList>
+          <BareHead>
+            <span className="w-[200px] shrink-0">成员</span>
+            <span className="w-20 shrink-0 text-right">分摊</span>
+            <span className="w-24 shrink-0 text-right">余额</span>
+            <span className="min-w-0 flex-1">状态</span>
+            <span className="w-[132px] shrink-0 text-right">操作</span>
+          </BareHead>
+          {members.map((m) => (
+            <MemberRow
+              key={m.passenger_id}
+              m={m}
+              isMe={m.passenger_id === me?.id}
+              busy={setSuspended.isPending || removeMember.isPending}
+              onToggleSuspend={() =>
+                setSuspended.mutate({
+                  memberId: m.passenger_id,
+                  suspended: m.status !== "suspended",
+                })
+              }
+              onRemove={() => setConfirmRemove(m)}
+            />
+          ))}
+        </BareList>
+
+        {/* 挂起规则 · 就一句话说清什么时候会自动挂起 */}
+        <p className="mt-4 text-label text-fg-tertiary">
+          余额不够时该成员<Em plain>本次跳过</Em>
+          （不扣他积分，也不给他取这批号）· 连续被跳过{" "}
+          <Em>{SUSPEND_AFTER}</Em> 次自动挂起 ·
+          他充值后自己就恢复，不用你批
+        </p>
+      </Card>
+
+      {/* 拉人进车 · 靠邀请码（team 车才有） */}
+      {bus.kind === "team" && (
+        <Card className="p-7">
+          <SectionHead
+            title="拉人进车"
+            sub="把邀请码给他 · 他注册/登录后填码进车 · 进车后分摊比例要全员确认才生效"
+          />
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <code className="rounded-xl border border-hairline bg-bg-elevated px-4 py-2.5 font-mono text-num font-semibold tracking-wider">
+              {bus.invite_code ?? "—"}
+            </code>
+            <Button variant="ghost" onClick={onCopyCode} disabled={!bus.invite_code}>
+              {copied ? <Check /> : <Copy />}
+              {copied ? "已复制" : "复制"}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => regenCode.mutate()}
+              disabled={regenCode.isPending}
+              title="旧码立即失效"
+            >
+              <RefreshCw />
+              换一个
+            </Button>
+          </div>
+          <p className="mt-3 text-label text-fg-tertiary">换码后旧码立即失效，已进车的人不受影响</p>
+        </Card>
+      )}
+
+      {/* 移除确认 · 会改其他人的分摊比例，得说清楚 */}
+      <RemoveMemberModal
+        member={confirmRemove}
+        onClose={() => setConfirmRemove(null)}
+        pending={removeMember.isPending}
+        onConfirm={async () => {
+          if (!confirmRemove) return;
+          await removeMember.mutateAsync(confirmRemove.passenger_id);
+          setConfirmRemove(null);
+        }}
+      />
+    </div>
+  );
+}
+
+function MemberRow({
+  m, isMe, busy, onToggleSuspend, onRemove,
+}: {
+  m: BusMember;
+  isMe: boolean;
+  busy: boolean;
+  onToggleSuspend: () => void;
+  onRemove: () => void;
+}) {
+  const suspended = m.status === "suspended";
+  /* 「余额够不够」是相对下一轮花多少的 · 那个数现在不知道（价格随行就市）
+     所以不猜 —— 只报后端记下的事实：他被跳过过几次 */
+  const behind = !suspended && m.skipped_count > 0;
+
+  return (
+    <BareRow>
+      <span className="flex w-[200px] shrink-0 items-center gap-2.5">
+        <span
+          className={cn(
+            "grid size-8 shrink-0 place-items-center rounded-full text-label font-semibold",
+            suspended
+              ? "bg-bg-elevated text-fg-tertiary"
+              : isMe
+                ? "bg-brand-subtle text-brand-strong"
+                : "bg-bg-elevated text-fg-secondary",
+          )}
+        >
+          {m.username.slice(0, 2)}
+        </span>
+        <span className="min-w-0">
+          <span className="flex items-center gap-1.5">
+            <span className={cn("truncate font-semibold", suspended && "text-fg-tertiary")}>
+              {m.username}
+            </span>
+            {m.role === "owner" && <Chip tone="brand">车主</Chip>}
+          </span>
+          <span className="block text-label text-fg-tertiary">
+            {fmtTime(m.joined_at)} 进车
+          </span>
+        </span>
+      </span>
+
+      {/* 挂起不改 share_pct（这正是它跟"移除"的区别）· 所以不划掉，只调淡 */}
+      <span
+        className={cn(
+          "w-20 shrink-0 text-right font-semibold tnum",
+          suspended && "text-fg-tertiary",
+        )}
+      >
+        {m.share_pct}%
+      </span>
+
+      <span
+        className={cn(
+          "w-24 shrink-0 text-right text-label font-medium tnum",
+          behind ? "text-warn-fg" : "text-fg-secondary",
+        )}
+      >
+        {fmtCredits(m.balance)}
+      </span>
+
+      <span className="flex min-w-0 flex-1 items-center gap-2 text-label">
+        {suspended ? (
+          <>
+            <Chip tone="neutral" dot>已挂起</Chip>
+            <span className="truncate text-fg-tertiary">取不到号 · 不参与分摊</span>
+          </>
+        ) : behind ? (
+          <>
+            <Chip tone="warn" dot>
+              已跳过 {m.skipped_count}/{SUSPEND_AFTER}
+            </Chip>
+            <span className="truncate text-fg-tertiary">
+              再 {SUSPEND_AFTER - m.skipped_count} 次自动挂起
+            </span>
+          </>
+        ) : (
+          <Chip tone="ok" dot>正常</Chip>
+        )}
+      </span>
+
+      {/* 车主自己不能挂起 / 移除自己 —— 要退出走「车设置 → 解散」 */}
+      <span className="flex w-[132px] shrink-0 items-center justify-end gap-1">
+        {m.role === "owner" ? (
+          <span className="text-label text-fg-tertiary">—</span>
+        ) : (
+          <>
+            <Button variant="ghost" size="sm" onClick={onToggleSuspend} disabled={busy}>
+              {suspended ? <UserCheck /> : <UserMinus />}
+              {suspended ? "解挂" : "挂起"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onRemove}
+              disabled={busy}
+              aria-label={`移除 ${m.username}`}
+              title="移除出车"
+            >
+              <Trash2 />
+            </Button>
+          </>
+        )}
+      </span>
+    </BareRow>
+  );
+}
+
+function RemoveMemberModal({
+  member, onClose, onConfirm, pending,
+}: {
+  member: BusMember | null;
+  onClose: () => void;
+  onConfirm: () => void;
+  pending: boolean;
+}) {
+  return (
+    <Dialog open={!!member} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-[460px]">
+        <DialogHeader>
+          <DialogTitle>移除 {member?.username}？</DialogTitle>
+          <p className="text-label text-fg-tertiary">他立刻取不到这辆车的号</p>
+        </DialogHeader>
+        <DialogBody>
+          <Alert tone="warn" icon={AlertTriangle} title="剩下的人分摊比例要重算">
+            他那 <span className="font-semibold tnum">{member?.share_pct}%</span> 要摊给其他人 ·
+            这是改所有人的钱，要等全员确认才生效
+          </Alert>
+          <p className="mt-3 text-label text-fg-tertiary">
+            只是他暂时没钱的话，用「挂起」更合适 —— 挂起不动分摊比例，他充值后自己就回来了
+          </p>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>取消</Button>
+          <Button variant="danger" onClick={onConfirm} disabled={pending}>
+            {pending ? "移除中…" : "确认移除"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ── Tab · 号列表 ── */
 
 function TabCredentials({ busId }: { busId: string }) {
@@ -170,15 +453,17 @@ function TabCredentials({ busId }: { busId: string }) {
 
   return (
     <Card className="p-7">
-      <div className="mb-4 flex items-baseline justify-between gap-4">
-        <div>
-          <h2 className="text-section font-semibold">号列表</h2>
-          <p className="text-label text-fg-tertiary">
-            共 <span className="font-semibold tnum text-fg-secondary">{items.length}</span> 个 ·
-            正常 <span className="font-semibold tnum text-ok-fg">{items.filter((c) => c.status === "alive").length}</span>{" "}
-            · 失效 <span className="font-semibold tnum text-danger-fg">{items.filter((c) => c.status === "dead").length}</span>
-          </p>
-        </div>
+      <div className="mb-4">
+        <SectionHead
+          title="号列表"
+          sub={
+            <>
+              共 <Em>{items.length}</Em> 个 ·
+              正常 <Em tone="ok">{items.filter((c) => c.status === "alive").length}</Em>{" "}
+              · 失效 <Em tone="spend">{items.filter((c) => c.status === "dead").length}</Em>
+            </>
+          }
+        />
       </div>
 
       <div className="overflow-x-auto">
@@ -266,10 +551,10 @@ function TabPulls({ busId }: { busId: string }) {
   return (
     <Card className="p-7">
       <div className="mb-4">
-        <h2 className="text-section font-semibold">拉号历史</h2>
-        <p className="text-label text-fg-tertiary">
-          共 <span className="font-semibold tnum text-fg-secondary">{rounds.length}</span> 轮 · 只列这辆车的
-        </p>
+        <SectionHead
+          title="拉号历史"
+          sub={<>共 <Em>{rounds.length}</Em> 轮 · 只列这辆车的</>}
+        />
       </div>
 
       <div className="overflow-x-auto">
@@ -364,8 +649,8 @@ type PushEvent = {
   keyMasked: string;
   vendorId: string;
   status: "success" | "failed";
-  /** 失败原因 · 售后追溯（decisions §8.24）· 客服靠这个判断是用户配错还是我方问题 */
-  error: string | null;
+  /** 失败原因 · 结构化（decisions §8.24）· 客服靠 code / status 判断是用户配错还是我方问题 */
+  error: PushError | null;
 };
 
 /** 把 URL 简化成 host 展示（"https://pool.foo.com/api" → "pool.foo.com"）· 失败回退原串 */
@@ -408,16 +693,16 @@ function TabPushes({ busId }: { busId: string }) {
 
   return (
     <Card className="p-7">
-      <div className="mb-4 flex items-baseline justify-between gap-4">
-        <div>
-          <h2 className="text-section font-semibold">推送记录</h2>
-          <p className="text-label text-fg-tertiary">
-            号从我方推给你号池的事件 · 共{" "}
-            <span className="font-semibold tnum text-fg-secondary">{events.length}</span> 条 · 成功{" "}
-            <span className="font-semibold tnum text-ok-fg">{success}</span> · 失败{" "}
-            <span className="font-semibold tnum text-danger-fg">{failed}</span>
-          </p>
-        </div>
+      <div className="mb-4">
+        <SectionHead
+          title="推送记录"
+          sub={
+            <>
+              号从我方推给你号池的事件 · 共 <Em>{events.length}</Em> 条 ·
+              成功 <Em tone="ok">{success}</Em> · 失败 <Em tone="spend">{failed}</Em>
+            </>
+          }
+        />
       </div>
 
       {events.length === 0 ? (

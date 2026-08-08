@@ -6,18 +6,23 @@ import { cn } from "@/lib/utils";
  *  切换动画 = transition-all：白底 / 阴影 / 文字颜色**同时平滑过渡**（不是瞬间切换）*/
 const Tabs = TabsPrimitive.Root;
 
+/** tab 条 · 多到装不下时**自己横滚**，不撑破页面
+ *  车详情 6 个 tab 在 390px 手机上宽 414px > 视口，之前会让整页出现横向滚动条。
+ *  外面套一层 overflow-x-auto 把溢出关在自己家里（负 margin + padding 让滚动区贴满边缘） */
 const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
 >(({ className, ...props }, ref) => (
-  <TabsPrimitive.List
-    ref={ref}
-    className={cn(
-      "inline-flex h-10 w-fit items-center justify-center rounded-xl bg-bg-elevated p-[3px] text-fg-tertiary",
-      className,
-    )}
-    {...props}
-  />
+  <div className="-mx-1 max-w-full overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <TabsPrimitive.List
+      ref={ref}
+      className={cn(
+        "inline-flex h-10 w-fit items-center justify-center rounded-xl bg-bg-elevated p-[3px] text-fg-tertiary",
+        className,
+      )}
+      {...props}
+    />
+  </div>
 ));
 TabsList.displayName = TabsPrimitive.List.displayName;
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { KeyRound, Sparkles } from "lucide-react";
 import {
-  useMe, usePullForBus, useVendorStats,
+  useGlobalStrategy, useMe, usePullForBus, useVendorStats,
 } from "@/api/hooks";
 import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -45,6 +45,17 @@ export function PullNowModal({
 
   const bargain = count === 1;
 
+  /* 生效的单价上限 = 车级和全局取更严的那个（AND 关系 · decisions §8.27）
+     只展示不拦：这个弹窗看不到成交价（比价在后端），真正的拦在后端和提取确认窗 */
+  const { data: gs } = useGlobalStrategy();
+  const globalCap = gs?.max_unit_price ?? null;
+  const effectiveCap =
+    maxUnitPrice != null && globalCap != null ? Math.min(maxUnitPrice, globalCap)
+      : maxUnitPrice ?? globalCap;
+  const capFrom = effectiveCap == null ? null
+    : effectiveCap === globalCap && (maxUnitPrice == null || globalCap! < maxUnitPrice) ? "global"
+      : "bus";
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const picked = vendorId === "auto" ? undefined : vendorId;
@@ -76,8 +87,11 @@ export function PullNowModal({
             <Field
               label="vendor"
               hint={
-                maxUnitPrice ? (
-                  <>单价上限 <span className="font-semibold tnum">{toCredits(maxUnitPrice)}</span> 积分</>
+                effectiveCap != null ? (
+                  <>
+                    单价上限 <span className="font-semibold tnum">{toCredits(effectiveCap)}</span> 积分
+                    {capFrom === "global" && <span className="text-fg-tertiary">（全局）</span>}
+                  </>
                 ) : undefined
               }
             >

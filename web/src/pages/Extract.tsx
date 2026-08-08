@@ -20,7 +20,7 @@ import {
 import { AssignModal } from "@/components/AssignModal";
 import { PullExtractForm } from "@/components/PullExtractForm";
 import {
-  BareHead, BareList, BareRow, Card, Chip, SectionHead,
+  BareHead, BareList, BareRow, Card, Chip, Em, SectionHead,
 } from "@/components/ui/primitives";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -99,7 +99,7 @@ export default function Extract() {
             <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-subtle">
               <KeyRound className="size-4 text-brand-strong" />
             </span>
-            <div>
+            <div className="min-w-0 space-y-1">
               <h2 className="text-section font-semibold">提取新 key</h2>
               <p className="text-label text-fg-tertiary">选 vendor 看上游 · 定数量和区域 · 拉一批</p>
             </div>
@@ -204,7 +204,7 @@ function PendingTab({
           sub={
             items.length > 0 ? (
               <>
-                可用 <span className="font-semibold tnum text-fg-secondary">{usable.length}</span> 个
+                可用 <Em>{usable.length}</Em> 个
                 {items.length > usable.length && (
                   <> · <span className="font-semibold tnum text-danger-fg">
                     {items.length - usable.length}
@@ -347,10 +347,10 @@ function ExtractHistoryTab() {
   return (
     <Card className="p-7">
       <div className="mb-4">
-        <h2 className="text-section font-semibold">提取历史</h2>
-        <p className="text-label text-fg-tertiary">
-          每次拉号操作 · 共 <span className="font-semibold tnum text-fg-secondary">{events.length}</span> 次
-        </p>
+        <SectionHead
+          title="提取历史"
+          sub={<>每次拉号操作 · 共 <Em>{events.length}</Em> 次</>}
+        />
       </div>
 
       {events.length === 0 ? (
@@ -456,10 +456,10 @@ function AssignHistoryTab() {
   return (
     <Card className="p-7">
       <div className="mb-4">
-        <h2 className="text-section font-semibold">派发历史</h2>
-        <p className="text-label text-fg-tertiary">
-          每次派动作 · 共 <span className="font-semibold tnum text-fg-secondary">{events.length}</span> 次 · 点行展开看每个号
-        </p>
+        <SectionHead
+          title="派发历史"
+          sub={<>每次派动作 · 共 <Em>{events.length}</Em> 次 · 点行展开看每个号</>}
+        />
       </div>
 
       {events.length === 0 ? (
@@ -515,7 +515,6 @@ function AssignEventRow({ e }: { e: AssignEvent }) {
             className={cn(
               "size-3.5 shrink-0",
               meta.tone === "brand" && "text-brand-strong",
-              meta.tone === "danger" && "text-danger-fg",
               meta.tone === "neutral" && "text-fg-secondary",
             )}
           />

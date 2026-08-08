@@ -8,7 +8,7 @@ import { BusFocalCard } from "@/components/BusFocalCard";
 import { BusMiniCard } from "@/components/BusMiniCard";
 import { StartCarpoolModal } from "@/components/StartCarpoolModal";
 import { PullNowModal } from "@/components/PullNowModal";
-import { BareHead, BareList, BareRow, Card, Chip, SectionHead } from "@/components/ui/primitives";
+import { BareHead, BareList, BareRow, Card, Chip, Em, SectionHead } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 import { LoadMoreButton } from "@/components/ui/load-more-button";
 import { Popover, PopoverContent, PopoverItem, PopoverTrigger } from "@/components/ui/popover";
@@ -60,13 +60,13 @@ export default function Buses() {
         <div className="min-w-0 space-y-2">
           <h1 className="text-hero font-semibold">拼车</h1>
           <p className="text-fg-tertiary">
-            <span className="font-semibold tnum text-fg">{items.length}</span> 辆车正在运转{" "}
-            · <span className="font-semibold tnum text-fg">{totalAlive}</span> 个号在池{" "}
-            · 失效 <span className="font-semibold tnum text-fg-secondary">{totalDead}</span>{" "}
+            <Em>{items.length}</Em> 辆车正在运转{" "}
+            · <Em>{totalAlive}</Em> 个号在池{" "}
+            · 失效 <Em>{totalDead}</Em>{" "}
             · 今日消费{" "}
-            <span className="font-semibold tnum text-danger-fg">
+            <Em tone="spend">
               {totalSpendToday > 0 ? `-${fmtCredits(totalSpendToday)}` : "0"}
-            </span>{" "}
+            </Em>{" "}
             积分
           </p>
         </div>
@@ -107,7 +107,7 @@ export default function Buses() {
               // 阶段 2+ 有多人车：左 2 mini + 右 focal
               const miniList = items.filter((b) => b.id !== multiBus.id).slice(0, 2);
               return (
-                <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[340px_1fr]">
+                <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
                   <div className="flex flex-col gap-3">
                     {miniList.map((b) => {
                       const idx = items.findIndex((x) => x.id === b.id);

@@ -106,7 +106,7 @@ export function StartCarpoolModal({
               />
             </Field>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[140px_1fr]">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[140px_minmax(0,1fr)]">
               <Field label="拉几个号">
                 <Input
                   type="number"

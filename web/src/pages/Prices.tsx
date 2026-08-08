@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowDown, ArrowLeft, ArrowUp, Minus, X } from "lucide-react";
 import { useVendorPrices } from "@/api/hooks";
 import {
-  BareHead, BareList, BareRow, Card, Chip, SectionHead, Segmented,
+  BareHead, BareList, BareRow, Card, Chip, Em, SectionHead, Segmented,
 } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 import { LoadMoreButton } from "@/components/ui/load-more-button";
@@ -183,10 +183,8 @@ export default function Prices() {
               {cheapest ? (
                 <>
                   当前最便宜：
-                  <span className="font-semibold text-fg-secondary"> {cheapest.vendor_label}</span>
-                  <span className="font-semibold tnum text-fg-secondary">
-                    {" · "}{toCredits(cheapest.current_price)} 积分
-                  </span>
+                  <Em plain>{cheapest.vendor_label}</Em>
+                  {" · "}<Em>{toCredits(cheapest.current_price)}</Em> 积分
                 </>
               ) : (
                 "暂无数据"
@@ -200,17 +198,20 @@ export default function Prices() {
               value={zone}
               onChange={setZone}
             />
+            {/* Segmented 的 value 是 string（拿来当 React key）· days 在边界转 */}
             <Segmented
-              options={[{ value: 7, label: "7 天" }, { value: 30, label: "30 天" }]}
-              value={days}
-              onChange={setDays}
+              options={[{ value: "7", label: "7 天" }, { value: "30", label: "30 天" }]}
+              value={String(days)}
+              onChange={(v) => setDays(Number(v))}
             />
           </div>
         </div>
       </div>
 
-      {/* 箱线矩阵 */}
+      {/* 箱线矩阵 · 左列固定 300px + 右列 96px，缩不到手机宽度（390px 时要 473px）
+          所以整块横滚：负 margin 抵掉 card 的 p-7，让滚动区贴满卡片边缘 */}
       <Card className="relative p-7">
+        <div className="-mx-7 overflow-x-auto px-7">
         {isLoading ? (
           <div className="grid h-96 place-items-center text-label text-fg-tertiary">加载中…</div>
         ) : sorted.length === 0 ? (
@@ -227,8 +228,11 @@ export default function Prices() {
             </div>
 
             {/* 6 行 · 每行一家
-                relative + 绝对定位的 X 网格层 · 竖线贯穿全部 6 行（不在每行 SVG 内部各画一遍） */}
-            <div className="relative mb-1.5 divide-y divide-hairline border-b border-hairline">
+                relative + 绝对定位的 X 网格层 · 竖线贯穿全部 6 行（不在每行 SVG 内部各画一遍）
+                注意：网格层 / hover 层是**绝对定位但仍算 DOM 子元素**，divide-y 会把紧跟它们的
+                第一个 VendorRow 当成"非首个"而加 border-t —— 那条会跟表头的 border-b 贴成 2px。
+                所以两个层包在自己的 wrapper 里，divide-y 只作用于 6 个 VendorRow */}
+            <div className="relative mb-1.5 border-b border-hairline">
               {/* X 网格层 · 只覆盖图区（左列 300px + gap 16px 之后，右列 96px + gap 16px 之前） */}
               <div
                 className="pointer-events-none absolute inset-y-0 z-0"
@@ -266,20 +270,23 @@ export default function Prices() {
                 </div>
               )}
 
-              {sorted.map((t) => (
-                <VendorRow
-                  key={t.vendor_id}
-                  t={t}
-                  tags={tags[t.vendor_id] ?? []}
-                  dim={hoveredVendor != null && hoveredVendor !== t.vendor_id}
-                  hoveredDate={hoveredVendor === t.vendor_id ? hoveredDate : null}
-                  selectedDate={filter?.vendorId === t.vendor_id ? filter.date : null}
-                  onEnter={() => setHoveredVendor(t.vendor_id)}
-                  onLeave={() => { setHoveredVendor(null); setHoveredDate(null); }}
-                  onHoverDate={setHoveredDate}
-                  onSelectDate={(d) => pickDay(t.vendor_id, d)}
-                />
-              ))}
+              {/* 行本身 · divide-y 只管这里 → 首行不会拿到 border-t */}
+              <div className="divide-y divide-hairline">
+                {sorted.map((t) => (
+                  <VendorRow
+                    key={t.vendor_id}
+                    t={t}
+                    tags={tags[t.vendor_id] ?? []}
+                    dim={hoveredVendor != null && hoveredVendor !== t.vendor_id}
+                    hoveredDate={hoveredVendor === t.vendor_id ? hoveredDate : null}
+                    selectedDate={filter?.vendorId === t.vendor_id ? filter.date : null}
+                    onEnter={() => setHoveredVendor(t.vendor_id)}
+                    onLeave={() => { setHoveredVendor(null); setHoveredDate(null); }}
+                    onHoverDate={setHoveredDate}
+                    onSelectDate={(d) => pickDay(t.vendor_id, d)}
+                  />
+                ))}
+              </div>
             </div>
 
             {/* 日期轴 · 刻度位置跟整体 X 网格层严格对齐（同一套 leftPct）
@@ -333,8 +340,9 @@ export default function Prices() {
             </div>
           </>
         )}
+        </div>
 
-        {/* hover tooltip · 跟随在图右上（不用 recharts，自己定位） */}
+        {/* hover tooltip · 放在滚动容器**外面**，否则会被裁掉 */}
         {hoveredRounds && (
           <div className="pointer-events-none absolute right-7 top-7 z-10">
             <RoundsTooltip

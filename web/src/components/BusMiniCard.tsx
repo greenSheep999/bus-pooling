@@ -1,6 +1,6 @@
 import { Bus as BusIcon, Zap, ZapOff } from "lucide-react";
 import type { Bus } from "@/types";
-import { Chip } from "@/components/ui/primitives";
+import { Chip, Em } from "@/components/ui/primitives";
 import { OwnerBadge } from "@/components/ui/tags";
 import { avatarColor, avatarLetter, cn, fmtCredits } from "@/lib/utils";
 
@@ -66,7 +66,7 @@ export function BusMiniCard({
         <div className="flex items-baseline gap-1.5">
           <span className="text-num font-semibold tnum">{bus.alive_count}</span>
           <span className="text-label text-fg-tertiary">
-            个 · 已失效 <span className="font-semibold tnum text-fg-secondary">{bus.dead_count}</span>
+            个 · 已失效 <Em>{bus.dead_count}</Em>
           </span>
         </div>
         {bus.spend_today > 0 && (
@@ -83,13 +83,13 @@ export function BusMiniCard({
             <Zap className="size-3.5 text-brand-strong" />
             <span className="font-semibold text-brand-strong">自动补车</span>
             <span className="text-fg-tertiary">
-              · 保活 <span className="font-semibold tnum text-fg-secondary">{bus.strategy.refill_watermark}</span>
+              · 保活 <Em>{bus.strategy.refill_watermark}</Em>
             </span>
           </>
         ) : (
           <>
             <ZapOff className="size-3.5 text-fg-tertiary" />
-            <span className="font-medium text-fg-secondary">手动模式</span>
+            <Em plain>手动模式</Em>
             <span className="text-fg-tertiary">· 号少时提醒</span>
           </>
         )}

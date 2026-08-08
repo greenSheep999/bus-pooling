@@ -250,7 +250,11 @@ GET /api/me/vendors/:vendor_id/history
 
 ### 5.3 阶段 1a 是否做
 
-**推荐 · 阶段 1a 不做**（`decisions.md §8.21` 归档）：
+**✅ 已推翻并落地**（见 `decisions §8.27`）：本节当时判断"1a 不做"，理由是"全局默认值价值低"。但**漏了一半** —— `passenger_strategy_default` 里的 `daily_round_limit` / `daily_spend_limit` 不是"默认值"，是**硬上限**，而且**提取 key 只受它管**。等于用户被一个看不见改不了的限额管着。所以阶段 1a **做了** `设置 › 拉号偏好`：上限那半必须有入口，默认值那半顺手一起做（同一个表、同一个端点）。
+
+下面是当时"不做"的原始论证，保留备查：
+
+**原推荐 · 阶段 1a 不做**（`decisions.md §8.21` 归档 —— 注意 §8.21 后来被通道费那条占用，本节记录实际落在 `§8.27`）：
 
 - 阶段 1a 只 3 辆 mock 车 · 每辆车都能填自己的策略 · 全局默认价值极低
 - 用户建车弹窗的 default 值 hardcode 就够（count=3 · vendor=auto · zone=auto）

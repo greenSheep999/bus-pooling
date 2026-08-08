@@ -53,6 +53,19 @@ export function fmtK(v: number): string {
   return (v / 1000).toFixed(1);
 }
 
+/** 连续被跳过几次自动挂起（decisions §8.26）· 充值后归零 */
+export const SUSPEND_AFTER = 3;
+
+/** waffo 通道费 5% · pass-through，我方不加不承担（decisions §2.13）
+ *  **只在充值时收一次**（§8.21）—— 拉号 / 提取 / 派号都是积分抵扣，那些页面不许显示通道费 */
+export const CHANNEL_FEE_RATE = 0.05;
+
+/** 充值：付款额 → 通道费 + 实际到账 */
+export function topupBreakdown(paid: number): { fee: number; credits: number } {
+  const fee = Math.round(paid * CHANNEL_FEE_RATE);
+  return { fee, credits: paid - fee };
+}
+
 /** 号额度阈值配色（decisions §8.14 · 10k 积分寿终阈值） */
 export const QUOTA_MAX = 10_000;
 

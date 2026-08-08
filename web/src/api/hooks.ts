@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, del, post, put } from "./client";
 import type {
-  Activity, ApiKey, AssignEvent, AutoPickResult, Bus, Credential, DownstreamConfig, ExtractEvent,
-  ExtractRecord, LedgerEntry, Overview, Paged, Passenger, PullRound, StockSummary,
-  TimeRange, TrendMetric, TrendPoint, VendorHistory, VendorPriceTrend, VendorShare,
-  VendorStat, VendorStock, Wallet, WebhookConfig, WebhookDelivery,
+  Activity, ApiKey, ApiKeyCreated, AssignEvent, AutoPickResult, Bus, Credential, DownstreamConfig,
+  ExtractEvent, ExtractRecord, GlobalStrategy, LedgerEntry, Money, Overview, Paged, Passenger,
+  PullRound,
+  RedeemResult, StockSummary, TimeRange, TopupOrder, TrendMetric, TrendPoint,
+  VendorHistory, VendorPriceTrend, VendorShare, VendorStat, VendorStock, Wallet, WebhookConfig,
+  WebhookDelivery,
 } from "@/types";
 
 /* ── 账号 / 钱包 / 库存 ── */
@@ -108,6 +110,39 @@ export const useRenameBus = (busId: string) => {
       qc.invalidateQueries({ queryKey: ["bus", busId] });
       qc.invalidateQueries({ queryKey: ["buses"] });
     },
+  });
+};
+
+/* ── 成员管理（多人车）· decisions §8.26 ── */
+
+/** 挂起 / 解挂某成员 · 挂起 = 撤 client_key（取不到号）+ 不参与分摊 · share_pct 不动 */
+export const useSetMemberSuspended = (busId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ memberId, suspended }: { memberId: string; suspended: boolean }) =>
+      put(`/me/buses/${busId}/members/${memberId}`, { suspended }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bus", busId] }),
+  });
+};
+
+/** 移除成员 · 剩下的人 share_pct 要重算 · 后端要走全员确认（§8.18） */
+export const useRemoveMember = (busId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (memberId: string) => del(`/me/buses/${busId}/members/${memberId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bus", busId] });
+      qc.invalidateQueries({ queryKey: ["buses"] });
+    },
+  });
+};
+
+/** 重新生成邀请码 · 旧码立即失效 */
+export const useRegenInviteCode = (busId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => post<{ invite_code: string }>(`/me/buses/${busId}/invite-code`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bus", busId] }),
   });
 };
 
@@ -259,6 +294,45 @@ export const usePull = () => {
   });
 };
 
+/* ── 钱包 · 充值 / 兑换 ── */
+
+/** 生成充值单 → 返回二维码 · 扫码付到 waffo */
+export const useCreateTopup = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (paid: Money) => post<TopupOrder>("/me/topup", { paid }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["wallet"] });
+      qc.invalidateQueries({ queryKey: ["ledger"] });
+    },
+  });
+};
+
+export const useRedeem = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) => post<RedeemResult>("/me/redeem", { code }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["wallet"] });
+      qc.invalidateQueries({ queryKey: ["ledger"] });
+    },
+  });
+};
+
+/* ── 全局策略 ── */
+
+export const useGlobalStrategy = () =>
+  useQuery({ queryKey: ["globalStrategy"], queryFn: () => api<GlobalStrategy>("/me/strategy") });
+
+export const useSaveGlobalStrategy = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<Omit<GlobalStrategy, "used_today">>) =>
+      put("/me/strategy", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["globalStrategy"] }),
+  });
+};
+
 /* ── 配置 ── */
 
 export const useDownstream = () =>
@@ -273,5 +347,112 @@ export const useWebhookDeliveries = () =>
     queryFn: () => api<WebhookDelivery[]>("/me/downstream/webhook/deliveries"),
   });
 
+/** 存我的号池配置 · url / token / 4 条推送规则 */
+export const useSaveDownstream = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<DownstreamConfig> & { token?: string }) =>
+      put("/me/downstream/passengerpool", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["downstream"] }),
+  });
+};
+
+/** 测连通 · 不写库，只回 latency */
+export const useTestDownstream = () =>
+  useMutation({
+    mutationFn: (body?: { url?: string; token?: string }) =>
+      post<{ ok: boolean; latency_ms: number }>("/me/downstream/passengerpool/test", body ?? {}),
+  });
+
+export const useSaveWebhook = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<WebhookConfig> & { secret?: string }) =>
+      put("/me/downstream/webhook", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["webhook"] }),
+  });
+};
+
+export const useTestWebhook = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      post<{ ok: boolean; status_code: number; latency_ms: number }>(
+        "/me/downstream/webhook/test",
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["webhookDeliveries"] }),
+  });
+};
+
+/** 重新生成 webhook secret · 旧的立即失效 */
+export const useRegenWebhookSecret = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => post<{ secret: string }>("/me/downstream/webhook/secret"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["webhook"] }),
+  });
+};
+
 export const useApiKeys = () =>
   useQuery({ queryKey: ["apiKeys"], queryFn: () => api<ApiKey[]>("/me/api-keys") });
+
+/** 建 api key · plaintext 只在响应里出现这一次 */
+export const useCreateApiKey = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => post<ApiKeyCreated>("/me/api-keys", { name }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["apiKeys"] }),
+  });
+};
+
+export const useRevokeApiKey = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/me/api-keys/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["apiKeys"] }),
+  });
+};
+
+/* ── 账号 ── */
+
+/** 改密码 · 阶段 1a 前端表单先做，后端 1b 才支持 */
+export const useChangePassword = () =>
+  useMutation({
+    mutationFn: (body: { old_password: string; new_password: string }) =>
+      post("/me/password", body),
+  });
+
+/* 登录 / 注册 / 退出后必须把 query 缓存清掉：
+   身份换了，缓存里全是上一个身份的数据。不清的话会拿着旧 ["me"] 继续渲染
+   （最直接的症状：带邀请码注册完，vendor 还显示 Vendor 0N 而不是真名）
+
+   用 removeQueries() 而**不是** clear()：clear() 连 mutation 缓存一起清，
+   于是当前这个 mutation 自己被清掉、mutateAsync 的 promise 不 resolve，
+   调用侧 `await mutateAsync(); nav("/")` 的跳转就永远不执行 */
+export const useLogin = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { account: string; password: string; remember: boolean }) =>
+      post("/login", body),
+    onSuccess: () => qc.removeQueries(),
+  });
+};
+
+export const useRegister = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      email: string; username: string; password: string; invite_code?: string;
+    }) => post("/register", body),
+    onSuccess: () => qc.removeQueries(),
+  });
+};
+
+export const useLogout = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => post("/logout"),
+    // 同上 · 不能用 clear()，否则 Profile 里 await 完的 nav("/login") 不执行
+    onSuccess: () => qc.removeQueries(),
+  });
+};

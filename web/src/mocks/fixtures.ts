@@ -1,7 +1,7 @@
 import { MICRO, vendorLabel } from "@/lib/utils";
 import type {
-  Activity, ApiKey, AssignEvent, AssignedKey, AutoPickResult, PushError, Bus, Credential, DownstreamConfig,
-  ExtractEvent, ExtractRecord, LedgerEntry, Overview, Passenger, PullRound,
+  Activity, ApiKey, AssignEvent, AssignedKey, AutoPickResult, BusMember, PushError, Bus, Credential, DownstreamConfig,
+  ExtractEvent, ExtractRecord, GlobalStrategy, LedgerEntry, Overview, Passenger, PullRound,
   StockSummary, TrendPoint, VendorDayRounds, VendorHistory, VendorPriceTrend, VendorRound,
   VendorShare, VendorStat, VendorStock, Wallet, WebhookConfig, WebhookDelivery, Zone,
 } from "@/types";
@@ -51,6 +51,19 @@ export const stock: StockSummary = {
 
 /* ── Bus ── */
 
+/** 车主自己 · single 车只有这一条（100% 自付，没有分摊对象） */
+const meMember = (joinedAgoH: number): BusMember => ({
+  passenger_id: passenger.id,
+  username: passenger.username,
+  role: "owner",
+  joined_at: ago(joinedAgoH),
+  share_pct: 100,
+  balance: wallet.balance,
+  status: "active",
+  skipped_count: 0,
+  last_skipped_at: null,
+});
+
 export const buses: Bus[] = [
   {
     id: "bus_weekend", name: "周末拼车局", kind: "single", status: "active",
@@ -62,6 +75,7 @@ export const buses: Bus[] = [
       per_round_count: 3, max_unit_price: C(25), daily_round_limit: 20,
       daily_spend_limit: C(200), preferred_vendor: null,
     },
+    members: [meMember(24 * 8)],
   },
   {
     id: "bus_daily", name: "日常一号", kind: "single", status: "active",
@@ -73,10 +87,11 @@ export const buses: Bus[] = [
       per_round_count: 2, max_unit_price: C(22), daily_round_limit: 10,
       daily_spend_limit: C(100), preferred_vendor: null,
     },
+    members: [meMember(24 * 15)],
   },
   {
     id: "bus_kiro", name: "Kiro 常驻车", kind: "team", status: "active",
-    member_count: 3, invite_code: "K7X-2M4", created_at: ago(24 * 30),
+    member_count: 4, invite_code: "K7X-2M4", created_at: ago(24 * 30),
     alive_count: 6, dead_count: 1, spend_today: C(5),
     avg_lifespan_seconds: 28 * 3600,
     strategy: {
@@ -84,6 +99,30 @@ export const buses: Bus[] = [
       per_round_count: 2, max_unit_price: null, daily_round_limit: null,
       daily_spend_limit: null, preferred_vendor: "91kiro",
     },
+    /* 多人车 · 分摊比例加起来 100 · decisions §8.18 §8.23 §8.26
+       四个人刻意覆盖成员 tab 的全部状态：
+       - me   正常 · 车主
+       - wei  正常 · 余额充足
+       - lin  正常但余额只剩 12 积分 · 已被跳过 2 次（再 1 次自动挂起）
+       - zhou 已挂起 · 不参与分摊 · 没有 client_key */
+    members: [
+      { ...meMember(24 * 30), share_pct: 40 },
+      {
+        passenger_id: "psg_wei", username: "wei", role: "member",
+        joined_at: ago(24 * 26), share_pct: 30, balance: C(320),
+        status: "active", skipped_count: 0, last_skipped_at: null,
+      },
+      {
+        passenger_id: "psg_lin", username: "lin", role: "member",
+        joined_at: ago(24 * 20), share_pct: 20, balance: C(12),
+        status: "active", skipped_count: 2, last_skipped_at: ago(30),
+      },
+      {
+        passenger_id: "psg_zhou", username: "zhou", role: "member",
+        joined_at: ago(24 * 18), share_pct: 10, balance: C(0),
+        status: "suspended", skipped_count: 3, last_skipped_at: ago(72),
+      },
+    ],
   },
 ];
 
@@ -775,6 +814,24 @@ export const webhookDeliveries: WebhookDelivery[] = [
   { id: "w4", event: "round.failed", ok: false, status_code: 502, attempt: 3, latency_ms: 5200, created_at: ago(4.3) },
   { id: "w5", event: "wallet.low", ok: true, status_code: 200, attempt: 2, latency_ms: 820, created_at: ago(9.8) },
 ];
+
+/** 全局策略 · 06-db-schema §16 passenger_strategy_default
+ *  daily_* 是**硬上限**（跨所有车累加 + 提取 key 也受它管）· 其余是新车默认值 */
+export const globalStrategy: GlobalStrategy = {
+  /* 30 积分 · mock 里各 vendor 单价 15-26，所以默认不触发拦截；
+     想看拦截态把它调到 5 左右（提取确认窗会禁用确认按钮） */
+  max_unit_price: C(30),
+  daily_round_limit: 20,
+  daily_spend_limit: C(500),
+  per_round_count: 3,
+  preferred_vendor: null,
+  default_zone: "auto",
+  /* 今日已用 · 拿 mock 里今天的拉号轮次和消费凑，别硬编一个跟别处矛盾的数 */
+  used_today: {
+    rounds: pullRounds.filter((r) => Date.now() - new Date(r.created_at).getTime() < 24 * 3600_000).length,
+    spend: buses.reduce((s, b) => s + b.spend_today, 0),
+  },
+};
 
 export const apiKeys: ApiKey[] = [
   { id: "k1", name: "生产 · N8N 机器人", prefix: "sk_live_a3f2", last_used_at: ago(0.03), created_at: ago(24 * 18), revoked: false },

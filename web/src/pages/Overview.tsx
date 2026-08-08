@@ -11,7 +11,7 @@ import { KpiCard } from "@/components/KpiCard";
 import { TrendChart, TrendLegend } from "@/components/TrendChart";
 import { ActivityRow } from "@/components/rows";
 import {
-  BareHead, BareList, BareRow, Card, Chip, Label, Meter, Muted, SectionHead, Segmented, Stat,
+  BareHead, BareList, BareRow, Card, Chip, Em, Label, Meter, Muted, SectionHead, Segmented, Stat,
 } from "@/components/ui/primitives";
 import { MicroStat, OwnerBadge } from "@/components/ui/tags";
 import { LoadMoreButton } from "@/components/ui/load-more-button";
@@ -19,19 +19,20 @@ import {
   Popover, PopoverContent, PopoverItem, PopoverSectionLabel, PopoverSeparator, PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  cn, fmtCredits, fmtDelta, fmtK, fmtLifespan, signedToneClass, toCredits, vendorColor, vendorLabel,
+  cn, fmtCredits, fmtDelta, fmtK, fmtLifespan, toCredits, vendorColor, vendorLabel,
 } from "@/lib/utils";
 import type { Activity, Destination, TimeRange, TrendMetric } from "@/types";
 
-/* 小字里嵌数字：加粗 + 表格数字对齐；带正负号时上语义色（+绿 / -红） */
+/** 小字里嵌数字 · 就是 <Em> 加上"带正负号时上语义色"（+绿 / -红）
+ *  样式本体在 primitives 的 Em 里 —— 别在这里另写一套 */
 function Num({
   children,
   sign = "",
 }: { children: React.ReactNode; sign?: "+" | "-" | "" }) {
   return (
-    <span className={cn("font-semibold tnum", signedToneClass(sign))}>
+    <Em tone={sign === "+" ? "ok" : sign === "-" ? "spend" : undefined}>
       {children}
-    </span>
+    </Em>
   );
 }
 
@@ -534,8 +535,12 @@ export default function Overview() {
       </Card>
 
       {/* ── Vendor 监测 + 占比 ── */}
-      {/* Vendor 监测 + 占比 · 2xl (1536) 才并排 · xl 主列不够放表格 min-w-[640] */}
-      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[1fr_400px]">
+      {/* 2xl (1536) 才并排 · xl 主列不够放表格 min-w-[640]
+          **必须 minmax(0,1fr) 不能写 1fr**：`1fr` = `minmax(auto,1fr)`，那个 auto 下限 =
+          轨道的 min-content（这张卡因为表格里一堆 nowrap 的 chip，min-content 有 886px）·
+          于是轨道拒绝缩到可用宽度，把右边 400px 那张卡挤出容器外。
+          minmax(0,…) 把下限归零，表格该横滚就横滚（overflow-x-auto 本来就在那儿等着） */}
+      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1fr)_400px]">
         <Card className="p-7">
           <SectionHead
             title="Vendor 监测"

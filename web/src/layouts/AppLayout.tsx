@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
-  ArrowRight, BookOpen, Bell, Bot, Check, ChevronDown, ChevronRight, Globe,
+  ArrowRight, BookOpen, Bell, Check, ChevronDown, ChevronRight, Globe,
   KeyRound, LayoutDashboard, LogOut, Moon, Send, Settings,
   User, Users, Wallet,
 } from "lucide-react";
@@ -85,11 +85,12 @@ function AvatarMenu() {
   const seed = me?.email ?? me?.username ?? "?";
   const { bg, fg } = avatarColor(seed);
 
+  /* 「我的」= 账号本身（/me）· 「设置」= 设置主入口（/settings 索引页）
+     号池 / 机器人通知 / API key 都是设置的**下级**，不跟「设置」并列摆在这里 ——
+     并列会让人以为它们跟设置是平级的另外三件事 */
   const items: MenuItem[] = [
-    { icon: User, label: me?.username ?? "-", sub: me?.email, to: "/settings/profile" },
-    { icon: KeyRound, label: "API key", to: "/settings/api-keys" },
-    { icon: Bot, label: "机器人通知", to: "/settings/webhook" },
-    { icon: Settings, label: "设置", to: "/settings/downstream" },
+    { icon: User, label: me?.username ?? "-", sub: me?.email, to: "/me" },
+    { icon: Settings, label: "设置", to: "/settings", hint: "号池 · 通知 · API key" },
     { sep: true },
     {
       icon: Globe,
@@ -363,10 +364,12 @@ function AppFooter() {
 
             <FooterCol title="账户">
               <FooterLink to="/wallet">钱包 / 充值</FooterLink>
-              <FooterLink to="/settings/profile">个人资料</FooterLink>
-              <FooterLink to="/settings/api-keys">API key</FooterLink>
-              <FooterLink to="/settings/webhook">机器人通知</FooterLink>
+              <FooterLink to="/me">我的</FooterLink>
+              <FooterLink to="/settings">设置</FooterLink>
+              {/* footer 里把三类设置也直接列出来（页脚就是给人扫的，多一层点击没意义） */}
               <FooterLink to="/settings/downstream">我的号池</FooterLink>
+              <FooterLink to="/settings/webhook">机器人通知</FooterLink>
+              <FooterLink to="/settings/api-keys">API key</FooterLink>
             </FooterCol>
 
             <FooterCol title="说明与政策">

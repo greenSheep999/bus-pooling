@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, KeyRound, Tag } from "lucide-react";
+import { AlertTriangle, KeyRound, ShieldAlert, Tag } from "lucide-react";
+import { Link } from "react-router-dom";
+import { useGlobalStrategy } from "@/api/hooks";
 import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -53,6 +55,12 @@ export function ExtractConfirmModal({
   const singlePullFee = info.count === 1 ? keyCost * 0.2 : 0;
   const serviceFee = 1_000_000;
   const total = keyCost + singlePullFee + serviceFee;
+
+  /* 全局单价上限（decisions §8.27）· 超了不给确认
+     判的是**优惠码折后价** —— 用码压到线内就该放行 */
+  const { data: gs } = useGlobalStrategy();
+  const cap = gs?.max_unit_price ?? null;
+  const overCap = cap != null && discounted != null && discounted > cap;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -155,9 +163,29 @@ export function ExtractConfirmModal({
             </div>
           </div>
 
-          <Alert tone="warn" icon={AlertTriangle}>
-            价格受市场波动影响 · 实际扣除以成交为准 · 确认前请核对上面信息
-          </Alert>
+          {overCap ? (
+            /* 超了你自己设的上限 · 拦住 · 说清超多少、去哪儿改（不给"就这次放行"的口子，
+               要放行就去改上限 —— 免得护栏形同虚设） */
+            <Alert tone="danger" icon={ShieldAlert} title="超过你设的单价上限">
+              现在 <strong className="tnum">{toCredits(discounted ?? 0)}</strong> 积分 / 个 ·
+              你的上限是 <strong className="tnum">{toCredits(cap!)}</strong> ·
+              超了 <strong className="tnum">{toCredits((discounted ?? 0) - cap!)}</strong>
+              <div className="mt-1">
+                等价格降下来 · 或者去
+                <Link
+                  to="/settings/preferences"
+                  className="mx-1 font-semibold text-brand-strong hover:underline"
+                >
+                  拉号偏好
+                </Link>
+                调高上限
+              </div>
+            </Alert>
+          ) : (
+            <Alert tone="warn" icon={AlertTriangle}>
+              价格受市场波动影响 · 实际扣除以成交为准 · 确认前请核对上面信息
+            </Alert>
+          )}
         </DialogBody>
 
         <DialogFooter>
@@ -165,11 +193,11 @@ export function ExtractConfirmModal({
           <Button
             type="button"
             variant="brand"
-            disabled={pending}
+            disabled={pending || overCap}
             onClick={() => onConfirm(applied ?? undefined)}
           >
             <KeyRound />
-            {pending ? "提取中…" : `确认提取 ${info.count} 个`}
+            {overCap ? "超过上限 · 拉不了" : pending ? "提取中…" : `确认提取 ${info.count} 个`}
           </Button>
         </DialogFooter>
       </DialogContent>

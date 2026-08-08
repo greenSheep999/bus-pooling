@@ -107,7 +107,7 @@ export function PullExtractForm({
         className="space-y-5"
       >
         {/* vendor 第一（决定单价/库存/质保）· 区域 第二 · 数量 第三 · 一行 md+ · 窄屏堆叠 */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1.6fr_1fr_1fr]">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
           <Field label="vendor">
             <Select value={vendorId} onValueChange={setVendorId}>
               <SelectTrigger><SelectValue /></SelectTrigger>

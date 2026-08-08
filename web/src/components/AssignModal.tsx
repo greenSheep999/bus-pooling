@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, ArrowRight, Bus, Copy, Download, Send } from "lucide-react";
+import {
+  AlertTriangle, ArrowRight, Bus, Coins, Copy, Download, Send, UserMinus,
+} from "lucide-react";
 import {
   useAssign, useBuses, useMe,
 } from "@/api/hooks";
@@ -9,17 +11,84 @@ import {
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
-import { Chip } from "@/components/ui/primitives";
+import { Chip, Em, Muted } from "@/components/ui/primitives";
 import { VendorTag } from "@/components/ui/tags";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  cn, vendorLabel,
+  cn, fmtCredits, vendorLabel,
 } from "@/lib/utils";
-import type { Credential } from "@/types";
+import type { Bus as BusType, Credential, Money } from "@/types";
 
 type Kind = "into_bus" | "push_pool" | "handoff";
+
+/** 车友分摊一笔 · 谁 / 该付多少 / 为什么没付 */
+type Share = {
+  username: string;
+  /** 该成员按 share_pct 应付给我的部分 */
+  amount: Money;
+  /** 没参与的原因 · null = 正常付了 */
+  skipReason: "short" | "suspended" | null;
+  /** skipReason === "short" 时差多少 */
+  short: Money;
+};
+
+type Settlement =
+  /** 单人车 · 没有分摊对象 */
+  | { kind: "solo" }
+  /** 多人车 · 有分摊 */
+  | {
+      kind: "split";
+      /** 付得起的人合计给我的（跳过的人不算） */
+      income: Money;
+      /** 付得起 · 扣钱 + 保留取号权 */
+      payers: Share[];
+      /** 付不起 · 本次跳过（不扣钱 · 撤 client_key 不给取号） */
+      skipped: Share[];
+      /** 因为跳过而少收的 */
+      lost: Money;
+    };
+
+/** 自费拉的号派进多人车 · 按 share_pct 即时清算（decisions §8.23）
+ *  我垫了全款 → 其他成员按各自比例买入份额 → 我净支出 = 我自己那份
+ *  号价在提取时已付给 vendor，这里只是内部记账转移，不再收 vendor 费用
+ *
+ *  余额不足的成员**只是这一次不参与**（不扣钱 · 不给取号），车照进：
+ *  号已经是我的了，少一个人分摊只是我少收回一点，不是派不进去
+ *  挂起的成员（§8.26）同理不参与 —— 他连 client_key 都被撤了 */
+function calcSettlement(bus: BusType | undefined, cost: Money, myId: string): Settlement | null {
+  if (!bus) return null;
+  const members = bus.members ?? [];
+  const others = members.filter((m) => m.passenger_id !== myId);
+  if (others.length === 0) return { kind: "solo" };
+
+  const shares: Share[] = others.map((m) => {
+    const amount = Math.round((cost * m.share_pct) / 100);
+    const short = Math.max(0, amount - m.balance);
+    return {
+      username: m.username,
+      amount,
+      skipReason:
+        m.status === "suspended" ? "suspended"
+          : short > 0 ? "short"
+            : null,
+      short,
+    };
+  });
+
+  const payers = shares.filter((x) => x.skipReason === null);
+  const skipped = shares.filter((x) => x.skipReason !== null);
+
+  return {
+    kind: "split",
+    // 只算付得起的人 · 逐项求和（避免各自四舍五入后跟总额差 1）
+    income: payers.reduce((s, x) => s + x.amount, 0),
+    payers,
+    skipped,
+    lost: skipped.reduce((s, x) => s + x.amount, 0),
+  };
+}
 
 /** 派去向弹层 · 3 种：进车 / 推我的号池 / 拿走 handoff
  *  presetKind：从底部悬浮栏直接带去向进来 · 跳过"先开弹窗再选去向"这一步
@@ -48,9 +117,20 @@ export function AssignModal({
     }
   }, [open, presetKind]);
 
+  /* 这批号我已经垫的钱 · 派进多人车时按份额跟车友清算 */
+  const cost = records.reduce((s, r) => s + r.paid, 0);
+  const settlement = calcSettlement(
+    (buses?.items ?? []).find((b) => b.id === busId),
+    cost,
+    me?.id ?? "",
+  );
+  /* 只有"没一个人付得起"才拦 —— 那时候派进去等于纯赠送，先让车友充值
+     只是某几个人不够 → 照派 · 跳过他们（§8.23） */
+  const settlementBlocked = settlement?.kind === "split" && settlement.payers.length === 0;
+
   const canSubmit =
     kind === "handoff" ? true
-      : kind === "into_bus" ? !!busId
+      : kind === "into_bus" ? !!busId && !settlementBlocked
         : passengerpoolConnected;
 
   const onSubmit = async () => {
@@ -90,12 +170,12 @@ export function AssignModal({
           <p className="text-label text-fg-tertiary">
             {presetKind ? (
               <>
-                共 <span className="font-semibold tnum text-fg-secondary">{records.length}</span> 个 key ·
+                共 <Em>{records.length}</Em> 个 key ·
                 核对后确认
               </>
             ) : (
               <>
-                选中 <span className="font-semibold tnum text-fg-secondary">{records.length}</span> 个 key · 选一种去向
+                选中 <Em>{records.length}</Em> 个 key · 选一种去向
               </>
             )}
           </p>
@@ -152,18 +232,21 @@ export function AssignModal({
                     {presetKind === "handoff" && "下载明文 key 后号离开系统 · 我方不再监控，也无法重新下载"}
                   </Alert>
 
-                  {/* 进车必须选车 */}
+                  {/* 进车必须选车 · 选完才算得出清算 */}
                   {presetKind === "into_bus" && (
-                    <Field label="派到哪辆车">
-                      <Select value={busId} onValueChange={setBusId}>
-                        <SelectTrigger><SelectValue placeholder="选择⋯" /></SelectTrigger>
-                        <SelectContent>
-                          {(buses?.items ?? []).map((b) => (
-                            <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
+                    <div className="space-y-2">
+                      <Field label="派到哪辆车">
+                        <Select value={busId} onValueChange={setBusId}>
+                          <SelectTrigger><SelectValue placeholder="选择⋯" /></SelectTrigger>
+                          <SelectContent>
+                            {(buses?.items ?? []).map((b) => (
+                              <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      {settlement && <SettlementNote settlement={settlement} />}
+                    </div>
                   )}
 
                   {/* 选中的 key 清单 */}
@@ -189,7 +272,7 @@ export function AssignModal({
                     picked={kind === "into_bus"} onPick={() => setKind("into_bus")}
                   />
                   {kind === "into_bus" && (
-                    <div className="ml-11 rounded-xl bg-bg-elevated p-3">
+                    <div className="ml-11 space-y-2 rounded-xl bg-bg-elevated p-3">
                       <Field label="选一辆车">
                         <Select value={busId} onValueChange={setBusId}>
                           <SelectTrigger>
@@ -202,6 +285,7 @@ export function AssignModal({
                           </SelectContent>
                         </Select>
                       </Field>
+                      {settlement && <SettlementNote settlement={settlement} />}
                     </div>
                   )}
 
@@ -237,6 +321,45 @@ export function AssignModal({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** 清算提示 · 选完车之后才出（选车前不知道跟谁分摊，算不出来）
+ *  §8.23：只给结果，不列明细 —— 用户要知道的就是"我能收回多少"
+ *  逐成员份额在车详情页成员 tab 看，这里不重复
+ *  例外：余额不足时必须展开说是谁（这时候用户得知道找谁） */
+function SettlementNote({ settlement }: { settlement: Settlement }) {
+  if (settlement.kind === "solo") {
+    return <Muted>独享车 · 无分摊</Muted>;
+  }
+
+  const skipLabel = settlement.skipped
+    .map((s) => `@${s.username}${s.skipReason === "suspended" ? "（已挂起）" : "（余额不足）"}`)
+    .join(" · ");
+
+  /* 一个人都参与不了 · 派进去等于纯赠送 · 拦下来 */
+  if (settlement.payers.length === 0) {
+    return (
+      <Alert tone="danger" icon={AlertTriangle} title="没有车友能参与这次分摊">
+        {skipLabel} · 现在派进去等于你白送 · 等他们充值或先解挂
+      </Alert>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <Alert tone="ok" icon={Coins}>
+        车友分摊后你将收到{" "}
+        <span className="font-semibold tnum text-ok-fg">{fmtCredits(settlement.income)}</span> 积分
+      </Alert>
+      {/* 跳过的只是这次不参与 · 车照进 · 所以是 warn 不是 danger */}
+      {settlement.skipped.length > 0 && (
+        <Alert tone="warn" icon={UserMinus} title={`${skipLabel} · 本次跳过`}>
+          不扣他积分，也不给取这批号 · 你少收{" "}
+          <span className="font-semibold tnum">{fmtCredits(settlement.lost)}</span> 积分
+        </Alert>
+      )}
+    </div>
   );
 }
 
