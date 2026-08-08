@@ -372,13 +372,15 @@ function ExtractEventRow({ e }: { e: ExtractEvent }) {
 
 /* ─────────────── Tab · 派发历史 ─────────────── */
 
+/** 三种去向都是正常动作 · 不用 danger 红（红留给失败 / 危险）
+ *  handoff 的"不可恢复"提示走展开区的说明，不靠颜色吓人 */
 const DEST_META: Record<
   AssignEvent["destination"],
-  { label: string; icon: React.ComponentType<{ className?: string }>; tone: "brand" | "neutral" | "danger" }
+  { label: string; icon: React.ComponentType<{ className?: string }>; tone: "brand" | "neutral" }
 > = {
   into_bus:  { label: "进车",       icon: BusIcon,  tone: "brand" },
   push_pool: { label: "推我的号池", icon: Send,     tone: "neutral" },
-  handoff:   { label: "下载拿走",   icon: Download, tone: "danger" },
+  handoff:   { label: "下载拿走",   icon: Download, tone: "neutral" },
 };
 
 function AssignHistoryTab() {
@@ -464,7 +466,9 @@ function AssignEventRow({ e }: { e: AssignEvent }) {
               <span className="ml-1">{e.target_host}</span>
             </TokenTag>
           ) : (
-            <Chip tone="danger" icon={<Check className="size-3" />}>已下载</Chip>
+            /* 已下载 = 成功完成的动作 · 用 ok 绿不用 danger 红
+               红色留给失败 / 危险操作 · 下载成功不是危险 */
+            <Chip tone="ok" icon={<Check className="size-3" />}>已下载</Chip>
           )}
         </span>
 
@@ -483,6 +487,16 @@ function AssignEventRow({ e }: { e: AssignEvent }) {
       {/* 展开 · 每个号的明细 */}
       {open && (
         <div className="border-t border-hairline bg-bg-elevated/40 px-1 py-2">
+          {/* 拿走的号我方已删明文 · 说明为什么没有"重新下载" */}
+          {e.destination === "handoff" && (
+            <div className="mx-1 mb-2 flex items-start gap-2 rounded-lg bg-warn-bg/40 px-2.5 py-2 text-label">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warn-fg" />
+              <span className="text-fg-secondary">
+                明文已交给你并从我方删除 · <strong className="text-fg">无法重新下载</strong> ·
+                下面只保留打码记录
+              </span>
+            </div>
+          )}
           <div className="flex items-center gap-4 px-1 pb-1.5 text-[10px] font-semibold text-fg-tertiary">
             <span className="min-w-0 flex-1">key</span>
             <span className="w-24 shrink-0">区域</span>
