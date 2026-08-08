@@ -18,6 +18,7 @@
 6. [卡片系统](#6-卡片系统)
 7. [表格](#7-表格)
 8. [列表 + 空态 + 分页](#8-列表--空态--分页)
+   - **响应式规则见 §11.2 + §11.3**
 9. [下拉 / 弹窗](#9-下拉--弹窗)
 10. [图表](#10-图表)
 11. [页面级布局](#11-页面级布局)
@@ -534,40 +535,322 @@ hover 或 click 展开，向**左**弹出（因为菜单本身贴右边缘）：
 
 ---
 
-## 11. 页面级布局
+## 11. 页面级布局 + 响应式
 
-### 11.1 顶栏对齐
+### 11.1 统一容器 `page-container`
 
-Header 内层用 `px-gutter`（96px）跟 `main` 对齐。**不用 `px-8`**（32px 差 64px，logo 跟卡片对不上）。
+**Header 和 main 用同一个 utility**，宽度必然一致（`src/index.css`）：
 
-### 11.2 Hero
+```css
+.page-container {
+  @apply mx-auto w-full max-w-[1440px] px-4 sm:px-6 lg:px-12 xl:px-gutter;
+}
+```
+
+响应式 padding：
+- `< sm (640)`：16px 两侧
+- `sm~lg (640~1024)`：24px
+- `lg~xl (1024~1280)`：48px
+- `≥ xl (1280)`：96px（`gutter`）
+
+**不用 `px-gutter` 单独套**（96px 在小屏太宽）。**Header 内层必须用 `page-container`**，否则内容左右边界跟 main 对不上。
+
+### 11.2 统一断点表（**新页面直接抄，别自己造区间**）
+
+| 断点 | tailwind | 场景 | KPI 卡 | 业务卡 | 表 + 侧列 | 主导航 |
+|---|---|---|---|---|---|---|
+| **< sm** | (default) | 手机竖屏 (< 640) | 1 列 | 1 列 | 单列堆叠 | **logo 右 chevron 下拉面板** |
+| **≥ sm** | 640+ | 大手机 / 手机横屏 | 2 列 | 1 列 | 单列堆叠 | 下拉面板 + Bell 出现 |
+| **≥ md** | 768+ | 平板 | 2 列 | 2 列 | 单列堆叠 | 下拉面板 + 上游 pill 完整版 |
+| **≥ lg** | 1024+ | 小桌面 / 大平板 | 4 列 | 3 列 | 单列堆叠 | **主导航 tab 展开（第二排）** |
+| **≥ 2xl** | 1536+ | 大桌面 | 4 列 | 3 列 | **1fr + 400px 并排** | 完整 |
+
+**关键 class 模板**：
+- 4 KPI: `grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4`
+- 3 业务卡: `grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3`
+- 表 + 侧列: `grid grid-cols-1 gap-6 2xl:grid-cols-[1fr_400px]`（**xl 主列不够放 min-w-640 的表**，2xl 才启用）
+- 顶部 hero 左右两列: `flex flex-col gap-4 md:flex-row md:items-end md:justify-between`
+
+**永远从窄开始声明**（mobile-first）· 断点值从小到大加 prefix。
+
+### 11.3 表格 / 长列表 · 横滚兜底
+
+宽表和长行**不硬压缩**（挤压 badge 变形、数字换行）。用 `overflow-x-auto + min-w`：
+
+```tsx
+<div className="-mx-7 mt-5 overflow-x-auto px-7">
+  <div className="min-w-[640px]">
+    <BareHead>...</BareHead>
+    <BareList>...</BareList>
+  </div>
+</div>
+```
+
+- **min-w** 设为表的自然宽度（列宽相加，Vendor 表 640px · 活动记录 640px）
+- **-mx-7 + px-7** 让滚动条延伸到卡片边缘（视觉上"整卡横滚"）
+- 窄屏出滚动条 · 宽屏不影响
+- min-w 别写太大 —— **考虑跟 `2xl:grid-cols-[1fr_400px]` 并排后主列的可用宽度**（xl=1280 时主列 664，不够 720 但够 640）
+
+**这是硬约束**：任何 5+ 列的数据表、任何带 badge + 长文本的行，都要包 `overflow-x-auto + min-w`。别指望"响应式列宽"能救 —— 挤到某个点必然溢出或错位。
+
+### 11.4 Hero · 左右响应式换行
 
 ```
+桌面 (md+)：
 [页标题 hero 32px]                  [状态 pill / 上排]
-[日期时间 · 描述]                     [Segmented 全页时间维度 · 下排]
+[日期时间 · 描述]                     [Segmented 时间维度 · 下排]
+
+移动 (<md)：
+[页标题]
+[日期时间 · 描述]
+[状态 pill]
+[Segmented（可横滚兜底）]
 ```
 
-- 左列：`text-hero` 标题 + 灰字副行（动态时钟 + 加粗数字 + 空间叙述）
-- 右列：两排右对齐（`flex flex-col items-end gap-2`）· 上放状态、下放时间范围
+```tsx
+<div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+  <div className="min-w-0 space-y-2">...</div>
+  <div className="flex flex-col gap-2 md:items-end">
+    <PoolStatus />
+    <div className="-mx-1 overflow-x-auto px-1">
+      <Segmented options={...} value={...} onChange={...} />
+    </div>
+  </div>
+</div>
+```
 
-### 11.3 Section 头部
+`min-w-0` 关键 —— 让 flex 子项能收缩（默认 `min-w: auto` 会被内容撑开导致父级 flex 挤压其他项）。
 
-`<SectionHead title sub right>`：
+### 11.5 Header 元素响应策略 · mini pill 渐进展开
 
-- `items-start` 让 right 跟 title 顶对齐（不用 items-end 让 right 沉底）
-- title 用 `text-section` · sub 用 `text-label text-fg-tertiary`
-- sub 可以是 `ReactNode`（不仅 string）—— 里面能嵌 `<Num>` 加粗数字
+**核心原则**：所有 header 元素必须显示（信息不丢失），空间不够时**渐进缩小**（先隐藏辅助文字、保留数字/图标）而不是整个隐藏。
 
-### 11.4 网格
+| 元素 | 移动 (< sm) | sm (640+) | md (768+) | lg (1024+) |
+|---|---|---|---|---|
+| Logo mark | ✅ 显示 | ✅ | ✅ | ✅ |
+| Wordmark "bus-pooling" | 隐藏 | ✅ 显示 | ✅ | ✅ |
+| **上游 pill** | `● 128` mini | `● 128` mini | `● 上游 128 个可拉` 完整 | 完整 |
+| **积分 pill** | `钱包 1,245` mini | `钱包 1,245 积分` | 完整 | 完整 |
+| Bell 通知 | 隐藏 | ✅ 显示 | ✅ | ✅ |
+| Avatar | ✅（无 chevron） | ✅ | ✅ | ✅ |
+| **下拉箭头**（触发 mobile nav） | ✅ 显示 | ✅ | ✅ | 隐藏 |
+| **主导航 tab（第二排）** | 隐藏 → 走下拉 | 隐藏 | 隐藏 | ✅ 显示 |
 
-- 4 KPI：`grid grid-cols-4 gap-6`
-- 3 业务卡：`grid grid-cols-3 gap-6`
-- 表 + 环形：`grid grid-cols-[1fr_400px] gap-6`
-- 页面最大宽度 `max-w-[1440px] mx-auto`
+**pill 收缩范式**：数据本身永远显示，只有量词/单位/label 可以按屏收起：
 
-### 11.5 页面纵向节奏
+```tsx
+<div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap
+                rounded-full ... px-2.5 py-1
+                sm:gap-2 sm:px-3 sm:py-1.5">
+  <Icon className="size-3.5" />
+  <span className="font-semibold tnum">{value}</span>
+  <span className="hidden sm:inline">积分</span>{/* 或 "个可拉"、md:inline */}
+</div>
+```
 
-模块之间用 `space-y-section`（56px）拉开距离，够呼吸不空旷。
+**决策依据**：移动端用户还是想知道"上游有多少、我有多少积分"—— 数据永远显示，只有 label 可以收。所有 header 元素必须 `shrink-0 whitespace-nowrap`，任何挤压都不变形。
+
+### 11.6 移动端菜单 · logo 右侧下拉面板
+
+**不用侧滑抽屉**（280px 从右滑入的模式学习成本高、遮挡内容）。**用 logo 右边的 chevron 触发向下展开的面板**：
+
+```tsx
+function MobileNav() {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onResize = () => window.innerWidth >= 1024 && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onResize);
+    return () => { /* cleanup */ };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="grid size-7 shrink-0 place-items-center rounded-md
+                   hover:bg-bg-elevated lg:hidden"
+        aria-label="切换菜单"
+      >
+        <ChevronDown className={cn("size-4 text-fg-tertiary transition-transform",
+                                    open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <>
+          {/* 空白点击关 · 无背景遮罩，不遮挡下方内容 */}
+          <div className="fixed inset-0 z-30 lg:hidden"
+               onClick={() => setOpen(false)} />
+          {/* 面板从 header 下沿向下摊开 · 全宽 */}
+          <div className="absolute inset-x-0 top-full z-40 border-b border-hairline
+                          bg-bg shadow-pop lg:hidden">
+            <nav className="page-container flex flex-col gap-1 py-3">
+              {TABS.map((t) => (
+                <NavLink to={t.to} onClick={() => setOpen(false)} ...>
+                  <t.icon /> {t.label}
+                </NavLink>
+              ))}
+            </nav>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+```
+
+**父容器 `relative`**：header 排 1 容器加 `relative` 让 MobileNav 的 `top-full` 定位到 header 下沿。
+
+**关键行为**：
+- **chevron 旋转 180°**（`rotate-180`）指示 open/close 状态
+- **点空白关**（`fixed inset-0` 空 div）· **ESC 关** · **resize 到 lg 自动关**
+- **点链接自动关**（`NavLink onClick={close}`）
+- **不遮罩背景** —— 移动端下拉面板是"轻交互"，不像模态框需要 backdrop
+
+### 11.7 Header 分割线策略 · 中浅底深
+
+Header 是双排结构时（lg+）：
+
+- **排 1 与排 2 之间**：`h-px bg-hairline/40` **极浅**（40% hairline），只做视觉过渡
+- **Header 底部（跟 main 分开）**：`border-b border-hairline` **正常灰**，明确分离 header 与内容
+
+**中间浅 / 底部深**，不是反过来。为什么：排 1 排 2 都在 header 内属于同一层，用浅线过渡；header 跟内容是不同层，需要清晰边界。
+
+**全宽**：排 1/2 中间分割线**不套 `page-container`**，撑满 viewport 边缘。header border-b 也是全宽。
+
+### 11.8 组件级 shrink 保底
+
+Chip / FlowBadge / StockBadge / CreditPill / 所有 pill 类小元素都**默认加**：
+
+```tsx
+"inline-flex shrink-0 whitespace-nowrap ..."
+```
+
+**这是组件应有属性**，别指望在调用侧每处补。见 `primitives.tsx` `Chip` 定义。
+
+### 11.9 flex 子项收缩
+
+flex 布局里想让某个子项能收缩（比如内容长的 `truncate` 生效），**必须**加 `min-w-0`：
+
+```tsx
+<div className="flex items-center gap-2">
+  <div className="min-w-0 flex-1 truncate">{longText}</div>
+  <Chip>标签</Chip>
+</div>
+```
+
+默认 `min-width: auto` 让 flex item 至少跟内容一样宽，长文本就把兄弟挤没了。踩过。
+
+**兄弟 badge 不换行**：flex 里的 badge 必须 `shrink-0 whitespace-nowrap`，让 `min-w-0` 的兄弟先 truncate 而不是 badge 换行。
+
+### 11.10 Grid 分栏宽度陷阱
+
+flex/grid 分栏时**别只调 gap**，务必给栏本身 `min-w`。踩过的坑：
+
+```tsx
+// ❌ 错做法：gap 越拉越大，栏本身反而瘦成 60px（栏比 gap 还窄，视觉稀疏）
+<div className="grid grid-cols-3 gap-x-20">
+  {/* 每栏只有 60px 时看着挤 · 但其实是栏瘦了 */}
+</div>
+
+// ✅ 对做法：先保证栏最小宽度，再调整 gap
+<div className="grid grid-cols-3 gap-x-12 [&>div]:min-w-[120px]">
+```
+
+调整前用浏览器 `getBoundingClientRect` 测实际宽度，别凭感觉。用户说"挤"时先确认是**栏挤**还是**栏本身瘦**。
+
+### 11.11 Promo bar · 顶部品牌色跑马灯
+
+页面最顶（在 header 上方）品牌紫底 · 白字居中 · 后箭头 · 可点击跳落地页。多条文案 6s 轮播：
+
+```tsx
+const PROMOS = [
+  { text: "阶段 1a · 拼车公测中 · ...", to: "/buses" },
+];
+
+function PromoBar() {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setI((v) => (v + 1) % PROMOS.length), 6000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="bg-brand text-white">
+      <Link to={PROMOS[i].to}
+            className="page-container flex items-center justify-center gap-2
+                       py-1.5 text-label font-medium hover:opacity-90">
+        <span className="truncate text-center">{PROMOS[i].text}</span>
+        <ArrowRight className="size-3.5 shrink-0" />
+      </Link>
+    </div>
+  );
+}
+```
+
+**永远在 header 之上**（不 sticky · 用户不需要一直看到）。
+
+### 11.12 Footer 结构
+
+**左品牌区 + 右 3 栏菜单** flex 布局：
+
+```tsx
+<footer className="mt-auto border-t border-hairline bg-bg-elevated">
+  <div className="page-container py-10">
+    {/* 上部：左品牌 · 右菜单 · lg 起并排 */}
+    <div className="flex flex-col gap-10 lg:flex-row lg:justify-between lg:gap-16">
+      {/* 品牌 · max-w-xs 收窄不占位 */}
+      <div className="max-w-xs space-y-3">
+        <Logo />
+        <p>描述</p>
+        <SocialIcons /> {/* 3 个：TG · Discord · GitHub · 带 border 描边 */}
+      </div>
+
+      {/* 3 栏菜单 · min-w-[120px] 保证不瘦 · gap 从内容自然拉开 */}
+      <div className="grid grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-3
+                      sm:gap-x-10 lg:gap-x-12 [&>div]:min-w-[120px]">
+        <FooterCol title="产品">...</FooterCol>
+        <FooterCol title="账户">...</FooterCol>
+        <FooterCol title="说明与政策">...</FooterCol>
+      </div>
+    </div>
+
+    {/* 底行 · copyright 左 · 状态右 */}
+    <div className="mt-8 flex flex-col gap-3 border-t border-hairline
+                    pt-6 text-label text-fg-tertiary md:flex-row
+                    md:items-center md:justify-between">
+      <span>© 2026 bus-pooling · 开源公益项目</span>
+      <SystemStatus />
+    </div>
+  </div>
+</footer>
+```
+
+**社群 icon 用内嵌 SVG**：lucide 1.x 没有 GitHub / Telegram / Discord。**别拉图标包**，SVG path 5 行内复制到组件即可。
+
+**Footer 链接铁律**：
+- **只列真实存在的路由 / 真会写的文档** —— 不堆 dead link
+- 阶段 1a 三栏：`产品`（概览/拼车/提取/发车）· `账户`（钱包/资料/API/webhook/号池）· `说明与政策`（用户协议/隐私政策/合规声明/对接文档）
+- 政策类等真写文档了再接入路由
+
+### 11.13 页面纵向节奏
+
+模块之间用 `space-y-section`（56px）· 卡片内层用 `mt-5`（20px）· 卡片间距 `gap-6`（24px）。**主内容 py 响应式**：`py-8 lg:py-12`。
+
+**Layout 用 `flex flex-col min-h-dvh`** 让 footer 沉底：
+
+```tsx
+<div className="flex min-h-dvh flex-col bg-bg">
+  <PromoBar />
+  <header>...</header>
+  <main className="flex-1 page-container py-8 lg:py-12">
+    <Outlet />
+  </main>
+  <AppFooter />
+</div>
+```
 
 ---
 
@@ -639,3 +922,4 @@ Header 内层用 `px-gutter`（96px）跟 `main` 对齐。**不用 `px-8`**（32
 **更新历史**
 
 - 2026-08-08 · 概览页 v7 定型后首次沉淀（commit `15ff2b1`）
+- 2026-08-08 · 响应式改造 · header 双排 + 移动下拉面板 + mini pill 渐进 + promo bar + footer 3 栏

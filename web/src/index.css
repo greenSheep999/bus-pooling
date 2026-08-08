@@ -51,6 +51,13 @@
 }
 
 @layer components {
+  /* 统一容器：max-width 1440px + 居中 + 响应式左右 padding
+     header 内层 · main 内容都用这个 · 保证两者宽度永远一致
+     padding：sm 16px · md 24px · lg 48px · xl 96px（gutter 变量） */
+  .page-container {
+    @apply mx-auto w-full max-w-[1440px] px-4 sm:px-6 lg:px-12 xl:px-gutter;
+  }
+
   /* 卡片三态（design/audit.md 视觉规范） */
   .card {
     @apply bg-bg border border-hairline rounded-panel shadow-card;

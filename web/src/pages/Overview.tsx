@@ -206,11 +206,16 @@ function ActivityFeed({ items, total }: { items: Activity[]; total: number }) {
         title="活动记录"
         sub={`共 ${total} 条 · 拉号 / 补车 / 号失效 / 资金`}
       />
-      <BareList>
-        {visible.map((a) => (
-          <ActivityRow key={a.id} a={a} />
-        ))}
-      </BareList>
+      {/* 列表容器：窄屏横滚 · 行按内容自然宽度不压缩，badge 不变形 */}
+      <div className="overflow-x-auto">
+        <div className="min-w-[640px]">
+          <BareList>
+            {visible.map((a) => (
+              <ActivityRow key={a.id} a={a} />
+            ))}
+          </BareList>
+        </div>
+      </div>
       {remain > 0 && (
         <div className="flex justify-center pt-1">
           <button
@@ -254,10 +259,11 @@ export default function Overview() {
   const extractTotal = ov?.extract.total_credentials ?? 0;
 
   return (
-    <div className="mx-auto max-w-[1440px] space-y-section">
-      {/* ── Hero + 全页时间维度 ── */}
-      <div className="flex items-end justify-between">
-        <div className="space-y-2">
+    <div className="space-y-section">
+      {/* ── Hero + 全页时间维度 ──
+          窄屏（<md）左右两列换行堆叠 · 右列 Segmented 可能超出时给个横滚兜底 */}
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="min-w-0 space-y-2">
           <h1 className="text-hero font-semibold">概览</h1>
           <p className="text-fg-tertiary">
             <span className="tnum">
@@ -270,14 +276,16 @@ export default function Overview() {
             <Num>{kpi?.alive_count ?? 0}</Num> 个号还活着
           </p>
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col gap-2 md:items-end">
           <PoolStatus />
-          <Segmented options={RANGES} value={range} onChange={setRange} />
+          <div className="-mx-1 overflow-x-auto px-1">
+            <Segmented options={RANGES} value={range} onChange={setRange} />
+          </div>
         </div>
       </div>
 
       {/* ── 4 KPI ── */}
-      <div className="grid grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           focal
           tone="credit"
@@ -350,7 +358,7 @@ export default function Overview() {
       </div>
 
       {/* ── 3 业务线 ── */}
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* 拼车 */}
         <Card to="/buses" className="flex flex-col gap-4 p-6">
           <div className="flex items-center justify-between">
@@ -521,7 +529,7 @@ export default function Overview() {
             ) : undefined
           }
           right={
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <ScopePicker
                 value={scope}
                 onChange={setScope}
@@ -541,13 +549,16 @@ export default function Overview() {
       </Card>
 
       {/* ── Vendor 监测 + 占比 ── */}
-      <div className="grid grid-cols-[1fr_400px] gap-6">
+      {/* Vendor 监测 + 占比 · 2xl (1536) 才并排 · xl 主列不够放表格 min-w-[640] */}
+      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[1fr_400px]">
         <Card className="p-7">
           <SectionHead
             title="Vendor 监测"
             sub="按 vendor 汇总的号池表现 · 单价 / 寿命 / 耐用度 / 存活率 一览"
           />
-          <div className="mt-5">
+          {/* 表容器：窄屏横滚 · 自然列宽（不压缩），避免 vendor 名 + badge 挤成一坨 */}
+          <div className="-mx-7 mt-5 overflow-x-auto px-7">
+            <div className="min-w-[640px]">
             <BareHead>
               <span className="w-7 shrink-0">#</span>
               <span className="min-w-0 flex-1">vendor</span>
@@ -578,19 +589,19 @@ export default function Overview() {
                   <span className="flex min-w-0 flex-1 items-center gap-2">
                     <span
                       className={cn(
-                        "truncate font-semibold",
+                        "min-w-0 truncate font-semibold",
                         v.out_of_stock && "text-fg-tertiary",
                       )}
                     >
                       {vendorName(v.vendor_id)}
                     </span>
                     {v.rank === 1 && (
-                      <span className="rounded-md bg-ok-bg px-1.5 py-[1px] text-[10px] font-semibold leading-[1.4] text-ok-fg">
+                      <span className="shrink-0 whitespace-nowrap rounded-md bg-ok-bg px-1.5 py-[1px] text-[10px] font-semibold leading-[1.4] text-ok-fg">
                         最优
                       </span>
                     )}
                     {v.out_of_stock && (
-                      <span className="rounded-md bg-danger-bg px-1.5 py-[1px] text-[10px] font-semibold leading-[1.4] text-danger-fg">
+                      <span className="shrink-0 whitespace-nowrap rounded-md bg-danger-bg px-1.5 py-[1px] text-[10px] font-semibold leading-[1.4] text-danger-fg">
                         缺货
                       </span>
                     )}
@@ -687,6 +698,7 @@ export default function Overview() {
                 </BareRow>
               ))}
             </BareList>
+            </div>
           </div>
 
           {/* 数据来源脚注 · 灰色小字，跟"活动记录"底部同一层级 */}

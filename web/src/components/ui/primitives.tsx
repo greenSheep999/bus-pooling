@@ -82,12 +82,13 @@ export function SectionHead({
   right?: ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4">
+    /* 响应式：窄屏 right 换到下面 · md+ 才并排 · gap 收紧避免挤压 */
+    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-4">
       <div className="min-w-0 space-y-1">
         <h2 className="text-section font-semibold">{title}</h2>
         {sub && <p className="text-label text-fg-tertiary">{sub}</p>}
       </div>
-      {right}
+      {right && <div className="shrink-0">{right}</div>}
     </div>
   );
 }
@@ -153,7 +154,8 @@ export function Chip({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-label font-semibold",
+        /* shrink-0 + whitespace-nowrap：flex 挤压时绝不变形（是 Chip 应有属性 · 别指望调用侧每处都加） */
+        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-0.5 text-label font-semibold",
         CHIP[tone],
         className,
       )}
