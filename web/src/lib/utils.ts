@@ -20,6 +20,20 @@ export function fmtCredits(micro: number, opts?: { sign?: boolean }): string {
   return v > 0 ? `+${s}` : v < 0 ? `-${s}` : s;
 }
 
+/** 环比：今值 vs 昨值 → "+41%" / "-12%" / "-"（昨值为 0 时无从比较） */
+export function fmtDelta(now: number, prev: number): string {
+  if (!prev) return "-";
+  const pct = Math.round(((now - prev) / prev) * 100);
+  return pct > 0 ? `+${pct}%` : `${pct}%`;
+}
+
+/** 带符号数字的语义色：正 = 到账（绿）· 负 = 花掉（红）· 0/无符号 = 中性 */
+export function signedToneClass(sign: "+" | "-" | ""): string {
+  if (sign === "+") return "text-ok-fg";
+  if (sign === "-") return "text-danger-fg";
+  return "text-fg";
+}
+
 /** 用量 k 格式：6400 → "6.4" */
 export function fmtK(v: number): string {
   return (v / 1000).toFixed(1);
@@ -69,16 +83,15 @@ export function vendorColor(id: string): string {
 }
 
 /** 相对时间：8/07 18:24 / 昨 20:15 / 18:24 */
+/** 时间统一 · 全用 "MM/DD HH:mm" —— 每行 11 字符等宽，列对齐；
+    不做"今天只显示时分 / 昨 HH:mm"的省略变体（同列不同格式看着乱） */
 export function fmtTime(iso: string): string {
   const d = new Date(iso);
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  if (sameDay) return hm;
-  const y = new Date(now);
-  y.setDate(y.getDate() - 1);
-  if (d.toDateString() === y.toDateString()) return `昨 ${hm}`;
-  return `${d.getMonth() + 1}/${String(d.getDate()).padStart(2, "0")} ${hm}`;
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mn = String(d.getMinutes()).padStart(2, "0");
+  return `${mm}/${dd} ${hh}:${mn}`;
 }
 
 /** 寿命：秒 → "42h" / "3.2d" */
@@ -86,4 +99,23 @@ export function fmtLifespan(seconds: number): string {
   const h = seconds / 3600;
   if (h < 48) return `${Math.round(h)}h`;
   return `${(h / 24).toFixed(1)}d`;
+}
+
+/* ── 头像：同一标识恒定出同一个浅色（不是每次渲染随机） ── */
+
+const AVATAR_HUES = [262, 210, 158, 24, 340, 190, 45, 285];
+
+/* bg 83% · 比 credit/ok 这些 badge 底色（L≈94%）深一档，不跟它们糊成一片 */
+export function avatarColor(seed: string): { bg: string; fg: string } {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  const hue = AVATAR_HUES[Math.abs(h) % AVATAR_HUES.length];
+  return {
+    bg: `hsl(${hue} 68% 83%)`,
+    fg: `hsl(${hue} 62% 26%)`,
+  };
+}
+
+export function avatarLetter(seed: string): string {
+  return (seed.trim()[0] ?? "?").toUpperCase();
 }

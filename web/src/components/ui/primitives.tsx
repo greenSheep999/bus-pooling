@@ -1,29 +1,71 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
 /* ─────────────── Card ─────────────── */
 
+/* 传 to：整卡可点，自动带 hover 悬浮（可点区域 = 浮起区域，不能只让角上的链接可点） */
 export function Card({
   focal,
+  focalTone,
   hover,
+  to,
   className,
   children,
 }: {
   focal?: boolean;
+  /** focal 卡的强调色。默认紫；积分/余额类用 "credit"（绿光，跟 header pill 统一） */
+  focalTone?: "brand" | "credit";
   hover?: boolean;
+  to?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const focalCls = focalTone === "credit" ? "card-focal-credit" : "card-focal";
+  const cls = cn(
+    focal ? focalCls : "card",
+    (hover || to) && "card-hover cursor-pointer",
+    className,
+  );
+
+  if (to) {
+    return (
+      <Link to={to} className={cls}>
+        {children}
+      </Link>
+    );
+  }
+
+  return <div className={cls}>{children}</div>;
+}
+
+/* ─────────────── 文字语义组件（避免到处写 text-*） ─────────────── */
+
+/** 次要说明 · 12px 灰 */
+export function Muted({
+  className,
+  children,
+}: {
   className?: string;
   children: ReactNode;
 }) {
   return (
-    <div
-      className={cn(
-        focal ? "card-focal" : "card",
-        hover && "card-hover cursor-pointer",
-        className,
-      )}
-    >
+    <span className={cn("text-label text-fg-tertiary", className)}>{children}</span>
+  );
+}
+
+/** 字段标签 · 12px 灰 + 半粗 */
+export function Label({
+  className,
+  children,
+}: {
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className={cn("text-label font-semibold text-fg-tertiary", className)}>
       {children}
-    </div>
+    </span>
   );
 }
 
@@ -35,14 +77,15 @@ export function SectionHead({
   right,
 }: {
   title: string;
-  sub?: string;
+  /** 用 ReactNode 让 sub 里能嵌加粗数字 / <Num> 之类，不局限 string */
+  sub?: ReactNode;
   right?: ReactNode;
 }) {
   return (
-    <div className="flex items-end justify-between">
-      <div className="space-y-1">
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0 space-y-1">
         <h2 className="text-section font-semibold">{title}</h2>
-        {sub && <p className="text-micro text-fg-tertiary">{sub}</p>}
+        {sub && <p className="text-label text-fg-tertiary">{sub}</p>}
       </div>
       {right}
     </div>
@@ -74,7 +117,7 @@ export function Stat({
         {value}
       </span>
       {unit && (
-        <span className={cn("text-micro font-medium text-fg-tertiary", unitPad)}>
+        <span className={cn("text-label font-medium text-fg-tertiary", unitPad)}>
           {unit}
         </span>
       )}
@@ -110,7 +153,7 @@ export function Chip({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-micro font-semibold",
+        "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-label font-semibold",
         CHIP[tone],
         className,
       )}
@@ -177,7 +220,7 @@ export function Segmented<T extends string>({
             key={o.value}
             onClick={() => onChange(o.value)}
             className={cn(
-              "rounded-[7px] px-3 py-1.5 text-micro font-medium transition-colors",
+              "rounded-[7px] px-3 py-1.5 text-label font-medium transition-colors",
               on
                 ? solid
                   ? "bg-brand text-white font-semibold"
@@ -213,7 +256,7 @@ export function Button({
       {...rest}
       className={cn(
         "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-all",
-        size === "sm" ? "px-3.5 py-2 text-micro" : "px-4 py-2.5 text-body",
+        size === "sm" ? "px-3.5 py-2 text-label" : "px-4 py-2.5",
         variant === "primary" &&
           "bg-brand text-white shadow-[0_8px_20px_-2px_rgb(145_71_255/0.28)] hover:brightness-110 active:scale-[0.98]",
         variant === "ghost" &&
@@ -261,7 +304,7 @@ export function BareRow({
 /** 表头（跟 BareList 配套 · 中列居中 · 末列居右） */
 export function BareHead({ children }: { children: ReactNode }) {
   return (
-    <div className="flex items-center gap-4 border-b border-hairline px-1 pb-2.5 text-micro font-semibold text-fg-tertiary">
+    <div className="flex items-center gap-4 border-b border-hairline px-1 pb-2.5 text-label font-semibold text-fg-tertiary">
       {children}
     </div>
   );

@@ -156,13 +156,29 @@ export type ActivityKind =
   | "redeem"
   | "push";
 
+/** 去向枚举（跟 Destination 语义对齐，另加 refill/dead 场景的非去向 target） */
+export type ActivityTarget =
+  | "into_bus"      // 进车
+  | "push_pool"     // 推池
+  | "handoff"       // 拿走
+  | "pending"       // 待派
+  | "bus_refill"    // 补车动作的车名 target
+  | "cred_dead"     // 号失效的号 target
+  | "topup_source"; // 充值/兑换 target（waffo / 兑换码等）
+
 export interface Activity {
   id: string;
   kind: ActivityKind;
-  summary: string;
+  /** 结构化字段（首选）；summary 作为兜底 */
+  source?: string;              // 号来源 / vendor 名 / 事件主体（"Kiro Drop" · "cred_...4F2" · "waffo · 支付宝"）
+  target?: string;              // 去向 / 目标（"我的号池" · "Kiro 常驻车" · "存活 42h"）
+  target_kind?: ActivityTarget;
+  count?: number;               // 量（个号/个 key/次数）
+  count_unit?: string;          // 量词（"个号" · "个 key" · "元"）
+  summary: string;              // 兜底叙述，也用于结构化字段不足时
   amount: Money | null;
   created_at: ISOTime;
-  link: string | null; // 点击落地路由
+  link: string | null;
 }
 
 // ── Vendor 监测
@@ -171,10 +187,14 @@ export interface VendorStat {
   rank: number;
   unit_price: Money;
   avg_lifespan_seconds: number;
-  effective_cost: number; // 单价 ÷ 平均寿命
+  effective_cost: number; // 单价 ÷ 平均寿命（仅内部保留，不上 UI）
+  /** 平均每号消耗多少积分才挂（0~10k 区间，越大越耐用） */
+  avg_credits_per_cred: Money;
+  /** 保修次数：这家 vendor 出的号在 30 分钟内挂被退款过几次（越少越好） */
+  warranty_count: number;
   alive_rate: number; // 0-100
   pulls_today: number;
-  fallback_count: number;
+  fallback_count: number; // 拉这家失败、我方 fallback 到别家的次数
   out_of_stock: boolean;
 }
 
@@ -211,7 +231,15 @@ export interface OverviewBuses {
   total_credentials: number;
   refill_count: number;
   coalesce_rate: number;
-  items: { id: string; name: string; alive: number; dead: number; spend: Money }[];
+  items: {
+    id: string;
+    name: string;
+    /** 当前乘客在这辆车里的角色：owner=我发起的 · member=我参与的 */
+    role: "owner" | "member";
+    alive: number;
+    dead: number;
+    spend: Money;
+  }[];
 }
 
 export interface OverviewExtract {

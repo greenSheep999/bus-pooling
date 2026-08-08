@@ -38,8 +38,8 @@ export function CredentialCard({
             <span
               className={
                 alive
-                  ? "text-body font-semibold"
-                  : "text-body font-semibold text-fg-tertiary"
+                  ? "font-semibold"
+                  : "font-semibold text-fg-tertiary"
               }
             >
               {vendorName(cred.vendor_id)}
@@ -66,11 +66,11 @@ export function CredentialCard({
 
         {/* 寿命 + ID */}
         <div className="flex items-center justify-between">
-          <span className="flex items-center gap-1.5 text-micro font-medium text-fg-secondary">
+          <span className="flex items-center gap-1.5 text-label font-medium text-fg-secondary">
             <Clock3 className="size-3 text-fg-tertiary" />
             {fmtLifespan(cred.lifespan_seconds)}
           </span>
-          <span className="font-mono text-micro text-fg-tertiary">
+          <span className="font-mono text-label text-fg-tertiary">
             …{cred.id.slice(-3)}
           </span>
         </div>

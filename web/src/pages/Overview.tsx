@@ -1,20 +1,62 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import {
-  Activity as ActivityIcon, ChevronRight, KeyRound, Send, TrendingDown, Users, Wallet,
+  Activity as ActivityIcon, Check, ChevronDown, KeyRound, Send,
+  TrendingDown, Users, Wallet,
 } from "lucide-react";
 import {
-  useActivities, useOverview, useTrend, useVendorStats,
+  useActivities, useOverview, useStock, useTrend, useVendorStats,
 } from "@/api/hooks";
 import { KpiCard } from "@/components/KpiCard";
-import { TrendChart } from "@/components/TrendChart";
+import { TrendChart, TrendLegend } from "@/components/TrendChart";
 import { ActivityRow } from "@/components/rows";
 import {
-  BareHead, BareList, BareRow, Card, Chip, Meter, SectionHead, Segmented, Stat,
+  BareHead, BareList, BareRow, Card, Chip, Label, Meter, Muted, SectionHead, Segmented, Stat,
 } from "@/components/ui/primitives";
-import { cn, fmtCredits, fmtLifespan, toCredits, vendorColor, vendorName } from "@/lib/utils";
-import type { Destination, TimeRange, TrendMetric } from "@/types";
+import {
+  cn, fmtCredits, fmtDelta, fmtK, fmtLifespan, signedToneClass, toCredits,
+  vendorColor, vendorName,
+} from "@/lib/utils";
+import type { Activity, Destination, TimeRange, TrendMetric } from "@/types";
+
+/* 小字里嵌数字：加粗 + 表格数字对齐；带正负号时上语义色（+绿 / -红） */
+function Num({
+  children,
+  sign = "",
+}: { children: React.ReactNode; sign?: "+" | "-" | "" }) {
+  return (
+    <span className={cn("font-semibold tnum", signedToneClass(sign))}>
+      {children}
+    </span>
+  );
+}
+
+/* 号池状态 pill · 呼吸绿点 = 心跳（system live）· 告急/停运 用静态实心点
+   阈值：0 = 停运 · <20 = 告急 · 其他 = 正常。跟 header 库存徽标共用 useStock */
+function PoolStatus() {
+  const { data } = useStock();
+  const n = data?.total_available;
+
+  const state =
+    n === undefined ? "loading"
+      : n === 0 ? "down"
+        : n < 20 ? "warn"
+          : "ok";
+
+  const cfg = {
+    loading: { dot: "bg-hairline", label: "加载中" },
+    ok: { dot: "bg-ok-solid animate-breath", label: "号池运行正常" },
+    warn: { dot: "bg-warn-solid", label: "号池告急" },
+    down: { dot: "bg-danger-solid", label: "号池已停运" },
+  }[state];
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className={cn("size-2 shrink-0 rounded-full", cfg.dot)} />
+      <span className="font-medium text-fg-secondary">{cfg.label}</span>
+    </div>
+  );
+}
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "today", label: "今日" },
@@ -44,12 +86,166 @@ const DEST_COLOR: Record<Destination, string> = {
   handoff: "#D4D4D8",
 };
 
+/* Trend scope · "全部"（默认）/ 单车 / 单 vendor —— 二选一
+   为什么不做去向 scope：见对话里的推导（handoff 号已离开系统、寿命跟去向无关，
+   去向应该是"当前视图内的堆叠模式"而不是 scope） */
+type Scope =
+  | { kind: "all" }
+  | { kind: "bus"; id: string; name: string }
+  | { kind: "vendor"; id: string; name: string };
+
+function ScopePicker({
+  value,
+  onChange,
+  buses,
+  vendors,
+}: {
+  value: Scope;
+  onChange: (s: Scope) => void;
+  buses: { id: string; name: string }[];
+  vendors: { id: string; name: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+
+  /* 全部 trigger 显示"全部（N 车 · M vendor）"—— 光写"全部"用户不知道全部什么 */
+  const label =
+    value.kind === "all"
+      ? `全部 · ${buses.length} 车 · ${vendors.length} vendor`
+      : value.kind === "bus" ? `按车 · ${value.name}`
+        : `按 vendor · ${value.name}`;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          "flex min-w-[200px] items-center justify-between gap-2 rounded-lg border border-hairline bg-bg px-3 py-1.5 font-medium shadow-card transition-colors hover:bg-bg-elevated",
+          open && "bg-bg-elevated",
+        )}
+      >
+        <span className="truncate text-fg-secondary">{label}</span>
+        <ChevronDown className="size-3.5 shrink-0 text-fg-tertiary" />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-50 mt-2 w-64 rounded-[14px] border border-hairline bg-bg p-2 shadow-pop">
+            <ScopeOption
+              picked={value.kind === "all"}
+              onPick={() => { onChange({ kind: "all" }); setOpen(false); }}
+            >
+              <div className="flex flex-col items-start">
+                <span>全部数据</span>
+                <span className="text-[11px] font-normal text-fg-tertiary">
+                  {buses.length} 车 · {vendors.length} vendor 合计
+                </span>
+              </div>
+            </ScopeOption>
+
+            <div className="my-1 h-px bg-hairline" />
+            <div className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-fg-tertiary">
+              按车
+            </div>
+            {buses.map((b) => (
+              <ScopeOption
+                key={b.id}
+                picked={value.kind === "bus" && value.id === b.id}
+                onPick={() => { onChange({ kind: "bus", id: b.id, name: b.name }); setOpen(false); }}
+              >
+                {b.name}
+              </ScopeOption>
+            ))}
+
+            <div className="my-1 h-px bg-hairline" />
+            <div className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-fg-tertiary">
+              按 vendor
+            </div>
+            {vendors.map((v) => (
+              <ScopeOption
+                key={v.id}
+                picked={value.kind === "vendor" && value.id === v.id}
+                onPick={() => { onChange({ kind: "vendor", id: v.id, name: v.name }); setOpen(false); }}
+              >
+                {v.name}
+              </ScopeOption>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ScopeOption({
+  picked, onPick, children,
+}: { picked: boolean; onPick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onPick}
+      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-bg-elevated"
+    >
+      <span className="min-w-0 flex-1 truncate font-medium">{children}</span>
+      <Check className={cn("size-3.5 shrink-0", picked ? "text-brand-strong" : "invisible")} />
+    </button>
+  );
+}
+
+/* 活动记录 · 无详情页 · 首屏 N 条，"加载更多"渐进展开
+   不做右上角"全部→"入口（没落地页），只用底部按钮控制显示条数 */
+const ACT_STEP = 8;
+
+function ActivityFeed({ items, total }: { items: Activity[]; total: number }) {
+  const [shown, setShown] = useState(ACT_STEP);
+  const visible = items.slice(0, shown);
+  const remain = Math.max(0, items.length - shown);
+
+  return (
+    <div className="space-y-5">
+      <SectionHead
+        title="活动记录"
+        sub={`共 ${total} 条 · 拉号 / 补车 / 号失效 / 资金`}
+      />
+      <BareList>
+        {visible.map((a) => (
+          <ActivityRow key={a.id} a={a} />
+        ))}
+      </BareList>
+      {remain > 0 && (
+        <div className="flex justify-center pt-1">
+          <button
+            onClick={() => setShown((s) => s + ACT_STEP)}
+            className="rounded-lg border border-hairline bg-bg px-4 py-1.5 font-medium text-fg-secondary shadow-card transition-colors hover:bg-bg-elevated"
+          >
+            加载更多 <span className="text-fg-tertiary">· 还剩 {remain} 条</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 动态时钟：每秒 tick，返回本地化字符串（读秒） */
+function useNowSecond() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
+}
+
 export default function Overview() {
   const [range, setRange] = useState<TimeRange>("30d");
   const [metric, setMetric] = useState<TrendMetric>("credits");
+  const [scope, setScope] = useState<Scope>({ kind: "all" });
+  const now = useNowSecond();
 
   const { data: ov } = useOverview(range);
-  const { data: trend } = useTrend(range, metric);
+  const { data: trend } = useTrend(range, metric, {
+    busId: scope.kind === "bus" ? scope.id : undefined,
+    vendor: scope.kind === "vendor" ? scope.id : undefined,
+  });
   const { data: vendors } = useVendorStats();
   const { data: acts } = useActivities(range);
 
@@ -63,12 +259,21 @@ export default function Overview() {
       <div className="flex items-end justify-between">
         <div className="space-y-2">
           <h1 className="text-hero font-semibold">概览</h1>
-          <p className="text-body text-fg-tertiary">
-            {new Date().toLocaleDateString("zh-CN")} · {ov?.buses.bus_count ?? 0} 辆车正在跑 ·{" "}
-            {kpi?.alive_count ?? 0} 号活着
+          <p className="text-fg-tertiary">
+            <span className="tnum">
+              {now.toLocaleDateString("zh-CN")}{" "}
+              {now.toLocaleTimeString("zh-CN", { hour12: false })}
+            </span>
+            {" · "}
+            <Num>{ov?.buses.bus_count ?? 0}</Num> 辆拼车正在运转
+            {" · "}
+            <Num>{kpi?.alive_count ?? 0}</Num> 个号还活着
           </p>
         </div>
-        <Segmented options={RANGES} value={range} onChange={setRange} />
+        <div className="flex flex-col items-end gap-2">
+          <PoolStatus />
+          <Segmented options={RANGES} value={range} onChange={setRange} />
+        </div>
       </div>
 
       {/* ── 4 KPI ── */}
@@ -77,38 +282,69 @@ export default function Overview() {
           focal
           tone="credit"
           icon={Wallet}
-          label="总余额"
-          value={kpi ? fmtCredits(kpi.balance) : "—"}
+          label="剩余积分"
+          value={kpi ? fmtCredits(kpi.balance) : "-"}
           unit="积分"
           sub={
-            kpi
-              ? `本月 +${fmtCredits(kpi.balance_delta_topup)} · -${fmtCredits(kpi.balance_delta_spend)}`
-              : undefined
+            kpi ? (
+              <>
+                本月{" "}
+                <Num sign="+">+{fmtCredits(kpi.balance_delta_topup)}</Num>
+                {" · "}
+                <Num sign="-">-{fmtCredits(kpi.balance_delta_spend)}</Num>
+              </>
+            ) : undefined
           }
         />
         <KpiCard
           icon={TrendingDown}
           label="今日消费"
-          value={kpi ? fmtCredits(kpi.spend_today) : "—"}
+          value={kpi ? fmtCredits(kpi.spend_today) : "-"}
           unit="积分"
-          sub={kpi ? `昨日 ${fmtCredits(kpi.spend_yesterday)} · 环比 +40%` : undefined}
+          sub={
+            kpi ? (
+              <>昨日 <Num>{fmtCredits(kpi.spend_yesterday)}</Num></>
+            ) : undefined
+          }
+          subRight={
+            kpi ? (() => {
+              const s = fmtDelta(kpi.spend_today, kpi.spend_yesterday);
+              /* 消费涨了不是好事（红），跌了才是好（绿）· 跟到账/花掉的正负色对调 */
+              const sign: "+" | "-" | "" =
+                s.startsWith("+") ? "-" : s.startsWith("-") ? "+" : "";
+              return <>环比 <Num sign={sign}>{s}</Num></>;
+            })() : undefined
+          }
         />
         <KpiCard
           icon={KeyRound}
           label="累计拉号"
-          value={kpi ? String(kpi.pull_total) : "—"}
+          value={kpi ? String(kpi.pull_total) : "-"}
           unit="次"
-          sub={kpi ? `本月 ${kpi.pull_this_month} 次` : undefined}
+          sub={
+            kpi ? (
+              <>本月 <Num>{kpi.pull_this_month}</Num> 次</>
+            ) : undefined
+          }
         />
         <KpiCard
           icon={ActivityIcon}
           label="活跃号"
-          value={kpi ? String(kpi.alive_count) : "—"}
-          unit="号"
+          value={kpi ? String(kpi.alive_count) : "-"}
+          unit="个"
           sub={
-            kpi
-              ? `${kpi.dead_count} 死 · ${kpi.pending_refill} 待补 · 平均 ${fmtLifespan(kpi.avg_lifespan_seconds)}`
-              : undefined
+            kpi ? (
+              <>
+                失效 <Num>{kpi.dead_count}</Num>
+                {" · "}
+                待补 <Num>{kpi.pending_refill}</Num>
+              </>
+            ) : undefined
+          }
+          subRight={
+            kpi ? (
+              <>平均 <Num>{fmtLifespan(kpi.avg_lifespan_seconds)}</Num></>
+            ) : undefined
           }
         />
       </div>
@@ -116,7 +352,7 @@ export default function Overview() {
       {/* ── 3 业务线 ── */}
       <div className="grid grid-cols-3 gap-6">
         {/* 拼车 */}
-        <Card className="flex flex-col gap-4 p-6">
+        <Card to="/buses" className="flex flex-col gap-4 p-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <span className="grid size-7 place-items-center rounded-lg bg-brand-subtle">
@@ -124,19 +360,19 @@ export default function Overview() {
               </span>
               <h3 className="text-body-lg font-semibold">拼车</h3>
             </div>
-            <Link to="/buses" className="text-micro font-semibold text-brand-strong">
+            <span className="text-label font-semibold text-brand-strong">
               查看 →
-            </Link>
+            </span>
           </div>
 
           <Stat
             value={String(ov?.buses.bus_count ?? 0)}
-            unit={`辆车 · ${totalBusCreds} 号在池`}
+            unit={`辆车 · ${totalBusCreds} 个号在池`}
             size="num"
           />
 
           <div className="space-y-2.5">
-            <span className="text-micro font-semibold text-fg-tertiary">号池分布</span>
+            <Label>号池分布</Label>
             <div className="flex h-2.5 overflow-hidden rounded-full bg-hairline">
               {(ov?.buses.items ?? []).map((b, i) => (
                 <div
@@ -155,28 +391,34 @@ export default function Overview() {
                     className="size-[7px] shrink-0 rounded-full"
                     style={{ backgroundColor: ["#9147FF", "#A574FF", "#C9A9FF"][i % 3] }}
                   />
-                  <span className="min-w-0 flex-1 truncate text-body font-medium text-fg-secondary">
+                  <span className="min-w-0 flex-1 truncate font-medium text-fg-secondary">
                     {b.name}
+                    {b.role === "owner" && (
+                      <span className="ml-1.5 inline-flex items-center rounded-[4px] bg-brand-subtle px-1.5 py-[1px] text-[10px] font-semibold leading-[1.4] text-brand-strong">
+                        我发起
+                      </span>
+                    )}
                   </span>
-                  <span className="text-body font-semibold tnum">{b.alive} 号</span>
+                  <span className="font-semibold tnum">{b.alive} 个</span>
                 </div>
               ))}
             </div>
           </div>
 
           <div className="mt-auto flex items-center justify-between border-t border-hairline pt-3.5">
-            <span className="text-micro font-medium text-fg-tertiary">
+            <Muted className="font-medium">
               补车 {ov?.buses.refill_count ?? 0} 次 · 集单率{" "}
               {Math.round((ov?.buses.coalesce_rate ?? 0) * 100)}%
-            </span>
-            <span className="text-body font-semibold tnum">
-              {kpi ? fmtCredits(-kpi.spend_today, { sign: true }) : "—"}
+            </Muted>
+            <span className="font-semibold tnum">
+              {kpi ? fmtCredits(-kpi.spend_today, { sign: true }) : "-"}
+              <Muted className="ml-1 font-medium">积分</Muted>
             </span>
           </div>
         </Card>
 
         {/* 提取 key */}
-        <Card className="flex flex-col gap-4 p-6">
+        <Card to="/extract" className="flex flex-col gap-4 p-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <span className="grid size-7 place-items-center rounded-lg bg-warn-bg">
@@ -184,19 +426,19 @@ export default function Overview() {
               </span>
               <h3 className="text-body-lg font-semibold">提取 key</h3>
             </div>
-            <Link to="/extract" className="text-micro font-semibold text-brand-strong">
+            <span className="text-label font-semibold text-brand-strong">
               查看 →
-            </Link>
+            </span>
           </div>
 
           <Stat
             value={String(extractTotal)}
-            unit={`号 · 今日 ${ov?.extract.count_today ?? 0} 次`}
+            unit={`个 key 在池 · 今日拉 ${ov?.extract.count_today ?? 0} 次`}
             size="num"
           />
 
           <div className="space-y-2.5">
-            <span className="text-micro font-semibold text-fg-tertiary">去向分布</span>
+            <Label>去向分布</Label>
             <div className="flex h-2.5 overflow-hidden rounded-full bg-hairline">
               {(ov?.extract.by_destination ?? []).map((d) => (
                 <div
@@ -215,21 +457,20 @@ export default function Overview() {
                     className="size-[7px] shrink-0 rounded-full"
                     style={{ backgroundColor: DEST_COLOR[d.destination] }}
                   />
-                  <span className="min-w-0 flex-1 truncate text-body font-medium text-fg-secondary">
+                  <span className="min-w-0 flex-1 truncate font-medium text-fg-secondary">
                     {DEST_LABEL[d.destination]}
                   </span>
-                  <span className="text-body font-semibold tnum">{d.count} 号</span>
+                  <span className="font-semibold tnum">{d.count} 个</span>
                 </div>
               ))}
             </div>
           </div>
 
           <div className="mt-auto flex items-center justify-between border-t border-hairline pt-3.5">
-            <span className="text-micro font-medium text-fg-tertiary">
-              待派 {ov?.extract.pending ?? 0} 号
-            </span>
-            <span className="text-body font-semibold tnum">
-              {ov ? fmtCredits(-ov.extract.spend, { sign: true }) : "—"}
+            <Muted className="font-medium">待派 {ov?.extract.pending ?? 0} 个</Muted>
+            <span className="font-semibold tnum">
+              {ov ? fmtCredits(-ov.extract.spend, { sign: true }) : "-"}
+              <Muted className="ml-1 font-medium">积分</Muted>
             </span>
           </div>
         </Card>
@@ -246,9 +487,9 @@ export default function Overview() {
             <Chip tone="brand">阶段 3</Chip>
           </div>
 
-          <Stat value="—" unit="未启用" size="num" />
+          <Stat value="-" unit="未启用" size="num" />
 
-          <p className="text-body text-fg-secondary">
+          <p className="text-fg-secondary">
             绑定你的 AWS 账户 · 我方转发上游 vendor 开号 · 号池归你
           </p>
 
@@ -256,54 +497,74 @@ export default function Overview() {
             {["绑定的 AWS 账户", "今日发车次数", "转发成功率", "累计发车号数"].map((t) => (
               <div key={t} className="flex items-center gap-2">
                 <span className="size-[7px] shrink-0 rounded-full bg-hairline" />
-                <span className="flex-1 text-body font-medium text-fg-tertiary">{t}</span>
-                <span className="text-body font-medium text-fg-tertiary">—</span>
+                <span className="flex-1 font-medium text-fg-tertiary">{t}</span>
+                <span className="font-medium text-fg-tertiary">-</span>
               </div>
             ))}
           </div>
         </Card>
       </div>
 
-      {/* ── 使用趋势（全宽 focal） ── */}
-      <div className="space-y-5">
+      {/* ── 使用趋势 ── 不用 focal：右上角有 Segmented，紫光会被 tab 吃掉 */}
+      <Card className="p-7">
         <SectionHead
-          title="使用趋势"
+          title="用量趋势"
           sub={
-            kpi
-              ? `消耗 ${fmtCredits(kpi.balance_delta_spend)} 积分 · 拉号 ${kpi.pull_this_month} 次 · 补车 ${ov?.buses.refill_count ?? 0} 次`
-              : undefined
+            kpi ? (
+              <>
+                消耗 <Num>{fmtCredits(kpi.balance_delta_spend)}</Num> 积分
+                {" · "}
+                拉号 <Num>{kpi.pull_this_month}</Num> 次
+                {" · "}
+                补车 <Num>{ov?.buses.refill_count ?? 0}</Num> 次
+              </>
+            ) : undefined
           }
-          right={<Segmented options={METRICS} value={metric} onChange={setMetric} />}
+          right={
+            <div className="flex items-center gap-2">
+              <ScopePicker
+                value={scope}
+                onChange={setScope}
+                buses={(ov?.buses.items ?? []).map((b) => ({ id: b.id, name: b.name }))}
+                vendors={(vendors?.stats ?? [])
+                  .filter((v) => !v.out_of_stock)
+                  .map((v) => ({ id: v.vendor_id, name: vendorName(v.vendor_id) }))}
+              />
+              <Segmented options={METRICS} value={metric} onChange={setMetric} />
+            </div>
+          }
         />
-        <Card focal className="p-7">
+        <div className="mt-5">
           <TrendChart data={trend ?? []} metric={metric} />
-        </Card>
-      </div>
+          <TrendLegend />
+        </div>
+      </Card>
 
       {/* ── Vendor 监测 + 占比 ── */}
       <div className="grid grid-cols-[1fr_400px] gap-6">
         <Card className="p-7">
           <SectionHead
             title="Vendor 监测"
-            sub="有效成本 = 单价 ÷ 平均寿命 · 越低越划算"
+            sub="按 vendor 汇总的号池表现 · 单价 / 寿命 / 耐用度 / 存活率 一览"
           />
           <div className="mt-5">
             <BareHead>
               <span className="w-7 shrink-0">#</span>
               <span className="min-w-0 flex-1">vendor</span>
-              <span className="w-16 shrink-0 text-center">单价</span>
-              <span className="w-16 shrink-0 text-center">寿命</span>
-              <span className="w-20 shrink-0 text-center">有效成本</span>
-              <span className="w-28 shrink-0 text-center">存活率</span>
-              <span className="w-16 shrink-0 text-center">今日拉</span>
-              <span className="w-16 shrink-0 text-right">fallback</span>
+              <span className="w-14 shrink-0 text-center">单价</span>
+              <span className="w-14 shrink-0 text-center">寿命</span>
+              <span className="w-28 shrink-0 text-center">耐用度</span>
+              <span className="w-24 shrink-0 text-center">存活率</span>
+              <span className="w-14 shrink-0 text-center">今日拉</span>
+              <span className="w-14 shrink-0 text-center">保修</span>
+              <span className="w-14 shrink-0 text-right">补拉</span>
             </BareHead>
             <BareList>
               {(vendors?.stats ?? []).map((v) => (
                 <BareRow key={v.vendor_id}>
                   <span
                     className={cn(
-                      "grid size-5 shrink-0 place-items-center rounded text-micro font-semibold",
+                      "grid size-5 shrink-0 place-items-center rounded-md text-label font-semibold",
                       v.rank === 1
                         ? "bg-ok-bg text-ok-fg"
                         : v.out_of_stock
@@ -317,82 +578,122 @@ export default function Overview() {
                   <span className="flex min-w-0 flex-1 items-center gap-2">
                     <span
                       className={cn(
-                        "truncate text-body font-semibold",
+                        "truncate font-semibold",
                         v.out_of_stock && "text-fg-tertiary",
                       )}
                     >
                       {vendorName(v.vendor_id)}
                     </span>
-                    {v.rank === 1 && <Chip tone="ok">最优</Chip>}
-                    {v.out_of_stock && <Chip tone="danger">缺货</Chip>}
+                    {v.rank === 1 && (
+                      <span className="rounded-md bg-ok-bg px-1.5 py-[1px] text-[10px] font-semibold leading-[1.4] text-ok-fg">
+                        最优
+                      </span>
+                    )}
+                    {v.out_of_stock && (
+                      <span className="rounded-md bg-danger-bg px-1.5 py-[1px] text-[10px] font-semibold leading-[1.4] text-danger-fg">
+                        缺货
+                      </span>
+                    )}
                   </span>
 
                   <span
                     className={cn(
-                      "w-16 shrink-0 text-center text-body font-medium tnum",
+                      "w-14 shrink-0 text-center font-medium tnum",
                       v.out_of_stock && "text-fg-tertiary",
                     )}
                   >
-                    {v.out_of_stock ? "—" : toCredits(v.unit_price)}
+                    {v.out_of_stock ? "-" : toCredits(v.unit_price)}
                   </span>
 
                   <span
                     className={cn(
-                      "w-16 shrink-0 text-center text-body font-medium tnum",
+                      "w-14 shrink-0 text-center font-medium tnum",
                       v.out_of_stock && "text-fg-tertiary",
                     )}
                   >
-                    {v.out_of_stock ? "—" : fmtLifespan(v.avg_lifespan_seconds)}
+                    {v.out_of_stock ? "-" : fmtLifespan(v.avg_lifespan_seconds)}
                   </span>
 
-                  <span
-                    className={cn(
-                      "w-20 shrink-0 text-center text-body tnum",
-                      v.out_of_stock
-                        ? "text-fg-tertiary"
-                        : v.rank === 1
-                          ? "font-semibold text-ok-fg"
-                          : "font-medium",
-                    )}
-                  >
-                    {v.out_of_stock ? "—" : v.effective_cost.toFixed(2)}
-                  </span>
-
+                  {/* 耐用度：每号平均积分 · Meter 满格 = 10k（QUOTA_MAX）·
+                      ≥8k 绿 · 5~8k 紫 · <5k 红 */}
                   <span className="flex w-28 shrink-0 items-center justify-center gap-2">
-                    <Meter
-                      value={v.alive_rate}
-                      max={100}
-                      color={
-                        v.alive_rate >= 95 ? "#22C55E" : v.alive_rate >= 88 ? "#9147FF" : "#EF4444"
-                      }
-                      className="w-14"
-                    />
-                    <span className="text-micro tnum text-fg-tertiary">
-                      {v.alive_rate > 0 ? `${v.alive_rate}%` : "—"}
-                    </span>
+                    {v.out_of_stock ? (
+                      <span className="text-fg-tertiary">-</span>
+                    ) : (
+                      <>
+                        <Meter
+                          value={toCredits(v.avg_credits_per_cred)}
+                          max={10000}
+                          color={
+                            toCredits(v.avg_credits_per_cred) >= 8000 ? "#22C55E"
+                              : toCredits(v.avg_credits_per_cred) >= 5000 ? "#F59E0B"
+                                : "#EF4444"
+                          }
+                          className="w-12"
+                        />
+                        <span className="text-label tnum text-fg-tertiary">
+                          {fmtK(toCredits(v.avg_credits_per_cred))}k
+                        </span>
+                      </>
+                    )}
+                  </span>
+
+                  <span className="flex w-24 shrink-0 items-center justify-center gap-2">
+                    {v.out_of_stock || v.alive_rate === 0 ? (
+                      <span className="text-fg-tertiary">-</span>
+                    ) : (
+                      <>
+                        <Meter
+                          value={v.alive_rate}
+                          max={100}
+                          color={
+                            v.alive_rate >= 95 ? "#22C55E" : v.alive_rate >= 88 ? "#F59E0B" : "#EF4444"
+                          }
+                          className="w-12"
+                        />
+                        <span className="text-label tnum text-fg-tertiary">
+                          {v.alive_rate}%
+                        </span>
+                      </>
+                    )}
                   </span>
 
                   <span
                     className={cn(
-                      "w-16 shrink-0 text-center text-body font-medium tnum",
+                      "w-14 shrink-0 text-center font-medium tnum",
                       v.out_of_stock && "text-fg-tertiary",
                     )}
                   >
-                    {v.pulls_today}
+                    {v.out_of_stock ? "-" : v.pulls_today}
                   </span>
 
                   <span
                     className={cn(
-                      "w-16 shrink-0 text-right text-micro font-medium tnum",
+                      "w-14 shrink-0 text-center text-label font-medium tnum",
+                      v.warranty_count > 0 ? "text-warn-fg" : "text-fg-tertiary",
+                    )}
+                  >
+                    {v.out_of_stock ? "-" : `${v.warranty_count} 次`}
+                  </span>
+
+                  <span
+                    className={cn(
+                      "w-14 shrink-0 text-right text-label font-medium tnum",
                       v.fallback_count > 0 ? "text-warn-fg" : "text-fg-tertiary",
                     )}
                   >
-                    {v.fallback_count} 次
+                    {v.out_of_stock ? "-" : `${v.fallback_count} 次`}
                   </span>
                 </BareRow>
               ))}
             </BareList>
           </div>
+
+          {/* 数据来源脚注 · 灰色小字，跟"活动记录"底部同一层级 */}
+          <p className="mt-5 text-[11px] leading-relaxed text-fg-tertiary">
+            数据来源：单价 / 寿命 / 耐用度 / 存活率 综合自 vendor 官方接口
+            与我方号池实测（近 30 天滚动平均）· 保修与补拉来自实际拉号记录
+          </p>
         </Card>
 
         {/* 占比环形 */}
@@ -401,8 +702,9 @@ export default function Overview() {
           <div className="relative mt-4 h-[180px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
+                {/* 饼图只画有数据的（pulls>0）· 图例列表下面全列 */}
                 <Pie
-                  data={vendors?.share ?? []}
+                  data={(vendors?.share ?? []).filter((s) => s.pulls > 0)}
                   dataKey="pulls"
                   nameKey="vendor_id"
                   innerRadius={58}
@@ -410,7 +712,7 @@ export default function Overview() {
                   paddingAngle={2}
                   strokeWidth={0}
                 >
-                  {(vendors?.share ?? []).map((s) => (
+                  {(vendors?.share ?? []).filter((s) => s.pulls > 0).map((s) => (
                     <Cell key={s.vendor_id} fill={vendorColor(s.vendor_id)} />
                   ))}
                 </Pie>
@@ -421,51 +723,52 @@ export default function Overview() {
                 <div className="text-num font-semibold tnum">
                   {(vendors?.share ?? []).reduce((s, v) => s + v.pulls, 0)}
                 </div>
-                <div className="text-micro text-fg-tertiary">次拉号</div>
+                <Muted>次拉号</Muted>
               </div>
             </div>
           </div>
 
+          {/* 图例：6 家全列，pulls=0 的用灰色 + "-" 表示没数据但确实存在 */}
           <div className="mt-5 space-y-3">
-            {(vendors?.share ?? []).map((s) => (
-              <div key={s.vendor_id} className="flex items-center gap-2.5">
-                <span
-                  className="size-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: vendorColor(s.vendor_id) }}
-                />
-                <span className="min-w-0 flex-1 truncate text-body font-medium text-fg-secondary">
-                  {vendorName(s.vendor_id)}
-                </span>
-                <span className="text-body font-semibold tnum">{s.pulls} 次</span>
-                <span className="w-9 text-right text-micro tnum text-fg-tertiary">
-                  {Math.round(s.ratio * 100)}%
-                </span>
-              </div>
-            ))}
+            {(vendors?.share ?? []).map((s) => {
+              const noData = s.pulls === 0;
+              return (
+                <div key={s.vendor_id} className="flex items-center gap-2.5">
+                  <span
+                    className={cn(
+                      "size-2 shrink-0 rounded-full",
+                      noData && "opacity-40",
+                    )}
+                    style={{ backgroundColor: vendorColor(s.vendor_id) }}
+                  />
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate font-medium",
+                      noData ? "text-fg-tertiary" : "text-fg-secondary",
+                    )}
+                  >
+                    {vendorName(s.vendor_id)}
+                  </span>
+                  <span
+                    className={cn(
+                      "font-semibold tnum",
+                      noData && "text-fg-tertiary",
+                    )}
+                  >
+                    {noData ? "-" : `${s.pulls} 次`}
+                  </span>
+                  <span className="w-9 text-right text-label tnum text-fg-tertiary">
+                    {noData ? "-" : `${Math.round(s.ratio * 100)}%`}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </Card>
       </div>
 
-      {/* ── 活动记录（裸列表） ── */}
-      <div className="space-y-5">
-        <SectionHead
-          title="活动记录"
-          sub={`共 ${acts?.total ?? 0} 条 · 拉号 / 补车 / 号死 / 资金`}
-          right={
-            <Link
-              to="/buses"
-              className="flex items-center gap-1 text-micro font-semibold text-brand-strong"
-            >
-              全部 <ChevronRight className="size-3" />
-            </Link>
-          }
-        />
-        <BareList>
-          {(acts?.items ?? []).map((a) => (
-            <ActivityRow key={a.id} a={a} />
-          ))}
-        </BareList>
-      </div>
+      {/* ── 活动记录（裸列表 · 分页加载） ── */}
+      <ActivityFeed items={acts?.items ?? []} total={acts?.total ?? 0} />
     </div>
   );
 }

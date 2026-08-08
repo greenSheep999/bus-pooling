@@ -29,10 +29,22 @@ export const useLedger = () =>
 export const useOverview = (range: TimeRange) =>
   useQuery({ queryKey: ["overview", range], queryFn: () => api<Overview>("/me/overview", { params: { range } }) });
 
-export const useTrend = (range: TimeRange, metric: TrendMetric) =>
+/* scope 可选：整体（省略）· 单车（bus_id=xxx）· 单 vendor（vendor=xxx）—— 二选一 */
+export const useTrend = (
+  range: TimeRange,
+  metric: TrendMetric,
+  scope?: { busId?: string; vendor?: string },
+) =>
   useQuery({
-    queryKey: ["trend", range, metric],
-    queryFn: () => api<TrendPoint[]>("/me/trend", { params: { range, metric } }),
+    queryKey: ["trend", range, metric, scope?.busId ?? "", scope?.vendor ?? ""],
+    queryFn: () =>
+      api<TrendPoint[]>("/me/trend", {
+        params: {
+          range, metric,
+          ...(scope?.busId ? { bus_id: scope.busId } : {}),
+          ...(scope?.vendor ? { vendor: scope.vendor } : {}),
+        },
+      }),
   });
 
 export const useActivities = (range: TimeRange) =>

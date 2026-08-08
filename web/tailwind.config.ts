@@ -48,13 +48,14 @@ export default {
         mono: ["JetBrains Mono", "ui-monospace", "monospace"],
       },
       fontSize: {
-        // 5 档字号（decisions §8.16）
-        micro: ["11px", { lineHeight: "1.45" }],
-        body: ["13px", { lineHeight: "1.5" }],
-        "body-lg": ["14px", { lineHeight: "1.5" }],
+        // 组件内文字 · 标准三档（12 / 13 / 14）
+        label: ["12px", { lineHeight: "1.4" }],      // 表头 / chip / 次要说明
+        body: ["13px", { lineHeight: "1.5" }],       // 组件主力正文（表格 / 列表 / 卡内）
+        "body-lg": ["14px", { lineHeight: "1.5" }],  // 卡片标题 / 强调正文（少用）
+        // 标题 / 数字（不动）
         section: ["20px", { lineHeight: "1.3", letterSpacing: "-0.01em" }],
-        stat: ["26px", { lineHeight: "1.15", letterSpacing: "-0.02em" }],
-        num: ["32px", { lineHeight: "1.1", letterSpacing: "-0.02em" }],
+        stat: ["24px", { lineHeight: "1.15", letterSpacing: "-0.02em" }],
+        num: ["30px", { lineHeight: "1.1", letterSpacing: "-0.02em" }],
         hero: ["36px", { lineHeight: "1.1", letterSpacing: "-0.02em" }],
         giant: ["48px", { lineHeight: "1.05", letterSpacing: "-0.03em" }],
       },
@@ -65,7 +66,8 @@ export default {
       },
       boxShadow: {
         card: "0 2px 8px 0 rgb(10 10 10 / 0.03)",
-        hover: "0 12px 32px -4px rgb(145 71 255 / 0.20)",
+        // hover 不带紫（避免跟 focal 强调色抢），中性黑阴影放大即可
+        hover: "0 12px 32px -4px rgb(10 10 10 / 0.14)",
         pop: "0 12px 32px -4px rgb(10 10 10 / 0.08)",
         modal: "0 24px 64px -8px rgb(10 10 10 / 0.20)",
       },
@@ -74,14 +76,26 @@ export default {
         gutter: "96px",
       },
       backgroundImage: {
-        // focal 卡右上角光晕
+        // focal 卡右上角光晕（紫 = 品牌强调；绿 = 积分类，跟 credit pill 视觉统一）
         "glow-tr":
           "radial-gradient(70% 100% at 100% 0%, rgb(145 71 255 / 0.14) 0%, transparent 100%)",
+        "glow-tr-credit":
+          "radial-gradient(70% 100% at 100% 0%, rgb(34 197 94 / 0.16) 0%, transparent 100%)",
         "glow-t":
           "radial-gradient(50% 100% at 50% 0%, rgb(145 71 255 / 0.14) 0%, transparent 100%)",
       },
       transitionDuration: { DEFAULT: "180ms" },
       transitionTimingFunction: { DEFAULT: "cubic-bezier(0.22,1,0.36,1)" },
+      keyframes: {
+        /* 呼吸：opacity 1 → 0.35 → 1 · 2.4s 缓入缓出（心跳感，不刺眼） */
+        breath: {
+          "0%, 100%": { opacity: "1", transform: "scale(1)" },
+          "50%": { opacity: "0.45", transform: "scale(0.85)" },
+        },
+      },
+      animation: {
+        breath: "breath 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+      },
     },
   },
   plugins: [],

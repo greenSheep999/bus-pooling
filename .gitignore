@@ -23,3 +23,7 @@ web/node_modules/
 web/dist/
 web/.vite/
 .playwright-mcp/
+
+# 设计探索中间产物（截图、mockup 导出）· 不入库
+/*.png
+/*.jpg

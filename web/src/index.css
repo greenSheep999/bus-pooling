@@ -28,8 +28,21 @@
   }
 
   body {
+    /* 全站默认字号 · 组件不写 text-* 就继承 13px（rem 基准仍是 16，spacing 不受影响） */
     @apply bg-bg text-fg font-sans antialiased;
+    font-size: 13px;
+    line-height: 1.5;
     font-feature-settings: "cv11", "ss01";
+  }
+
+  /* 标签类语义元素默认降一档，不用挨个写 text-label */
+  th,
+  label,
+  caption,
+  figcaption,
+  small {
+    font-size: 12px;
+    line-height: 1.4;
   }
 
   .tnum {
@@ -43,16 +56,34 @@
     @apply bg-bg border border-hairline rounded-panel shadow-card;
   }
 
+  /* 白底 + 右上角光晕 · 图标已挪左，右上角空出来正好放渐变
+     （13-frontend-research §4.3 "每屏最多 1 个渐变元素"） */
   .card-focal {
-    @apply bg-bg-elevated bg-glow-tr rounded-focal shadow-card;
+    @apply bg-bg bg-glow-tr rounded-focal shadow-card;
     border: 1px solid rgb(145 71 255 / 0.12);
+  }
+  /* 积分类 focal · 绿色渐变，跟 header credit pill 统一（decisions §8 · 积分 = 绿色系） */
+  .card-focal-credit {
+    @apply bg-bg bg-glow-tr-credit rounded-focal shadow-card;
+    border: 1px solid rgb(34 197 94 / 0.18);
   }
 
   .card-hover {
     @apply transition-all;
   }
+  /* hover 不改色，只放大阴影 + 上浮；描边转深灰（不用紫，避免跟 focal 强调色抢） */
   .card-hover:hover {
     @apply -translate-y-1 shadow-hover;
-    border-color: rgb(145 71 255 / 0.22);
+    border-color: rgb(0 0 0 / 0.10);
   }
+
+}
+
+/* 全局裸规则（不放 @layer，避免 tailwind purge 因源码里搜不到 .recharts-* 而砍掉） */
+/* Recharts svg/surface/path 点击后会有浏览器蓝色 focus ring · 只在图表内关掉 */
+.recharts-wrapper,
+.recharts-wrapper *,
+.recharts-surface,
+.recharts-surface * {
+  outline: none !important;
 }

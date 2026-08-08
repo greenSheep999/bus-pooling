@@ -4,7 +4,7 @@ export default function AuthLayout() {
   return (
     <div className="relative min-h-dvh bg-bg bg-glow-t">
       <Link to="/" className="absolute left-8 top-6 flex items-center gap-2.5">
-        <span className="grid size-7 place-items-center rounded-lg bg-brand text-body font-semibold text-white">
+        <span className="grid size-7 place-items-center rounded-lg bg-brand font-semibold text-white">
           K
         </span>
         <span className="text-body-lg font-semibold">bus-pooling</span>

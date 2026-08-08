@@ -21,8 +21,10 @@ export const handlers = [
     const u = new URL(request.url);
     const metric = u.searchParams.get("metric") ?? "credits";
     const range = u.searchParams.get("range") ?? "30d";
+    const busId = u.searchParams.get("bus_id") ?? undefined;
+    const vendor = u.searchParams.get("vendor") ?? undefined;
     const days = range === "today" ? 1 : range === "7d" ? 7 : range === "90d" ? 90 : 30;
-    return ok(fx.trend(metric, days));
+    return ok(fx.trend(metric, days, { busId, vendor }));
   }),
   http.get("/api/me/activities", () => ok({ items: fx.activities, total: fx.activities.length, page: 1, page_size: 20 })),
 
