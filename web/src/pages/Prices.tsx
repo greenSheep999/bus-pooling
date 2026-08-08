@@ -200,7 +200,11 @@ export default function Prices() {
           <>
             {/* 表头 */}
             <div className="flex items-end gap-4 border-b border-hairline pb-2.5 text-label font-semibold text-fg-tertiary">
-              <span className="w-[248px] shrink-0">vendor</span>
+              <span className="flex w-[264px] shrink-0 items-baseline gap-3">
+                <span className="w-[52px] shrink-0">均价</span>
+                <span className="w-[62px] shrink-0">区间</span>
+                <span className="min-w-0 flex-1">发车</span>
+              </span>
               <span className="min-w-0 flex-1">
                 {days} 天价格分布 · 竖条高度 = 当天最低~最高轮价
               </span>
@@ -227,7 +231,7 @@ export default function Prices() {
 
             {/* 日期轴 */}
             <div className="flex gap-4 pt-2">
-              <span className="w-[248px] shrink-0" />
+              <span className="w-[264px] shrink-0" />
               <div className="relative min-w-0 flex-1">
                 {dateTicks.map((d, i) => (
                   <span
@@ -323,40 +327,38 @@ export default function Prices() {
           }
         />
 
-        <Card className="p-4">
-          {rows.length === 0 ? (
-            <div className="py-12 text-center text-label text-fg-tertiary">暂无发车记录</div>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <div className="min-w-[680px]">
-                  <BareHead>
-                    <span className="w-[92px] shrink-0">时间</span>
-                    <span className="min-w-0 flex-1">vendor</span>
-                    <span className="w-14 shrink-0 text-center">区域</span>
-                    <span className="w-24 shrink-0 text-right">单价</span>
-                    <span className="w-20 shrink-0 text-right">产出</span>
-                    <span className="w-24 shrink-0 text-right">当天位置</span>
-                  </BareHead>
-                  <BareList>
-                    {visible.map((r) => (
-                      <RoundRow
-                        key={r.key}
-                        r={r}
-                        onPick={() => pickDay(r.vendorId, r.date)}
-                      />
-                    ))}
-                  </BareList>
-                </div>
+        {rows.length === 0 ? (
+          <div className="py-12 text-center text-label text-fg-tertiary">暂无发车记录</div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <div className="min-w-[680px]">
+                <BareHead>
+                  <span className="w-[92px] shrink-0">时间</span>
+                  <span className="min-w-0 flex-1">vendor</span>
+                  <span className="w-14 shrink-0 text-center">区域</span>
+                  <span className="w-24 shrink-0 text-right">单价</span>
+                  <span className="w-20 shrink-0 text-right">产出</span>
+                  <span className="w-24 shrink-0 text-right">当天位置</span>
+                </BareHead>
+                <BareList>
+                  {visible.map((r) => (
+                    <RoundRow
+                      key={r.key}
+                      r={r}
+                      onPick={() => pickDay(r.vendorId, r.date)}
+                    />
+                  ))}
+                </BareList>
               </div>
-              <LoadMoreButton
-                onLoadMore={() => setShown((s) => s + PAGE)}
-                remain={remain}
-                remainUnit="轮"
-              />
-            </>
-          )}
-        </Card>
+            </div>
+            <LoadMoreButton
+              onLoadMore={() => setShown((s) => s + PAGE)}
+              remain={remain}
+              remainUnit="轮"
+            />
+          </>
+        )}
       </div>
 
       <p className="text-center text-label text-fg-tertiary">
@@ -445,30 +447,32 @@ function VendorRow({
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
     >
-      {/* 左：vendor 名 + 标记 + 均价 + 区间 + 日均轮数 */}
-      <div className="w-[248px] shrink-0 space-y-0.5">
+      {/* 左：名字行 + 数据行 · 数据行只留 3 个关键量，各占固定宽度对齐（不挤成一串） */}
+      <div className="w-[264px] shrink-0 space-y-1.5">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="truncate text-label font-medium">{t.vendor_label}</span>
+          <span className="truncate font-medium">{t.vendor_label}</span>
           {tags.map((tag) => (
             <Chip key={tag} tone={TAG_TONE[tag] ?? "neutral"} className="text-[10px]">
               {tag}
             </Chip>
           ))}
         </div>
-        <div className="flex items-baseline gap-2 text-label text-fg-tertiary">
-          <span>
-            均 <strong className="tnum text-fg">{toCredits(t.price_avg)}</strong>
+        <div className="flex items-baseline gap-3 text-label text-fg-tertiary">
+          {/* 均价 · 最重要 · 放大加粗 */}
+          <span className="w-[52px] shrink-0">
+            <strong className="text-body-lg tnum text-fg">{toCredits(t.price_avg)}</strong>
           </span>
-          <span className="tnum">
+          {/* 区间 */}
+          <span className="w-[62px] shrink-0 tnum">
             {toCredits(t.price_low)}-{toCredits(t.price_high)}
           </span>
-          <span>·</span>
-          <span>
+          {/* 日均轮数 · 没车天数（有才显示） */}
+          <span className="min-w-0 flex-1 truncate">
             日均 <strong className="tnum text-fg-secondary">{t.avg_rounds_per_day}</strong> 轮
+            {t.no_service_days > 0 && (
+              <span className="ml-1.5 text-warn-fg">{t.no_service_days} 天没车</span>
+            )}
           </span>
-          {t.no_service_days > 0 && (
-            <span className="text-warn-fg">{t.no_service_days} 天没车</span>
-          )}
         </div>
       </div>
 
