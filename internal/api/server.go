@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bus-pooling/bus-pooling/internal/bus"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
 	"github.com/bus-pooling/bus-pooling/internal/strategy"
@@ -25,6 +26,7 @@ type Server struct {
 	passengers *passenger.Store
 	wallets    *wallet.Store
 	strategies *strategy.Store
+	buses      *bus.Store
 	decider    *decider.Orchestrator
 	// secureCookie 生产环境要 true（HTTPS）· 本地 http 调试设 false 否则 cookie 不生效
 	secureCookie bool
@@ -37,6 +39,7 @@ type ServerDeps struct {
 	Passengers   *passenger.Store
 	Wallets      *wallet.Store
 	Strategies   *strategy.Store
+	Buses        *bus.Store
 	Decider      *decider.Orchestrator
 	SecureCookie bool
 }
@@ -47,6 +50,7 @@ func NewServer(d ServerDeps) *Server {
 		passengers:   d.Passengers,
 		wallets:      d.Wallets,
 		strategies:   d.Strategies,
+		buses:        d.Buses,
 		decider:      d.Decider,
 		secureCookie: d.SecureCookie,
 	}
@@ -73,6 +77,14 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/me/strategy", handler(s.RequireAuth(s.handleGetStrategy)))
 	mux.Handle("PUT /api/me/strategy", handler(s.RequireAuth(s.handlePutStrategy)))
 	mux.Handle("POST /api/me/pull", handler(s.RequireAuth(s.handlePull)))
+
+	// bus（阶段 1a 只 single kind）
+	mux.Handle("POST /api/me/buses", handler(s.RequireAuth(s.handleCreateBus)))
+	mux.Handle("GET /api/me/buses", handler(s.RequireAuth(s.handleListBuses)))
+	mux.Handle("GET /api/me/buses/{bus_id}", handler(s.RequireAuth(s.handleGetBus)))
+	mux.Handle("POST /api/me/buses/{bus_id}/leave", handler(s.RequireAuth(s.handleLeaveBus)))
+	mux.Handle("DELETE /api/me/buses/{bus_id}", handler(s.RequireAuth(s.handleDissolveBus)))
+	mux.Handle("POST /api/me/buses/{bus_id}/pull", handler(s.RequireAuth(s.handleBusPull)))
 
 	// 只会话 —— API key 不能做这两件事
 	mux.Handle("POST /api/me/password", handler(s.RequireSession(s.handleChangePassword)))

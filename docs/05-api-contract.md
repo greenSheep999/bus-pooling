@@ -209,34 +209,35 @@ await POST(`/handoff/${download_token}/confirm`)
 
 ### `POST /api/me/buses/{bus_id}/pull`
 
+**响应形状跟 `POST /api/me/pull` 一致**（CLAUDE.md §0.1 · 对外只暴露单价 / 总额 / 服务费；内部加价链分层不出）。
+
 ```json
 // req
 {
   "count": 5,
-  "vendor_id": "kiro91",      // optional，让系统选就不传
-  "constraints": {              // optional
+  "vendor_id": "kiro91",        // optional · 乘客偏好，服务端可否决
+  "constraints": {                // optional
     "max_unit_price": 30000000
   }
 }
-// resp (成功)
+// resp
 {
   "pull_round_id": "01H8...",
   "vendor_id": "kiro91",
   "purchased": 5,
-  "key_cost": 100000000,        // 号价（pass-through）
-  "single_pull_fee": 0,          // count==5 → 0
-  "service_fee_total": 5000000,  // 算好的金额 · 不下发费率
-  "channel_fee": 0,              // 拉号动作不涉及通道费
-  "total_debit": 105000000,      // 号价 100 + 服务费 5
+  "credential_ids": ["01H8a", "..."],   // 我方 UUID
+  "unit_price": 21000000,       // microunit · 单价（含所有内部加价，一口价）
+  "service_fee": 5000000,       // microunit · 服务费一项显式列出
+  "total_debit": 105000000,     // = unit_price × purchased
   "balance_remaining": 895000000
 }
 // resp (错误)
 { "code": "insufficient_balance", "message": "余额不足 X" }
 ```
 
-**关键**：`count == 1` 触发单次议价，响应里 `single_pull_fee` 是号价 × 20%。
+**服务端裁定**，客户端 `constraints.max_unit_price` 只是软偏好。响应体不下发内部加价明细。
 
-**幂等**：`X-Idempotency-Key` 必填。
+**幂等**：`X-Idempotency-Key` 必填（32 hex）。
 
 ## 5. 单独拉号（次入口 + 拉号记录）
 

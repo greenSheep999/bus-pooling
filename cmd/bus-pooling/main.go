@@ -22,6 +22,7 @@ import (
 	"syscall"
 
 	"github.com/bus-pooling/bus-pooling/internal/api"
+	"github.com/bus-pooling/bus-pooling/internal/bus"
 	"github.com/bus-pooling/bus-pooling/internal/config"
 	"github.com/bus-pooling/bus-pooling/internal/db"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
@@ -290,6 +291,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		Passengers:   passenger.NewStore(database.DB),
 		Wallets:      wallet.NewStore(database.DB),
 		Strategies:   strategy.NewStore(database.DB),
+		Buses:        bus.NewStore(database.DB),
 		Decider:      orch,
 		SecureCookie: secureCookie,
 	})

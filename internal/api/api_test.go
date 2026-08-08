@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bus-pooling/bus-pooling/internal/bus"
 	"github.com/bus-pooling/bus-pooling/internal/db"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
@@ -63,6 +64,7 @@ func newEnvBase(t *testing.T, mkDecider func(*db.DB) *decider.Orchestrator) *tes
 		Passengers:   passenger.NewStore(d.DB),
 		Wallets:      wallets,
 		Strategies:   strategy.NewStore(d.DB),
+		Buses:        bus.NewStore(d.DB),
 		Decider:      orch,
 		SecureCookie: false,
 	}).Routes(mux)
