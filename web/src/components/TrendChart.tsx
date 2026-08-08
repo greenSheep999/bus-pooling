@@ -123,7 +123,7 @@ export function TrendChart({
             ifOverflow="visible"
           >
             <Label
-              value={`峰值 ${peak.value} · ${peak.date.slice(5).replace("-", "/")}`}
+              value={`峰值 ${peak.value} ${unit} · ${peak.date.slice(5).replace("-", "/")}`}
               position="top"
               fill="#6420C7"
               fontSize={11}

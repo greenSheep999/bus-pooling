@@ -4,11 +4,17 @@
 >
 > **14 页面 + 2 layout** 覆盖阶段 1 全部乘客侧需求。管理端阶段 3+ 单独开文档。
 >
-> **视觉基线**：`design/mockups/05-home.pen`（24 张 mockup 已定型）· 规范见本文末「视觉规范」
+> **视觉基线**：概览页 v7（commit `15ff2b1`）· 24 张 Pencil mockup 已废弃转真代码
 >
-> **原则**（`CLAUDE.md §12`）：
+> **⚠️ 写新页面前必读**：
+> 1. `docs/13-design-principles.md` —— 数据表达 + 交互 + 组件用法（**从概览页 v7 沉淀，是硬约束**）
+> 2. `docs/13-frontend-research.md` —— 品牌色系 / 字号 / 阴影 token（外观规范）
+> 3. `CLAUDE.md §12` —— 术语双分离铁律
+>
+> **核心原则**（`CLAUDE.md §12`）：
 > - **不出现内部术语**（`housepool` / `provider` / `record group` / `initiated`）
 > - **状态只显示 2-3 态**（"活" / "已失效"，不显示 `preparing/live/dying`）
+> - **参考实现**：所有其他页面都以 `Overview.tsx` 为节奏基准，不重造轮子
 
 ## 导航形态（`decisions §8.2`）
 

@@ -1,6 +1,8 @@
 # CLAUDE.md · 给未来 AI agent 的行为铁律
 
 > **每次进入本项目动代码前**：先读 `README.md`，再读 `docs/00-values-and-phases.md`，最后读**本文**。
+>
+> **写前端页面前额外必读**：`docs/13-design-principles.md`（数据表达 + 组件用法规范，从概览页 v7 沉淀，硬约束）。写新页面时抄 `web/src/pages/Overview.tsx` 的结构、不重造轮子。
 > 本文是防止重蹈旧项目 `kiro-auto` 覆辙的**硬约束**。
 >
 > 旧项目 `kiro-auto`（本机 `~/Repositories/daniel/kiro-auto`）—— 90+ 内部模块、60+ 份 v3 文档、5 tier 文档 governance —— 演化成了它自己解释不清的样子。本项目**不重蹈**。
