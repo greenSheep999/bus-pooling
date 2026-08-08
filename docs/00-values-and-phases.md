@@ -74,7 +74,7 @@
 **通道费不在这条链里** —— 它在**充值**时收一次（`decisions §8.21`），不在每次拉号时扣。
 
 **充值端**：
-- 乘客充值 100 CNY → waffo 扣 5 → 我方到账 95 → 乘客账户 +95 积分（`recharge +95` + `channel_fee -5` 明细）
+- 乘客想充 100 积分 → 通道费 = 100 × 5% = 5 积分 → 折 105 CNY → 按 7 CNY/USD 显示 **15 USD** 走 waffo → 内部记两笔：`recharge +105` + `channel_fee −5` → 乘客净 +100 积分（详见 CLAUDE.md §1.4）
 
 **通道费（Payment Gateway）**：
 

@@ -9,6 +9,41 @@
 
 ---
 
+## 0. 第一优先级（覆盖以下所有规则）
+
+### 0.1 前台接口 = 只给结果数据
+
+**给前端 / 对外 webhook / 帮助中心的接口，只返回乘客做决策需要的结果数据。内部字段、内部枚举、内部术语一律不出去。**
+
+**不得出现在响应体 / 错误 message / 前端类型定义里的**（非穷举）：
+
+- 加价链的分层字段：`vendor_fee` / `region_fee` / `single_pull_fee` / `capability_fee` 等 —— **对外只有单价 + 服务费**（`decisions §8.20`）
+- 号池实现细节：`housepool` / `record group` / `bus-<id>` / `record-<pid>` / `kiro_rs_id` / `kiro.rs` / `current_group` / `death_source`
+- 上游架构名：`provider` / `adapter` / `decider` / `coalescer` / `deathwatch` / `pullrecord`
+- 内部状态多态：`preparing` / `standby` / `dying` / `scrapped` / `purchasing` / `reserved` 等（收敛见 §12.5）
+- 内部错误码里的实现术语：`housepool_unavailable` 之类
+
+**写法**：每个对外端点必须**独立定义**响应 struct（如 `strategyResponse` / `profileResponse`），**不许**把内部 struct 直接 `writeJSON` 出去；枚举一律**在 api 层做映射**，不许直接 `string(internalEnum)`。
+
+**审计动作**：写 / 改任何对外接口前，先扫 §1（术语铁律）和 §12.6（对外文案）—— 写完再扫一遍响应体和 message，含内部术语则打回。
+
+**冲突时**：`web/src/types/index.ts` 是可执行契约（前端 TS 编译器会检查），跟 `docs/05-api-contract.md` 有出入以它为准（`05-api-contract §625` 已定）。发现 md 里写着内部字段（比如响应体里出现 `death_source`）时，改 md 对齐 TS，不是反过来。
+
+### 0.2 代码注释只写代码解释
+
+**注释里只写**：为什么这样实现、别人容易踩的坑、隐含的契约。
+
+**注释里不写**：
+
+- 我自己的推理过程 / 思考日志 / 「我一开始想…后来发现…」
+- 跟车主 / 用户的对话内部沟通记录（"车主原话：…"、"讨论过 A 但被否决"等 —— 这些进 `decisions.md`，不进代码）
+- 项目背景 / 阶段规划 / 需求来源 / 谁在什么时候说过什么
+- 大段的业务政策复述（价格结构、议价规则、阶段 roadmap 等）
+
+**判据**：注释描述**代码此刻在做什么、为什么这么做**。如果读代码的人不需要知道就能维护它，那条注释就删。
+
+---
+
 ## 1. 术语铁律（不许再讨论、不许再改）
 
 ### 1.1 分层名词
@@ -54,6 +89,38 @@
 通道费**不在这条链里** —— 充值时单独收一次（§8.21）
 ```
 **各层费率是内部配置** · 只在文档和后台，**不进代码注释**（前端代码用户看得到 · §8.20 不许暴露加价幅度）
+
+### 1.4 充值口径（跟拉号扣除完全独立）
+
+**积分是单位，不是币种**。基准：`1 积分 ≡ 1 CNY`（会计对账口径）。
+
+**通道费加在本金上**（不是含在总额里）：
+
+```
+目标积分 = 乘客想充的数字
+通道费   = 目标积分 × 5%             （waffo 侧的 pass-through）
+本次到账 = 目标积分                   （净增到 wallet.balance 的量）
+
+支付显示 = (目标积分 + 通道费) / 汇率 = 目标积分 × 1.05 / 7  单位 USD
+汇率     = 7 CNY / USD               （对乘客展示层用；后端记账单位始终是积分）
+```
+
+**举例**：想充 100 积分 → 通道费 5 积分 → 折 105 CNY → 除 7 汇率 → **waffo 界面显示 15 USD**
+
+**内部账本记积分**（`wallet_ledger`）：一次充值两条明细
+- `recharge +105`（乘客真金白银换到的总积分，含要给 waffo 的那部分）
+- `channel_fee -5`（pass-through 立刻扣回给 waffo）
+- **净变化 = +100 积分**（乘客账户实际到手）
+
+**跟拉号扣除的分工**（别混）：
+- **拉号消费**：走 `decisions §8.34` 的加价链 · reason 是 `key_cost` / `vendor_fee` / `region_fee` / `single_pull_fee` / `capability_fee` / `service_fee` · 对外 `LedgerType = spend`
+- **充值**：走本节口径 · reason 是 `recharge` / `channel_fee` · 对外 `LedgerType = topup`
+- **运营调整**：reason 是 `admin_adjust` · 对外 `LedgerType = refund`
+
+**旧口径作废**（散在多份 md 里，遇到就改）：
+- ❌「乘客付 100 CNY，到账 95」/「recharge +95」/「channel_fee -5」的旧版
+- ❌ 计价用 CNY 描述（`docs/02-flows.md` / `docs/04-scenarios.md` 里的时序图）
+- ✅ 统一按「乘客想充 N 积分，通道费 = N × 5%，支付 (N × 1.05) / 7 USD」
 
 ---
 

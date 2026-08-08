@@ -145,7 +145,15 @@ await POST(`/handoff/${download_token}/confirm`)
 
 ### `GET /api/me/ledger` `?type=` 枚举
 
-- `recharge` / `channel_fee` / `redeem` / `key_cost` / `single_pull_fee` / `capability_fee` / `service_fee` / `warranty_refund` / `admin_adjust`
+**对外只有 5 个类型**（跟 `web/src/types/index.ts` 的 `LedgerType` 一致）：
+
+- `topup` · 充值到账
+- `spend` · 拉号扣款（内部的 key_cost / service_fee 等分层**合并展示**，对外不出加价链结构 —— CLAUDE.md §0.1）
+- `redeem` · 兑换码
+- `refund` · 一般退款
+- `warranty_refund` · 质保退款
+
+**内部记账**仍按 `wallet.Reason` 的多种分类落库（对账 / 分项统计用），api 层做映射收敛。
 
 ### `POST /api/me/redeem`
 
@@ -165,7 +173,7 @@ await POST(`/handoff/${download_token}/confirm`)
 { "order_id": "01H8...", "pay_url": "https://waffo/...", "expires_at": "..." }
 ```
 
-**通道费 pass-through**：乘客付 100 CNY → 到账 95 CNY 积分（`recharge +95` + `channel_fee -5` 明细，见 `00 §3`）。
+**通道费 pass-through**（详见 CLAUDE.md §1.4）：乘客想充 100 积分 → 通道费 = 100 × 5% = 5 积分 → 折 105 CNY → 按 7 CNY/USD 汇率显示 **15 USD** 走 waffo。内部账本记两笔：`recharge +105` + `channel_fee −5`（净 +100 积分到 balance）。
 
 ## 4. Bus（拼车主入口）
 
@@ -255,28 +263,19 @@ await POST(`/handoff/${download_token}/confirm`)
   "pull_round_id": "01H8...",
   "vendor_id": "kiro91",
   "purchased": 10,
-  "records": [
-    { "credential_id": "01H8...", "kiro_rs_id": 12345 },   // credential_id = 我方 UUID（派发时用这个）
-    ...
-  ],
-  "key_cost": 200000000,
-  "single_pull_fee": 0,             // count>=2 → 0
-  "service_fee": 10000000,          // 算好的金额 · 不下发费率
-  "total_debit": 210000000,         // 号价 200 + 服务费 10
+  "credential_ids": ["01H8a", "01H8b", "..."],   // 我方 UUID · 派发 / handoff 都用这个
+  "unit_price": 21000000,           // microunit · 单价（含所有内部加价，一口价）
+  "service_fee": 10000000,          // microunit · 服务费一项显式列出
+  "total_debit": 210000000,         // = unit_price × purchased
   "balance_remaining": 790000000
 }
 ```
 
-**ID 口径**（别混）：
-- `credential_id` = **我方** `credential_ledger.id`（UUID v7 · TEXT）· **所有 API 都用这个**（assign / handoff 都收它）
-- `kiro_rs_id` = housepool 侧的 u64 · 只在需要跟 kiro.rs 对账时出现，**不作为 API 入参**
+**对外只暴露三项金额**（CLAUDE.md §0.1）：`unit_price` / `service_fee` / `total_debit`。号价、vendor 附加费、区域附加费、单次议价、附加能力等内部分层**不出响应体** —— 想调结构不需要改契约。
 
-**注意**：
-- 计费是**逐层乘**（`decisions §8.34`）：`最终单价 = 号价 × (1+各层率…)`，`本次扣除 = 最终单价 × 号数`
-  - ~~"一次动作一轮，跟 count 无关"~~ —— 原来这句是错的，会让拉 10 个号只收 1 份服务费
-- **各层费率不下发** —— 响应只给**算好的金额**（`§8.20`：不下发原价和加价明细）
-- **服务端裁定**，客户端传什么都不信
-- `single_pull_fee` 只在 `count==1` 才有
+**ID 口径**：`credential_id` = 我方 `credential_ledger.id`（UUID v7 · TEXT）· 所有对外 API 都用这个。上游 id（如号池 u64）**不进响应体**（CLAUDE.md §0.1）。
+
+**服务端裁定**，客户端传什么都不信。请求里可以传 `vendor_id`（乘客偏好），但服务端可以否决。
 
 ### `POST /api/me/pull-records/assign` （派去向 · 只管进车 / 推号池）
 
@@ -346,35 +345,37 @@ await POST(`/handoff/${download_token}/confirm`)
 
 ### 单号详情返回字段（`GET /api/me/credentials/{id}`）
 
+**对外只暴露乘客做决策需要的字段**（CLAUDE.md §0.1）。内部的 group 命名、死亡来源、号池 id 等一律不出。乘客视角只有：号在哪辆车 / 是否存活 / 用了多少。
+
 ```json
 {
   "credential": {
     "id": "01H8...",
     "vendor_id": "kiro91",
-    "current_group": "bus-01H...",  // 或 record-<pid>
+    "bus_id": "01H...",              // 属于哪辆车；单独拉号（提取入口）为 null
     "pulled_at": "2026-08-01T10:00:00Z",
-    "dead_at": null,                 // null = 存活；有值 = 已死
-    "death_source": null,             // housepool_probe | vendor_webhook | vendor_poll
+    "alive": true,                    // false = 已死（不告诉乘客是谁探到的死）
+    "dead_at": null,                  // null = 存活；有值 = 已死
     "usage": {
       "calls_24h": 320,
       "calls_7d": 1850,
       "input_tokens_24h": 82000,
       "output_tokens_24h": 15000,
       "errors_24h": 4,
-      "credits_used_total": 4700000,  // microunit，累计消耗额度
-      "avg_credits_per_day": 1560000,  // 累计消耗 / 存活天数（microunit）
-      "concurrency_avg": null           // 平均并发；kiro.rs 未直接给，暂空
+      "credits_used_total": 4700000,  // microunit
+      "avg_credits_per_day": 1560000,
+      "concurrency_avg": null
     }
   }
 }
 ```
 
-**`concurrency_avg` 字段现状**：kiro.rs 未提供并发读端点。**待方案**：
-- (a) 给 kiro.rs 加 `GET /credentials/{id}/concurrency`（**推荐**，运维方拍板）
-- (b) 我方定期采样聚合
-- (c) 反推（需响应时间数据）—— 不可用
+**`concurrency_avg`** 上游未提供并发读端点前返回 `null`，UI 显示 `—`。
 
-暂未拍板 → 该字段返回 `null`，UI 显示 `—`。
+**故意不返回的字段**（CLAUDE.md §0.1 · §12.5-12.6）：
+- `current_group` / `record-<pid>` / `bus-<id>` group 名 —— 号池实现细节，乘客不需要
+- `death_source` —— 谁探到的死用户不关心；只关心死了
+- `kiro_rs_id` —— 上游 id，只在跟 kiro.rs 对账时内部用
 
 ### `GET /api/me/buses/{bus_id}/credentials` 返回
 
@@ -650,9 +651,11 @@ X-Bus-Signature: sha256=<hex HMAC-SHA256(secret, timestamp + "." + body)>
 | 409 | `already_member` | 已在该 bus |
 | 413 | `body_too_large` | 请求体 > 1 MiB |
 | 429 | `rate_limited` | 限流；看 `retry_after` |
-| 502 | `vendor_error` | 上游 vendor 5xx / 网络 |
-| 503 | `housepool_unavailable` | kiro.rs 暂时不可用 |
+| 502 | `upstream_error` | 上游临时不可用（vendor 或号池；对外不区分具体来源 · CLAUDE.md §0.1） |
+| 503 | `service_unavailable` | 我方服务暂时不可用 |
 | 500 | `internal` | 服务端问题 |
+
+**内部术语禁止上错误码**（`housepool_unavailable` 之类原本在这，已改）：错误 code 是对外契约的一部分，暴露 `housepool` / `kiro.rs` 等于告诉用户我方依赖哪家上游 —— 换供应商就变成一次破坏性变更。日志和监控里保留内部原因即可。
 
 ## 未定 / 阶段后期补的
 

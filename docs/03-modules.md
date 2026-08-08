@@ -132,7 +132,7 @@
 - **依赖**：`wallet`, `infra/httpx`, `infra/secrets`（payment-gateway 密钥）
 - **谁调它**：`api`
 - **P 标签**：1b
-- **通道费规则**：见 §00.3；乘客充值 100 → 到账 95（`recharge +95` + `channel_fee -5` 明细）
+- **通道费规则**：见 CLAUDE.md §1.4；乘客想充 100 积分 → 通道费 5 积分 → 支付 15 USD → 内部 `recharge +105` + `channel_fee −5` → 净 +100
 
 ### `internal/strategy/` (业务包 7/15)
 
