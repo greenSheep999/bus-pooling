@@ -11,7 +11,7 @@ var (
 	ErrNotFound = errors.New("housepool: 资源不存在")
 	// ErrUnauthorized admin key 不对
 	ErrUnauthorized = errors.New("housepool: 号池鉴权失败")
-	// ErrUnavailable 号池连不上或 5xx —— 对外映射成 housepool_unavailable（503）
+	// ErrUnavailable 上游连不上或 5xx · api 层映射到对外 upstream_error / service_unavailable
 	ErrUnavailable = errors.New("housepool: 号池暂时不可用")
 	// ErrNotSupported 号池没这个能力（例：并发查询 · 契约 §7）
 	ErrNotSupported = errors.New("housepool: 号池不支持这个操作")
