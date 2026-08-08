@@ -202,7 +202,10 @@
 
 ### Iss #4 · passenger 包 · 1 天
 - 表：`passenger` / `passenger_api_key`
-- 端点：`POST /api/register` / `POST /api/login` / `POST /api/logout` / `GET /api/me/profile`
+- 端点：`POST /api/register` / `POST /api/login` / `POST /api/logout` / `GET /api/me`
+  （`/api/me` 不是 `/api/me/profile` —— 见矩阵和 `05-api-contract §1`，改名对齐前端 `/me` 页）
+- **API key 权限收窄**（`05-api-contract §鉴权`）：API key **不能**改密码、**不能**建新 key
+  —— 防"泄露的 key 换成新 key 把主人锁在门外"。这两个端点强制会话鉴权，违反返 `session_required`
 - 密码：Argon2id
 - API key 生成 + 存 hash + 列表 / 吊销端点
 - 中间件：会话鉴权 + API key 鉴权（`X-API-Key` / `Authorization: Bearer`）

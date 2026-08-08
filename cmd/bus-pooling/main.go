@@ -21,10 +21,13 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/bus-pooling/bus-pooling/internal/api"
 	"github.com/bus-pooling/bus-pooling/internal/config"
 	"github.com/bus-pooling/bus-pooling/internal/db"
 	"github.com/bus-pooling/bus-pooling/internal/httpx"
+	"github.com/bus-pooling/bus-pooling/internal/passenger"
 	"github.com/bus-pooling/bus-pooling/internal/secrets"
+	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
 
 func main() {
@@ -179,7 +182,16 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	}
 
 	mux := http.NewServeMux()
-	// 业务路由在 Iss #4 起逐个加（internal/api）· 现在只有存活探针
+
+	// secureCookie：生产走 HTTPS 要 true；本地 http 调试必须 false，否则浏览器不存 cookie
+	secureCookie := os.Getenv("BP_INSECURE_COOKIE") == ""
+	apiSrv := api.NewServer(
+		passenger.NewStore(database.DB),
+		wallet.NewStore(database.DB),
+		secureCookie,
+	)
+	apiSrv.Routes(mux)
+
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := database.PingContext(r.Context()); err != nil {
 			http.Error(w, `{"code":"internal","message":"服务暂时不可用"}`, http.StatusServiceUnavailable)
