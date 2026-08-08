@@ -117,6 +117,13 @@ export const credentials: Credential[] = [
   mkCred(18, "kirodrop", 4400, 28, true, true, "bus_kiro"),
   mkCred(19, "kirodrop", 3900, 28, true, true, "bus_kiro"),
   mkCred(20, "91kiro", 5100, 26, true, true, "bus_kiro"),
+  /* record group · owner_bus_id=null · 用户通过 /pull 拉的号，还没派去向
+     `/pull-records` 页会列这批 · 派 3 种去向后此字段更新 */
+  mkCred(21, "kirooo",  1200, 4,  true, false, null),
+  mkCred(22, "kirooo",  980,  4,  true, false, null),
+  mkCred(23, "91kiro",  2200, 8,  true, false, null),
+  mkCred(24, "kiroceo", 600,  2,  true, false, null),
+  mkCred(25, "kirodrop",1450, 6,  true, false, null),
 ];
 
 /* ── 拉号历史 ── */
@@ -134,6 +141,13 @@ export const pullRounds: PullRound[] = [
   { id: "rd_10", vendor_id: "kirooo", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "success", count_requested: 1, count_purchased: 1, alive_count: 1, dead_count: 0, push_state: "failed", push_ratio: null, total_cost: -C(8), fail_reason: null, created_at: ago(102) },
   { id: "rd_11", vendor_id: "kiroappio", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "refunded", count_requested: 1, count_purchased: 1, alive_count: 0, dead_count: 1, push_state: "none", push_ratio: null, total_cost: C(9), fail_reason: "30 分钟内失效 · 质保退款", created_at: ago(126) },
   { id: "rd_12", vendor_id: "kiroceo", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "success", count_requested: 3, count_purchased: 3, alive_count: 3, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(10), fail_reason: null, created_at: ago(150) },
+  /* 日常一号 · bus_daily */
+  { id: "rd_20", vendor_id: "91kiro",  bus_id: "bus_daily", bus_name: "日常一号", result: "success", count_requested: 2, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "pushed",  push_ratio: null,  total_cost: -C(8),  fail_reason: null, created_at: ago(3.2) },
+  { id: "rd_21", vendor_id: "kiroceo", bus_id: "bus_daily", bus_name: "日常一号", result: "success", count_requested: 2, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "none",    push_ratio: null,  total_cost: -C(7),  fail_reason: null, created_at: ago(24) },
+  { id: "rd_22", vendor_id: "91kiro",  bus_id: "bus_daily", bus_name: "日常一号", result: "partial", count_requested: 3, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "partial", push_ratio: "2/3", total_cost: -C(8),  fail_reason: null, created_at: ago(76) },
+  /* Kiro 常驻车 · bus_kiro · 手动模式，拉号频率低 */
+  { id: "rd_30", vendor_id: "91kiro",  bus_id: "bus_kiro",  bus_name: "Kiro 常驻车", result: "success", count_requested: 2, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(8),  fail_reason: null, created_at: ago(18) },
+  { id: "rd_31", vendor_id: "kirodrop", bus_id: "bus_kiro",  bus_name: "Kiro 常驻车", result: "success", count_requested: 3, count_purchased: 3, alive_count: 3, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(9),  fail_reason: null, created_at: ago(52) },
 ];
 
 /* ── 提取记录 ── */

@@ -148,6 +148,45 @@ export const useExtract = () => {
   });
 };
 
+/* ── 拉号记录（record group · 未派去向号） ── */
+
+export const usePullRecords = () =>
+  useQuery({
+    queryKey: ["pullRecords"],
+    queryFn: () => api<Paged<Credential>>("/me/pull-records"),
+  });
+
+/* 派去向 · 三种：进车（into_bus + bus_id）· 推池（push_pool）· 拿走（handoff） */
+export type AssignBody = {
+  credential_ids: string[];
+  destination: "into_bus" | "push_pool" | "handoff";
+  bus_id?: string; // into_bus 才带
+};
+
+export const useAssign = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AssignBody) => post("/me/pull-records/assign", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pullRecords"] });
+      qc.invalidateQueries({ queryKey: ["buses"] });
+    },
+  });
+};
+
+/* ── 单独拉号（次入口） · 跟 bus 无关 · 拉完进 record group ── */
+
+export const usePull = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { vendor_id?: string; count: number }) => post("/me/extract", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pullRecords"] });
+      qc.invalidateQueries({ queryKey: ["wallet"] });
+    },
+  });
+};
+
 /* ── 配置 ── */
 
 export const useDownstream = () =>

@@ -52,6 +52,13 @@ export const handlers = [
   http.post("/api/me/buses/:id/pull", () => ok({ round_id: "rd_new", status: "initiated" }, 600)),
   http.delete("/api/me/buses/:id", () => ok({ ok: true }, 400)),
 
+  // ── 拉号记录（record group · 未派去向号）· 派去向
+  http.get("/api/me/pull-records", () => {
+    const items = fx.credentials.filter((c) => c.owner_bus_id === null);
+    return ok({ items, total: items.length, page: 1, page_size: 20 });
+  }),
+  http.post("/api/me/pull-records/assign", () => ok({ ok: true, assigned: 0 }, 400)),
+
   // ── 提取 key
   http.get("/api/me/extract/records", () => ok({ items: fx.extractRecords, total: fx.extractRecords.length, page: 1, page_size: 20 })),
   http.post("/api/me/extract/estimate", async ({ request }) => {
