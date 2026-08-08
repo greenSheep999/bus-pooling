@@ -1429,6 +1429,79 @@ card 左下角常驻灰色小字：**「价格受市场波动影响，会有波�
 
 **✅ 已接受**：2.5（API 售卖 —— 我们推自己池 API）、单次议价（`00 §3`）、**8.20（邀请码双层机制 · 覆盖 2.10/2.11/2.12 地区议价）**、**8.21（通道费只在充值展示）**、**8.2（顶栏结构）、8.3（我的发车占位）、8.4（概览活动流混流+tag）、8.5（号质量=用量+寿命）、8.6（补车策略跟车绑）、8.7（UI 单位=积分）、8.8（活动流无查看全部）、8.9（阶段 1 只 single）、8.10（搭车更名）、8.11（立即拼车下拉）、8.12（概览是数据页）、8.13（拼车页专属记录）、8.14（用量进度条 10k 阈值）、8.15（卡片默认+hover 阴影）**
 
+## 9. 文档与前端对齐记录（后端 Phase 1a 装配收尾）
+
+**背景**：CLAUDE.md §0.1 定 `web/src/types/index.ts` = 可执行契约优先。装配阶段发现 `docs/05-api-contract.md` 若干处跟 TS 有出入，按"改文档对齐 TS"处理，不改前端代码。
+
+### 9.1 `docs/05 §3 redeem` 响应字段改名 ✅
+
+- 旧：`{ quota, replayed, balance }`
+- 新：`{ credits, memo, balance_after }`
+- 理由：前端 `RedeemResult` 用的是 `credits + memo`；`replayed` 从来没在 UI 上用（幂等由 header 处理，业务侧不需要）；`balance_after` 让前端拿到后顺手更新钱包，省一次 `GET /me`
+
+### 9.2 `docs/05 §3 topup` 响应字段改名 ✅
+
+- 旧：`{ order_id, pay_url, expires_at }`
+- 新：`{ order_id, qr_payload, paid, credits, expires_at, status, created_at, paid_at? }`
+- 理由：前端 `TopupOrder` 要 `qr_payload`（渲染 QR）· `paid` / `credits` 分别是"乘客支付总额"和"净到账"（CLAUDE.md §1.4 通道费加在本金上）· `status` 是收敛后对外三态（pending | paid | failed · cancelled/expired 合并到 failed）
+- 请求字段：`amount` → `credits`（明确"目标积分"语义）
+
+### 9.3 `docs/05 §5` 补 `GET /me/pull-records` 响应形状 ✅
+
+- 契约里之前只写了描述"分页；含状态、去向历史"，没写字段
+- 补：`Paged<Credential>`（每号一条），对齐 web `Credential` 类型
+- `?history=1` 时把 dead / handed_off 号也带上（默认只 alive）
+
+### 9.4 `docs/05 §8` 补两条下游端点行 ✅
+
+- `POST /me/downstream/passengerpool/test`（探活）
+- `POST /me/downstream/webhook/secret`（轮换 secret · 明文只此一次返回）
+- 理由：前端 `web/src/api/hooks.ts` 在调这两条 · 契约里之前漏了
+
+### 9.5 `docs/05 §8 PUT webhook` 响应改成 `{ok:true}` ✅
+
+- 旧示例：`{ url, secret: "64-hex" }` 让人以为 PUT 会返 secret
+- 新：`{ ok: true }` · secret 明文**只在 POST /secret 轮换那一刻返回一次**（CLAUDE.md §11 明文永不落库）
+- PUT 不接收 secret 明文进请求体（防日志泄漏）
+
+### 9.6 `docs/05 §8` 下游端点阶段标签 1e → 1a ✅
+
+- 前端 1a 页面已经在调（Settings 里的 downstream tab）· 保留 1e 会导致后端不实现 → UI 白屏
+- 阶段 1a 简化：test 端点走 3s timeout 探连通 · webhook 签名 / 重试机制 1e 出向 worker 里再补
+
+### 9.7 `docs/05 §9 vendors` 端点鉴权口径清理 ✅
+
+- 旧尾注"原本写的'匿名可访问'作废" 表达绕
+- 新："全部走 `RequireAuth`" · 直接说结论
+
+### 9.8 `docs/05 §9 /vendors/prices` 阶段 1d → 1a stub ✅
+
+- 前端 `pages/Prices.tsx` 已加载即调 · 501 会白屏
+- 1a 返 `200 OK` + `{trends: []}` 让页面渲染空态
+- 1d 起接 `vendor_round` + `vendor_lifespan_snapshot` 采集后返真数据
+
+### 9.9 `docs/06 §11.1` 售后追溯字段迁移标注 ✅
+
+- `key_masked / region / credits_used` 三列在 001_init.sql 漏了 · 由 004 迁移补上
+- 表结构 spec 保持不变 · 加了行注释指向 004 迁移
+
+### 9.10 `docs/06 §14` 补 `latency_ms` 列 + 对外收敛说明 ✅
+
+- 前端 `WebhookDelivery` 要 `latency_ms` · 原表结构漏了 · 003 迁移已补
+- 补充说明：内部 4 态 `pending/delivered/failed/dropped` → 对外 `ok:bool`（`delivered→true` 其余 `false`）· CLAUDE.md §12.5 状态收敛
+- 响应字段名对齐前端：`event / ok / status_code / attempt / latency_ms / created_at`（不出 `status_text`）
+
+### 9.11 `docs/08 §12.1` handoff 读明文缺口 ⚠
+
+- 08 §12 承诺"从 kiro.rs 读明文"但 kiro.rs 无对应 admin 端点、housepool 接口无 `GetCredentialPlaintext`
+- 1a 落地临时方案：用 `key_masked` + `housepool.GetCredential(元数据)` 拼占位（key 前缀 `pending-handoff-`）· 让契约 + 前端可以联调
+- 上线到 1c 前**必须补齐** kiro.rs admin 端点 + housepool 接口方法 · 已在后端 knownIssues 里挂着
+
+### 9.12 `outbound_webhook_delivery` 状态收敛落地 ✅（配 CLAUDE.md §12.5）
+
+- handler `webhookDeliveryDTOOf` 里 `d.OK()` 把内部四态收敛成 `ok:bool`
+- 内部保留 `status ∈ {pending, delivered, failed, dropped}` 用于重试调度（`next_retry_at`）· 用户看不到
+
 ## 记录约定（未来加决策时）
 
 - 每条格式：`### N.M 提议 [❌ / ⏸ / ✅]` + 提议 + 状态说明 + 参考（若有）

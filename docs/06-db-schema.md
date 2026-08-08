@@ -374,6 +374,7 @@ CREATE TABLE credential_ledger (
 handoff / 推送失败后用户找客服，客服必须能定位到具体是哪个号。原表只有内部 id，对不上用户说的「我那个 xxx 结尾的号」，所以补：
 
 ```sql
+-- 首批 001 迁移里漏了这三列 · 由 004_credential_ledger_traceability.sql 补上
 ALTER TABLE credential_ledger ADD COLUMN key_masked   TEXT;    -- ksk_live_xxxx…xxx · 客服/用户对号的唯一凭据
 ALTER TABLE credential_ledger ADD COLUMN region       TEXT;    -- us-east-1 | eu-central-1
 ALTER TABLE credential_ledger ADD COLUMN credits_used INTEGER; -- 交付/失效那一刻已耗额度（microunit）
@@ -493,6 +494,7 @@ CREATE TABLE outbound_webhook_delivery (
   status                 TEXT NOT NULL,                  -- pending | delivered | failed | dropped
   response_status        INTEGER,
   response_body_snippet  TEXT,
+  latency_ms             INTEGER,                        -- 单次投递耗时（ms）· 前端 WebhookDelivery 展示用
   next_retry_at          TEXT,
   delivered_at           TEXT,
   created_at             TEXT NOT NULL
@@ -500,6 +502,8 @@ CREATE TABLE outbound_webhook_delivery (
 ```
 
 **索引**：`(passenger_id, created_at DESC)`, `(status, next_retry_at)`。
+
+**对外收敛**（CLAUDE.md §12.5）：内部 4 态 `pending / delivered / failed / dropped` → 对外 `ok: boolean`（`delivered → true`，其余 → `false`）。API 响应体字段名对齐前端 `WebhookDelivery`：`event / ok / status_code / attempt / latency_ms / created_at`（不出 `status_text`）。
 
 ## 15. 附加能力插槽 · `capability_slot`
 

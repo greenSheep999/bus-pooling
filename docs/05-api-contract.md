@@ -160,17 +160,27 @@ await POST(`/handoff/${download_token}/confirm`)
 ```json
 // req
 { "code": "KRC-XXXX" }
-// resp
-{ "quota": 100000000, "replayed": false, "balance": 195000000 }
+// resp（对齐 web/src/types RedeemResult · CLAUDE.md §0.1 TS = 权威）
+{ "credits": 100000000, "memo": "兑换码 KRC-XXXX", "balance_after": 195000000 }
 ```
+
+**幂等**：`X-Idempotency-Key` 可选。带 key 时重放返回同一 body；不带 key 走 Store 的条件 UPDATE 单一乘客 replay 兜底。
 
 ### `POST /api/me/topup`
 
 ```json
-// req
-{ "amount": 100000000, "channel": "waffo" }
-// resp
-{ "order_id": "01H8...", "pay_url": "https://waffo/...", "expires_at": "..." }
+// req · credits = 想充值的目标积分（净到账）· 通道费 5% 加在本金上（CLAUDE.md §1.4）
+{ "credits": 100000000, "channel": "waffo" }
+// resp（201 Created · 对齐 web/src/types TopupOrder）
+{
+  "order_id": "01H8...",
+  "qr_payload": "https://waffo.example/order/01H8...",  // 前端渲染 QR
+  "paid": 105000000,                                     // credits + channel_fee
+  "credits": 100000000,                                  // 净到账
+  "expires_at": "2026-08-07T12:15:00Z",
+  "status": "pending",                                   // pending | paid | failed
+  "created_at": "2026-08-07T12:00:00Z"
+}
 ```
 
 **通道费 pass-through**（详见 CLAUDE.md §1.4）：乘客想充 100 积分 → 通道费 = 100 × 5% = 5 积分 → 折 105 CNY → 按 7 CNY/USD 汇率显示 **15 USD** 走 waffo。内部账本记两笔：`recharge +105` + `channel_fee −5`（净 +100 积分到 balance）。
@@ -244,8 +254,8 @@ await POST(`/handoff/${download_token}/confirm`)
 | Method | Path | 说明 | 阶段 |
 |---|---|---|---|
 | POST | `/api/me/pull` | 单独拉一批号（不指定 bus） | 1a |
-| GET | `/api/me/pull-records` | 我的拉号记录（分页；含状态、去向历史） | 1a |
-| GET | `/api/me/pull-records/{record_id}` | 单条详情 | 1a |
+| GET | `/api/me/pull-records` | 我的拉号记录（`Paged<Credential>` · 每号一条 · `?history=1` 含已死号） | 1a |
+| GET | `/api/me/pull-records/{record_id}` | 单条详情（返回 `Credential` 单体） | 1a |
 | POST | `/api/me/pull/estimate` | 提取确认窗的费用预估（**不下单**）· 含优惠码折后价 | 1a |
 | GET | `/api/me/pull/events` | 提取历史（每次拉号一条） | 1a |
 | GET | `/api/me/assign/events` | 派发历史（每次派动作一条 · 可展开看每个号） | 1a |
@@ -277,6 +287,34 @@ await POST(`/handoff/${download_token}/confirm`)
 **ID 口径**：`credential_id` = 我方 `credential_ledger.id`（UUID v7 · TEXT）· 所有对外 API 都用这个。上游 id（如号池 u64）**不进响应体**（CLAUDE.md §0.1）。
 
 **服务端裁定**，客户端传什么都不信。请求里可以传 `vendor_id`（乘客偏好），但服务端可以否决。
+
+### `GET /api/me/pull-records` 返回
+
+```json
+{
+  "items": [
+    // 对齐 web/src/types Credential · UI status 二态（alive | dead）
+    {
+      "id": "01H8a...",
+      "vendor_id": "kiro91",
+      "status": "alive",
+      "key_masked": "ksk_live_xxxx…vn6",
+      "region": "us-east-1",
+      "credits_used": 3200000,
+      "pulled_at": "2026-08-07T12:00:00Z",
+      "warranty_until": "2026-08-07T12:15:00Z",
+      "dead_at": null,
+      "pushed_at": null,
+      "push_failed": false,
+      "push_error": null,
+      "source_pull_round_id": "01H8..."
+    }
+  ],
+  "total": 42, "page": 1, "page_size": 50, "pages": 1
+}
+```
+
+**默认只返存活号**（`status=alive`）· 带 `?history=1` 时把已死 / 已交出的号也带上（售后追溯）。
 
 ### `POST /api/me/pull-records/assign` （派去向 · 只管进车 / 推号池）
 
@@ -471,31 +509,61 @@ await POST(`/handoff/${download_token}/confirm`)
 
 | Method | Path | 说明 | 阶段 |
 |---|---|---|---|
-| GET | `/api/me/downstream` | 当前配置 | 1e |
-| PUT | `/api/me/downstream/passengerpool` | 配 passengerpool url + token | 1e |
-| PUT | `/api/me/downstream/webhook` | 配我方推给他的 webhook 地址 | 1e |
-| POST | `/api/me/downstream/webhook/test` | 发一条测试 webhook | 1e |
-| GET | `/api/me/downstream/webhook/deliveries` | 投递日志 | 1e |
+| GET | `/api/me/downstream` | 当前配置（含 `rules` + 推送统计 + `passengerpool_token_masked`） | 1a |
+| PUT | `/api/me/downstream/passengerpool` | 配 passengerpool url + token + 4 条 rules（partial update） | 1a |
+| POST | `/api/me/downstream/passengerpool/test` | 探活目标号池 URL | 1a |
+| GET | `/api/me/downstream/webhook` | webhook 配置（含 `secret_masked` · **明文不返回**） | 1a |
+| PUT | `/api/me/downstream/webhook` | 配 URL / events · **不接收 secret** | 1a |
+| POST | `/api/me/downstream/webhook/secret` | 轮换 secret · **明文只在这一次返回** | 1a |
+| POST | `/api/me/downstream/webhook/test` | 发一条测试 webhook · 落 delivery 台账 | 1a |
+| GET | `/api/me/downstream/webhook/deliveries` | 投递日志（数组 · 不是 Paged 信封） | 1a |
 
 ### `PUT /api/me/downstream/passengerpool`
 
 ```json
+// req · 三项都可选，只带哪个改哪个
 {
-  "url": "https://my-kiro-rs.example.com",
-  "token": "..."          // 保存后不再回显
+  "passengerpool_url": "https://my-kiro-rs.example.com",
+  "token": "sk-...",              // 空字符串 = 不改现有 token · 明文加密后落库
+  "rules": {
+    "push_on_pull": true,
+    "resync_on_dead": true,
+    "retry_on_failure": true,
+    "bus_only": false
+  }
 }
+// resp
+{ "ok": true }
+```
+
+### `POST /api/me/downstream/passengerpool/test`
+
+发一次 3s timeout 的 GET 探活。**不发敏感字**（只关心 TCP + TLS + HTTP 层能不能通）。
+
+```json
+// resp
+{ "ok": true, "latency_ms": 187 }
+// or
+{ "ok": false, "latency_ms": 3005, "error": "连不上目标地址" }
 ```
 
 ### `PUT /api/me/downstream/webhook`
 
 ```json
-{
-  "url": "https://your-server.com/hook"
-}
-// resp
-{ "url": "...", "secret": "64-hex-signing-secret" }
-// secret 用来给我方推的 webhook 签名，pass 给你验签
+// req
+{ "url": "https://your-server.com/hook", "events": ["round.completed", "credential.dead"] }
+// resp（不返 secret · secret 只在 POST /secret 轮换那一刻返回）
+{ "ok": true }
 ```
+
+### `POST /api/me/downstream/webhook/secret`
+
+```json
+// resp · 前端拿到后弹一次性对话框让用户手抄，关闭后就再也拿不到（GET 只有 mask）
+{ "secret": "64-hex-signing-secret" }
+```
+
+**为什么 secret 独立端点**（CLAUDE.md §0.1 + §11）：明文只在轮换那一刻返回一次。PUT webhook 用来改 URL / events，不接受 secret 明文进来（防用户把明文塞进请求体 → 日志泄漏）。
 
 ## 9. Vendor 状态
 
@@ -506,7 +574,7 @@ await POST(`/handoff/${download_token}/confirm`)
 | GET | `/api/vendors/{vendor_id}/stock` | 单家实时快照 · 支持 `?coupon_code=` | 1a |
 | GET | `/api/vendors/stats` | 概览「Vendor 监测」表 + 占比 | 1a |
 | GET | `/api/vendors/auto-pick` | auto 档的推荐结果（推哪家 + 价 + 库存） | 1a |
-| GET | `/api/vendors/prices?days=&zone=` | 价格走势（**轮次级**历史 · `decisions §8.22`） | 1d |
+| GET | `/api/vendors/prices?days=&zone=` | 价格走势（**轮次级**历史 · `decisions §8.22`）· 1a stub 返 `{trends: []}` | 1a stub → 1d 补数据源 |
 | GET | `/api/vendors/{vendor_id}/history` | 单家历史 | 1d |
 | GET | `/api/vendors/{vendor_id}/health` | 单家健康（平均寿命等） | 1d |
 
@@ -518,11 +586,11 @@ await POST(`/handoff/${download_token}/confirm`)
 | 无邀请码 | `AWS-Q Kiro Vendor 0N` **编号** + 默认加价 |
 | 无邀请码但带 `?coupon_code=` | 编号（**码不解锁真名**）+ 本次免加价 |
 
-**只下发最终价**，不下发原价和加价明细（`decisions §8.20`）。所以这几个端点**要鉴权**（拿不到身份就没法定价）—— 原本写的"匿名可访问"作废。
+**只下发最终价**，不下发原价和加价明细（`decisions §8.20`）。所以这几个端点**要鉴权**（拿不到身份就没法定价）—— 全部走 `RequireAuth`，别用 vendors 作为"未登录可看的公共接口"。
 
 **`auto-pick` 为什么必须 1a 有**：散客默认就走 auto 档，界面上 auto 项要显示"推荐到哪家 + 单价 + 库存 + 预估费用"才能下单（`decisions §8.20`）。没有它，无邀请码用户根本下不了单。
 
-**`/api/vendors/prices` 是 1d**：要轮次级历史数据，得先采集。1b 返 501 → 价格走势页显示空态，可接受（那页本来标了"需求待定"）。
+**`/api/vendors/prices` 1a stub · 1d 补数据源**：轮次级历史要先采集（1d 起走 `vendor_round` + `vendor_lifespan_snapshot`）。1a 返 `200 OK` + `{trends: []}` 让价格走势页渲染空态，别返 501（前端会白屏）。
 
 ## 9b. 概览页数据
 

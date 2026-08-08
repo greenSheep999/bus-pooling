@@ -541,6 +541,16 @@ summary 事件的 `summary` 字段才有值。
 
 **理由**：顺序反了会出现 "号已经交出去 / 复制出去，但状态没改" 的不一致；反过来"状态改了但外部动作失败"至少还能回滚。
 
+### 12.1 阶段 1a 的现状 · handoff 读明文缺口 ⚠
+
+kiro.rs 目前**没有暴露**"读 credential 明文"的 admin 端点（`GetCredential` 只返元数据 · `ListCredentials` 也不含明文）。上面说的"从 kiro.rs 读 credential 明文"是**目标形态**，1a 未实现。
+
+阶段 1a 落地方案（`internal/api/handoff.go readHandoffPlaintext`）：
+- `key` = `credential_ledger.key_masked` 或 `pending-handoff-<credential_id>` 占位
+- `vendor_id` / `account` 从台账 + `housepool.GetCredential` 元数据派生（account 从 email）
+
+**上线到 1c 前必须补齐**：kiro.rs 加 `GET /admin/credentials/{id}/reveal`（或类似端点）+ `housepool.HousePool` 接口加 `GetCredentialPlaintext` 方法。见后端 `knownIssues`。
+
 ## 13. 幂等
 
 kiro.rs 的 endpoint **不都幂等**：
