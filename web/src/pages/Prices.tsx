@@ -90,6 +90,16 @@ export default function Prices() {
     return use.reduce((a, b) => (a.current_price <= b.current_price ? a : b));
   }, [trends]);
 
+  /* hover 的那天在图区里的百分比位置 · 整体指示线用（贯穿 6 行） */
+  const hoverLeftPct = useMemo(() => {
+    const d = trends[0]?.days ?? [];
+    if (!hoveredDate || d.length === 0) return null;
+    const i = d.findIndex((x) => x.date === hoveredDate);
+    if (i < 0) return null;
+    const slotPct = 100 / d.length;
+    return slotPct * i + slotPct / 2;
+  }, [hoveredDate, trends]);
+
   /* hover 中的那天概要 · tooltip 用 */
   const hoveredRounds = useMemo(() => {
     if (!hoveredVendor || !hoveredDate) return null;
@@ -216,8 +226,46 @@ export default function Prices() {
               <span className="w-24 shrink-0 text-right">{days} 天涨跌</span>
             </div>
 
-            {/* 6 行 · 每行一家 */}
-            <div className="mb-1.5 divide-y divide-hairline">
+            {/* 6 行 · 每行一家
+                relative + 绝对定位的 X 网格层 · 竖线贯穿全部 6 行（不在每行 SVG 内部各画一遍） */}
+            <div className="relative mb-1.5 divide-y divide-hairline">
+              {/* X 网格层 · 只覆盖图区（左列 300px + gap 16px 之后，右列 96px + gap 16px 之前） */}
+              <div
+                className="pointer-events-none absolute inset-y-0 z-0"
+                style={{ left: 316, right: 112 }}
+                aria-hidden
+              >
+                {dateTicks.map(({ date, leftPct }) => (
+                  <span
+                    key={`grid-${date}`}
+                    className="absolute inset-y-0 w-px"
+                    style={{
+                      left: `${leftPct}%`,
+                      background:
+                        "repeating-linear-gradient(to bottom,#EDEDED 0,#EDEDED 3px,transparent 3px,transparent 6px)",
+                    }}
+                  />
+                ))}
+              </div>
+
+              {/* hover 指示线 · 也是整体层 · 贯穿 6 行（之前每行 SVG 内部各画一遍，跨行断） */}
+              {hoverLeftPct != null && (
+                <div
+                  className="pointer-events-none absolute inset-y-0 z-20"
+                  style={{ left: 316, right: 112 }}
+                  aria-hidden
+                >
+                  <span
+                    className="absolute inset-y-0 w-px"
+                    style={{
+                      left: `${hoverLeftPct}%`,
+                      background:
+                        `repeating-linear-gradient(to bottom,${ROW_COLOR}66 0,${ROW_COLOR}66 3px,transparent 3px,transparent 6px)`,
+                    }}
+                  />
+                </div>
+              )}
+
               {sorted.map((t) => (
                 <VendorRow
                   key={t.vendor_id}
@@ -234,7 +282,7 @@ export default function Prices() {
               ))}
             </div>
 
-            {/* 日期轴 · 刻度位置跟图内 X 网格严格对齐 · 带小刻度线 */}
+            {/* 日期轴 · 刻度位置跟整体 X 网格层严格对齐（同一套 leftPct） */}
             <div className="flex gap-4 border-t border-hairline pt-1.5">
               <span className="w-[300px] shrink-0" />
               <div className="relative h-4 min-w-0 flex-1">
@@ -441,7 +489,8 @@ function VendorRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-4 py-2.5 transition-opacity",
+        /* relative z-10 · 内容盖在贯穿全行的 X 网格层之上 */
+        "relative z-10 flex items-center gap-4 py-2.5 transition-opacity",
         dim && "opacity-30",
       )}
       onMouseEnter={onEnter}

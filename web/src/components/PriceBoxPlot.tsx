@@ -48,9 +48,6 @@ export function PriceBoxPlot({
   const slot = w / Math.max(1, days.length);
   const barW = Math.min(9, Math.max(3, slot * 0.55));
 
-  /* X 网格 · 跟日期轴刻度同位置（每 N 天一条）· 让竖条能对上日期 */
-  const xStep = Math.max(1, Math.floor(days.length / 5));
-
   return (
     <svg
       className="w-full"
@@ -58,7 +55,8 @@ export function PriceBoxPlot({
       ref={(el) => { if (el) setW(el.clientWidth || 800); }}
       onMouseLeave={() => onHoverDate(null)}
     >
-      {/* Y 网格 · 上中下三条横虚线 · 给竖条一个高度参考 */}
+      {/* Y 网格 · 该行的价格参考线（每行 Y 域独立，所以必须画在行内）
+          X 网格不在这画 —— 那是贯穿 6 行的整体背景层，见 Prices.tsx GridOverlay */}
       {[0, 0.5, 1].map((f) => (
         <line
           key={`y${f}`}
@@ -71,22 +69,6 @@ export function PriceBoxPlot({
           strokeDasharray={f === 0.5 ? "4 4" : "0"}
         />
       ))}
-
-      {/* X 网格 · 竖虚线 · 跟下方日期刻度对齐 */}
-      {days.map((d, i) =>
-        i % xStep === 0 ? (
-          <line
-            key={`x${d.date}`}
-            x1={slot * i + slot / 2}
-            x2={slot * i + slot / 2}
-            y1={0}
-            y2={height}
-            stroke="#F2F2F2"
-            strokeWidth={1}
-            strokeDasharray="3 3"
-          />
-        ) : null,
-      )}
 
       {days.map((d, i) => {
         const cx = slot * i + slot / 2;
@@ -176,21 +158,7 @@ export function PriceBoxPlot({
         );
       })}
 
-      {/* hover 竖虚线 · 指示当前列 */}
-      {hoveredDate && (() => {
-        const idx = days.findIndex((d) => d.date === hoveredDate);
-        if (idx < 0) return null;
-        const cx = slot * idx + slot / 2;
-        return (
-          <line
-            x1={cx} x2={cx} y1={0} y2={height}
-            stroke={color}
-            strokeWidth={1}
-            strokeDasharray="3 3"
-            strokeOpacity={0.35}
-          />
-        );
-      })()}
+      {/* hover 指示线不在这画 —— 那也是贯穿 6 行的整体层，见 Prices.tsx */}
     </svg>
   );
 }
