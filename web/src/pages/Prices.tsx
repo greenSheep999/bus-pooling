@@ -1,11 +1,15 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowDown, ArrowLeft, ArrowUp, Minus } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Minus, X } from "lucide-react";
 import { useVendorPrices } from "@/api/hooks";
-import { Card, Chip, Segmented } from "@/components/ui/primitives";
+import {
+  BareHead, BareList, BareRow, Card, Chip, SectionHead, Segmented,
+} from "@/components/ui/primitives";
+import { Button } from "@/components/ui/button";
+import { LoadMoreButton } from "@/components/ui/load-more-button";
 import { PriceBoxPlot, RoundsTooltip } from "@/components/PriceBoxPlot";
 import { cn, toCredits } from "@/lib/utils";
-import type { VendorPriceTrend } from "@/types";
+import type { Money, VendorPriceTrend, VendorRound } from "@/types";
 
 /** 箱线矩阵专用色 · 每行独立不需要区分色相 · 统一品牌紫（深浅表达轮数）
  *  之前给 6 家配 6 个色相是为了区分重叠折线 —— 现在每家独占一行，不需要了 */
@@ -25,11 +29,17 @@ const ROW_H = 44;
  *  设计要点：数据是三层（vendor → 每天 → 每轮），一根曲线表达不了
  *  → 箱线矩阵：6 家各一行，每根竖条 = 某天全部轮次的价格范围
  *  → hover 竖条 → tooltip 列出那天每一轮的时刻/区/单价/号数 */
+/** 列表每次加载多少条 */
+const PAGE = 20;
+
 export default function Prices() {
   const [days, setDays] = useState<number>(30);
   const [zone, setZone] = useState<string>("us");
   const [hoveredVendor, setHoveredVendor] = useState<string | null>(null);
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
+  /** 列表筛选 · 点图上某天设进来 */
+  const [filter, setFilter] = useState<{ vendorId: string; date: string } | null>(null);
+  const [shown, setShown] = useState(PAGE);
   const { data, isLoading } = useVendorPrices(days, zone);
   const trends = data?.trends ?? [];
 
@@ -71,7 +81,7 @@ export default function Prices() {
     return use.reduce((a, b) => (a.current_price <= b.current_price ? a : b));
   }, [trends]);
 
-  /* hover 中的那天明细 */
+  /* hover 中的那天概要 · tooltip 用 */
   const hoveredRounds = useMemo(() => {
     if (!hoveredVendor || !hoveredDate) return null;
     const t = trends.find((x) => x.vendor_id === hoveredVendor);
@@ -79,6 +89,60 @@ export default function Prices() {
     if (!t || !d) return null;
     return { label: t.vendor_label, date: d.date, rounds: d.rounds };
   }, [hoveredVendor, hoveredDate, trends]);
+
+  /* ── 下方记录列表 · 每条 = 一轮车 ──
+     无筛选 = 全部 vendor 混流按时间倒序（看最近发车动态）
+     有筛选 = 只看那家那天（点图上某天来的） */
+  const rows = useMemo(() => {
+    const out: {
+      key: string;
+      vendorId: string;
+      label: string;
+      date: string;
+      round: VendorRound;
+      /** 那天该家的最低 / 最高价 · 标绿标红用 */
+      dayMin: Money;
+      dayMax: Money;
+      dayRounds: number;
+    }[] = [];
+    for (const t of trends) {
+      if (filter && t.vendor_id !== filter.vendorId) continue;
+      for (const d of t.days) {
+        if (filter && d.date !== filter.date) continue;
+        if (d.rounds.length === 0) continue;
+        const prices = d.rounds.map((r) => r.unit_price);
+        const dayMin = Math.min(...prices);
+        const dayMax = Math.max(...prices);
+        for (let i = 0; i < d.rounds.length; i++) {
+          out.push({
+            key: `${t.vendor_id}-${d.date}-${i}`,
+            vendorId: t.vendor_id,
+            label: t.vendor_label,
+            date: d.date,
+            round: d.rounds[i],
+            dayMin,
+            dayMax,
+            dayRounds: d.rounds.length,
+          });
+        }
+      }
+    }
+    /* 时间倒序 · 最近的在前 */
+    return out.sort((a, b) => b.round.time.localeCompare(a.round.time));
+  }, [trends, filter]);
+
+  const visible = rows.slice(0, shown);
+  const remain = Math.max(0, rows.length - shown);
+
+  /* 点图上某天 → 筛列表 + 重置分页 */
+  const pickDay = (vendorId: string, date: string) => {
+    setFilter((prev) =>
+      prev && prev.vendorId === vendorId && prev.date === date
+        ? null                                     // 再点一次取消
+        : { vendorId, date },
+    );
+    setShown(PAGE);
+  };
 
   return (
     <div className="space-y-section">
@@ -152,9 +216,11 @@ export default function Prices() {
                   tags={tags[t.vendor_id] ?? []}
                   dim={hoveredVendor != null && hoveredVendor !== t.vendor_id}
                   hoveredDate={hoveredVendor === t.vendor_id ? hoveredDate : null}
+                  selectedDate={filter?.vendorId === t.vendor_id ? filter.date : null}
                   onEnter={() => setHoveredVendor(t.vendor_id)}
                   onLeave={() => { setHoveredVendor(null); setHoveredDate(null); }}
                   onHoverDate={setHoveredDate}
+                  onSelectDate={(d) => pickDay(t.vendor_id, d)}
                 />
               ))}
             </div>
@@ -228,6 +294,71 @@ export default function Prices() {
         )}
       </Card>
 
+      {/* 发车记录 · 每条 = 一轮车 · 图上点某天可筛到那天 */}
+      <div className="space-y-5">
+        <SectionHead
+          title="发车记录"
+          sub={
+            filter ? (
+              <>
+                {trends.find((t) => t.vendor_id === filter.vendorId)?.vendor_label} ·{" "}
+                {filter.date.slice(5).replace("-", "/")} ·{" "}
+                <span className="font-semibold tnum">{rows.length}</span> 轮
+              </>
+            ) : (
+              <>
+                {zone === "us" ? "美国区" : "欧洲区"} 全部 vendor ·{" "}
+                <span className="font-semibold tnum">{rows.length}</span> 轮 · 按时间倒序 ·
+                点上图某天可筛
+              </>
+            )
+          }
+          right={
+            filter && (
+              <Button variant="ghost" size="sm" onClick={() => { setFilter(null); setShown(PAGE); }}>
+                <X />
+                清除筛选
+              </Button>
+            )
+          }
+        />
+
+        <Card className="p-4">
+          {rows.length === 0 ? (
+            <div className="py-12 text-center text-label text-fg-tertiary">暂无发车记录</div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <div className="min-w-[680px]">
+                  <BareHead>
+                    <span className="w-[92px] shrink-0">时间</span>
+                    <span className="min-w-0 flex-1">vendor</span>
+                    <span className="w-14 shrink-0 text-center">区域</span>
+                    <span className="w-24 shrink-0 text-right">单价</span>
+                    <span className="w-20 shrink-0 text-right">产出</span>
+                    <span className="w-24 shrink-0 text-right">当天位置</span>
+                  </BareHead>
+                  <BareList>
+                    {visible.map((r) => (
+                      <RoundRow
+                        key={r.key}
+                        r={r}
+                        onPick={() => pickDay(r.vendorId, r.date)}
+                      />
+                    ))}
+                  </BareList>
+                </div>
+              </div>
+              <LoadMoreButton
+                onLoadMore={() => setShown((s) => s + PAGE)}
+                remain={remain}
+                remainUnit="轮"
+              />
+            </>
+          )}
+        </Card>
+      </div>
+
       <p className="text-center text-label text-fg-tertiary">
         当前数据为演示用 mock · 真实数据将从上游轮次记录聚合
       </p>
@@ -235,18 +366,75 @@ export default function Prices() {
   );
 }
 
+/* ─────────────── 记录行 · 一轮车 ─────────────── */
+
+function RoundRow({
+  r, onPick,
+}: {
+  r: {
+    label: string;
+    date: string;
+    round: VendorRound;
+    dayMin: Money;
+    dayMax: Money;
+    dayRounds: number;
+  };
+  onPick: () => void;
+}) {
+  const isMin = r.dayRounds > 1 && r.round.unit_price === r.dayMin;
+  const isMax = r.dayRounds > 1 && r.round.unit_price === r.dayMax;
+  return (
+    <BareRow onClick={onPick}>
+      <span className="w-[92px] shrink-0 text-label font-medium tnum text-fg-tertiary">
+        {r.date.slice(5).replace("-", "/")} {r.round.time.slice(11, 16)}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-label font-medium">{r.label}</span>
+      <span className="w-14 shrink-0 text-center text-label font-medium text-fg-secondary">
+        {r.round.zone ?? "全区"}
+      </span>
+      <span
+        className={cn(
+          "w-24 shrink-0 text-right font-semibold tnum",
+          isMin && "text-ok-fg",
+          isMax && "text-danger-fg",
+        )}
+      >
+        {toCredits(r.round.unit_price)}
+        <span className="ml-0.5 font-medium text-fg-tertiary">积分</span>
+      </span>
+      <span className="w-20 shrink-0 text-right text-label tnum text-fg-secondary">
+        {r.round.keys_count} 个号
+      </span>
+      <span className="w-24 shrink-0 text-right">
+        {/* 那天有多轮时才标 · 让用户知道这轮是当天最便宜还是最贵 */}
+        {isMin ? (
+          <Chip tone="ok" className="text-[10px]">当天最低</Chip>
+        ) : isMax ? (
+          <Chip tone="danger" className="text-[10px]">当天最高</Chip>
+        ) : r.dayRounds > 1 ? (
+          <span className="text-label text-fg-tertiary">{r.dayRounds} 轮中</span>
+        ) : (
+          <span className="text-label text-fg-tertiary">唯一一轮</span>
+        )}
+      </span>
+    </BareRow>
+  );
+}
+
 /* ─────────────── 单行 ─────────────── */
 
 function VendorRow({
-  t, tags, dim, hoveredDate, onEnter, onLeave, onHoverDate,
+  t, tags, dim, hoveredDate, selectedDate, onEnter, onLeave, onHoverDate, onSelectDate,
 }: {
   t: VendorPriceTrend;
   tags: string[];
   dim: boolean;
   hoveredDate: string | null;
+  selectedDate: string | null;
   onEnter: () => void;
   onLeave: () => void;
   onHoverDate: (d: string | null) => void;
+  onSelectDate: (d: string) => void;
 }) {
   return (
     <div
@@ -292,6 +480,8 @@ function VendorRow({
           height={ROW_H}
           hoveredDate={hoveredDate}
           onHoverDate={onHoverDate}
+          selectedDate={selectedDate}
+          onSelectDate={onSelectDate}
         />
       </div>
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { cn, fmtCredits, toCredits } from "@/lib/utils";
+import { toCredits } from "@/lib/utils";
 import type { VendorDayRounds, VendorRound } from "@/types";
 
 /** 单家 vendor 的箱线行 · docs/15-prices-page-design.md
@@ -13,12 +13,18 @@ export function PriceBoxPlot({
   height = 44,
   hoveredDate,
   onHoverDate,
+  selectedDate,
+  onSelectDate,
 }: {
   days: VendorDayRounds[];
   color: string;
   height?: number;
   hoveredDate: string | null;
   onHoverDate: (d: string | null) => void;
+  /** 已选中的那天 · 下方列表正在筛这天 */
+  selectedDate?: string | null;
+  /** 点某天 → 下方列表筛到该 vendor + 该天 */
+  onSelectDate?: (d: string) => void;
 }) {
   const [w, setW] = useState(800);
 
@@ -52,18 +58,28 @@ export function PriceBoxPlot({
       {days.map((d, i) => {
         const cx = slot * i + slot / 2;
         const hovered = hoveredDate === d.date;
+        const selected = selectedDate === d.date;
+        const lit = hovered || selected;
+
+        /* 整列命中区 · 点了筛下方列表 */
+        const hit = (
+          <rect
+            x={cx - slot / 2}
+            y={0}
+            width={slot}
+            height={height}
+            fill="transparent"
+            className={onSelectDate ? "cursor-pointer" : undefined}
+            onClick={() => onSelectDate?.(d.date)}
+          />
+        );
 
         /* 没发车 · 灰点在中线 */
         if (d.rounds.length === 0) {
           return (
             <g key={d.date} onMouseEnter={() => onHoverDate(d.date)}>
-              <rect x={cx - slot / 2} y={0} width={slot} height={height} fill="transparent" />
-              <circle
-                cx={cx}
-                cy={height / 2}
-                r={hovered ? 2.5 : 1.5}
-                fill="#D4D4D8"
-              />
+              {hit}
+              <circle cx={cx} cy={height / 2} r={lit ? 2.5 : 1.5} fill="#D4D4D8" />
             </g>
           );
         }
@@ -77,15 +93,15 @@ export function PriceBoxPlot({
         if (d.rounds.length === 1) {
           return (
             <g key={d.date} onMouseEnter={() => onHoverDate(d.date)}>
-              <rect x={cx - slot / 2} y={0} width={slot} height={height} fill="transparent" />
+              {hit}
               <line
                 x1={cx - barW / 2}
                 x2={cx + barW / 2}
                 y1={y(min)}
                 y2={y(min)}
                 stroke={color}
-                strokeWidth={hovered ? 3 : 2}
-                strokeOpacity={hovered ? 1 : opacity}
+                strokeWidth={lit ? 3 : 2}
+                strokeOpacity={lit ? 1 : opacity}
                 strokeLinecap="round"
               />
             </g>
@@ -97,7 +113,7 @@ export function PriceBoxPlot({
         const yBot = y(min);
         return (
           <g key={d.date} onMouseEnter={() => onHoverDate(d.date)}>
-            <rect x={cx - slot / 2} y={0} width={slot} height={height} fill="transparent" />
+            {hit}
             <rect
               x={cx - barW / 2}
               y={yTop}
@@ -105,10 +121,24 @@ export function PriceBoxPlot({
               height={Math.max(2, yBot - yTop)}
               rx={barW / 2}
               fill={color}
-              fillOpacity={hovered ? 1 : opacity}
-              stroke={hovered ? color : "none"}
-              strokeWidth={hovered ? 1.5 : 0}
+              fillOpacity={lit ? 1 : opacity}
+              stroke={lit ? color : "none"}
+              strokeWidth={lit ? 1.5 : 0}
             />
+            {/* 选中态 · 加个外圈让它在列表筛选时可辨认 */}
+            {selected && (
+              <rect
+                x={cx - barW / 2 - 2.5}
+                y={yTop - 2.5}
+                width={barW + 5}
+                height={Math.max(2, yBot - yTop) + 5}
+                rx={(barW + 5) / 2}
+                fill="none"
+                stroke={color}
+                strokeWidth={1}
+                strokeOpacity={0.4}
+              />
+            )}
           </g>
         );
       })}
@@ -132,7 +162,8 @@ export function PriceBoxPlot({
   );
 }
 
-/** 某天全部轮次的明细 tooltip · 这才是用户要的"每轮价格多少" */
+/** 当天概要 tooltip · 只给"轮数 + 区间 + 均价"
+ *  每轮明细**不放这里** —— 下沉到页面下方的记录列表（信息分层） */
 export function RoundsTooltip({
   date, rounds, label, color,
 }: {
@@ -141,14 +172,18 @@ export function RoundsTooltip({
   label: string;
   color: string;
 }) {
+  const head = (
+    <div className="flex items-center gap-1.5">
+      <span className="size-1.5 rounded-sm" style={{ backgroundColor: color }} />
+      <span className="font-medium">{label}</span>
+      <span className="text-fg-tertiary">· {date.slice(5).replace("-", "/")}</span>
+    </div>
+  );
+
   if (rounds.length === 0) {
     return (
       <div className="rounded-xl border border-hairline bg-bg px-3 py-2 text-label shadow-pop">
-        <div className="flex items-center gap-1.5">
-          <span className="size-1.5 rounded-sm" style={{ backgroundColor: color }} />
-          <span className="font-medium">{label}</span>
-          <span className="text-fg-tertiary">· {date.slice(5)}</span>
-        </div>
+        {head}
         <div className="mt-1 text-fg-tertiary">那天没发车</div>
       </div>
     );
@@ -157,50 +192,41 @@ export function RoundsTooltip({
   const prices = rounds.map((r) => r.unit_price);
   const min = Math.min(...prices);
   const max = Math.max(...prices);
+  const avg = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
 
   return (
-    <div className="min-w-[240px] rounded-xl border border-hairline bg-bg px-3 py-2.5 text-label shadow-pop">
-      {/* 头 · vendor + 日期 + 轮数 */}
-      <div className="flex items-center gap-1.5">
-        <span className="size-1.5 rounded-sm" style={{ backgroundColor: color }} />
-        <span className="font-medium">{label}</span>
-        <span className="text-fg-tertiary">· {date.slice(5)}</span>
-        <span className="ml-auto font-semibold tnum">{rounds.length} 轮</span>
-      </div>
-
-      {/* 每轮明细 · 时刻 / 区 / 单价 / 号数 */}
+    <div className="min-w-[180px] rounded-xl border border-hairline bg-bg px-3 py-2.5 text-label shadow-pop">
+      {head}
       <div className="mt-2 space-y-1 border-t border-hairline pt-2">
-        {rounds.map((r, i) => {
-          const isMin = r.unit_price === min;
-          const isMax = r.unit_price === max;
-          return (
-            <div key={i} className="flex items-baseline gap-2 tnum">
-              <span className="w-10 shrink-0 text-fg-tertiary">{r.time.slice(11, 16)}</span>
-              {r.zone && <span className="w-5 shrink-0 text-fg-tertiary">{r.zone}</span>}
-              <span
-                className={cn(
-                  "w-16 shrink-0 font-semibold",
-                  isMin && rounds.length > 1 && "text-ok-fg",
-                  isMax && rounds.length > 1 && "text-danger-fg",
-                )}
-              >
-                {toCredits(r.unit_price)} 积分
-              </span>
-              <span className="ml-auto text-fg-tertiary">{r.keys_count} 个号</span>
-            </div>
-          );
-        })}
+        <TipRow label="发车" value={<><strong className="tnum">{rounds.length}</strong> 轮</>} />
+        <TipRow
+          label="区间"
+          value={
+            min === max ? (
+              <><strong className="tnum">{toCredits(min)}</strong> 积分</>
+            ) : (
+              <>
+                <strong className="tnum">{toCredits(min)}</strong>
+                {" - "}
+                <strong className="tnum">{toCredits(max)}</strong> 积分
+              </>
+            )
+          }
+        />
+        <TipRow label="均价" value={<><strong className="tnum">{toCredits(avg)}</strong> 积分</>} />
       </div>
+      <div className="mt-2 border-t border-hairline pt-1.5 text-fg-tertiary">
+        点一下 · 下方看每轮明细
+      </div>
+    </div>
+  );
+}
 
-      {/* 底 · 当天区间 */}
-      {rounds.length > 1 && (
-        <div className="mt-2 flex items-baseline justify-between border-t border-hairline pt-2 text-fg-tertiary">
-          <span>当天区间</span>
-          <span className="font-semibold tnum text-fg">
-            {fmtCredits(min)} - {fmtCredits(max)} 积分
-          </span>
-        </div>
-      )}
+function TipRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-fg-tertiary">{label}</span>
+      <span className="text-fg">{value}</span>
     </div>
   );
 }
