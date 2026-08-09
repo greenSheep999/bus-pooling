@@ -120,7 +120,7 @@ delta=$((before - after))
 expected=60000000
 if [ "$delta" -eq "$expected" ]; then ok "只扣一次 · $delta 微单位"; else ko "delta 期望 $expected·实际 $delta"; fi
 
-# ── 步骤 3 · 5 并发拉号 · 5 个不同 key ────────
+# ── 步骤 3 · 5 并发拉号 · 5 个不同 key（余额充足场景）────────
 banner "step 3 · 5 并发拉号 (不同 key · 应各扣一次)"
 before=$(curl -sSf -b "$COOKIES" "$BASE/api/me/wallet" | python3 -c 'import json,sys;print(json.load(sys.stdin)["balance"])')
 
@@ -140,6 +140,42 @@ delta=$((before - after))
 # 5 × 30_000_000 = 150_000_000（单价 · 1 号）· DRY_RUN vendor
 expected=150000000
 if [ "$delta" -eq "$expected" ]; then ok "并发 5 次各扣一次 · $delta"; else ko "delta 期望 $expected·实际 $delta（超扣或漏扣）"; fi
+
+# ── 步骤 3b · 余额不足并发 · 真资金竞争（不能超扣）──────────
+banner "step 3b · 余额不足并发 (资金竞争·不能超扣不能漏扣)"
+# 场景：wallet 剩余不够抢·10 goroutine 每个要 30_000_000·wallet 只够 3 次成功
+# 造场景：先把 wallet SQL 直接压到 90_000_000（= 3 次单价）
+sqlite3 "$DB" "UPDATE wallet SET balance=90000000 WHERE passenger_id IN (SELECT id FROM passenger LIMIT 1);"
+
+before=$(curl -sSf -b "$COOKIES" "$BASE/api/me/wallet" | python3 -c 'import json,sys;print(json.load(sys.stdin)["balance"])')
+if [ "$before" != "90000000" ]; then
+  ko "预置余额失败 · got=$before want=90000000"
+else
+  # 10 goroutine 各拉 1 号（30_000_000）· 只能 3 个成功
+  rm -f /tmp/bp-e2e-r*.txt
+  pids=()
+  for i in $(seq 1 10); do
+    key=$(gen_key)
+    (curl -sS -o /dev/null -w "%{http_code}\n" -b "$COOKIES" -X POST "$BASE/api/me/pull" \
+       -H "Content-Type: application/json" \
+       -H "X-Idempotency-Key: $key" \
+       -d '{"count":1}' > /tmp/bp-e2e-r$i.txt) &
+    pids+=($!)
+  done
+  for p in "${pids[@]}"; do wait "$p" || true; done
+
+  # 统计成功数（HTTP 200）· 失败数（HTTP 402 insufficient_balance）
+  success=$(cat /tmp/bp-e2e-r*.txt 2>/dev/null | grep -c "^200$" || echo 0)
+  failed=$(cat /tmp/bp-e2e-r*.txt 2>/dev/null | grep -c "^402$" || echo 0)
+  after=$(curl -sSf -b "$COOKIES" "$BASE/api/me/wallet" | python3 -c 'import json,sys;print(json.load(sys.stdin)["balance"])')
+
+  # 断言：成功数 = 3 · 失败数 = 7 · 余额 = 0（3 × 30_000_000 恰好扣光）
+  if [ "$success" = "3" ] && [ "$failed" = "7" ] && [ "$after" = "0" ]; then
+    ok "资金竞争无超扣 · 成功 3 · 失败 7 · 余额 0"
+  else
+    ko "资金竞争异常 · 成功=$success (期望 3) · 失败=$failed (期望 7) · 余额=$after (期望 0)"
+  fi
+fi
 
 # ── 步骤 4 · Kill 恢复 ────────────────────────
 banner "step 4 · Kill 恢复 (SIGKILL → 重启 → janitor 兜)"
