@@ -263,9 +263,11 @@ func buildDecider(cfg config.Config, sqldb *db.DB, reg *providers.Registry) (*de
 		if err != nil {
 			return nil, nil, decider.Rates{}, fmt.Errorf("装配号池客户端: %w", err)
 		}
-		// expected_sha 真校验（Iss #13）· 空 = 不校验
+		// expected_version 真校验（Iss #13）· 空 = 不校验
 		// live 模式下强烈建议配·防 kiro.rs 契约漂移后我方误发请求
-		if cfg.Housepool.ExpectedSHA != "" {
+		// **注意**：这里比的是**语义版本**（CARGO_PKG_VERSION）·不是 commit SHA。
+		// 真绑 build sha 需 kiro.rs 加 endpoint · 上游未提供。
+		if cfg.Housepool.ExpectedVersion != "" {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			gotVersion, verErr := poolClient.GetVersion(ctx)
 			cancel()
@@ -273,10 +275,10 @@ func buildDecider(cfg config.Config, sqldb *db.DB, reg *providers.Registry) (*de
 				return nil, nil, decider.Rates{}, fmt.Errorf(
 					"kiro.rs 版本校验失败·无法拉版本·拒启动: %w", verErr)
 			}
-			if gotVersion != cfg.Housepool.ExpectedSHA {
+			if gotVersion != cfg.Housepool.ExpectedVersion {
 				return nil, nil, decider.Rates{}, fmt.Errorf(
 					"kiro.rs 版本对不上·期望 %q·实际 %q·契约可能已漂移·拒启动",
-					cfg.Housepool.ExpectedSHA, gotVersion)
+					cfg.Housepool.ExpectedVersion, gotVersion)
 			}
 			slog.Info("kiro.rs 版本校验通过", "version", gotVersion)
 		}

@@ -57,14 +57,16 @@ type HTTPX struct {
 
 type Housepool struct {
 	BaseURL string `yaml:"base_url"`
-	// 绑定 kiro.rs 版本防契约漂移（sprint Iss #13）· 空 = 不校验
-	// 启动时调 GET /admin/system/update/check · 比对返回的 current_version
-	// （kiro.rs types.rs UpdateCheckInfo.current_version = CARGO_PKG_VERSION）·
-	// 不等就启动失败·跟 rates 零费率同款守护。
+	// ExpectedVersion 绑 kiro.rs 语义版本（**不是 commit SHA**）·空 = 不校验。
 	//
-	// ExpectedSHA 是兼容旧字段名·实际含义是"expected version"（语义版本字符串）·
-	// 后续可能改字段名。
-	ExpectedSHA string `yaml:"expected_sha"`
+	// 启动时调 GET /admin/system/update/check · 比对返回的 current_version
+	// （kiro.rs types.rs UpdateCheckInfo.current_version = CARGO_PKG_VERSION ·
+	// 例："0.42.1"）·不等就启动失败·跟 rates 零费率同款守护。
+	//
+	// **要绑真 commit SHA** · 需 kiro.rs 加暴露 build info 的 endpoint ·
+	// 目前上游不提供 · 只能对比语义版本。字段名从 ExpectedSHA 改了 · 老 yaml/env
+	// 的兼容读取见 applyEnv（同时接受两个 env 名）。
+	ExpectedVersion string `yaml:"expected_version"`
 }
 
 // Vendors 各家 vendor 的**非敏感**配置。
@@ -187,8 +189,12 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("BP_HOUSEPOOL_URL"); v != "" {
 		cfg.Housepool.BaseURL = v
 	}
-	if v := os.Getenv("BP_HOUSEPOOL_EXPECTED_SHA"); v != "" {
-		cfg.Housepool.ExpectedSHA = v
+	// BP_HOUSEPOOL_EXPECTED_VERSION 是新名·BP_HOUSEPOOL_EXPECTED_SHA 是兼容旧名（misnomer）
+	// 新名优先·两个都设新名生效。
+	if v := os.Getenv("BP_HOUSEPOOL_EXPECTED_VERSION"); v != "" {
+		cfg.Housepool.ExpectedVersion = v
+	} else if v := os.Getenv("BP_HOUSEPOOL_EXPECTED_SHA"); v != "" {
+		cfg.Housepool.ExpectedVersion = v
 	}
 	if v := os.Getenv("BP_PROXY"); v != "" {
 		cfg.HTTPX.Proxy = v

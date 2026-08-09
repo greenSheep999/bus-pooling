@@ -160,7 +160,7 @@ bash tests/e2e/run-e2e.sh  # e2e 一键 · 幂等 / 5 并发 / kill 恢复
 | `BP_ENABLE_DEV_TOPUP` | | `1` = 挂 `/api/internal/topup/{id}/paid` dev 端点（生产必空） |
 | `BP_HOUSEPOOL_URL` | | kiro.rs 部署地址 · 例：`https://kiro.aibbq.xyz` |
 | `BP_HOUSEPOOL_ADMIN_KEY` | | kiro.rs 的 admin API key |
-| `BP_HOUSEPOOL_EXPECTED_SHA` | | 绑 kiro.rs 语义版本 · 启动时校验 · 空 = 不校 |
+| `BP_HOUSEPOOL_EXPECTED_VERSION` | | 绑 kiro.rs **语义版本**（不是 commit SHA · 上游未暴露 build sha）· 启动时对比 `GET /admin/system/update/check` 里的 `current_version` · 不等则拒启动 · 空 = 不校。兼容旧名 `BP_HOUSEPOOL_EXPECTED_SHA` |
 | `BP_VENDOR_KIRO91_API_KEY` | 1a live | 91kiro 我方账户 API key (`usr-` 前缀) |
 | `BP_VENDOR_KIRO91_ENABLED` | | 非空 = 注册 91kiro adapter |
 | `BP_VENDOR_KIRO91_WEBHOOK_SECRET` | | 收 91kiro webhook 时验签用 |

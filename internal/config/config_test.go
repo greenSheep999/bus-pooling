@@ -46,7 +46,7 @@ httpx:
   max_retries: 7
 housepool:
   base_url: "https://pool.example.com"
-  expected_sha: "abc123"
+  expected_version: "0.42.1"
 dry_run: false
 `
 	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
@@ -66,8 +66,8 @@ dry_run: false
 	if cfg.HTTPX.MaxRetries != 7 {
 		t.Errorf("max_retries = %d", cfg.HTTPX.MaxRetries)
 	}
-	if cfg.Housepool.ExpectedSHA != "abc123" {
-		t.Errorf("expected_sha = %q", cfg.Housepool.ExpectedSHA)
+	if cfg.Housepool.ExpectedVersion != "0.42.1" {
+		t.Errorf("expected_version = %q", cfg.Housepool.ExpectedVersion)
 	}
 	if cfg.DryRun {
 		t.Error("yaml 里 dry_run: false 没生效")

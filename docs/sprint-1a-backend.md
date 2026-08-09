@@ -164,7 +164,7 @@
 3. **wallet 冻结机制** —— `wallet.reserved` 字段 + `BEGIN IMMEDIATE` + 条件更新
 4. **credential_ledger 号归属 = Bus**（`owner_bus_id` XOR `owner_record_passenger_id`）
 5. **DRY_RUN 开关** —— 环境变量 `DRY_RUN=1` 时 vendor.Purchase 走 mock（避免误扣真钱）；生产 `DRY_RUN=0`
-6. **kiro.rs commit sha 绑定** —— `config.yaml` 加 `housepool.kirors.expected_sha`，启动时 ping kiro.rs `/version` 校验，防止契约漂移
+6. **kiro.rs 版本绑定** —— `config.yaml` 加 `housepool.expected_version`（**语义版本·非 commit SHA** · 上游未暴露 build sha），启动时 `GET /admin/system/update/check` 拿 `current_version` 比对，不等则拒启（防契约漂移）
 7. **登录方案冻结** —— Argon2id + session cookie + API key hash，**不接** SuperTokens（`decisions.md §1.9`）
 
 ## Issue 拆分（估工时 = 单人纯开发；不含 review / 联调）
@@ -330,7 +330,7 @@
 - **两套环境**：
   - `DRY_RUN=1` · vendor 调用走 mock，不扣真钱；用于 CI / 开发
   - `DRY_RUN=0` · 真实调 vendor；上线前手工验证一次
-- **kiro.rs commit sha 绑定**：`config.yaml` 里 `housepool.kirors.expected_sha`；启动时 `GET /` 校验版本；不匹配拒启（防契约漂移）
+- **kiro.rs 版本绑定（语义版本·非 commit SHA）**：`config.yaml` 里 `housepool.expected_version`；启动时 `GET /admin/system/update/check` 拿 `current_version` 比对；不匹配拒启（防契约漂移）· 真绑 build sha 需 kiro.rs 加 endpoint
 - e2e 测试脚本：
   - 注册 → 登录 → API key
   - 建 bus → 拉 5 号 → 看 credentials（DRY_RUN=1）
