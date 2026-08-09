@@ -450,6 +450,15 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	go handoffJanitor.Run(ctx)
 	slog.Info("handoff janitor 已启动")
 
+	// assign janitor · 扫 pending_assignment 卡在 initial 太久的行（09-transactions §5）
+	// tx1 落 initial + pool.UpdateCredential + tx2 completed 是三段·中间崩会留 initial。
+	// 阶段 1a 简化：转 need_manual 让运营查·1c 加自动 reconcile。
+	assignJanitor := pullrecord.NewAssignJanitor(pullrecord.AssignJanitorConfig{
+		DB: database.DB,
+	})
+	go assignJanitor.Run(ctx)
+	slog.Info("assign janitor 已启动")
+
 	// deathwatch 只在真号池 live 起时跑（mock 模式没 pool 可探）
 	if poolClient != nil {
 		w := deathwatch.New(deathwatch.Config{DB: database.DB, Pool: poolClient})

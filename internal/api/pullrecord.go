@@ -264,11 +264,21 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	// 三步塞一个事务（09-transactions §5 · assign 状态机 · 业务写 + 事件表 + 幂等响应）：
-	//   1. AssignToBusTx / MarkPushedTx · 派去向
-	//   2. pending_assignment 落 N 行（供 /me/assign/events）
-	//   3. saveIdempotentResponseTx · 冻结这条 idempotency_record 的响应
-	// 任何一步失败 → tx 回滚 → 派没成 · 事件没落 · 幂等键仍是 in-flight（下次同 key 重试）
+	// 09-transactions §5 · pending_assignment 崩溃安全的三段式：
+	//
+	//   tx1: INSERT initial + Commit          ← 承诺"这个 idempotency_key 要做 assign"
+	//   tx 外: pool.UpdateCredential          ← 外部动作·崩溃留 initial 供 janitor 兜
+	//   tx2: 台账 + 推 completed + finalize   ← 走完
+	//
+	// 崩溃窗口分析：
+	//   - tx1 之前崩：什么痕迹都没有·同 key 重试 = 新单
+	//   - tx1 与 pool 之间崩：pending_assignment=initial · janitor 扫到 → 无外部动作·delete·同 key 可重放
+	//   - pool 与 tx2 之间崩：pending_assignment=initial · housepool 已迁·台账未改 →
+	//                        janitor 查号池 group 对账·前推到 completed 或转 need_manual
+	//   - tx2 之后：completed 终态
+	//
+	// P0 修复（审计发现）：之前先 pool.UpdateCredential 再 tx·中间崩溃会导致
+	//   housepool 已迁 · 本地无痕迹 · 同 key 重试 hit idempotency in-flight conflict。
 	target := "to-bus"
 	var targetBusID any = nil
 	if dest == "push_pool" {
@@ -283,15 +293,34 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 	}
 	respBody, _ := json.Marshal(resp)
 
-	// ── 阶段 A · tx 外做外部动作（先外后内 §7.1）──
-	// 只读 SELECT + housepool.UpdateCredential 都放在 tx 之前·
-	// 免 SQLite 单 writer 死锁（tx 开着时任何其他 conn 都不能拿写锁）。
-	// 失败直接返错 · 后续 tx 不开 · 台账干净。
-	//
-	// **1a 简化**：仍然不算 09-transactions §7.1 定义的完整"先外后内 + 二事务 + janitor
-	// 恢复"（那个要求 pending_assignment 先落 initial · 外部动作失败 janitor 兜）。
-	// 这里的顺序是：外部动作 → 全事务（含 initial → completed 状态推进）。真严格的
-	// 崩溃恢复放到 1c 处理。
+	// ── tx1 · 落 initial + commit（承诺 · janitor 可见的锚点）──
+	assignIDs := make([]string, 0, len(req.CredentialIDs))
+	{
+		tx1, err := s.db.BeginTx(r.Context(), nil)
+		if err != nil {
+			return err
+		}
+		now := nowRFC3339()
+		for _, cid := range req.CredentialIDs {
+			aid := uuidNewString()
+			assignIDs = append(assignIDs, aid)
+			if _, err := tx1.ExecContext(r.Context(), `
+				INSERT INTO pending_assignment
+				  (id, idempotency_record_id, passenger_id, credential_id, target, target_bus_id,
+				   status, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, 'initial', ?, ?)`,
+				aid, hit.recordID, p.ID, cid, target, targetBusID, now, now); err != nil {
+				_ = tx1.Rollback()
+				return fmt.Errorf("assign tx1 · 落 initial 失败: %w", err)
+			}
+		}
+		if err := tx1.Commit(); err != nil {
+			return fmt.Errorf("assign tx1 · commit: %w", err)
+		}
+	}
+
+	// ── tx 外 · 外部动作（housepool 迁 group）──
+	// 崩溃发生在这里 · initial 行留在 DB · janitor 扫 → 查 housepool 决定 forward/rollback
 	if dest == "into_bus" && s.pool != nil {
 		krIDs, err := s.pullRecords.LookupKiroRSCredentialIDs(r.Context(), req.CredentialIDs, p.ID)
 		if err != nil {
@@ -301,42 +330,24 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		for _, cid := range req.CredentialIDs {
 			krID, ok := krIDs[cid]
 			if !ok {
-				// kiro_rs_credential_id 空（DryRun 拉的号 / 遗留数据）· 阶段 1a 允许跳过
-				// 真上线前 assign 应保证所有 credential 都有 krID
 				continue
 			}
 			if err := s.pool.UpdateCredential(r.Context(),
 				housepool.CredentialID(krID),
 				housepool.CredentialPatch{Groups: &targetGroups}); err != nil {
+				// 外部动作失败：initial 行留库·janitor 后续走 recover 分支（查 pool group）
 				return fmt.Errorf("assign into_bus · housepool 迁 group 失败 (cred=%s krID=%d): %w",
 					cid, krID, err)
 			}
 		}
 	}
 
-	// ── 阶段 B · tx 内做本地状态机 + 台账 + 幂等响应 ──
+	// ── tx2 · 台账更新 + 状态推 completed + 幂等响应 ──
 	tx, err := s.db.BeginTx(r.Context(), nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-
-	// 09-transactions §5 · pending_assignment 状态机：
-	//   initial → external_done → status_updated → completed
-	assignIDs := make([]string, 0, len(req.CredentialIDs))
-	now := nowRFC3339()
-	for _, cid := range req.CredentialIDs {
-		assignID := uuidNewString()
-		assignIDs = append(assignIDs, assignID)
-		if _, err := tx.ExecContext(r.Context(), `
-			INSERT INTO pending_assignment
-			  (id, idempotency_record_id, passenger_id, credential_id, target, target_bus_id,
-			   status, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, 'initial', ?, ?)`,
-			assignID, hit.recordID, p.ID, cid, target, targetBusID, now, now); err != nil {
-			return fmt.Errorf("assign: 事件表 initial 落库失败: %w", err)
-		}
-	}
 
 	// credential_ledger 更新（into_bus 迁 owner_bus_id · push_pool 标 pushed_at）
 	switch dest {
@@ -358,32 +369,21 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	// ② initial → external_done · 外部动作已做（阶段 1a 只是台账写·1c 加 housepool 迁移）
-	// ③ external_done → status_updated · credential_ledger 状态更新（阶段 1a 合并在 ①）
-	// ④ status_updated → completed · 终态
-	//
-	// **阶段 1a 的诚实说明**：SQLite 单 writer + 无跨系统真外部动作·4 态在同一 tx
-	// 内合并推进等价于原子写。这里显式分 3 次 UPDATE 走完·让审计能看到状态机存在·
-	// 也让下游 1c（into_bus 真 housepool group 迁移）能只补 ② → ③ 之间的异步逻辑。
-	//
-	// 每步都用条件 UPDATE · 强制线性推进 · 任何一步 rows=0 都算状态被别人推过（并发保护）。
+	// initial → completed · SQLite 单 tx 下直接一步。
+	// 以前有 initial → external_done → status_updated → completed 三次 UPDATE ·
+	// 但同 tx 提交本质是一次原子写 · 那三次 UPDATE 是"给审计看的假状态机" · 移除。
+	// 真的分步是 tx1（initial）+ tx 外（pool）+ tx2（completed）· 现在已经三段。
 	for _, aid := range assignIDs {
-		for _, t := range []struct{ from, to string }{
-			{"initial", "external_done"},
-			{"external_done", "status_updated"},
-			{"status_updated", "completed"},
-		} {
-			res, err := tx.ExecContext(r.Context(), `
-				UPDATE pending_assignment
-				   SET status = ?, updated_at = ?
-				 WHERE id = ? AND status = ?`,
-				t.to, nowRFC3339(), aid, t.from)
-			if err != nil {
-				return fmt.Errorf("assign: 状态 %s→%s 失败: %w", t.from, t.to, err)
-			}
-			if n, _ := res.RowsAffected(); n == 0 {
-				return fmt.Errorf("assign: 状态 %s→%s rows=0（并发或已推过）", t.from, t.to)
-			}
+		res, err := tx.ExecContext(r.Context(), `
+			UPDATE pending_assignment
+			   SET status = 'completed', updated_at = ?
+			 WHERE id = ? AND status = 'initial'`,
+			nowRFC3339(), aid)
+		if err != nil {
+			return fmt.Errorf("assign: 状态推进 completed 失败: %w", err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return fmt.Errorf("assign: 状态推进 rows=0（并发或已推过）")
 		}
 	}
 

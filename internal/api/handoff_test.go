@@ -94,8 +94,11 @@ func TestHandoffFulfill_ReturnsKeys(t *testing.T) {
 	}
 }
 
-// ② TrueTextMode · 真明文路径下 fulfill 推 fulfilled · 需要 BP_HANDOFF_TRUE_PLAINTEXT=1
-func TestHandoffFulfill_TrueTextMode(t *testing.T) {
+// ② **P0 锁**：真明文模式（BP_HANDOFF_TRUE_PLAINTEXT=1）当前 kiro.rs 明文 endpoint 未接·
+// fulfill 必须返 501 · pending_handoff 状态不推 fulfilled · 号绝不会被删。
+// 上一轮审计发现的漏洞：真明文分支实际调 readHandoffPlaintext·但那函数返占位串·
+// confirm 又走 DELETE·拿到假 key 却删真号。修完后本测试锁死。
+func TestHandoffFulfill_TrueTextMode_RejectsUntilPlaintextEndpointReady(t *testing.T) {
 	t.Setenv("BP_HANDOFF_TRUE_PLAINTEXT", "1")
 	e, base, withKey, _ := setupHandoff(t)
 
@@ -105,12 +108,27 @@ func TestHandoffFulfill_TrueTextMode(t *testing.T) {
 	token := init["download_token"]
 
 	status, resp := base.do(t, "GET", "/api/me/handoff/"+token, nil, withKey)
-	if status != http.StatusOK {
-		t.Fatalf("fulfill status = %d body=%s", status, resp)
+	if status != http.StatusNotImplemented {
+		t.Fatalf("真明文路径 fulfill 应 501·得到 %d body=%s", status, resp)
 	}
+	got := decode[Error](t, resp)
+	if got.Code != "handoff_plaintext_unavailable" {
+		t.Errorf("code = %s·want handoff_plaintext_unavailable", got.Code)
+	}
+
+	// **关键锁**：pending_handoff 状态**不能**推到 fulfilled·防 confirm 走 DELETE
 	pending, _ := e.handoffs.GetByToken(context.Background(), token)
-	if pending.Status != handoff.StatusFulfilled {
-		t.Errorf("真明文路径 status = %s, want fulfilled", pending.Status)
+	if pending.Status == handoff.StatusFulfilled {
+		t.Errorf("真明文 fulfill 失败后·status 不能推 fulfilled·实际 %s", pending.Status)
+	}
+
+	// **关键锁**：号仍 alive
+	var credStatus string
+	if err := e.db.DB.QueryRow(`SELECT status FROM credential_ledger WHERE id='c1'`).Scan(&credStatus); err != nil {
+		t.Fatal(err)
+	}
+	if credStatus != "alive" {
+		t.Errorf("真明文失败后·号绝不能被 handed_off·实际 status=%s", credStatus)
 	}
 }
 
@@ -172,52 +190,13 @@ func TestHandoffFulfill_OtherPassenger(t *testing.T) {
 	}
 }
 
-// ③ 真明文路径下 confirm → status=completed · credential_ledger 标 handed_off · pool DELETE
-// 需要 BP_HANDOFF_TRUE_PLAINTEXT=1（默认占位路径的 confirm 不删号 · 见另一个测试）
-func TestHandoffConfirm_MarksHandedOff(t *testing.T) {
-	t.Setenv("BP_HANDOFF_TRUE_PLAINTEXT", "1")
-	e, base, withKey, _ := setupHandoff(t)
-
-	_, body := base.do(t, "POST", "/api/me/handoff",
-		map[string]any{"credential_ids": []string{"c1"}}, withKey)
-	init := decode[map[string]string](t, body)
-	token := init["download_token"]
-
-	// 先 fulfill 才能 confirm
-	if s, _ := base.do(t, "GET", "/api/me/handoff/"+token, nil, withKey); s != http.StatusOK {
-		t.Fatalf("fulfill 失败 status=%d", s)
-	}
-
-	status, _ := base.do(t, "POST", "/api/me/handoff/"+token+"/confirm", nil, withKey)
-	if status != http.StatusOK {
-		t.Fatalf("confirm status = %d", status)
-	}
-
-	// pending_handoff 标 completed
-	pending, _ := e.handoffs.GetByToken(context.Background(), token)
-	if pending.Status != handoff.StatusCompleted {
-		t.Errorf("status = %s, want completed", pending.Status)
-	}
-
-	// credential_ledger 标 handed_off
-	var credStatus string
-	if err := e.db.DB.QueryRow(
-		`SELECT status FROM credential_ledger WHERE id = 'c1'`).Scan(&credStatus); err != nil {
-		t.Fatal(err)
-	}
-	if credStatus != "handed_off" {
-		t.Errorf("credential_ledger.status = %s, want handed_off", credStatus)
-	}
-
-	// handoff 后号从 pull-records 视图消失
-	_, listBody := base.do(t, "GET", "/api/me/pull-records", nil, withKey)
-	list := decode[struct {
-		Total int `json:"total"`
-	}](t, listBody)
-	// c2 还在（本用例只 handoff c1）
-	if list.Total != 1 {
-		t.Errorf("handoff 后 record 视图 total = %d, want 1（c2 未 handoff）", list.Total)
-	}
+// ③ 真明文路径下 confirm → 号 handed_off · pool DELETE ·
+// **skip**：当前 readHandoffPlaintext 一定返 error（kiro.rs 明文 endpoint 未接）·
+// 真明文路径根本走不到 confirm 分支。接了 endpoint 后·把 readHandoffPlaintext
+// 里的 return error 换成真调 pool·然后打开这个测试。
+func TestHandoffConfirm_MarksHandedOff_TrueTextPath(t *testing.T) {
+	t.Skip("真明文路径 fulfill 当前 501·接了 kiro.rs 明文 endpoint 后打开·" +
+		"届时改 readHandoffPlaintext 真调 pool 明文 API")
 }
 
 // ③ **P0 保护**：占位路径下 confirm 不删号 · 号仍 alive · status=confirmed_placeholder

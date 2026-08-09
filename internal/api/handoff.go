@@ -255,36 +255,32 @@ func (s *Server) handleHandoffConfirm(w http.ResponseWriter, r *http.Request) er
 	return nil
 }
 
-// readHandoffPlaintext 每号一次从 housepool 读明文。
+// errHandoffPlaintextUnavailable 真明文路径的兜底：kiro.rs 明文 endpoint 还没接·
+// 就不许有任何"能返 keys"的代码路径·上一轮审计报告的 P0：BP_HANDOFF_TRUE_PLAINTEXT=1
+// 进真明文分支·readHandoffPlaintext 却返 PLACEHOLDER·confirm 又走 DELETE 删真号。
+// 现在 · 真明文路径永远 error 出去·pending_handoff 状态不推进·号不删。
+var errHandoffPlaintextUnavailable = &Fail{
+	Status: http.StatusNotImplemented,
+	Err: &Error{
+		Code:    "handoff_plaintext_unavailable",
+		Message: "取号明文暂未开放（kiro.rs 明文导出端点未接·联系管理员）",
+	},
+}
+
+// readHandoffPlaintext 从 housepool 读**真明文** —— 只在真接了 kiro.rs 明文 endpoint
+// 之后才会有实现。
 //
-// **阶段 1a 的现状**：kiro.rs 侧还没开放"读明文"admin 端点
-// （08-housepool-contract §12 承诺但未定义 endpoint）。本方法返回**明确标记为
-// 占位**的响应 —— key 形如 "PLACEHOLDER:not-a-real-key:<credential_id>"，
-// account / vendor_id 是真的（从台账拿）。前端 UI 三段式 flow 能跑完，但拿到
-// 的号不能用。
+// **当前实现是拒绝** —— 因为 kiro.rs 侧还没开放"读明文"admin 端点
+// （08-housepool-contract §12 承诺但未定义 endpoint）·任何走到这个函数的代码
+// 路径都会返 error·pending_handoff 状态不推 fulfilled·confirm 分支就走不了 DELETE。
 //
-// **上线前**：接 kiro.rs 明文导出端点·替换本方法·同时把 BP_STRICT_HANDOFF=1
-// 打开·防降级路径把占位漏进生产。
-func (s *Server) readHandoffPlaintext(ctx context.Context, credIDs []string) ([]handoffKey, error) {
-	if len(credIDs) == 0 {
-		return nil, nil
-	}
-	rows, err := s.selectHandoffMeta(ctx, credIDs)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]handoffKey, 0, len(rows))
-	for _, m := range rows {
-		// 明显的占位·别让前端误把 key_masked 当真号渲染
-		key := "PLACEHOLDER:not-a-real-key:" + m.credentialID
-		out = append(out, handoffKey{
-			CredentialID: m.credentialID,
-			Key:          key,
-			VendorID:     m.vendorID,
-			Account:      m.account,
-		})
-	}
-	return out, nil
+// **联调用占位路径**：用 BP_ALLOW_HANDOFF_PLACEHOLDER=1 · 那条走 readHandoffPlaceholder
+// + MarkPlaceholderDelivered · 状态推到 placeholder_delivered · confirm 分支特判走
+// MarkConfirmedPlaceholder 不删号。**跟这个函数**完全无关。
+//
+// **上线**：接了 kiro.rs 明文 endpoint 后·把下面 return error 换成真调 pool 读明文。
+func (s *Server) readHandoffPlaintext(_ context.Context, _ []string) ([]handoffKey, error) {
+	return nil, errHandoffPlaintextUnavailable
 }
 
 type handoffMeta struct {
