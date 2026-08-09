@@ -181,7 +181,7 @@ fi
 banner "step 4 · janitor 恢复集成测试 (initial / reserved / purchasing / purchased)"
 # **重要澄清**（审计准确指出）：这不是真"进程在执行到某一步时 SIGKILL"的崩溃窗口测试·
 # 而是"手工在 DB 造 4 种 pending 状态·SIGKILL 后重启·看 janitor 能否兜"的恢复集成测试。
-# 真崩溃窗口需要注入延迟 + 精确时机 SIGKILL·工作量大·1c 补。
+# 真崩溃窗口另跑 tests/e2e/real-crash-window.sh（DryRunVendor Purchase sleep 3s · pull 中间 SIGKILL）。
 #
 # 本测试证明的：janitor 在扫到卡在任一状态时·都能做出正确决策（delete / recover / need_manual）。
 # 本测试**不**证明的：在业务真跑到那个状态时崩溃·系统能恢复。
