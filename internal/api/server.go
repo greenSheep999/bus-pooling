@@ -164,6 +164,12 @@ func (s *Server) Routes(mux *http.ServeMux) {
 		mux.Handle("POST /api/hooks/paymentgw/settlement", handler(s.handleGatewaySettlement))
 	}
 
+	// vendor webhook 接收 · 6 家 kiro 系 vendor 一个统一端点
+	//
+	// 阶段 1a 只：验签（有 HMAC 那两家）+ log + 返 200 · 事件在 1d 真处理
+	// 目的：vendor 侧不再刷我方 404。无鉴权（用 HMAC / URL secret 验证）
+	mux.Handle("POST /api/webhooks/vendor/{vendor_id}", handler(s.handleVendorWebhook))
+
 	// vendors 只读（05-api-contract §9）· 全部要鉴权
 	mux.Handle("GET /api/vendors/stock", handler(s.RequireAuth(s.handleVendorsStock)))
 	mux.Handle("GET /api/vendors/prices", handler(s.RequireAuth(s.handleVendorsPrices)))

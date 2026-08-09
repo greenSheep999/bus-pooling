@@ -102,7 +102,7 @@
 | `GET /api/vendors/prices` | ⚙️ 骨架 501 | 价格走势页（§8.22）· 要轮次级历史，1d 采集后才有 |
 | `GET /api/vendors/{id}/history` | ⚙️ 骨架 501 | 同上 |
 | `GET /api/vendors/{id}/health` | ⚙️ 骨架 501 | 1d 有平均寿命才做 |
-| `POST /webhook/vendor/91kiro` | ⚙️ 骨架 501 | 1d 才做 |
+| `POST /api/webhooks/vendor/{vendor_id}` | ✅ 骨架 | 6 家统一入口·验签 + log·真处理号死是 1d |
 
 ### 概览页（原表整段漏了 · 返 501 概览就是空白页）
 
