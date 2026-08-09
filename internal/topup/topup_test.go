@@ -44,7 +44,7 @@ func seedPassenger(t *testing.T, d *db.DB, id string) {
 }
 
 func TestBreakdownFor(t *testing.T) {
-	// 想充 100 积分 → 通道费 5 → paid 105（CLAUDE.md §1.4）
+	// 想充 100 积分 → 手续费 5 → paid 105（CLAUDE.md §1.4）
 	b := BreakdownFor(100_000_000)
 	if b.Credits != 100_000_000 {
 		t.Errorf("credits = %d", b.Credits)

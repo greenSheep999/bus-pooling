@@ -13,17 +13,22 @@ import (
 
 	"github.com/bus-pooling/bus-pooling/internal/paymentgw"
 	"github.com/bus-pooling/bus-pooling/internal/topup"
+	"github.com/bus-pooling/bus-pooling/internal/topupchannel"
 )
 
 // topupRequest / topupOrderResponse 对外形状。
 //
-// 请求字段 `credits`：乘客目标积分（要净到账的数字）。通道费 5% 加在本金上（CLAUDE.md §1.4）。
-// 响应字段对齐 web/src/types/index.ts 的 TopupOrder：
+// 请求字段 `credits`：乘客目标积分（要净到账的数字）。手续费 5% 加在本金上（CLAUDE.md §1.4）。
+// 请求字段 `channel`：具体渠道 id · 由 topupchannel 包的 registry 定义。
+// 空 = 用 default（未来算法选路 · 现在仅第一家 hosted 渠道）。
+// 请求字段 `payer_reference`：direct rail 渠道需要（UID / ID / wallet 地址等）· hosted 可空。
 //
-//	order_id / checkout_url / paid / credits / expires_at + status（收敛后的对外三态）。
+// 响应字段对齐 web/src/types/index.ts 的 TopupOrder：
+//   order_id / checkout_url / paid / credits / expires_at + status
 type topupRequest struct {
-	Credits int64  `json:"credits"`
-	Channel string `json:"channel"`
+	Credits        int64  `json:"credits"`
+	Channel        string `json:"channel"`
+	PayerReference string `json:"payer_reference,omitempty"` // direct rail 用（Bybit UID / Binance ID / wallet 地址）
 }
 
 // topupOrderResponse 单张充值单的对外形状。
@@ -33,17 +38,20 @@ type topupRequest struct {
 type topupOrderResponse struct {
 	OrderID     string `json:"order_id"`
 	CheckoutURL string `json:"checkout_url"`         // gateway.instructions.checkout_url · 前端跳转
-	QRContent   string `json:"qr_content,omitempty"` // 有 QR 的 rail 会给·waffo 一般没
+	QRContent   string `json:"qr_content,omitempty"` // 有 QR 的 rail 才给·hosted checkout 一般没
 	Paid        int64  `json:"paid"`                 // 乘客支付总积分 = credits + channel_fee
 	Credits     int64  `json:"credits"`              // 净到账
 	ExpiresAt   string `json:"expires_at"`
 	Status      string `json:"status"` // pending | paid | failed
 	PaidAt      string `json:"paid_at,omitempty"`
 	CreatedAt   string `json:"created_at"`
+	// FeeWaived 这单用掉了一次手续费减免（个人邀请码额度 · decisions §8.29）
+	// **只给这个 bool** —— 不出 fee_subsidy（我方垫付多少是成本结构 · CLAUDE.md §0.1）
+	FeeWaived bool `json:"fee_waived,omitempty"`
 }
 
-// TopupOrderTTL 起单后未支付的过期时长。定 const 而不是配置：15 分钟是 waffo
-// 那边收款链接的常规 TTL，跟通道商合同一致，改的话得同步改 waffo 侧。
+// TopupOrderTTL 起单后未支付的过期时长。定 const 而不是配置：15 分钟是通道商
+// 收款链接的常规 TTL·改的话得同步改 gateway 侧。
 const TopupOrderTTL = 15 * time.Minute
 
 // usdRateCNY 展示层 CNY/USD 汇率（CLAUDE.md §1.4）。const 而不是配置：
@@ -72,6 +80,46 @@ func microToDecimalString(micro int64) string {
 	return s
 }
 
+// topupChannelResp 一个渠道对外形状（前端确认窗按此渲染）。
+//
+// 三维属性都暴露 · 前端可按 region 分区 · 按 rail 分组 · 按 enabled 决定能否点。
+// **provider_kind 是我方对 gateway 的实现细节 · 不暴露**（术语铁律 §12.6 · CLAUDE.md §0.1）。
+type topupChannelResp struct {
+	ID                     string `json:"id"`                                // 渠道稳定 id
+	DisplayName            string `json:"display_name"`                      // 前端展示名
+	Region                 string `json:"region"`                            // domestic | overseas
+	Rail                   string `json:"rail"`                              // direct | hosted
+	Asset                  string `json:"asset"`                             // USD | USDT | CNY | ...
+	Enabled                bool   `json:"enabled"`                           // 关的前端可展示但不能下单
+	RequiresPayerReference bool   `json:"requires_payer_reference"`          // direct rail 通常要
+	PayerReferenceLabel    string `json:"payer_reference_label,omitempty"`   // 前端表单标签
+	Note                   string `json:"note,omitempty"`                    // 展示给乘客的一行提示
+}
+
+func (s *Server) handleListTopupChannels(w http.ResponseWriter, r *http.Request) error {
+	if s.topupChannels == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"channels": []topupChannelResp{}})
+		return nil
+	}
+	all := s.topupChannels.List()
+	out := make([]topupChannelResp, 0, len(all))
+	for _, c := range all {
+		out = append(out, topupChannelResp{
+			ID:                     string(c.ID),
+			DisplayName:            c.DisplayName,
+			Region:                 string(c.Region),
+			Rail:                   string(c.Rail),
+			Asset:                  c.Asset,
+			Enabled:                c.Enabled,
+			RequiresPayerReference: c.RequiresPayerReference,
+			PayerReferenceLabel:    c.PayerReferenceLabel,
+			Note:                   c.Note,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"channels": out})
+	return nil
+}
+
 func (s *Server) handleCreateTopup(w http.ResponseWriter, r *http.Request) error {
 	if s.topups == nil {
 		return newFail(http.StatusServiceUnavailable, CodeInternal, "充值服务暂未装配")
@@ -95,8 +143,27 @@ func (s *Server) handleCreateTopup(w http.ResponseWriter, r *http.Request) error
 	if req.Channel == "" {
 		req.Channel = "waffo"
 	}
-	if req.Channel != "waffo" {
-		return ErrBadRequest("暂只支持 waffo 通道")
+	if s.topupChannels == nil {
+		return newFail(http.StatusServiceUnavailable, CodeInternal, "充值渠道未装配")
+	}
+	channel, err := s.topupChannels.GetEnabled(req.Channel)
+	if err != nil {
+		if errors.Is(err, topupchannel.ErrUnknownChannel) {
+			return ErrBadRequest("未知支付渠道")
+		}
+		if errors.Is(err, topupchannel.ErrDisabledChannel) {
+			return newFail(http.StatusServiceUnavailable, "channel_disabled",
+				"该支付渠道暂未开放·请换其他方式")
+		}
+		return err
+	}
+	// direct rail 校验 payer_reference · hosted 用 profile email
+	payerRef := strings.TrimSpace(req.PayerReference)
+	if channel.RequiresPayerReference && payerRef == "" {
+		return ErrBadRequest("该渠道需要 " + channel.PayerReferenceLabel)
+	}
+	if payerRef == "" && channel.Rail == topupchannel.RailHosted {
+		payerRef = p.Email
 	}
 
 	// 幂等键：契约（05-api-contract §基础）规定充值起单**必须**带
@@ -119,40 +186,101 @@ func (s *Server) handleCreateTopup(w http.ResponseWriter, r *http.Request) error
 		return ErrIdempotencyConflict()
 	}
 
-	// 步骤 1：先落一行 pending。用我方 order.ID 做 gateway 的 client_order_id
-	//        （§8.1 契约·gateway 侧幂等键就是这个）
-	//        起单时 checkout_url 先写占位·gateway 建成后 AttachGateway 回填
+	// 步骤 1：**P1-2 修** · order + pending_topup 原子创建（同一事务）
+	//        以前分两步·中间崩溃留 order 但 pending 缺失·janitor 扫不到。
+	//        pendingTopups 未装配（早期 DRY_RUN）时退化为单表 CreateOrderIn。
 	placeholderURL := "pending://gateway"
-	order, err := s.topups.CreateOrder(r.Context(), p.ID, req.Channel, req.Credits, placeholderURL, TopupOrderTTL)
-	if err != nil {
-		return translateTopupErr(err)
+	var order topup.Order
+	if s.pendingTopups != nil {
+		o, _, err := s.topups.CreateOrderWithPending(r.Context(), topup.OrderInput{
+			PassengerID:    p.ID,
+			Channel:        req.Channel,
+			Region:         string(channel.Region),
+			Rail:           string(channel.Rail),
+			ProviderKind:   channel.ProviderKind,
+			PayerReference: payerRef,
+			Credits:        req.Credits,
+			PayURL:         placeholderURL,
+			TTL:            TopupOrderTTL,
+		}, hit.recordID)
+		if err != nil {
+			return translateTopupErr(err)
+		}
+		order = o
+	} else {
+		o, err := s.topups.CreateOrderIn(r.Context(), topup.OrderInput{
+			PassengerID:    p.ID,
+			Channel:        req.Channel,
+			Region:         string(channel.Region),
+			Rail:           string(channel.Rail),
+			ProviderKind:   channel.ProviderKind,
+			PayerReference: payerRef,
+			Credits:        req.Credits,
+			PayURL:         placeholderURL,
+			TTL:            TopupOrderTTL,
+		})
+		if err != nil {
+			return translateTopupErr(err)
+		}
+		order = o
 	}
 
 	// 步骤 2：调 gateway 建单（可选·未装配时退回 mock 兼容）
 	if s.paymentGW != nil {
-		// gateway 侧的 asset = CNY（1 积分 ≡ 1 元 · 前端已知汇率展示层做换算）
-		// gateway 的 waffo_checkout rail 支持 USD/CNY 等 fiat（openapi Asset pattern 是宽的）·
-		// 由 gateway 侧配 waffo store 币种决定是否被 waffo 拒。
-		// gateway 走 waffo·1a 先都按 USD 走·汇率展示层做（CLAUDE.md §1.4）：
-		// 1 积分 ≡ 1 CNY · 支付 USD = (积分 + 通道费) / 7 · 汇率是内部 const
-		// order.Paid 是 CNY 微单位 · / usdRateCNY 得 USD 微单位（同样 6 位小数）
-		usdMicro := order.Paid / usdRateCNY
+		// **P0 修**（审计二轮发现）：CreatePayment 之前必须先把 pending_topup 落到
+		// gateway_creating · 崩溃后 janitor 用 client_order_id 反查 · 避免"已收款但 expire"丢单。
+		// 落库失败**必须 hard fail**·**不能**继续调 CreatePayment —— 不然崩溃后
+		// pending 还在 initial 里·janitor 走 initial → expire 分支·gateway 已收款 = 丢单。
+		//
+		// paymentGW != nil 时 pendingTopups 也应非 nil（装配层校验·见 buildDecider）。
+		// 这里再兜一层：nil 直接 502·别赌。
+		if s.pendingTopups == nil {
+			slog.Error("paymentGW 装配了但 pendingTopups nil · 状态无法落库 · 拒起单",
+				"order_id", order.ID)
+			return newFail(http.StatusServiceUnavailable, CodeInternal,
+				"充值服务未完全装配·请联系管理员")
+		}
+		if err := s.pendingTopups.EnsureAtLeast(r.Context(), order.ID, topup.PendingGatewayCreating); err != nil {
+			slog.Error("pending_topup 推 gateway_creating 失败 · 拒调 CreatePayment 防丢单",
+				"order_id", order.ID, "err", err)
+			return newFail(http.StatusInternalServerError, CodeInternal,
+				"充值起单失败·请稍后重试")
+		}
+		// asset 按 channel 属性决定（registry 里配 · USD / USDT / CNY / ...）·
+		// 内部积分永远是 CNY 微单位·计算展示汇率时按 asset 折算
+		// 1 积分 ≡ 1 CNY · USD/USDT 汇率约 7 · 展示层做换算（CLAUDE.md §1.4）
+		amountMicro := order.Paid / usdRateCNY
 		gwReq := paymentgw.CreatePaymentRequest{
 			ClientOrderID:    order.ID,
-			ProviderKind:     "waffo_checkout",
-			ExpectedAmount:   microToDecimalString(usdMicro),
-			ExpectedAsset:    "USD",
-			PayerEmail:       p.Email,
-			PayerReference:   p.ID, // waffo 认证 checkout 要求·稳定标识用于对账去重
+			ProviderKind:     channel.ProviderKind,
+			ExpectedAmount:   microToDecimalString(amountMicro),
+			ExpectedAsset:    channel.Asset,
+			PayerEmail:       p.Email, // hosted rail 用 · direct rail gateway 忽略
+			PayerReference:   payerRef, // direct rail 用（乘客提供的 UID）· hosted 也发不影响
 			ExpiresInSeconds: int(TopupOrderTTL / time.Second),
 		}
 		if s.paymentGWSuccessURL != "" {
 			gwReq.SuccessURL = s.paymentGWSuccessURL
 		}
+		// **P0 修**（codex 三轮）：冷冻 request 到 topup_order · janitor 反查用它重 POST。
+		// 从当前 config 重建 request 会因为汇率 / channel / email 变化命中不同的幂等指纹。
+		// 必须在 CreatePayment **之前**落库·崩溃在中间时 snapshot 已就绪。
+		snapshot, mErr := json.Marshal(gwReq)
+		if mErr != nil {
+			slog.Error("序列化 gateway request 失败 · 拒调 CreatePayment", "order_id", order.ID, "err", mErr)
+			return newFail(http.StatusInternalServerError, CodeInternal,
+				"充值起单失败·请稍后重试")
+		}
+		if err := s.topups.SaveGatewayRequestSnapshot(r.Context(), order.ID, snapshot); err != nil {
+			slog.Error("落 gateway_request_snapshot 失败 · 拒调 CreatePayment 防反查失效",
+				"order_id", order.ID, "err", err)
+			return newFail(http.StatusInternalServerError, CodeInternal,
+				"充值起单失败·请稍后重试")
+		}
 		payment, err := s.paymentGW.CreatePayment(r.Context(), gwReq)
 		if err != nil {
-			// gateway 报错 · order 保留 pending（janitor 会清·或乘客换 idempotency-key 重试）
-			// 别把 gateway 内部错误码往前端透 · 统一 502
+			// gateway 报错 · pending_topup 保留 gateway_creating · janitor 后续用
+			// client_order_id 反查（gateway 端可能已建单也可能没建 · 反查决定）
 			slog.Warn("paymentgw create 失败", "order_id", order.ID, "err", err)
 			return newFail(http.StatusBadGateway, "payment_gateway_error",
 				"支付通道暂时不可用，请稍后再试")
@@ -170,13 +298,24 @@ func (s *Server) handleCreateTopup(w http.ResponseWriter, r *http.Request) error
 		order.GatewayPaymentID = payment.ID
 		order.CheckoutURL = checkoutURL
 		order.QRContent = qrContent
+		// pending_topup: 推到至少 gateway_ordered · 用 EnsureAtLeast 兼容 webhook 早到（已 gateway_paid）
+		if s.pendingTopups != nil {
+			if err := s.pendingTopups.EnsureAtLeast(r.Context(), order.ID, topup.PendingGatewayOrdered); err != nil {
+				slog.Warn("pending_topup 推 gateway_ordered 失败·主流程继续",
+					"order_id", order.ID, "err", err)
+			}
+		}
 	} else {
 		// 无 gateway · 走 dev mock 路径 · 前端展示这个假 URL 触发 BP_ENABLE_DEV_TOPUP 端点标 paid
-		fullURL := "https://waffo.example/order/" + order.ID
+		fullURL := "https://mock-checkout.example/order/" + order.ID
 		if err := s.topups.AttachGateway(r.Context(), order.ID, "", fullURL, ""); err != nil {
 			return err
 		}
 		order.CheckoutURL = fullURL
+		// mock 路径也推到 gateway_ordered · dev-mark-paid 会一路推到 completed
+		if s.pendingTopups != nil {
+			_ = s.pendingTopups.EnsureAtLeast(r.Context(), order.ID, topup.PendingGatewayOrdered)
+		}
 	}
 
 	resp := topupOrderResponseOf(order)
@@ -252,14 +391,27 @@ func (s *Server) handleGatewaySettlement(w http.ResponseWriter, r *http.Request)
 
 	outcome, detail := s.applySettlement(r.Context(), ev, kind)
 
-	if _, err := s.db.ExecContext(r.Context(), `
-		INSERT INTO settlement_event (event_id, gateway_payment_id, kind, received_at, outcome, detail)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		ev.EventID, ev.GatewayPaymentID, kind, nowRFC3339(), outcome, detail); err != nil {
-		// 落幂等表失败·仍然返 200（业务已经做了 MarkPaid 有幂等保护），
-		// 但记 warn — 重复回调会走一次 MarkPaid 检查·代价可控
-		slog.Warn("settlement_event 落库失败·业务已处理",
-			"event_id", ev.EventID, "err", err)
+	// P0-A/B 修：error:retry **不落 settlement_event**·让 gateway 重试
+	//   - error:retry：DB / wallet 内部错·让 gateway 重试
+	// unmatched 现在**加了 client_order_id fallback**·如果 fallback 也匹配不上·
+	// 说明这不是我们发出的 order（gateway 配错 / 重放）·200 停重发合理。
+	// 幂等表记 accepted / duplicate / ignored / unmatched·让重试能识别 duplicate。
+	shouldRetry := outcome == "error:retry"
+	if !shouldRetry {
+		if _, err := s.db.ExecContext(r.Context(), `
+			INSERT INTO settlement_event (event_id, gateway_payment_id, kind, received_at, outcome, detail)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			ev.EventID, ev.GatewayPaymentID, kind, nowRFC3339(), outcome, detail); err != nil {
+			// 落幂等表失败·业务已处理·只 warn。重复回调会重跑一次 MarkPaid（幂等保护）
+			slog.Warn("settlement_event 落库失败·业务已处理",
+				"event_id", ev.EventID, "err", err)
+		}
+	}
+	if shouldRetry {
+		slog.Warn("settlement 未处理·让 gateway 重试",
+			"event_id", ev.EventID, "outcome", outcome, "detail", detail)
+		return newFail(http.StatusServiceUnavailable, "settlement_defer",
+			"事件暂未匹配到订单或内部错误·请稍后重试")
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"outcome": outcome})
 	return nil
@@ -267,30 +419,80 @@ func (s *Server) handleGatewaySettlement(w http.ResponseWriter, r *http.Request)
 
 // applySettlement 根据 event kind 更新我方状态·返回 outcome 和详情。
 func (s *Server) applySettlement(ctx context.Context, ev paymentgw.SettlementEvent, kind string) (outcome, detail string) {
-	// 反查我方 order
+	// 反查我方 order · gateway_payment_id 优先·失败 fallback client_order_id
+	// P0-A 修：CreateOrder → gateway.CreatePayment → AttachGateway 之间有 tiny 窗口·
+	// gateway 极快时 webhook 先到·gateway_payment_id 还没回填。fallback 用 client_order_id
+	// （= 我方 order.ID · 从签名保护的 body 里读）保证不 unmatched。
+	// 匹配成功后**顺手回填 gateway_payment_id**·后续 refund/reversed 就能走主路径。
 	order, err := s.topups.FindByGatewayPaymentID(ctx, ev.GatewayPaymentID)
+	if err != nil && ev.ClientOrderID != "" {
+		if o2, err2 := s.topups.FindByClientOrderID(ctx, ev.ClientOrderID); err2 == nil {
+			order = o2
+			err = nil
+			// 回填 gateway_payment_id + checkout（占位）· webhook 顺手治好 AttachGateway 之前的空窗
+			if order.GatewayPaymentID == "" && ev.GatewayPaymentID != "" {
+				if aerr := s.topups.AttachGateway(ctx, order.ID, ev.GatewayPaymentID, order.CheckoutURL, order.QRContent); aerr != nil {
+					slog.Warn("settlement fallback 回填 gateway_payment_id 失败", "order_id", order.ID, "err", aerr)
+				}
+			}
+		}
+	}
 	if err != nil {
 		return "unmatched", err.Error()
 	}
 
 	switch kind {
 	case "settled":
+		// **P0-2 修**：以前用 AdvanceByOrderID(gateway_ordered→gateway_paid)·
+		// early settlement 时 pending 还在 initial（AttachGateway 没跑到）· 静默 rows=0 ·
+		// 订单 credited 但 pending 卡 initial · janitor 后续误标 expired。
+		// 现在用 EnsureAtLeast · 允许跨态跃迁（initial→gateway_paid 也接受）。
+		if s.pendingTopups != nil {
+			if err := s.pendingTopups.EnsureAtLeast(ctx, order.ID, topup.PendingGatewayPaid); err != nil {
+				// 支线态（refunded/expired/…）会返错 · log 但不阻塞 · MarkPaid 幂等会挡
+				slog.Warn("pending_topup 推 gateway_paid 失败·MarkPaid 幂等兜底",
+					"order_id", order.ID, "err", err)
+			}
+		}
 		if _, err := s.topups.MarkPaid(ctx, order.ID); err != nil {
 			// ErrOrderNotPending 说明这单已 paid（另一次回调抢先了）· 也算 duplicate
 			slog.Warn("MarkPaid 失败", "order_id", order.ID, "err", err)
 			return "duplicate", "already paid"
 		}
+		// pending_topup 一路推到 completed（EnsureAtLeast 幂等·允许重放）
+		if s.pendingTopups != nil {
+			if err := s.pendingTopups.EnsureAtLeast(ctx, order.ID, topup.PendingCompleted); err != nil {
+				slog.Warn("pending_topup 推 completed 失败·janitor 兜底",
+					"order_id", order.ID, "err", err)
+			}
+		}
 		return "accepted", ""
 	case "refunded", "reversed":
-		// 反向 recharge + 反向 channel_fee 事务合并 · 幂等（已 refunded / reversed 返 duplicate）
+		// 反向 recharge + 反向 channel_fee 事务合并·refund 允许 wallet 走到负（wallet.ForceApplyTx）
+		// P0-B 修：以前 "已花光余额不够" 吞成 duplicate 让 gateway 停重试·订单永卡 paid
 		if _, err := s.topups.MarkRefunded(ctx, order.ID, kind); err != nil {
-			if strings.Contains(err.Error(), "已结算或过期") ||
-				strings.Contains(err.Error(), "不能 refund") {
+			if errors.Is(err, topup.ErrOrderNotPending) ||
+				strings.Contains(err.Error(), "不能 refund") ||
+				strings.Contains(err.Error(), "已结算或过期") {
+				// 状态机拒绝（已 paid → 已 refunded 走到 duplicate 分支之外·或不合法 kind）
 				slog.Warn("MarkRefunded 状态不合法", "order_id", order.ID, "err", err)
 				return "ignored", err.Error()
 			}
-			slog.Warn("MarkRefunded 失败", "order_id", order.ID, "err", err)
-			return "duplicate", "already refunded"
+			// 其他错误（DB / wallet 出错）**不吞成 duplicate**·往上抛让 handler 返 5xx
+			// 其他错误（DB / wallet 出错）**不吞成 duplicate**·往上抛让 handler 返 5xx
+			slog.Error("MarkRefunded 内部错误·让 gateway 重试", "order_id", order.ID, "err", err)
+			return "error:retry", err.Error()
+		}
+		// pending_topup 打成 refunded 终态（任何前置态都能走到 · 第一个成功推的即返回）
+		if s.pendingTopups != nil {
+			for _, from := range []topup.PendingStatus{
+				topup.PendingCompleted, topup.PendingCredited, topup.PendingGatewayPaid,
+				topup.PendingGatewayOrdered, topup.PendingInitial,
+			} {
+				if ok, err := s.pendingTopups.AdvanceByOrderID(ctx, order.ID, from, topup.PendingRefunded); err == nil && ok {
+					break
+				}
+			}
 		}
 		return "accepted", "wallet reversed"
 	}
@@ -370,10 +572,10 @@ func (s *Server) handleListTopupOrders(w http.ResponseWriter, r *http.Request) e
 	return nil
 }
 
-// handleDevMarkTopupPaid 是**开发用**端点，mock waffo webhook。
+// handleDevMarkTopupPaid 是**开发用**端点·mock 支付网关 webhook。
 //
-// 阶段 1a 没接真 waffo：前端点了「我付好了」后调这个端点触发到账，
-// 对齐前端 mock 的即时到账体验。接了真 waffo 就撤掉这个端点，改成签名验证的 webhook。
+// 阶段 1a 未接真网关：前端点了「我付好了」后调这个端点触发到账·
+// 对齐前端 mock 的即时到账体验。接了真网关就撤掉这个端点·改成签名验证的 webhook。
 //
 // **安全**：只允许当前登录乘客给自己的订单标 paid（不能替别人标）。
 func (s *Server) handleDevMarkTopupPaid(w http.ResponseWriter, r *http.Request) error {
@@ -403,6 +605,14 @@ func (s *Server) handleDevMarkTopupPaid(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		return translateTopupErr(err)
 	}
+	// dev mock 也推 pending_topup 走完完整闭环（走真链路时是 webhook 推·mock 是这里）
+	// 用 EnsureAtLeast 一步推到 completed · 跨态跃迁允许
+	if s.pendingTopups != nil {
+		if err := s.pendingTopups.EnsureAtLeast(r.Context(), orderID, topup.PendingCompleted); err != nil {
+			slog.Warn("dev-mark-paid 推 pending completed 失败·janitor 兜底",
+				"order_id", orderID, "err", err)
+		}
+	}
 	writeJSON(w, http.StatusOK, topupOrderResponseOf(order))
 	return nil
 }
@@ -422,6 +632,7 @@ func topupOrderResponseOf(o topup.Order) topupOrderResponse {
 		ExpiresAt:   o.ExpiresAt.Format(time.RFC3339),
 		Status:      publicTopupStatus(o.Status),
 		CreatedAt:   o.CreatedAt.Format(time.RFC3339),
+		FeeWaived:   o.FeeWaiverApplied,
 	}
 	if !o.PaidAt.IsZero() {
 		resp.PaidAt = o.PaidAt.Format(time.RFC3339)

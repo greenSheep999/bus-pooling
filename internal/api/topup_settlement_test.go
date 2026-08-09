@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/paymentgw"
+	"github.com/bus-pooling/bus-pooling/internal/topup"
 )
 
 // settlementHelper · 造一个装配了 gateway client 的 env（用 test 秘钥）
@@ -29,6 +30,8 @@ func settlementHelper(t *testing.T, secret string) *testEnv {
 		t.Fatal(err)
 	}
 	env.server.paymentGW = client
+	// pending_topup 支持（P0-2 / P1-3 修）
+	env.server.pendingTopups = topup.NewPendingStore(env.db.DB)
 
 	// 重建 mux 让 handleGatewaySettlement 路由生效
 	newMux := http.NewServeMux()
@@ -231,6 +234,158 @@ func TestSettlement_UnmatchedGatewayID(t *testing.T) {
 	}
 	if got := decode[map[string]string](t, respBody)["outcome"]; got != "unmatched" {
 		t.Errorf("outcome=%q·want unmatched", got)
+	}
+}
+
+// **P0-2 复现**：early settlement · pending_topup 卡 initial
+//
+// 场景：CreateOrder 后 · 在 AttachGateway 之前 · webhook 已到（gateway 极快）·
+// pending_topup 仍是 initial。修前 settled 分支只做 gateway_ordered→gateway_paid ·
+// 静默 rows=0 · 订单已 credited 但 pending_topup 永远卡 initial · janitor 后续误标 expired。
+// 修后 EnsureAtLeast 跨态跃迁 · pending 一路推到 completed。
+func TestSettlement_EarlyPendingRecovers(t *testing.T) {
+	secret := "early-secret"
+	env := settlementHelper(t, secret)
+
+	pid := seedPassenger(t, env, "early@e.com", "earlyuser", "password123")
+	// **不**调 AttachGateway · pending_topup 也预先造一个 initial 行
+	order, _ := env.topups.CreateOrder(t.Context(), pid, "waffo", 100_000_000,
+		"pending://gateway", 15*time.Minute)
+	// 手工建 pending_topup initial（真实场景 handleCreateTopup 会顺手落 · 单测这里跳过 handler）
+	if _, err := env.server.pendingTopups.Create(t.Context(), topup.Pending{
+		IdempotencyRecordID: "irec-early",
+		PassengerID:         pid,
+		TopupOrderID:        order.ID,
+	}); err != nil {
+		// idempotency_record FK 需要 · 先造
+		if _, err := env.server.db.Exec(`
+			INSERT INTO idempotency_record (id, passenger_id, method, path, idempotency_key, request_fingerprint, created_at)
+			VALUES ('irec-early', ?, 'POST', '/api/me/topup', 'kk-early-0000000000000000000', 'fp', ?)`,
+			pid, time.Now().Format(time.RFC3339)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := env.server.pendingTopups.Create(t.Context(), topup.Pending{
+			IdempotencyRecordID: "irec-early",
+			PassengerID:         pid,
+			TopupOrderID:        order.ID,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 现在 pending 是 initial · settlement webhook 到
+	body, _ := json.Marshal(paymentgw.SettlementEvent{
+		EventID:          "ev_early_1",
+		GatewayPaymentID: "pay_racing_early",
+		ClientOrderID:    order.ID, // fallback 匹配
+		Kind:             "settled", State: "settled", SettledAt: time.Now().Unix(),
+	})
+	sig, ts := signSettlement(secret, body, time.Now())
+	status, respBody := postSettlement(t, env, body, sig, ts)
+	if status != http.StatusOK {
+		t.Fatalf("early settlement 应 200·得到 %d body=%s", status, respBody)
+	}
+
+	// 断言：钱包到账
+	bal, _ := env.wallets.Get(t.Context(), pid)
+	if bal.Balance != 100_000_000 {
+		t.Errorf("wallet.balance = %d · want 100_000_000（early settlement 未入账）", bal.Balance)
+	}
+
+	// 断言：pending_topup **不能卡在 initial** · 应该 = completed
+	p, err := env.server.pendingTopups.GetByOrderID(t.Context(), order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Status != topup.PendingCompleted {
+		t.Errorf("pending_topup.status = %s · want completed（P0-2 修：跨态跃迁一路推）",
+			p.Status)
+	}
+}
+
+// TestSettlement_FallbackByClientOrderID · P0-A · gateway 极快 webhook 先到·
+// gateway_payment_id 还没 AttachGateway · client_order_id fallback 匹配成功·wallet 应到账
+func TestSettlement_FallbackByClientOrderID(t *testing.T) {
+	secret := "fb-secret"
+	env := settlementHelper(t, secret)
+
+	pid := seedPassenger(t, env, "fb@e.com", "fbuser", "password123")
+	// **不**调 AttachGateway · 模拟 webhook 先到 · gateway_payment_id 还未回填
+	order, _ := env.topups.CreateOrder(t.Context(), pid, "waffo", 100_000_000,
+		"pending://gateway", 15*time.Minute)
+
+	body, _ := json.Marshal(paymentgw.SettlementEvent{
+		EventID:          "ev_fb_1",
+		GatewayPaymentID: "pay_racing", // 我方从未见过
+		ClientOrderID:    order.ID,      // 我方发出的 order.ID
+		Kind:             "settled", State: "settled", SettledAt: time.Now().Unix(),
+	})
+	sig, ts := signSettlement(secret, body, time.Now())
+	status, respBody := postSettlement(t, env, body, sig, ts)
+	if status != http.StatusOK {
+		t.Fatalf("fallback settled 应 200·得到 %d body=%s", status, respBody)
+	}
+	if got := decode[map[string]string](t, respBody)["outcome"]; got != "accepted" {
+		t.Errorf("outcome=%q·want accepted (fallback 应匹配)", got)
+	}
+	bal, _ := env.wallets.Get(t.Context(), pid)
+	if bal.Balance != 100_000_000 {
+		t.Errorf("fallback 后 balance = %d·want 100_000_000", bal.Balance)
+	}
+	// 回填 gateway_payment_id 应生效
+	o2, _ := env.topups.FindByGatewayPaymentID(t.Context(), "pay_racing")
+	if o2.ID != order.ID {
+		t.Errorf("fallback 未回填 gateway_payment_id (o2.ID=%q · order.ID=%q)", o2.ID, order.ID)
+	}
+}
+
+// TestSettlement_RefundAllowsNegativeBalance · P0-B · settled → 用户花光 → refund
+// refund 应把 balance 扣成负·不能吞成 duplicate 让 gateway 停重试·订单状态应到 refunded
+func TestSettlement_RefundAllowsNegativeBalance(t *testing.T) {
+	secret := "neg-secret"
+	env := settlementHelper(t, secret)
+
+	pid := seedPassenger(t, env, "neg@e.com", "neguser", "password123")
+	order, _ := env.topups.CreateOrder(t.Context(), pid, "waffo", 100_000_000,
+		"pending://x", 15*time.Minute)
+	_ = env.topups.AttachGateway(t.Context(), order.ID, "pay_neg", "https://co", "")
+
+	// settle · balance +100M
+	body, _ := json.Marshal(paymentgw.SettlementEvent{
+		EventID: "ev_neg_settled", GatewayPaymentID: "pay_neg", ClientOrderID: order.ID,
+		Kind: "settled", State: "settled", SettledAt: time.Now().Unix(),
+	})
+	sig, ts := signSettlement(secret, body, time.Now())
+	postSettlement(t, env, body, sig, ts)
+
+	// **模拟用户花光** · SQL 直接压 balance=0（模拟拉号扣款 · 不走 wallet.Debit 免污染流水）
+	if _, err := env.server.db.Exec(
+		`UPDATE wallet SET balance = 0 WHERE passenger_id = ?`, pid); err != nil {
+		t.Fatal(err)
+	}
+
+	// refund · 期望 balance 走到 -95M（reversed 100M paid + 5M fee）
+	refundBody, _ := json.Marshal(paymentgw.SettlementEvent{
+		EventID: "ev_neg_refund", GatewayPaymentID: "pay_neg", ClientOrderID: order.ID,
+		Kind: "refunded", State: "refunded", SettledAt: time.Now().Unix(),
+	})
+	rsig, rts := signSettlement(secret, refundBody, time.Now())
+	status, respBody := postSettlement(t, env, refundBody, rsig, rts)
+	if status != http.StatusOK {
+		t.Fatalf("refund 应 200·得到 %d body=%s", status, respBody)
+	}
+	if got := decode[map[string]string](t, respBody)["outcome"]; got != "accepted" {
+		t.Errorf("outcome=%q·want accepted (不能吞成 duplicate)", got)
+	}
+	bal, _ := env.wallets.Get(t.Context(), pid)
+	// paid=100M+5M=105M(recharge) · fee=5M · reverse: +5M -105M · 从 0 → -100M
+	if bal.Balance != -100_000_000 {
+		t.Errorf("refund 后 balance = %d · want -100_000_000（负余额记录负债）", bal.Balance)
+	}
+	// order 状态应到 refunded
+	got, _ := env.topups.Get(t.Context(), pid, order.ID)
+	if got.Status != "refunded" {
+		t.Errorf("order.status = %q · want refunded", got.Status)
 	}
 }
 
