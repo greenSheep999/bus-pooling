@@ -45,7 +45,8 @@ func internalReasonsFor(publicType string) []wallet.Reason {
 	case LedgerWarrantyRefund:
 		return []wallet.Reason{wallet.ReasonWarrantyRefund}
 	case LedgerRefund:
-		return []wallet.Reason{wallet.ReasonAdminAdjust}
+		// gateway 退款 (topup_refund) 和运营调整 (admin_adjust) 对外都是 refund
+		return []wallet.Reason{wallet.ReasonAdminAdjust, wallet.ReasonTopupRefund}
 	case LedgerSpend:
 		return spendInternalReasons
 	default:
@@ -62,7 +63,7 @@ func publicLedgerType(r wallet.Reason) LedgerType {
 		return LedgerRedeem
 	case wallet.ReasonWarrantyRefund:
 		return LedgerWarrantyRefund
-	case wallet.ReasonAdminAdjust:
+	case wallet.ReasonAdminAdjust, wallet.ReasonTopupRefund:
 		return LedgerRefund
 	case wallet.ReasonKeyCost, wallet.ReasonVendorFee, wallet.ReasonRegionFee,
 		wallet.ReasonSinglePullFee, wallet.ReasonCapabilityFee, wallet.ReasonServiceFee:

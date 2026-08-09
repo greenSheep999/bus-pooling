@@ -42,6 +42,9 @@ const (
 	ReasonRegionFee      Reason = "region_fee"
 	ReasonWarrantyRefund Reason = "warranty_refund"
 	ReasonAdminAdjust    Reason = "admin_adjust"
+	// ReasonTopupRefund 充值单被 gateway 退款/反向结算·反向 recharge + channel_fee 两条·
+	// 净变化 = -credits。触发条件：gateway 送 kind=refunded / reversed 的 settlement 事件。
+	ReasonTopupRefund Reason = "topup_refund"
 )
 
 type Balance struct {

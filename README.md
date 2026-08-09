@@ -143,7 +143,37 @@ cd web && npm run dev
 ```bash
 go test ./...              # 后端
 go test -race ./...        # 并发相关（wallet / 状态机）建议带 -race
+bash tests/e2e/run-e2e.sh  # e2e 一键 · 幂等 / 5 并发 / kill 恢复
 ```
+
+### 环境变量（后端）
+
+| 环境变量 | 必需 | 说明 |
+|---|---|---|
+| `BP_MASTER_KEY` | ✅ | 32 字节 hex · AES-256-GCM 主密钥 · `bp genkey` 生成 |
+| `BP_DB_PATH` | | SQLite 文件路径 · 默认 `data/bus-pooling.db` |
+| `BP_ADDR` | | 监听地址 · 默认 `:8080` |
+| `BP_INSECURE_COOKIE` | | 非空 = 允许 http 起 cookie（本地调试）· 生产必空 |
+| `DRY_RUN` | | `0` = 走真 vendor + kiro.rs · 默认 true（mock） |
+| `BP_ALLOW_LIVE_PULL` | | 跟 `DRY_RUN=0` 配套的第二道锁 · 都要显式设才拉真号 |
+| `BP_STRICT_HANDOFF` | | `1` = handoff fulfill 拒占位明文（上线前必开·防降级） |
+| `BP_ENABLE_DEV_TOPUP` | | `1` = 挂 `/api/internal/topup/{id}/paid` dev 端点（生产必空） |
+| `BP_HOUSEPOOL_URL` | | kiro.rs 部署地址 · 例：`https://kiro.aibbq.xyz` |
+| `BP_HOUSEPOOL_ADMIN_KEY` | | kiro.rs 的 admin API key |
+| `BP_HOUSEPOOL_EXPECTED_SHA` | | 绑 kiro.rs 语义版本 · 启动时校验 · 空 = 不校 |
+| `BP_VENDOR_KIRO91_API_KEY` | 1a live | 91kiro 我方账户 API key (`usr-` 前缀) |
+| `BP_VENDOR_KIRO91_ENABLED` | | 非空 = 注册 91kiro adapter |
+| `BP_VENDOR_KIRO91_WEBHOOK_SECRET` | | 收 91kiro webhook 时验签用 |
+| `BP_VENDOR_KIRODROP_WEBHOOK_SECRET` | | 收 kirodrop webhook 时验签用 |
+| `BP_RATE_SERVICE_BP` | live 必需 | 服务费率 · 万分位（500 = 5%）· 零费率拒启动 |
+| `BP_RATE_VENDOR_BP` `BP_RATE_REGION_BP` `BP_RATE_SINGLE_PULL_BP` | | 其他加价链层 · 阶段 1a 全 0 |
+| `BP_GW_BASE` | 接 payment | 404bus-payment-gateway base URL · 例：`http://127.0.0.1:18099` |
+| `BP_GW_TOKEN` | 接 payment | gateway `-add-client` 拿到的 bearer_token |
+| `BP_GW_SETTLEMENT_SECRET` | 接 payment | gateway `-add-client` 拿到的 settlement_secret · HMAC-SHA256 key |
+| `BP_GW_SUCCESS_URL` | | 可选 · waffo checkout 完成后回跳的前端 URL |
+
+**结算回调**：装配 gateway 时 (`BP_GW_*` 三条齐)，会自动挂
+`POST /api/hooks/paymentgw/settlement`。CLI 建 client 时 `settlement_url` 填这个路径。
 
 ### 目录
 

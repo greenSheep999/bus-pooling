@@ -282,8 +282,17 @@ func (s *Server) applySettlement(ctx context.Context, ev paymentgw.SettlementEve
 		}
 		return "accepted", ""
 	case "refunded", "reversed":
-		// 阶段 1a 不接退款反向流水（Iss #13）·记录·不动 wallet·让人工看
-		return "ignored", "退款/反向结算阶段 1a 未实现·请人工处理"
+		// 反向 recharge + 反向 channel_fee 事务合并 · 幂等（已 refunded / reversed 返 duplicate）
+		if _, err := s.topups.MarkRefunded(ctx, order.ID, kind); err != nil {
+			if strings.Contains(err.Error(), "已结算或过期") ||
+				strings.Contains(err.Error(), "不能 refund") {
+				slog.Warn("MarkRefunded 状态不合法", "order_id", order.ID, "err", err)
+				return "ignored", err.Error()
+			}
+			slog.Warn("MarkRefunded 失败", "order_id", order.ID, "err", err)
+			return "duplicate", "already refunded"
+		}
+		return "accepted", "wallet reversed"
 	}
 	return "ignored", "未知 kind: " + kind
 }

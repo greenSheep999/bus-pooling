@@ -29,6 +29,8 @@ type testEnv struct {
 	srv     *httptest.Server
 	db      *db.DB
 	wallets *wallet.Store
+	topups  *topup.Store
+	server  *Server // 可选·装配 gateway / mock 依赖时用
 }
 
 func newEnv(t *testing.T) *testEnv {
@@ -72,8 +74,9 @@ func newEnvBase(t *testing.T, mkDecider func(*db.DB) *decider.Orchestrator) *tes
 		t.Fatalf("cipher: %v", err)
 	}
 
+	topups := topup.NewStore(d.DB)
 	mux := http.NewServeMux()
-	NewServer(ServerDeps{
+	server := NewServer(ServerDeps{
 		DB:          d.DB,
 		Passengers:  passenger.NewStore(d.DB),
 		Wallets:     wallets,
@@ -81,21 +84,22 @@ func newEnvBase(t *testing.T, mkDecider func(*db.DB) *decider.Orchestrator) *tes
 		Buses:       bus.NewStore(d.DB),
 		Decider:     orch,
 		Redeems:     redeem.NewStore(d.DB),
-		Topups:      topup.NewStore(d.DB),
+		Topups:      topups,
 		PullRecords: pullrecord.NewStore(d.DB),
 		Handoffs:    handoff.NewStore(d.DB, 0),
 		Insights:    insight.NewStore(d.DB),
 		Downstreams: downstream.NewStore(d.DB, cipher),
 		// VendorView / Pool 保留 nil —— handler 里各自有 nil 兜底（返 503）
 		SecureCookie: false,
-	}).Routes(mux)
+	})
+	server.Routes(mux)
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(func() {
 		srv.Close()
 		_ = d.Close()
 	})
-	return &testEnv{srv: srv, db: d, wallets: wallets}
+	return &testEnv{srv: srv, db: d, wallets: wallets, topups: topups, server: server}
 }
 
 // walletCreditForTest 造一个测试用的充值 Move。

@@ -321,6 +321,107 @@ func (s *Store) MarkPaid(ctx context.Context, orderID string) (Order, error) {
 	return out, nil
 }
 
+// MarkRefunded gateway 发 refunded / reversed 事件时调用。
+//
+// 原子做两件事：
+//  1. 反向流水两条 · reason=topup_refund · amount=-paid (recharge 反向) +fee (channel_fee 反向)
+//     净变化 = -credits
+//  2. topup_order.status = refunded / reversed
+//
+// **只在 status=paid 时能调**：pending 直接跳 refunded 走 refund 无意义；
+// refunded / reversed 状态**幂等静默 return 当前订单**（gateway at-least-once）。
+//
+// kind: "refunded" (payer 主动退款) or "reversed" (下游反向 · 拒付/回单)
+//
+//nolint:funlen
+func (s *Store) MarkRefunded(ctx context.Context, orderID, kind string) (Order, error) {
+	if kind != "refunded" && kind != "reversed" {
+		return Order{}, fmt.Errorf("topup: MarkRefunded kind 必须是 refunded / reversed, got %q", kind)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Order{}, fmt.Errorf("topup: 开事务: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var (
+		passengerID string
+		credits     int64
+		channelFee  int64
+		paid        int64
+		status      string
+	)
+	err = tx.QueryRowContext(ctx,
+		`SELECT passenger_id, credits, channel_fee, paid, status
+		 FROM topup_order WHERE id = ?`, orderID).
+		Scan(&passengerID, &credits, &channelFee, &paid, &status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Order{}, ErrNotFound
+	}
+	if err != nil {
+		return Order{}, fmt.Errorf("topup: 查订单: %w", err)
+	}
+
+	// 幂等 · 已 refunded / reversed / cancelled 直接返回
+	if status == kind || status == "refunded" || status == "reversed" || status == "cancelled" {
+		return s.getInTx(ctx, tx, orderID)
+	}
+	// 只能从 paid 走 · pending / expired 拒
+	if status != string(StatusPaid) {
+		return Order{}, fmt.Errorf("topup: %w · order.status=%s 不能 refund", ErrOrderNotPending, status)
+	}
+
+	now := time.Now().UTC()
+	nowStr := formatTime(now)
+	res, err := tx.ExecContext(ctx, `
+		UPDATE topup_order
+		   SET status = ?, updated_at = ?
+		 WHERE id = ? AND status = 'paid'`,
+		kind, nowStr, orderID)
+	if err != nil {
+		return Order{}, fmt.Errorf("topup: 标 %s: %w", kind, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return Order{}, ErrOrderNotPending
+	}
+
+	// 反向顺序：先加 fee 回来 · 再扣 paid（否则余额不够扣 -paid）
+	// 净变化 = +fee - paid = -credits
+	if channelFee > 0 {
+		if _, err := wallet.ApplyTx(ctx, tx, wallet.Move{
+			PassengerID: passengerID,
+			Reason:      wallet.ReasonTopupRefund,
+			Amount:      channelFee,
+			RefType:     "topup_order",
+			RefID:       orderID,
+			Memo:        "充值 " + kind + "（反向 channel_fee）",
+		}, +1); err != nil {
+			return Order{}, err
+		}
+	}
+	// 反向 recharge：-paid（把当初 credit 的都退回给 gateway）
+	if _, err := wallet.ApplyTx(ctx, tx, wallet.Move{
+		PassengerID: passengerID,
+		Reason:      wallet.ReasonTopupRefund,
+		Amount:      paid,
+		RefType:     "topup_order",
+		RefID:       orderID,
+		Memo:        "充值 " + kind + "（反向 recharge）",
+	}, -1); err != nil {
+		return Order{}, err
+	}
+	_ = credits // avoid unused warning · 保留意图注释
+
+	out, err := s.getInTx(ctx, tx, orderID)
+	if err != nil {
+		return Order{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Order{}, fmt.Errorf("topup: 提交 refund: %w", err)
+	}
+	return out, nil
+}
+
 // Get 查一张充值单（校验属主，防串号）。
 func (s *Store) Get(ctx context.Context, passengerID, orderID string) (Order, error) {
 	o, err := s.getBy(ctx, orderID)
