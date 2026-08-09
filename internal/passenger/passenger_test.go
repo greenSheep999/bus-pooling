@@ -108,20 +108,174 @@ func TestRegisterCreatesWallet(t *testing.T) {
 	}
 }
 
-func TestRegisterWithInviteCodeSetsInvited(t *testing.T) {
+// **只有系统邀请码白名单里的码**才给社群身份（decisions §8.29 · 1c 修的漏洞）。
+// 以前是"任何非空码都算"—— 那等于随便编个码就能拿社群身份·定价分层形同虚设。
+func TestRegisterWithSystemInviteCodeSetsInvited(t *testing.T) {
 	s := setup(t)
-	p, err := s.Register(context.Background(), RegisterInput{
+	ctx := context.Background()
+	// 先把码放进白名单
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT INTO system_invite_code (code, memo, created_at)
+		VALUES ('KIROVIP', '测试社群', '2026-01-01T00:00:00.000Z')`); err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.Register(ctx, RegisterInput{
 		Email: "b@example.com", Username: "bob", Password: "password123",
-		InviteCode: "KIRO-VIP",
+		InviteCode: "KIROVIP",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !p.Invited {
-		t.Fatal("填了邀请码应该是 invited（决定看真名 + 免区域附加费）")
+		t.Fatal("白名单里的系统码应该给 invited（决定看真名 + 免区域分项）")
 	}
-	if p.InviteCodeUsed != "KIRO-VIP" {
+	if p.InviteCodeUsed != "KIROVIP" {
 		t.Errorf("invite_code_used = %q", p.InviteCodeUsed)
+	}
+	// 用一次 · 计数该 +1
+	var used int
+	_ = s.db.QueryRowContext(ctx,
+		`SELECT used_count FROM system_invite_code WHERE code='KIROVIP'`).Scan(&used)
+	if used != 1 {
+		t.Errorf("系统码 used_count = %d · want 1", used)
+	}
+}
+
+// **不在白名单里的码不给社群身份** —— 这是 §8.20 定价分层的守门人
+func TestRegisterWithUnknownCodeDoesNotGrantInvited(t *testing.T) {
+	s := setup(t)
+	p, err := s.Register(context.Background(), RegisterInput{
+		Email: "c@example.com", Username: "carol", Password: "password123",
+		InviteCode: "RANDOMFAKE",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Invited {
+		t.Fatal("随便编的码**绝不能**给社群身份（否则定价分层形同虚设）")
+	}
+	// 码还是记下来了（溯源用）· 只是不给身份
+	if p.InviteCodeUsed != "RANDOMFAKE" {
+		t.Errorf("invite_code_used = %q · 该记下来供溯源", p.InviteCodeUsed)
+	}
+}
+
+// 用别人的**个人邀请码**注册：不给社群身份·但记推荐关系 + 给邀请人加额度
+func TestRegisterWithPersonalCodeGivesInviterQuotaNotIdentity(t *testing.T) {
+	s := setup(t)
+	ctx := context.Background()
+	inviter, err := s.Register(ctx, RegisterInput{
+		Email: "inviter@example.com", Username: "inviter", Password: "password123",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pi, err := s.EnsurePersonalCode(ctx, inviter.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pi.Code == "" {
+		t.Fatal("个人邀请码没生成")
+	}
+
+	invitee, err := s.Register(ctx, RegisterInput{
+		Email: "invitee@example.com", Username: "invitee", Password: "password123",
+		InviteCode: pi.Code,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 铁律：个人码**不改身份**
+	if invitee.Invited {
+		t.Error("个人邀请码**绝不能**给社群身份（§8.29）")
+	}
+	// 邀请人拿到额度
+	after, err := s.EnsurePersonalCode(ctx, inviter.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.InvitedCount != 1 {
+		t.Errorf("邀请人 invited_count = %d · want 1", after.InvitedCount)
+	}
+	if after.FeeWaiverTotal != feeWaiverPerInvite {
+		t.Errorf("邀请人减免额度 = %d · want %d", after.FeeWaiverTotal, feeWaiverPerInvite)
+	}
+	if after.Remaining() != feeWaiverPerInvite {
+		t.Errorf("剩余额度 = %d", after.Remaining())
+	}
+}
+
+// 一个人只能被邀一次（防刷：重复注册不该反复给邀请人加额度）
+func TestPersonalCode_OneReferralPerInvitee(t *testing.T) {
+	s := setup(t)
+	ctx := context.Background()
+	inviter, _ := s.Register(ctx, RegisterInput{
+		Email: "i2@example.com", Username: "i2", Password: "password123",
+	})
+	pi, _ := s.EnsurePersonalCode(ctx, inviter.ID)
+
+	invitee, _ := s.Register(ctx, RegisterInput{
+		Email: "v2@example.com", Username: "v2", Password: "password123",
+		InviteCode: pi.Code,
+	})
+	// 手工再跑一次 applyPersonalCode（模拟重复调）· 不该再加额度
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyPersonalCodeTx(ctx, tx, invitee.ID, pi.Code, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	_ = tx.Commit()
+
+	after, _ := s.EnsurePersonalCode(ctx, inviter.ID)
+	if after.InvitedCount != 1 {
+		t.Errorf("重复邀请同一人 · invited_count 该保持 1 · got=%d", after.InvitedCount)
+	}
+	if after.FeeWaiverTotal != feeWaiverPerInvite {
+		t.Errorf("重复邀请不该重复加额度 · got=%d", after.FeeWaiverTotal)
+	}
+}
+
+// 不能自己邀自己
+func TestPersonalCode_SelfInviteIgnored(t *testing.T) {
+	s := setup(t)
+	ctx := context.Background()
+	p, _ := s.Register(ctx, RegisterInput{
+		Email: "self@example.com", Username: "self", Password: "password123",
+	})
+	pi, _ := s.EnsurePersonalCode(ctx, p.ID)
+
+	tx, _ := s.db.BeginTx(ctx, nil)
+	if err := applyPersonalCodeTx(ctx, tx, p.ID, pi.Code, time.Now().UTC()); err != nil {
+		t.Fatalf("自己邀自己该静默忽略不该报错: %v", err)
+	}
+	_ = tx.Commit()
+
+	after, _ := s.EnsurePersonalCode(ctx, p.ID)
+	if after.InvitedCount != 0 || after.FeeWaiverTotal != 0 {
+		t.Errorf("自己邀自己不该给额度 · count=%d total=%d",
+			after.InvitedCount, after.FeeWaiverTotal)
+	}
+}
+
+// EnsurePersonalCode 幂等（老账号读到就补 · 重复调不换码）
+func TestEnsurePersonalCode_Idempotent(t *testing.T) {
+	s := setup(t)
+	ctx := context.Background()
+	p, _ := s.Register(ctx, RegisterInput{
+		Email: "idem@example.com", Username: "idem", Password: "password123",
+	})
+	first, err := s.EnsurePersonalCode(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.EnsurePersonalCode(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Code != second.Code {
+		t.Errorf("重复调该返同一个码 · %q vs %q", first.Code, second.Code)
 	}
 }
 

@@ -84,8 +84,15 @@ type RegisterInput struct {
 // Register 建账号 + 钱包（同事务 —— 没有钱包的账号在后面每个流程里都是特例）。
 //
 // invited 由**系统邀请码**决定（decisions §8.20 §8.29）：它划社群身份，
-// 影响 vendor 是否显示真名、以及是否免区域附加费。个人邀请码不置这个。
-// 阶段 1a 还没有 invite_code 表，所以只要填了非空码就算 —— 校验逻辑在 1b 补。
+// 影响 vendor 是否显示真名、以及是否免区域分项。
+//
+// **1c 修的老漏洞**：以前是 `invited := in.InviteCode != ""` —— **任何**非空码都置
+// invited=1。那等于任何人随便编个码就能拿社群身份 → §8.20 的定价分层形同虚设。
+// 现在查 system_invite_code 白名单：
+//   - 码在白名单里 → invited=1（社群身份）+ 白名单计数 +1
+//   - 码是别人的**个人邀请码** → invited **保持 0**（仍是零售）· 但记推荐关系
+//     并给邀请人加手续费减免额度（§8.29 铁律：个人码不划身份·只给额度）
+//   - 码不存在 → invited=0 · 静默忽略（填错码不该让注册失败）
 func (s *Store) Register(ctx context.Context, in RegisterInput) (*Passenger, error) {
 	email := strings.ToLower(strings.TrimSpace(in.Email))
 	username := strings.TrimSpace(in.Username)
@@ -98,7 +105,7 @@ func (s *Store) Register(ctx context.Context, in RegisterInput) (*Passenger, err
 	id := uuid.NewString()
 	now := time.Now().UTC()
 	nowStr := formatTime(now)
-	invited := strings.TrimSpace(in.InviteCode) != ""
+	code := strings.ToUpper(strings.TrimSpace(in.InviteCode))
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -106,13 +113,19 @@ func (s *Store) Register(ctx context.Context, in RegisterInput) (*Passenger, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// **只有系统邀请码白名单里的码才给社群身份**（见函数注释）
+	invited, err := isSystemInviteCode(ctx, tx, code)
+	if err != nil {
+		return nil, err
+	}
+
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO passenger
 			(id, username, email, email_verified, password_hash, role, status,
 			 invited, invite_code_used, created_at, updated_at)
 		VALUES (?, ?, ?, 0, ?, 'user', 'active', ?, ?, ?, ?)`,
 		id, username, email, hash, boolToInt(invited),
-		nullIfEmpty(strings.TrimSpace(in.InviteCode)), nowStr, nowStr)
+		nullIfEmpty(code), nowStr, nowStr)
 	if err != nil {
 		// SQLite 的 UNIQUE 冲突只说列名，得自己分辨是邮箱还是用户名
 		if isUniqueViolation(err) {
@@ -133,6 +146,21 @@ func (s *Store) Register(ctx context.Context, in RegisterInput) (*Passenger, err
 		return nil, fmt.Errorf("passenger: 建钱包: %w", err)
 	}
 
+	if code != "" {
+		if invited {
+			// 系统码 · 计数 +1（有 max_uses 限制时靠它判满）
+			if err := bumpSystemCodeUseTx(ctx, tx, code); err != nil {
+				return nil, err
+			}
+		} else {
+			// 不是系统码 → 试当个人邀请码处理（记推荐关系 + 给邀请人加额度）
+			// **不改本人 invited** · 码无效时静默跳过
+			if err := applyPersonalCodeTx(ctx, tx, id, code, now); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("passenger: 提交: %w", err)
 	}
@@ -140,7 +168,7 @@ func (s *Store) Register(ctx context.Context, in RegisterInput) (*Passenger, err
 	return &Passenger{
 		ID: id, Username: username, Email: email,
 		Role: "user", Status: "active", Invited: invited,
-		InviteCodeUsed: strings.TrimSpace(in.InviteCode),
+		InviteCodeUsed: code,
 		CreatedAt:      now,
 	}, nil
 }
