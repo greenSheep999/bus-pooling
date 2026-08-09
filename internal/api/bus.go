@@ -301,6 +301,12 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 	if req.Count < 1 {
 		return ErrBadRequest("count 必须 ≥ 1")
 	}
+	if req.VendorID == "auto" {
+		req.VendorID = ""
+	}
+	if req.Zone == "auto" {
+		req.Zone = ""
+	}
 
 	key := r.Header.Get("X-Idempotency-Key")
 	if key == "" {

@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { cn, fmtCredits, fmtTime, MICRO, toCredits, topupBreakdown } from "@/lib/utils";
+import { cn, fmtCredits, fmtTime, MICRO, toCredits } from "@/lib/utils";
 import type { LedgerEntry, LedgerType, TopupOrder } from "@/types";
 
 /* 充值快捷档 · 元 */
@@ -137,18 +137,19 @@ function MiniTotal({
 /* ─────────────── 充值 ─────────────── */
 
 function TopupCard() {
-  const [yuan, setYuan] = useState<string>("100");
+  /* 输入的是**想到账的积分数**（CLAUDE.md §1.4）· 通道费 5% 加在上面 · 支付 = 积分 × 1.05 */
+  const [wantCredits, setWantCredits] = useState<string>("100");
   const create = useCreateTopup();
   const [order, setOrder] = useState<TopupOrder | null>(null);
 
-  const paid = Math.max(0, Math.round(Number(yuan) || 0)) * MICRO;
-  /* 费率是单一来源（lib/utils）· 实际扣费以生成充值单时后端返回的为准 */
-  const { fee, credits } = topupBreakdown(paid);
-  const valid = paid > 0;
+  const credits = Math.max(0, Math.round(Number(wantCredits) || 0)) * MICRO;
+  const fee = Math.round(credits * 0.05);
+  const paid = credits + fee; // 乘客实付（CNY 口径，1 积分 ≡ 1 元）
+  const valid = credits > 0;
 
   const onCreate = async () => {
     if (!valid) return;
-    const o = await create.mutateAsync(paid);
+    const o = await create.mutateAsync(credits);
     setOrder(o);
   };
 
@@ -157,17 +158,17 @@ function TopupCard() {
       <Card className="p-7">
         <SectionHead
           title="充值"
-          sub={<>付款后到账积分 · <Em>1</Em> 积分 = <Em>1</Em> 元</>}
+          sub={<>1 积分 = 1 元 · 通道费 5% 加在本金上</>}
         />
 
         <div className="mt-4 space-y-4">
-          <Field label="充值金额" hint="元">
+          <Field label="想充多少积分" hint="积分">
             <Input
               type="number"
               min={1}
-              value={yuan}
-              onChange={(e) => setYuan(e.target.value)}
-              placeholder="输入金额"
+              value={wantCredits}
+              onChange={(e) => setWantCredits(e.target.value)}
+              placeholder="输入积分数"
             />
           </Field>
 
@@ -175,11 +176,11 @@ function TopupCard() {
             {PRESETS.map((p) => (
               <Button
                 key={p}
-                variant={Number(yuan) === p ? "brand" : "ghost"}
+                variant={Number(wantCredits) === p ? "brand" : "ghost"}
                 size="sm"
-                onClick={() => setYuan(String(p))}
+                onClick={() => setWantCredits(String(p))}
               >
-                {p} 元
+                {p} 积分
               </Button>
             ))}
           </div>
@@ -187,15 +188,15 @@ function TopupCard() {
           {/* 通道费只在充值这一步展示（decisions §8.21）
               拉号 / 提取 / 派号都是积分抵扣，跟通道费无关，那些地方不显示 */}
           <div className="space-y-2 rounded-xl border border-hairline bg-bg-elevated/50 p-3.5">
-            <Row label="你支付" value={<><Em>{toCredits(paid)}</Em> 元</>} />
+            <Row label="想到账" value={<><Em tone="ok">{toCredits(credits)}</Em> 积分</>} />
             <Row
               label={<>waffo 通道费 <span className="text-fg-tertiary">5%</span></>}
-              value={<Em tone="spend">-{toCredits(fee)}</Em>}
+              value={<Em tone="spend">+{toCredits(fee)}</Em>}
             />
             <div className="border-t border-hairline pt-2">
               <Row
-                label="实际到账"
-                value={<><Em tone="ok">{toCredits(credits)}</Em> 积分</>}
+                label="你需支付"
+                value={<><Em>{toCredits(paid)}</Em> 元</>}
                 strong
               />
             </div>

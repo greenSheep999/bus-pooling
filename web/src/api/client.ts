@@ -57,3 +57,18 @@ export const put = <T>(path: string, body?: unknown) =>
   api<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined });
 
 export const del = <T>(path: string) => api<T>(path, { method: "DELETE" });
+
+/** 32 位十六进制 idempotency key · 契约要求这个格式（api §幂等键） */
+export function newIdempotencyKey(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** 需要幂等键的写操作 · 拉号 / 派去向 / handoff / 建单 · 自动生成 32 位 hex key */
+export const postIdempotent = <T>(path: string, body?: unknown, key?: string) =>
+  api<T>(path, {
+    method: "POST",
+    body: body ? JSON.stringify(body) : undefined,
+    headers: { "X-Idempotency-Key": key ?? newIdempotencyKey() },
+  });

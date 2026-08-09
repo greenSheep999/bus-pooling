@@ -101,6 +101,9 @@ func (d *DryRunVendor) OrderKeys(_ context.Context, orderID string) (*providers.
 }
 
 // DryRunPool 是 DRY_RUN 下的假号池 —— 假号进假池，不污染真 kiro.rs。
+//
+// 用 nano 时间戳做 id 起点 —— in-memory 计数器重启会归零，但 credential_ledger
+// 里那些老行还在，会撞 UNIQUE 约束。用 UnixNano 单调递增，重启不复用。
 type DryRunPool struct {
 	nextID atomic.Uint64
 }
@@ -108,6 +111,8 @@ type DryRunPool struct {
 func (p *DryRunPool) BatchImport(_ context.Context, req housepool.BatchImportRequest) (*housepool.BatchImportResult, error) {
 	ev := make(chan housepool.BatchImportEvent, len(req.Credentials)+1)
 	sum := make(chan housepool.BatchImportSummary, 1)
+	// 首次调用把种子设成 UnixNano · 之后每次拉都往上加 1
+	p.nextID.CompareAndSwap(0, uint64(time.Now().UnixNano()))
 	for i := range req.Credentials {
 		idx := i
 		cid := housepool.CredentialID(p.nextID.Add(1))

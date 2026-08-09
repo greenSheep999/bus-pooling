@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, del, post, put } from "./client";
+import { api, del, post, postIdempotent, put } from "./client";
 import type {
   Activity, ApiKey, ApiKeyCreated, AssignEvent, AutoPickResult, Bus, Credential, DownstreamConfig,
   ExtractEvent, GlobalStrategy, ISOTime, LedgerEntry, Money, Overview, Paged,
@@ -149,8 +149,8 @@ export const useRegenInviteCode = (busId: string) => {
 export const usePullForBus = (busId: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { count: number; vendor_id?: string }) =>
-      post(`/me/buses/${busId}/pull`, body),
+    mutationFn: (body: { count: number; vendor_id?: string; zone?: string }) =>
+      postIdempotent(`/me/buses/${busId}/pull`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["bus", busId] });
       qc.invalidateQueries({ queryKey: ["busCredentials", busId] });
@@ -187,12 +187,22 @@ export const useExtract = () => {
   return useMutation({
     mutationFn: (body: {
       vendor_id: string; zone?: string; count: number;
-      /** 优惠码 · 本次减免 · decisions §8.20（注册时叫邀请码 · 这里叫优惠码） */
+      /** 优惠码 · 本次减免 · 阶段 1a 后端估价还没接优惠码 · 前端先不发
+       *  避免 pullRequest decodeStrict 拒未知字段（bad_json） */
       coupon_code?: string;
-    }) => post("/me/pull", body),
+    }) => {
+      const { coupon_code: _unused, vendor_id, ...rest } = body;
+      void _unused;
+      const payload = {
+        ...rest,
+        ...(vendor_id && vendor_id !== "auto" ? { vendor_id } : {}),
+      };
+      return postIdempotent("/me/pull", payload);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["extractRecords"] });
       qc.invalidateQueries({ queryKey: ["extractEvents"] });
+      qc.invalidateQueries({ queryKey: ["pullRecords"] });
       qc.invalidateQueries({ queryKey: ["wallet"] });
     },
   });
@@ -272,9 +282,10 @@ export type AssignBody = {
 export const useAssign = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: AssignBody) => post("/me/pull-records/assign", body),
+    mutationFn: (body: AssignBody) => postIdempotent("/me/pull-records/assign", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pullRecords"] });
+      qc.invalidateQueries({ queryKey: ["assignEvents"] });
       qc.invalidateQueries({ queryKey: ["buses"] });
     },
   });
@@ -301,7 +312,7 @@ export interface HandoffKeys {
 export const useHandoffInit = () =>
   useMutation({
     mutationFn: (credential_ids: string[]) =>
-      post<HandoffToken>("/me/handoff", { credential_ids }),
+      postIdempotent<HandoffToken>("/me/handoff", { credential_ids }),
   });
 
 /** ② 用 token 取明文 · TTL 内可反复取（断线重试就靠这个） */
@@ -314,7 +325,7 @@ export const useHandoffFulfill = () =>
 export const useHandoffConfirm = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (token: string) => post(`/me/handoff/${token}/confirm`),
+    mutationFn: (token: string) => postIdempotent(`/me/handoff/${token}/confirm`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pullRecords"] });
       qc.invalidateQueries({ queryKey: ["assignEvents"] });
@@ -327,7 +338,14 @@ export const useHandoffConfirm = () => {
 export const usePull = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { vendor_id?: string; count: number }) => post("/me/pull", body),
+    mutationFn: (body: { vendor_id?: string; count: number; zone?: string }) => {
+      const payload = {
+        ...body,
+        ...(body.vendor_id && body.vendor_id !== "auto" ? {} : { vendor_id: undefined }),
+      };
+      if (payload.vendor_id === undefined) delete payload.vendor_id;
+      return postIdempotent("/me/pull", payload);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pullRecords"] });
       qc.invalidateQueries({ queryKey: ["wallet"] });
@@ -337,11 +355,14 @@ export const usePull = () => {
 
 /* ── 钱包 · 充值 / 兑换 ── */
 
-/** 生成充值单 → 返回二维码 · 扫码付到 waffo */
+/** 生成充值单 → 返回二维码 · 扫码付到 waffo
+ *  参数是**要净到账的积分**（CLAUDE.md §1.4）· 通道费 5% 加在本金上
+ *  1 积分 ≡ 1 元 → paid = credits × 1.05 元 → waffo 显示 USD = paid / 7 */
 export const useCreateTopup = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (paid: Money) => post<TopupOrder>("/me/topup", { paid }),
+    mutationFn: (credits: Money) =>
+      postIdempotent<TopupOrder>("/me/topup", { credits, channel: "waffo" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["wallet"] });
       qc.invalidateQueries({ queryKey: ["ledger"] });

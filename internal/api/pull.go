@@ -20,6 +20,9 @@ type pullRequest struct {
 	Count    int    `json:"count"`
 	VendorID string `json:"vendor_id,omitempty"` // 乘客偏好；服务端可否决
 	Zone     string `json:"zone,omitempty"`      // us | eu | 空
+	// CouponCode 阶段 1a 收但不消费 —— 前端确认窗允许填优惠码 ·
+	// 后端估价还没接优惠逻辑（decisions §8.20）· 收下防 decodeStrict 拒未知字段
+	CouponCode string `json:"coupon_code,omitempty"`
 }
 
 type pullResponse struct {
@@ -59,6 +62,13 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 	}
 	if req.Count < 1 {
 		return ErrBadRequest("count 必须 ≥ 1")
+	}
+	// 前端会发 "auto" 表示"让系统派" —— 服务端等价于空
+	if req.VendorID == "auto" {
+		req.VendorID = ""
+	}
+	if req.Zone == "auto" {
+		req.Zone = ""
 	}
 
 	key := r.Header.Get("X-Idempotency-Key")
@@ -103,7 +113,9 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	// 交给 decider 走完 5 状态
+	// 交给 decider 走完 5 状态。
+	// req.VendorID 前端可能传偏好，阶段 1a decider 还没接乘客偏好选路（Iss #11），
+	// 传进去也不用。留在请求体里给幂等指纹签名 —— 换 vendor 就应该是新的拉号请求
 	result, err := s.decider.Pull(r.Context(), decider.PullInput{
 		PassengerID:         p.ID,
 		BusID:               "",
