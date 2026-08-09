@@ -353,7 +353,7 @@ bus-pooling 本体（Go 服务）
 
 | # | 交付 | 不做 |
 |---|---|---|
-| **1a** | 1 个 vendor（91kiro）+ 主入口拼车（1 人 bus）+ 次入口单独拉号 + 拉号记录 + housepool | 无自动、无多 vendor、无兑换码、无 payment、无双写、无 handoff |
+| **1a** | 1 个 vendor（91kiro）+ 主入口拼车（1 人 bus）+ 次入口单独拉号 + 拉号记录 + housepool + handoff 三段式 | 无自动、无多 vendor、无兑换码、无 payment、无双写 |
 | **1b** | 加 5 家 vendor + 兑换码 + payment-gateway（waffo 5% pass-through） | 仍无拼车（多人）、无自动 |
 | **1c** | **匿名撮合多人 bus 拼车** + 号价按 N 分摊 + 集单调度 | 无邀请码、无自动 |
 | **1d** | 自动模式（时钟 / 水位 / vendor webhook 触发）+ 号死自动补车 + 决策模型（比价 + fallback） | 无邀请码、无压车治理 |

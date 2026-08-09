@@ -55,9 +55,9 @@
 | `DELETE /api/me/api-keys/{id}` | ✅ 实现 | |
 | `GET /api/me/wallet` | ✅ 实现 | 含 reserved |
 | `GET /api/me/ledger` | ✅ 实现 | 分页 |
-| `POST /api/me/redeem` | ⚙️ 骨架 501 | 1b 后端 sprint 无 CDK 表 |
-| `POST /api/me/topup` | ⚙️ 骨架 501 | payment 是 1c |
-| `GET /api/me/topup/{id}` | ⚙️ 骨架 501 | 同上 |
+| `POST /api/me/redeem` | ✅ 实现（骨架） | 1b · CDK 表 + 生成/校验后续补 |
+| `POST /api/me/topup` | ✅ 实现 | 1b · 已接 404bus-payment-gateway（waffo checkout） |
+| `GET /api/me/topup/{id}` | ✅ 实现 | 1b |
 | `GET /api/me/buses` | ✅ 实现 | |
 | `POST /api/me/buses` | ✅ 实现 | 只支持 `kind: single` |
 | `GET /api/me/buses/{id}` | ✅ 实现 | |
@@ -128,11 +128,11 @@
 |---|---|---|
 | 价格走势 `/prices` | 整页空态「暂无数据」 | ✅ 这页本来就标了「需求待定」（§8.22） |
 | 机器人通知 `/settings/webhook` | 配置存不了 · 投递记录空 | ✅ webhook out 是 1e |
-| 钱包充值 / 兑换 | 按钮点了报错 | ✅ payment 是 1c · 兑换要 CDK 表 |
+| 钱包充值 / 兑换 | 按钮点了报错 | ✅ 属于 1b · **payment 已提前接通**（gateway 未装配时 501） |
 | 成员挂起 / 移除 / 换邀请码 | 按钮点了报错 | ✅ 多人车整体是 2a |
 | 车详情「数据」tab | 空态 | ✅ 平均寿命是 1d |
 
-**不可接受 501 的**（1b 必须真实现）：概览三个端点 · `vendors/stock` · `vendors/stats` · `vendors/auto-pick` · `me/pull` + `estimate` · `assign` · handoff 三段 · `me/strategy`。这些一挂，阶段 1a 的主流程（拉号 → 派去向）就跑不起来。
+**阶段 1a 不可接受 501 的**：概览三个端点 · `vendors/stock` · `vendors/stats` · `vendors/auto-pick` · `me/pull` + `estimate` · `assign` · handoff 三段 · `me/strategy`。这些一挂，1a 的主流程（拉号 → 派去向 → 拿走）就跑不起来。
 
 ## 阶段 1a 的"必须做" 12 项模块
 
