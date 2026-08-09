@@ -114,27 +114,41 @@ else:  # 无幂等键（kiroappcc）
 
 ## 3. 派去向状态机 · `pending_assignment`
 
-**跨系统**：housepool（可能 PUT / BatchImport 到 passengerpool）· SQLite（credential_ledger 状态）。
+**跨系统**：housepool（PUT groups）· SQLite（credential_ledger + pending_assignment 状态）。
 
-### 状态
+### 实际状态（1a 已落地）
 
 ```
-initial → external_done → status_updated → completed
-                  │
-                  └─fail→ need_manual
+initial → completed
+   │
+   └── janitor 兜 → need_manual
 ```
 
 | 状态 | 说明 |
 |---|---|
-| `initial` | 收到 assign 请求，写 pending_assignment 行 |
-| `external_done` | 外部动作完成（进车：groups 已改；推 passengerpool：passengerpool 已收到复制；handoff：明文已给用户） |
-| `status_updated` | 我方 credential_ledger 状态更新完 |
-| `completed` | 全部完成 |
-| `need_manual` | 外部动作失败 3 次 → 报警 |
+| `initial` | tx1 落：idempotency_record + pending_assignment 一次原子 commit。承诺"要做这个 assign"·崩溃留痕给 janitor |
+| `completed` | tx2 落：credential_ledger 迁 owner + status → completed + 幂等响应体 |
+| `need_manual` | AssignJanitor 扫到 initial 卡 5min+·查号池 group 对账后**pool 未装配 / 号不在预期 group / push_pool 分支**·转人工 |
 
-**顺序铁律**（`CLAUDE.md § 12` 已写）：**先外部动作，再改 housepool 状态**。
+**三段执行**（`internal/api/pullrecord.go handleAssign`）：
 
-**幂等**：客户端带 `X-Idempotency-Key`；服务端查 `idempotency_record`（§6）判是否重放。
+```
+tx1: INSERT idempotency + pending_assignment initial + Commit   ← 承诺 · janitor 锚点
+tx 外: housepool.UpdateCredential(groups=bus-<id>)             ← 外部动作·崩溃留 initial
+tx2: UPDATE credential_ledger + pending_assignment completed  ← 走完 + 保存幂等响应
+```
+
+**崩溃窗口**：
+- tx1 之前：无痕迹·同 key 重试 = 新单
+- tx1 与 pool 之间：initial 行留库·janitor 扫到 → 无外部动作·delete·同 key 可重放
+- pool 与 tx2 之间：initial + housepool 已迁·台账未改 → janitor 查 pool group 对账·前推 completed 或转 need_manual
+- tx2 之后：completed 终态
+
+**顺序铁律**（`CLAUDE.md §12`）：**先外部动作，再改 housepool 状态** —— 只有 tx1 已 commit 才做 pool.UpdateCredential·避免"号已迁本地无痕"。
+
+**幂等**：客户端带 `X-Idempotency-Key`；`ensureIdempotencyRecordTx` 在 tx1 内做·跟 pending_assignment initial 原子提交·消除 orphan 窗口。
+
+**旧版四态**（`external_done / status_updated` 三次 UPDATE）已废弃：同 tx 提交本质是一次原子写·中间态是"给审计看的假状态机"·移除后语义更清晰。真的分步就是 tx1 / tx 外 / tx2 三段。
 
 ## 4. handoff 状态机 · `pending_handoff` · 三段式 Token 交付（P0-3 修补）
 
@@ -259,15 +273,59 @@ CREATE TABLE pending_dissolution (
 **跨系统**：payment-gateway（外部）· wallet（SQLite）。
 
 ```
-initial → gateway_ordered → gateway_paid → credited → completed
-                    │            │
-                    │            └─fail→ pending_manual （gateway 说已付但 credit 失败）
-                    └─timeout→ expired  （用户没扫码支付）
-                    └─cancel→ cancelled
-                    └─refund→ refunded
+initial → gateway_creating → gateway_ordered → gateway_paid → credited → completed
+   │             │                  │                │
+   │             │                  │                └─fail→ pending_manual （gateway 说已付但 credit 失败）
+   │             │                  └─timeout→ expired  （用户没扫码支付）
+   │             │                  └─cancel→ cancelled
+   │             │                  └─refund→ refunded
+   │             └─crash→ recover（客户端订单号反查·见下）
+   └─timeout→ expired（gateway 还没调过·5m）
 ```
 
+**`gateway_creating` 中间态**（migration 014 引入·P0 修）：
+- API handler 在**调 `CreatePayment` 之前**用 `EnsureAtLeast(gateway_creating)` 落库·
+  失败则 hard fail 500·**绝不发外部请求**（防"扣了钱但外部单丢失"）
+- `AttachGateway` 成功后自动推进到 `gateway_ordered`
+- 若进程在 `CreatePayment ↔ AttachGateway` 之间崩溃 → janitor 用客户端订单号
+  反查 gateway 幂等表恢复
+
 payment-gateway webhook 是主推进器；我方 janitor 兜底轮询状态。
+
+**janitor 兜底能力**（`internal/topup/janitor.go`）：
+- `initial` 超 `initialTimeout`（默认 5m） → 双表 expire
+- `gateway_creating` 卡 `pollAfter`（默认 60s） → 用**客户端订单号**反查 gateway（POST replay CreatePayment）：
+  - **反查成功（200 replay / 201 新建）** → 回填 `gateway_payment_id` + 推 `gateway_ordered`
+  - **反查失败（网络错 / 5xx / POST 4xx 含 404）** → 累计 `poll_fail_count` · 到上限（5 次）转 `pending_manual` · **绝不 expire**（POST 语义里 404 = 端点错·不代表 payment 不存在）
+  - **反查能力缺失（LoadRequestSnapshot 未装配 / snapshot 空）** → 立即转 `pending_manual` · **绝不 expire**
+- `gateway_ordered` 卡 `pollAfter`（默认 60s） → 主动调 `GetPayment`（**GET 读**接口）：
+  - state=settled → 触发 `MarkPaid` + `EnsureAtLeast(completed)`（webhook 丢失兜底）
+  - state=pending → 保留不动（下轮再 poll）
+  - state=expired / cancelled / failed → 走双表 `ExpireBoth`
+  - **GET 404** → 该 `gateway_payment_id` 明确不存在（读语义 · 允许 expire）→ 走双表 `ExpireBoth`
+  - poll 网络错 / 5xx → 累计 `poll_fail_count` · 到上限转 `pending_manual` · **不 expire**
+- `gateway_paid` 卡 `gatewayPaidTimeout`（默认 2m） → 重试 `MarkPaid`
+- `credited` 卡 `creditedTimeout`（默认 30s） → 推 `completed`
+
+**"未知不等于失败"**：poll 失败 / 反查能力缺失 / **POST 404** 都不能推断为 expired。
+只有以下三条**明确读语义**信号才当作"确认无单"·允许 expire：
+
+1. GET `/payments/{gateway_payment_id}` 返 404（该 payment id 明确不存在）
+2. gateway 显式状态 = `expired` / `cancelled` / `failed`
+3. `initial` 超时（本地压根没发 CreatePayment）
+
+**POST /payments 404 明确不适用这条规则**：CreatePayment 是**写**接口·404 表示"端点缺失 / 路径错"·
+不代表 "该 client_order_id 不存在"。POST replay 404 一律走 `poll_fail_count` 累计。
+未来 gateway 若加"只读 client-order-id 反查端点"（GET 读语义）·再单独走 GET 404 → expire 分支。
+
+避免的是这样的坑："外部有单 → 本地误当无单 expire → 用户重复付款"。
+
+**状态推进接口**：
+- `AdvanceByOrderID(orderID, from, to) (bool, error)` — 严格 from→to·caller 必须判 bool
+- `EnsureAtLeast(orderID, target) error` — 允许跨态跃迁·webhook 早到时 initial→gateway_paid 也放行
+- `ExpireBoth(pendingID, orderID, from) (bool, error)` — pending_topup + topup_order 同一事务 expired
+- `IncrPollFailCount(id) (int, error)` — 反查失败累计·返回累加后值
+- `MarkManual(id, reason) error` — 转 `pending_manual` · 让运营人工核对
 
 ## 7. `idempotency_record` 表设计
 
@@ -329,15 +387,21 @@ ALTER TABLE wallet ADD COLUMN reserved INTEGER NOT NULL DEFAULT 0;
 
 **扫描频率**：每 30 秒。
 
-**扫描范围**：`pending_purchase` / `pending_assignment` / `pending_handoff` / `pending_topup` 表中 `status ∉ {completed, cancelled_*, need_manual}` 且 `updated_at + timeout_for_status < now` 的行。
+**扫描范围**：`pending_purchase` / `pending_assignment` / `pending_handoff` / `pending_topup` 表中 `status ∉ {completed, cancelled_*, need_manual, pending_manual, expired, refunded}` 且 `updated_at + timeout_for_status < now` 的行。
 
 **动作**（按状态类型）：
 
 - `reserved` 超时 → 释放冻结
 - `purchased` 未 imported → 调 `vendor.OrderKeys(client_order_id)` 尝试 imported
 - `imported` 未 completed → 补落 ledger + 更新 completed
-- `pending_assignment` `external_done` 未 `status_updated` → 补落 status_updated
+- `pending_assignment` `initial` 卡 5min+ → AssignJanitor 查 housepool group 对账：
+  - pool 已迁到 `bus-<id>` → 前推 completed（+ 更新 credential_ledger + 回填幂等响应）
+  - pool 仍在 `record-<pid>` → delete pending_assignment + idempotency_record（允许同 key 重试 = 新单）
+  - 不在预期两个 group / pool 未装配 → 转 need_manual
+  - pool 查询失败（网络错） → retry 下轮再试
+  - push_pool 分支：1c 才做真推 → 现阶段直接 need_manual
 - `pending_handoff` 未 `housepool_deleted` → 补 DELETE
+- `pending_topup` `gateway_creating` 卡 → 用客户端订单号反查 gateway 幂等表恢复（详见 §6）
 - `pending_topup` `gateway_paid` 未 `credited` → 补 credit
 
 **报警**：任何状态 → `need_manual` 时立即报警（阶段 1 简单：写 log + 邮件）。

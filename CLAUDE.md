@@ -79,8 +79,16 @@
 | 号价 | `key_cost` | vendor pass-through |
 | 单次议价 | `single_pull_fee` | 我方（`count==1` 时链上加一层 `× (1+率)`，**不是号价 × 率** —— 见 `decisions §8.34` 分项拆法） |
 | 附加能力费 | `capability_fee` | 我方（**插槽**，阶段 1 无实例） |
-| 服务费 | `service_fee` | 我方（加价链最后一层 `× (1+率)` · 单一费率不分社群/零售 · 具体率在后台配置，**不写进代码** · 见 `decisions §8.34`） |
+| 服务费 | `service_fee` | 我方（加价链最后一层 `× (1+率)` · 单一费率不分档 · 具体率在后台配置，**不写进代码** · 见 `decisions §8.34`） |
 | 通道费 | `channel_fee` | waffo（`pass-through` 5%） |
+
+**用户档次**（`passenger.tier` · `decisions §8.39` 三档定稿）：
+
+| 对外 | tier 字段 | 谁 | 减免层 | 相对倍率 |
+|---|---|---|---|---|
+| **零售价** | `retail` | 散客 · 无码 | 无 · 全套加价 | 2.00× |
+| **批发价** | `wholesale` | TG/Discord 社群 · 社群码 | 免区域附加费 | ~1.67× |
+| **同行价** | `insider` | 同行群 · 同行码 | 免 vendor + 区域附加费 | 1.00× |
 
 **计费模型：逐层乘**（`decisions §8.34`）：
 ```
@@ -88,6 +96,9 @@
 本次扣除 = 最终单价 × 号数
 通道费**不在这条链里** —— 充值时单独收一次（§8.21）
 ```
+
+**按档跳过的层**：`retail` 全套 · `wholesale` 跳 region_markup · `insider` 跳 vendor_markup + region_markup · **服务费所有档都收**。
+
 **各层费率是内部配置** · 只在文档和后台，**不进代码注释**（前端代码用户看得到 · §8.20 不许暴露加价幅度）
 
 ### 1.4 充值口径（跟拉号扣除完全独立）
@@ -142,6 +153,15 @@
 | `发出去就不管` | 只有去向 ③ handoff 才不管 |
 | `P0 / P1 / P4a / P∞` 等 P 标签 | 用**阶段 1a / 1b / ... / 2a / 3a** 命名 |
 | `轮 = 一个号` | ❌ **1 轮 = 1 次拉号动作**，不管几个号 |
+| `single 车不能加人` | ❌ **任何车都能加人** · 1 人是状态不是类型 · 邀请码给出去就变多人拼车（1c 定稿） |
+| `只有 team 车有邀请码` | ❌ **用户建的车一律有邀请码**（`single` / `team` 行为完全一致）· 只有系统撮合池 `anon` 没码 |
+| `1 人车 / 邀请码车`（UI 类型标签） | ❌ 按 `member_count` 说：**独享** / **N 人拼车** · `kind` 不对外 |
+| `建车时选车类型` | ❌ 建车没有类型可选 · 建出来就是一辆能加人的车 |
+| **`社群 / 社群价 / 社群成员`**（作为**身份**）| ⚠️ **内部改叫同行 / 批发**（tier 分档 · `decisions §8.39`）· **对外 UI 保留"社群成员"**（用户视角只区分"绑了专属邀请码"vs"没绑" · 具体档次不对外） |
+| **`散客 / 标准价 / 优惠价 / 零售价 / 批发价 / 同行价`** | ❌ **UI 里都不出现** —— 用户端不暴露档次差别 · 加价链算完的最终单价就是他能看到的（`CLAUDE.md §0.1`）|
+| `invited: bool`（作为档次判断） | ❌ 用 `passenger.tier ∈ {retail, wholesale, insider}`（三档 · `decisions §8.39`）· 字段 `invited` 保留作兜底，下次 schema 变更删 |
+| `系统邀请码`（单一）| ❌ 内部分**同行码 / 社群码** · **对外 UI 都叫「专属邀请码」**（用户不感知级别 · `decisions §8.39`）|
+| `账号安全`（作为设置页名）| ❌ 用 **账号设置**（还含邮箱/用户名/第三方登录 · `decisions §8.40`）|
 
 **如果看到旧对话或旧文档里出现上面左列的词，立即警觉，去 `docs/decisions.md` 查为什么废**。
 
@@ -398,7 +418,7 @@ docs/vendors/_sources/root-*.html
 | 实体 | 内部状态（DB / 代码） | 用户可见状态（UI / API 返回 / webhook 载荷） |
 |---|---|---|
 | **credential** | `status ∈ {alive, dead, handed_off}` × `disabled ∈ {0,1}` × `current_group` × `death_source ∈ {housepool_probe, vendor_webhook, vendor_poll}` | **"活的"** / **"已失效"** 二态。`handed_off` 直接不出现在用户号列表里 |
-| **bus** | `kind ∈ {single, anon, team}` × `status ∈ {active, dissolved}` | UI 上叫**"我的车"** / **"拼车"** / **"车队"**（对应 single/anon/team），底部标 **"活跃"** / **"已解散"** 二态 |
+| **bus** | `kind ∈ {single, anon, team}` × `status ∈ {active, dissolved}` × `member_count` | **按人数说，不按 kind 说**：1 人 → **"独享"** · 多人 → **"N 人拼车"** · 系统撮合池 → **"搭车"**。底部标 **"活跃"** / **"已解散"** 二态。<br>**`kind` 不对外暴露** —— 它只记"谁建的"（`single`/`team` = 用户建 · `anon` = 系统建），不决定能不能加人。详见 `06-db-schema.md §车 kind 语义` |
 | **pull_intent** | `pending / in_flight / coalesced / fulfilled / failed / cancelled` | **"拉号中"** / **"完成"** / **"失败"** 三态（合流细节隐去） |
 | **pull_round** | `initiated / completed / failed / partial / refunded` | **"成功"** / **"部分成功"** / **"失败"** / **"已退款"** 四态 |
 | **payment_order** | `pending / paid / failed / cancelled / refunded` | **"待付款"** / **"已到账"** / **"失败"** 三态（cancelled 合入 failed；refunded 单独） |

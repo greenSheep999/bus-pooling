@@ -107,11 +107,20 @@ await POST(`/handoff/${download_token}/confirm`)
   "email": "alice@example.com",
   "email_verified": false,
   "created_at": "2026-08-07T12:00:00Z",
+  "tier": "insider",
   "invited": true
 }
 ```
 
-**`invited`**：注册时填过邀请码（`decisions §8.20`）· `true` = 看 vendor 真名 + 免加价；`false` = 看 `AWS-Q Kiro Vendor 0N` + 默认加价（提号时填优惠码可单次免）。
+**`tier`**（`decisions §8.39`）· 三档定价：
+
+| 值 | 含义 | vendor 显示 | 加价链 |
+|---|---|---|---|
+| `retail` | 零售 · 散客 · 无系统邀请码 | Vendor 0N 匿名编号 | 全套加价 |
+| `wholesale` | 批发 · TG/Discord 社群 · 社群码注册 | vendor 真名 | 免区域附加费 |
+| `insider` | 同行 · 同行群邀请制 · 同行码注册 | vendor 真名 | 免 vendor + 区域附加费 |
+
+**`invited`**（**兼容字段** · 下版删）：等同 `tier != 'retail'` · 保留供旧前端兜底 · 新前端一律读 `tier`。
 
 **余额不在这里** —— 走 `GET /api/me/wallet`（前端顶栏积分 pill 和钱包页都用那个，避免两处返回同一个数字导致不一致）。
 
@@ -138,20 +147,26 @@ await POST(`/handoff/${download_token}/confirm`)
 |---|---|---|---|
 | GET | `/api/me/wallet` | 余额 + 概要 | 1a |
 | GET | `/api/me/ledger` | 积分流水（分页） | 1a |
+| GET | `/api/promos` | **公开** · 顶部跑马灯活动位（config.promo.items · 过期条目服务端不下发） | 1c |
 | POST | `/api/me/redeem` | 兑换码 | 1b |
+| GET | `/api/me/invite` | 我的个人邀请码 + 邀请数 + 剩余手续费减免次数 | 1c |
+| POST | `/api/me/community-code` | 补绑社群码（已注册用户拿社群身份）· 404 码无效 · 409 已绑过 | 1c |
 | POST | `/api/me/topup` | 起充值单（走 waffo） | 1b |
 | GET | `/api/me/topup/{order_id}` | 查充值单 | 1b |
 | GET | `/api/me/topup-orders` | 我的充值单历史（分页） | 1b |
 
 ### `GET /api/me/ledger` `?type=` 枚举
 
-**对外只有 5 个类型**（跟 `web/src/types/index.ts` 的 `LedgerType` 一致）：
+**对外只有 6 个类型**（跟 `web/src/types/index.ts` 的 `LedgerType` 一致）：
 
 - `topup` · 充值到账
-- `spend` · 拉号扣款（内部的 key_cost / service_fee 等分层**合并展示**，对外不出加价链结构 —— CLAUDE.md §0.1）
+- `spend` · 拉号扣款（内部的 key_cost / service_fee 等分层**合并展示**，对外不出计费链结构 —— CLAUDE.md §0.1）
 - `redeem` · 兑换码
 - `refund` · 一般退款
 - `warranty_refund` · 质保退款
+- `share` · **车友份额清算**（1c 加 · `decisions §8.23`）· 金额正负表示方向：正 = 车友分摊回款给我（我派号进车）· 负 = 我买入别人派进来的号份额
+  - 为什么单开一类：这是**乘客之间**的内部转移·既不是充值（没花真钱）也不是消费（钱没出系统）· 并进 topup/spend 会让对账算错
+  - 内部对应 `wallet.ReasonShareIncome` / `ReasonShareExpense`
 
 **内部记账**仍按 `wallet.Reason` 的多种分类落库（对账 / 分项统计用），api 层做映射收敛。
 
@@ -193,7 +208,7 @@ await POST(`/handoff/${download_token}/confirm`)
 | POST | `/api/me/buses` | 建 bus | 1a（`kind: single`）→ 1c（`anon`）→ 2a（`team`） |
 | GET | `/api/me/buses/{bus_id}` | bus 详情 + 号池状态 | 1a |
 | POST | `/api/me/buses/{bus_id}/join` | 加入 anon bus（匿名撮合） | 1c |
-| POST | `/api/me/buses/join-by-invite` | 邀请码加入 team bus | 2a |
+| POST | `/api/me/buses/join-by-invite` | **拼车码**加入一辆车（对外叫「拼车码」· 跟个人邀请码区分 · §8.38） | 1c |
 | POST | `/api/me/buses/{bus_id}/leave` | 退出 bus | 1a |
 | DELETE | `/api/me/buses/{bus_id}` | 解散 bus（创建人 or 最后一位成员） | 1a |
 | POST | `/api/me/buses/{bus_id}/pull` | 给这个 bus 拉一次号 | 1a |
@@ -202,8 +217,8 @@ await POST(`/handoff/${download_token}/confirm`)
 | GET | `/api/me/buses/{bus_id}/pulls` | 该 bus 的拉号历史（分页） | 1a |
 | GET | `/api/me/buses/{bus_id}/stats` | 该 bus 号池的聚合统计（跨窗口） | 1d |
 | PUT | `/api/me/buses/{bus_id}/members/{pid}` | 挂起 / 解挂成员（`§8.26`） | 2a |
-| DELETE | `/api/me/buses/{bus_id}/members/{pid}` | 移除成员（要全员确认 `§8.18`） | 2a |
-| POST | `/api/me/buses/{bus_id}/invite-code` | 重新生成邀请码（旧码立即失效） | 2a |
+| DELETE | `/api/me/buses/{bus_id}/members/{pid}` | 移除成员（车主有权 · `§8.36`）· 剩余成员 share_pct 均分重算 | 1c |
+| POST | `/api/me/buses/{bus_id}/invite-code` | 重新生成**拼车码**（旧码和旧链接立即失效） | 1c |
 
 **没有 `GET /buses/{id}/members`** —— 成员数组**内嵌在 `GET /api/me/buses/{bus_id}` 的 `members[]`** 里。理由：车详情的成员 tab 切过去就该有数据，不值得为它多一次请求 + loading 态；成员数量天然很小（1 人车 1 条、多人车个位数）。1 人车 `members` 只有 owner 一条，`share_pct=100`。
 

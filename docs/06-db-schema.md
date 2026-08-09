@@ -16,7 +16,7 @@
 | 命名 | **snake_case** —— 表名单数（`passenger` 不是 `passengers`）、字段 snake_case |
 | 外键 | 用 `FOREIGN KEY` 但**不加 `ON DELETE CASCADE`**（软删更安全，我方 pull_record 表 credential 死了也保留） |
 | 索引 | 每张表关键字段建索引，见每张表说明 |
-| 软删 | 默认硬删；只有 `passenger` / `bus` / `payment_order` 需要软删（加 `deleted_at`） |
+| 软删 | 默认硬删；只有 `passenger` / `bus` / `topup_order` 需要软删（加 `deleted_at`） |
 
 **加密字段** 用 `secret_<name>_encrypted` 命名（AES-GCM，主密钥来自环境变量，见 `internal/secrets`）。
 
@@ -33,9 +33,13 @@ CREATE TABLE passenger (
   password_hash          TEXT NOT NULL,                  -- Argon2id
   role                   TEXT NOT NULL DEFAULT 'user',   -- user | admin
   status                 TEXT NOT NULL DEFAULT 'active', -- active | disabled
-  -- 注册时填过**系统**邀请码（decisions §8.20 §8.29）· 个人码不置这个
-  -- true  = 社群：看 vendor 真名 + 跳过区域附加费那一层
-  -- false = 零售：看 Vendor 0N 编号 + 照加区域附加费
+  -- 用户档次（decisions §8.39 · 三档 · 一档多减一层）
+  --   retail    = 零售 · 无系统邀请码 · 全套加价
+  --   wholesale = 批发 · 社群码注册（TG/Discord）· 免区域附加费
+  --   insider   = 同行 · 同行码注册（同行群邀请制）· 免 vendor + 区域附加费
+  tier                   TEXT NOT NULL DEFAULT 'retail'
+                         CHECK(tier IN ('retail','wholesale','insider')),
+  -- 兜底字段 · 下次 schema 变更删（decisions §8.39）· 迁移：invited=true → tier=insider
   invited                INTEGER NOT NULL DEFAULT 0,
   invite_code_used       TEXT,                            -- 注册时用的码（留痕 · 便于追来源）
   created_at             TEXT NOT NULL,
@@ -45,9 +49,15 @@ CREATE TABLE passenger (
 );
 ```
 
-**索引**：`(username)`, `(email)`, `(status)`。
+**索引**：`(username)`, `(email)`, `(status)`, `(tier)`（按档次统计 / 加价链读取）。
 
 **依赖**：`internal/passenger`（Layer 3a）。
+
+**tier 迁移**（`decisions §8.39`）：
+- 现有 `invited = 1` 全部迁到 `tier = 'insider'`（保守 · 老用户不掉档）
+- 现有 `invited = 0` 迁到 `tier = 'retail'`
+- 加价链一律读 `tier`，不再读 `invited`
+- `invited` 字段作为兜底保留 · 下次 schema 变更时移除
 
 ## 1.5 会话 · `session`
 
@@ -162,59 +172,81 @@ CREATE TABLE wallet_ledger (
 
 **索引**：`(passenger_id, seq)`, `(passenger_id, created_at DESC)`, `(reason)`。
 
-## 6. 兑换码 · `cdk` + `cdk_redemption`
+## 6. 兑换码 · `redeem_code`（单表 · 迁移 002）
+
+早前设计文档写 `cdk` + `cdk_redemption` 两表·实际 1a 落地时合并成一张 `redeem_code`
+（成人 code 直接携带 used_by / used_at · 不需要独立 redemption 事件表 · redemption
+事件通过 `wallet_ledger` 的 `redeem` reason + `ref_id = code` 已能追溯）。
 
 ```sql
-CREATE TABLE cdk (
-  code                   TEXT PRIMARY KEY,               -- 大小写、连字符归一化后
-  quota                  INTEGER NOT NULL,               -- microunit
-  status                 TEXT NOT NULL DEFAULT 'active', -- active | redeemed | expired | revoked
-  batch_id               TEXT,                            -- 批次（管理端生成时打）
-  expires_at             TEXT,
-  redeemed_by            TEXT,                            -- passenger_id
-  redeemed_at            TEXT,
+CREATE TABLE redeem_code (
+  code                   TEXT PRIMARY KEY,               -- 大小写敏感·生成时统一大写
+  credits                INTEGER NOT NULL,               -- microunit · 兑换到手积分
+  status                 TEXT NOT NULL,                  -- unused | used | expired
+  used_by                TEXT,                            -- passenger.id
+  used_at                TEXT,
+  expires_at             TEXT,                            -- NULL = 不过期
+  memo                   TEXT,                            -- 批次 / 活动等
   created_at             TEXT NOT NULL,
-  created_by             TEXT                             -- admin_id
-);
-
-CREATE TABLE cdk_redemption (
-  id                     TEXT PRIMARY KEY,
-  cdk_code               TEXT NOT NULL,
-  passenger_id           TEXT NOT NULL,
-  quota                  INTEGER NOT NULL,
-  redeemed_at            TEXT NOT NULL,
-  ledger_id              TEXT NOT NULL,                  -- 关联的 wallet_ledger 行
-  FOREIGN KEY (cdk_code) REFERENCES cdk(code),
-  FOREIGN KEY (passenger_id) REFERENCES passenger(id)
+  FOREIGN KEY (used_by) REFERENCES passenger(id),
+  CHECK (credits > 0),
+  CHECK (status IN ('unused', 'used', 'expired')),
+  CHECK (
+    (status = 'unused' AND used_by IS NULL AND used_at IS NULL) OR
+    (status = 'used'   AND used_by IS NOT NULL AND used_at IS NOT NULL) OR
+    (status = 'expired')
+  )
 );
 ```
 
-**索引**：`cdk(status, expires_at)`, `cdk_redemption(passenger_id, redeemed_at)`。
+**索引**：`idx_redeem_used_by(used_by)`。
 
-## 7. 充值单 · `payment_order`
+**兑换事件溯源**：`wallet_ledger WHERE reason='redeem' AND ref_id=<code>` 拿到"哪个乘客
+什么时候用哪码·换了多少积分"·不需要独立表。
+
+## 7. 充值单 · `topup_order`（迁移 002/005/006）
+
+早前设计文档写 `payment_order`·实际 1a 落地时叫 `topup_order`（跟 API 端点
+`/api/me/topup` 保持一致）。1b 之后又加了几列（`gateway_payment_id` / `checkout_url`
+/ `qr_content` · 迁移 005）·refund 状态支持（迁移 006）。**表名不改** —— 迁移已上线。
 
 ```sql
-CREATE TABLE payment_order (
-  id                          TEXT PRIMARY KEY,
-  passenger_id                TEXT NOT NULL,
-  channel                     TEXT NOT NULL,             -- waffo | ...
-  amount_original             INTEGER NOT NULL,          -- 乘客付的（microunit）
-  currency                    TEXT NOT NULL DEFAULT 'CNY',
-  channel_fee                 INTEGER NOT NULL,          -- 通道费（microunit，正值）
-  amount_credited             INTEGER NOT NULL,          -- 到账积分 = original - channel_fee
-  status                      TEXT NOT NULL,             -- pending | paid | failed | cancelled | refunded
-  gateway_order_id            TEXT,                       -- waffo 侧订单号
-  pay_url                     TEXT,
-  paid_at                     TEXT,
-  created_at                  TEXT NOT NULL,
-  updated_at                  TEXT NOT NULL,
-  FOREIGN KEY (passenger_id) REFERENCES passenger(id)
+CREATE TABLE topup_order (
+  id                        TEXT PRIMARY KEY,                -- UUID v7 · 对外叫 order_id
+  passenger_id              TEXT NOT NULL,
+  channel                   TEXT NOT NULL,                    -- 具体渠道 id · 由 topupchannel registry 定义
+  credits                   INTEGER NOT NULL,                 -- microunit · 净到账
+  channel_fee               INTEGER NOT NULL,                 -- microunit · 手续费
+  paid                      INTEGER NOT NULL,                 -- microunit · credits + channel_fee
+  pay_url                   TEXT NOT NULL,                    -- checkout URL 占位·gateway 建后 AttachGateway 回填
+  status                    TEXT NOT NULL,                    -- pending | paid | expired | cancelled | refunded | reversed
+  expires_at                TEXT NOT NULL,
+  paid_at                   TEXT,
+  wallet_ledger_id          TEXT,                             -- MarkPaid 后指向 recharge 那条流水
+  gateway_payment_id        TEXT,                             -- 005 加·gateway 分配的支付单 id
+  checkout_url              TEXT,                             -- 005 加·真 checkout URL
+  qr_content                TEXT,                             -- 005 加·扫码支付内容（USDT 等）
+  region                    TEXT,                             -- 010 加·地区分类（cn / overseas）
+  rail                      TEXT,                             -- 010 加·到账方式（direct / hosted）
+  provider_kind             TEXT,                             -- 010 加·gateway 侧 rail 名
+  payer_reference           TEXT,                             -- 010 加·direct rail 需要（UID / ID）
+  gateway_request_snapshot  BLOB,                             -- 016 加·起单时冷冻的 CreatePaymentRequest JSON · janitor 反查用它幂等重发
+  created_at                TEXT NOT NULL,
+  updated_at                TEXT NOT NULL,
+  FOREIGN KEY (passenger_id) REFERENCES passenger(id),
+  CHECK (credits > 0),
+  CHECK (channel_fee >= 0),
+  CHECK (paid = credits + channel_fee)
+  -- channel CHECK 在 010 rebuild 时放宽·允许多渠道（waffo / bybit_internal / binance_internal / epusdt）
+  -- 状态 CHECK 在 006 rebuild 时放宽·允许 refunded / reversed
 );
 ```
 
-**索引**：`(passenger_id, created_at DESC)`, `(status)`, `(gateway_order_id)`。
+**索引**：`idx_topup_passenger_time(passenger_id, created_at DESC)` · `idx_topup_status(status, expires_at)`。
 
-**幂等**：以 `gateway_order_id` 为幂等键（vs waffo webhook 重投）。
+**幂等**：webhook 侧以 `X-404bus-Event-Id` 为幂等键·记录在 `settlement_event` 表（迁移 005）。
+反查我方 order 优先用 `gateway_payment_id` · fallback `client_order_id = topup_order.id`
+（P0-A 修·见 `09-transactions §6`）。
 
 ## 8. Bus · `bus` + `bus_member`
 
@@ -222,10 +254,11 @@ CREATE TABLE payment_order (
 CREATE TABLE bus (
   id                     TEXT PRIMARY KEY,
   name                   TEXT NOT NULL,
-  kind                   TEXT NOT NULL,                   -- single | anon | team
+  -- kind 只区分"谁建的"·**不区分能不能加人**（见下面 §车 kind 语义）
+  kind                   TEXT NOT NULL,                   -- single / team = 用户建 · anon = 系统撮合池
   creator_passenger_id   TEXT NOT NULL,
-  invite_code            TEXT UNIQUE,                     -- team 才有
-  max_members            INTEGER,                          -- anon / team 才有
+  invite_code            TEXT UNIQUE,                     -- 用户建的车一律有（anon 池没有）
+  max_members            INTEGER,                          -- 系统统一 · 走 config.bus.max_members
   status                 TEXT NOT NULL DEFAULT 'active',  -- active | dissolved
   created_at             TEXT NOT NULL,
   dissolved_at           TEXT,
@@ -239,6 +272,10 @@ CREATE TABLE bus (
   daily_round_limit      INTEGER,                          -- 每日最多拉号次数
   daily_spend_limit      INTEGER,                          -- microunit · 每日花费上限
   preferred_vendor       TEXT,                              -- NULL = 有效成本比价自动选
+
+  -- 1c-1 · 匿名撮合（migration 011）
+  anon_zone              TEXT,                              -- anon 撮合的 zone 过滤（相同 zone 才匹配）· NULL = 不限
+  anon_max_unit_price    INTEGER,                            -- microunit · anon 撮合价格上限 · NULL = 不限
 
   FOREIGN KEY (creator_passenger_id) REFERENCES passenger(id)
 );
@@ -265,11 +302,30 @@ CREATE TABLE bus_member (
 
 **为什么 2a 的列现在就建**：SQLite 的 `ALTER TABLE` 只能加列不能加 CHECK / 改约束，而且这几列有默认值、1 人车语义天然成立（100% / active / 0 次）。1a 建好 = 2a 只写逻辑不动表。
 
-**挂起语义**（§8.26）：`status='suspended'` 的成员**不参与分摊**、也**没有 client_key**（取不到号），但 `share_pct` **保留** —— 这正是"挂起"跟"移除"的区别。移除要改其他人的 share_pct，得全员确认。
+**挂起语义**（§8.26）：`status='suspended'` 的成员**不参与分摊**、也**没有 client_key**（取不到号），但 `share_pct` **保留** —— 这正是"挂起"跟"移除"的区别。移除要改其他人的 share_pct —— **车主有权直接做**（§8.36 覆盖了原先的全员确认要求）。
 
 **索引**：`bus(creator_passenger_id, status)`, `bus(invite_code)`, `bus(kind, status)`, `bus_member(passenger_id, left_at)`, `bus_member(bus_id, left_at)`。
 
-**注意**：`bus.kind = single`（1 人 bus）也进 bus 表；没有单独的"solo bus"表（跟 `CLAUDE.md §1 术语铁律`一致）。
+### 车 kind 语义（1c 定稿 · 别再当三种类型看）
+
+**一辆车就是一辆车**（`CLAUDE.md §2`）。`kind` **只记录"谁建的"**，不决定行为：
+
+| kind | 谁建的 | 有邀请码 | 能加人 | 说明 |
+|---|---|---|---|---|
+| `single` | 用户 | ✅ | ✅ | 历史值 · 行为跟 `team` **完全一致** |
+| `team` | 用户 | ✅ | ✅ | 跟 `single` 无差别 · 新建车用哪个都行 |
+| `anon` | 系统 | ❌ | ✅ | 系统撮合池 · 谁进由撮合决定·不靠码 |
+
+**人数是状态不是类型**：车里 1 个人 = 独享，把邀请码给朋友、朋友进来 = 多人拼车。**同一辆车**，不需要"换类型"，`kind` 一个字都不用改。
+
+**因此代码里不允许出现**：
+- ❌ `if kind == team` 才给邀请码 —— 用户建的车一律有码
+- ❌ `if kind != single` 才允许 Join —— 任何车都能加人
+- ❌ UI 上出现"1 人车 / 邀请码车"这类**类型**标签 —— 只按 `member_count` 显示"独享 / N 人拼车"
+
+**老数据自愈**：1c 之前建的 `single` 车没生成过邀请码。不做 migration，`bus.Store.EnsureInviteCode` 在读车时补一个（幂等 · 条件 UPDATE · 并发安全）。
+
+**没有单独的 "solo bus" 表**（跟 `CLAUDE.md §1 术语铁律`一致）。
 
 ## 9. 拉号意图 · `pull_intent`
 
@@ -604,8 +660,8 @@ passenger ──┬─ passenger_api_key
             ├─ passenger_strategy_default
             ├─ passenger_daily_counter
             ├─ wallet ─── wallet_ledger
-            ├─ payment_order
-            ├─ cdk_redemption ─── cdk
+            ├─ topup_order ─── settlement_event
+            ├─ redeem_code
             ├─ bus (creator) ── bus_member ─── passenger
             ├─ pull_intent ── pull_round ── credential_ledger
             └─ outbound_webhook_delivery
@@ -616,9 +672,9 @@ vendor_lifespan_snapshot        --聚合视图--
 capability_slot / pull_round_capability （阶段 2c 起写）
 ```
 
-## Migration 顺序（1a 首批）
+## Migration 顺序（1a）
 
-**首批 migration 覆盖阶段 1a 所需 19 张表**（其余延后）：
+**001（首批）覆盖阶段 1a 主链所需 19 张表**：
 
 1. `passenger`（**含 invited**）, `passenger_api_key`, `passenger_downstream`, **`session`**
 2. `wallet`（**含 reserved 字段**）, `wallet_ledger`
@@ -629,13 +685,89 @@ capability_slot / pull_round_capability （阶段 2c 起写）
 7. `pending_purchase`, `pending_assignment`, **`pending_handoff`**, **`pending_dissolution`**（都是 1a；`pending_topup` 是 1b）
 
 **数 19 的口径**：1(4) + 2(2) + 3(2) + 4(3) + 5(3) + 6(1) + 7(4) = **19**。
-`sprint-1a-backend.md` Iss #3 和「交付验收」都已同步成 19 —— 早先那边写 12 / 16 是漏表（漏的 `session` / `idempotency_record` / 四张 `pending_*` 是后面 issue 的硬依赖）。
 
-**1b 加**：`cdk`, `cdk_redemption`, `payment_order`
+**1a 追加的 migration**：
+- 002_redeem_topup：`redeem_code`, `topup_order`（1a CDK + 通用充值单）
+- 003_outbound_webhook：`outbound_webhook_delivery`（1a 出向 webhook 兜底）
+- 004_credential_ledger_traceability：加列，无新表
+- 005_topup_gateway：`settlement_event`（1a 支付网关结算兜账）
+- 006_topup_refund：加列，无新表
+- 007_handoff_placeholder：加列，无新表
+- 008_handoff_retry_count：加列，无新表
+
+**累计到 008 · 1a 收工时共 23 张业务表**（19 首批 + 4 追加 · 009 加 wallet 允许负余额但**没加新表**）。
+
+**009**（1b P0-B 修）：`wallet` rebuild in-place drop `CHECK (balance >= 0)` · 允许 refund 时负余额记账·**无新表**。
+
+**1b 落地**：`pending_topup`（充值状态机 · 见 09-transactions.md）· migration 010 加 · 加 topup_order 三维属性列（region/rail/provider_kind/payer_reference）·**24 张业务表**。
+"cdk / cdk_redemption / payment_order" 是**过期设计口径** —— 实际用 `redeem_code` / `topup_order`
+一张表已够（§6 / §7 已修 · redemption 事件通过 wallet_ledger 溯源）。
+
+**1c-1**：migration 011 · `bus` 表加 `anon_zone` / `anon_max_unit_price` 列 · **无新表** · 累计 24 张业务表。
+
+**1c-2（当前）**：
+- migration 012 · `pending_assignment` 加 UNIQUE partial index（防 assign 并发分叉）· **无新表** · 累计仍 24 张
+- migration 013 · `vendor_pricing`（vendor 多币种定价 · USD 号价换算积分）· **+1 · 累计 25**
+- migration 014 · `pending_topup` rebuild in-place · 加 `gateway_creating` 状态 + `poll_fail_count` 列（P0 修 · CreatePayment 崩溃窗口反查恢复）· **无新表** · 累计 25
+- migration 015 · `surcharge_rule` + `pull_round_surcharge`（附加费引擎 · JSON 谓词命中 + 每轮附加费明细留痕）· **+2 · 累计 27**
+- migration 016 · `topup_order` 加 `gateway_request_snapshot BLOB`（P0 修 · janitor 反查用起单时冻结的 CreatePaymentRequest 重 POST · 保证幂等指纹一致）· **无新表** · 累计仍 27
+
+- migration 019 · `system_invite_code` + `personal_invite_code` + `invite_referral`（邀请码体系 · decisions §8.29/§8.32）· **+3 · 累计 30**
+- migration 020 · `topup_order` 加 `fee_waiver_applied` + `fee_subsidy`（手续费减免实际生效）· **无新表** · 累计 30
+
+**1c 收工时共 30 张业务表**。
+
+### 邀请码体系（migration 019 · decisions §8.29 / §8.32）
+
+**修的老漏洞**：`register` 里原来是 `invited := in.InviteCode != ""` —— **任何**非空码都置
+`invited=1`。等于随便编个码就能拿社群身份（解锁 vendor 真名 + 免区域分项）· §8.20 的
+定价分层形同虚设。现在查 `system_invite_code` 白名单。
+
+| 表 | 作用 | 关键约束 |
+|---|---|---|
+| `system_invite_code` | 我方发给社群 / 同行的码 · **只有它能置 tier ∈ {wholesale, insider}** | `max_uses` / `expires_at` / `disabled` 三重限制 · `grants_tier` 定授予档 |
+| `personal_invite_code` | 每人一个 · 只给**手续费减免额度**·**不改 tier** | `passenger_id` UNIQUE（一人一码） |
+| `invite_referral` | 谁邀请了谁 · 防刷 + 溯源 | 主键 = 被邀请人（**一人只能被邀一次**）· CHECK 挡自己邀自己 |
+
+**`system_invite_code` 加 `grants_tier` 列**（`decisions §8.39`）：
+
+```sql
+grants_tier TEXT NOT NULL CHECK(grants_tier IN ('wholesale','insider'))
+-- 'insider'   = 同行码 · 授 tier=insider · 同行群邀请制 · 车主手发白名单
+-- 'wholesale' = 社群码 · 授 tier=wholesale · TG/Discord · 车主批量生成投放
+```
+
+对外 UI 上两种码都叫「专属邀请码」（`CLAUDE.md §2`）· 用户不感知 · 后端按 `grants_tier` 决定授予哪档。
+
+**为什么个人码绝不能改 tier**（§8.29 明文）：如果个人码也解锁 wholesale/insider 身份，任何人都能
+生成码让别人免区域分项 → 定价分层崩掉。所以个人码**只给减免额度**。
+
+**补绑**：`POST /api/me/community-code` 让已注册用户补绑（原来只能注册时填 ——
+用户往往先注册后进社群，没补绑入口只能注销重注册）。条件 UPDATE（`WHERE tier = 'retail'`）
+保证一个账号只能绑一次·并发安全 · 补绑后 `tier` 定死不能重复升降。
+
+### 手续费减免怎么生效（migration 020）
+
+**减免时机必须在起单时**，不能在 MarkPaid：手续费决定乘客实际要付给支付通道多少钱，
+订单建出来那一刻金额就定了、二维码/跳转链接也带着这个金额。等他付完再说"其实可以少付"
+已经来不及。
+
+| 字段 | 含义 |
+|---|---|
+| `fee_waiver_applied` | 这单用掉了一次减免额度（0/1）· 退额度时清零防重复退 |
+| `fee_subsidy` | **我方垫付**给支付通道的手续费（microunit）· 单独记 |
+
+**为什么 fee_subsidy 要单独记**（§8.32 明文）：手续费是支付通道实收的 pass-through，
+我方减免 = 自掏腰包垫付。这是有意的营销支出（类似充值返现），但必须能算出补贴了多少 ——
+混进 `channel_fee` 财务上看不出来。**对外不下发**（我方成本结构 · CLAUDE.md §0.1）。
+
+**乘客账本不落 channel_fee 那笔** —— 他没花这钱。补贴是我方成本，不进乘客 ledger。
+
+**额度归还**：订单 expire / cancel / refund 时退回（`returnFeeWaiverForOrderTx`）——
+额度是起单时扣的，单子没付成那次减免实际没发生，不退等于用户白掉一次。
+条件 UPDATE 保证只退一次（janitor 重跑 / 并发都安全）。
 
 **1d 加**：`vendor_lifespan_snapshot`, `vendor_webhook_delivery`, `credential_usage_snapshot`, `bus_usage_snapshot`
-
-**1e 加**：`outbound_webhook_delivery`
 
 **2c 加**：`capability_slot`, `pull_round_capability`
 
@@ -713,7 +845,7 @@ CREATE TABLE pending_assignment (
   credential_id         TEXT NOT NULL,                    -- 我方 credential_ledger.id
   target                TEXT NOT NULL,                    -- to-bus | to-passengerpool | handoff
   target_bus_id         TEXT,                              -- target='to-bus' 时
-  status                TEXT NOT NULL,                    -- initial | external_done | status_updated | completed | need_manual
+  status                TEXT NOT NULL,                    -- initial | completed | need_manual （旧版四态 external_done / status_updated 已废 · 见 09-transactions §3）
   error                 TEXT,
   created_at            TEXT NOT NULL,
   updated_at            TEXT NOT NULL,
@@ -790,18 +922,29 @@ CREATE TABLE pending_topup (
   id                     TEXT PRIMARY KEY,
   idempotency_record_id  TEXT NOT NULL,
   passenger_id           TEXT NOT NULL,
-  payment_order_id       TEXT NOT NULL,
-  status                 TEXT NOT NULL,                   -- initial | gateway_ordered | gateway_paid | credited | completed | expired | cancelled | refunded | pending_manual
+  topup_order_id         TEXT NOT NULL,                   -- 关联 topup_order.id（旧文档写 payment_order_id · 表名对齐后统一）
+  -- migration 010（1b 落地）建表·migration 014（1c-2 P0 修）rebuild in-place
+  -- 加 gateway_creating + poll_fail_count
+  status                 TEXT NOT NULL,                   -- initial | gateway_creating | gateway_ordered | gateway_paid | credited | completed | expired | cancelled | refunded | pending_manual
   error                  TEXT,
+  poll_fail_count        INTEGER NOT NULL DEFAULT 0,      -- migration 014 · janitor 反查 gateway 失败累计 · 到 maxCreatingPollFails=5 转 pending_manual · **未知不等于失败**
   created_at             TEXT NOT NULL,
   updated_at             TEXT NOT NULL,
   FOREIGN KEY (passenger_id) REFERENCES passenger(id),
-  FOREIGN KEY (payment_order_id) REFERENCES payment_order(id),
+  FOREIGN KEY (topup_order_id) REFERENCES topup_order(id),
   FOREIGN KEY (idempotency_record_id) REFERENCES idempotency_record(id)
 );
 ```
 
 **索引**：`(status, updated_at)`。
+
+**`gateway_creating` 中间态**（migration 014 引入）：
+- API handler 起单时·**先** `EnsureAtLeast(gateway_creating)` 落库·**再**调 `paymentgw.CreatePayment`
+- 失败 hard fail 500·**绝不**发外部请求（不然 gateway 端已建单本地无痕 → 走 initial → expire 丢单）
+- 崩溃在 `CreatePayment ↔ AttachGateway` 之间时·janitor 用 `client_order_id` 反查 gateway 侧幂等表恢复
+- 详细状态机行为见 `09-transactions.md §6`
+
+**`gateway_request_snapshot`**（migration 016 · P0 修）：`topup_order` 加 BLOB 列存 CreatePaymentRequest JSON 快照·janitor 反查时读快照重新 POST（保证跟起单时的幂等指纹一致 · 不用当前 config 重建）。
 
 ## 备份 / 迁移
 

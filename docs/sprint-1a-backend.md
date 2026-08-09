@@ -72,7 +72,7 @@
 | `GET /api/me/buses/{id}/stats` | ⚙️ 骨架 501 | 平均寿命是 1d |
 | ~~`GET /api/me/buses/{id}/members`~~ | ❌ 不做 | **成员并进 `GET /me/buses/{id}` 的 `members[]`** —— 成员 tab 打开就有数据，不多一次请求 + loading 态。1 人车 `members` 只有 owner 一条 |
 | `PUT /api/me/buses/{id}/members/{pid}` | ⚙️ 骨架 501 | 挂起 / 解挂（§8.26）· 阶段 2a |
-| `DELETE /api/me/buses/{id}/members/{pid}` | ⚙️ 骨架 501 | 移除成员（要全员确认 §8.18）· 阶段 2a |
+| `DELETE /api/me/buses/{id}/members/{pid}` | ✅ 实现（1c） | 移除成员 · 车主有权（§8.36）· 剩余成员均分重算 |
 | `POST /api/me/buses/{id}/invite-code` | ⚙️ 骨架 501 | 换邀请码 · team bus 是 2a |
 | `POST /api/me/pull` | ✅ 实现 | 单独拉号 → record group（前端「提取 key」页的主动作） |
 | `POST /api/me/pull/estimate` | ✅ 实现 | 提取确认窗的费用预估（**不下单**）· 含优惠码折后价 |
@@ -369,14 +369,12 @@
 > 最后同步：commit `e664d5a`（P0 修 · readHandoffPlaintext 返 error · assign 三段崩溃安全）
 
 - [x] ✅ 12 个业务/基础设施包骨架都在（当前 21 个包 · 含 6 家 vendor + paymentgw）
-- [x] ✅ 核心表 migration 通过（当前 28 张 · 含 idempotency_record + pending_purchase + pending_assignment + settlement_event + pending_handoff）
+- [x] ✅ 核心表 migration 通过（累计 23 张业务表 · 001 首批 19 张 + 002 redeem/topup + 003 outbound_webhook + 005 settlement_event + 006/007/008 加列）
 - [ ] ⚙️ 91kiro adapter + kiro.rs client 真实调通
   - 已验：91kiro no_stock 真返·kiro.rs 401 真接（`docs/e2e/log-2026-08-09.md`）
   - **缺**：vendor 有余额时的成功 Purchase → BatchImport → 台账落 `kiro_rs_credential_id`
-- [x] ⚙️ **janitor 恢复集成测试** 全绿（`run-e2e.sh step 4` · 4 种 pending 状态 janitor 全兜）
-  - **审计发现的精确表述**：这不是"业务真跑到某状态时 SIGKILL"的真崩溃窗口·而是
-    "手工造 4 种 pending·SIGKILL 后重启看 janitor 兜"的恢复集成测试。真崩溃窗口需要
-    mock vendor 加延迟 + 精确时机 SIGKILL·1c 补。
+- [x] ✅ **janitor 恢复集成测试** 全绿（`run-e2e.sh step 4` · 4 种 pending 状态 janitor 全兜）
+- [x] ✅ **真崩溃窗口** 全绿（`real-crash-window.sh` · DryRunVendor Purchase sleep 3s · pull 中间 SIGKILL · 重启后 janitor 把 purchasing 推到 completed · 余额未超扣）
 - [x] ✅ **幂等 e2e** 全绿：`run-e2e.sh step 2` · 同 key ×5 字节一致
 - [x] ✅ **并发 e2e** 全绿：`run-e2e.sh step 3 + 3b` · 5 并发余额充足 + 10 并发资金竞争都不超扣
 - [x] ✅ e2e 脚本一键跑绿（`run-e2e.sh` 12/12 + `sprint1a-flows.sh` 23/23）
@@ -388,13 +386,13 @@
 - [x] ✅ **API 响应无内部术语**
 - [x] ✅ **P0-1 handoff 占位路径数据保护**（commit `82832ee` · 占位 confirm 不删号）
 - [x] ✅ **P0-2 handoff 真明文模式返 501**（commit `e664d5a` · readHandoffPlaintext 强制 error · 号绝不误删）
-- [x] ✅ **P0-3 assign 三段崩溃安全**（commit `e664d5a` · tx1 initial + tx 外 pool + tx2 completed · AssignJanitor 兜卡单）
+- [x] ✅ **P0-3 assign 三段崩溃安全**（tx1 initial + tx 外 pool + tx2 completed · AssignJanitor 兜卡单）
+- [x] ✅ **AssignJanitor reconcile pool groups**（into_bus 分支已实现：pool 已迁 → 前推 completed · 未迁 → 回滚重试 · 疑难 → need_manual · push_pool 仍转 manual）
 - [x] ✅ **into_bus 真调 housepool UpdateCredential**（commit `5b4ca86`）
 - [x] ✅ **handoff janitor 扫 confirmed**（commit `ce68470` · P1-A/B 修 · maxRetries=3 · retry_count 落库跨重启）
 - [x] ✅ **handoff.Complete 抽公用**（Standards · 消 duplication · api / janitor 共用）
 
 **还差的（不只是外部依赖）**：
-- **真崩溃窗口测试**：mock vendor 加延迟 · SIGKILL 在业务执行途中而不是造完状态。1c 补
 - **真明文 handoff**：接 kiro.rs 明文 endpoint 后打开 · 撤 501（外部依赖）
 - **vendor 有余额跑真 Purchase**：BatchImport 成功路径 · 落 `kiro_rs_credential_id`
 - **deathwatch worker 真联调**：需 pool 装配 + 真 vendor·当前只测了"号死 → 退款"链路
@@ -402,6 +400,20 @@
 
 **Sprint 1a 判定**：**主要 happy path + DRY_RUN 集成测试完成 · P0 全修 · NOT yet code-complete**。
 真 code-complete 依赖上面"还差的"里的前两项（真崩溃窗口 + 真明文）· 真 done 还要 vendor 有余额。
+
+**2026-08-09 复盘审计发现的四类 P0/P1 修**：
+- **P0-1 assign 并发跨系统分叉** — pending_assignment 加 UNIQUE(credential_id) WHERE status='initial'（migration 012）·归属校验搬进 tx1·janitor.forward 先查 owner_bus_id 判分叉·分叉转 need_manual
+- **P0-2 early settlement pending 卡 initial** — AdvanceByOrderID 改成返 (bool, error)·加 EnsureAtLeast 支持跨态跃迁·webhook 用它一路推
+- **P0-3 topup janitor gateway polling 缺失** — 加 GatewayPoller 接口 + GatewayPollerAdapter·gateway_ordered 卡 pollAfter 时主动 GetPayment·settled 触发 MarkPaid
+- **P1-1 双表分叉** — PendingStore.ExpireBoth 一事务改 pending_topup + topup_order
+- **P1-2 order+pending 非原子** — Store.CreateOrderWithPending 合两插到同 tx
+- **P1-4 live 强依赖单一 vendor** — 改成 config.decider.default_vendor 显式指定
+- **注释合规** — 全库扫 vendor 真名 / kiro.rs / 通道商名 → 全走 housepool / 通用描述
+
+**明确未 done 的 P1**（不算 1a/1b 交付·后续独立 sprint）：
+- **五家 adapter 真联调** — 目前是骨架 + DRY_RUN e2e 证明路由通·非 vendor 契约通
+- **1b 定价持久化** — vendor_pricing / surcharge_rule 表 · rules 引擎（decisions §934）
+- **CDK CLI 自动化测试**
 ## Sprint 1a（前后端）结束后 · 下一个 Sprint
 
 **Sprint 1b**（预计 2 周）：

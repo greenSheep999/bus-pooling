@@ -148,9 +148,9 @@
 ### `internal/coalescer/` (业务包 8/15)
 
 - **目的**：**bus 维度**集单调度；同 bus 内多成员意图在窗口内合流成一次拉号意图
-- **子文件**：
-  - `anon.go` —— 匿名撮合（**阶段 1c**）
-  - `team.go` —— 邀请码组队（阶段 2a）
+- **子文件**（1c-1 骨架已建）：
+  - `coalescer.go` · 骨架 · 定义 Intent / BatchIntent · Single 直发 pass-through · Anon/Team 占位 ErrNotImplemented
+  - **真集单窗口 + 意图池表 = 1c-2**（定时器合流 · 现阶段前端多人同 bus 各自 pull · 各自 decider）
 - **输入**：意图流（`Intent`）
 - **输出**：合流后的**批量意图** `BatchIntent { bus_id, participants[], count_total }`
 - **依赖**：`strategy`, `bus`
@@ -163,11 +163,12 @@
 - **目的**：跨 vendor 决策（比价 / 健康 / fallback） + 实际发起 vendor purchase + 记账 + 存进 housepool + 触发上车
 - **输入**：`BatchIntent` 或 `Intent`
 - **输出**：`PurchaseResult { credentials[], vendor_id, cost, participants_split }`
-- **依赖**：`providers/*`, `wallet`（记账）, `housepool`（进 bus group）, `pullrecord`（单独拉号写记录）, `deathwatch`（读平均寿命统计）
+- **依赖**：`providers/*`, `wallet`（记账）, `housepool`（进 bus group）, `pullrecord`（单独拉号写记录）, `deathwatch`（读平均寿命统计）, `pricing`（`SurchargeResolver` + `VendorPricing` 换算·可选）
 - **谁调它**：`strategy`（1 人 bus 意图直发）, `coalescer`（多人 bus 合流后发）, `api`（单独拉号）
-- **P 标签**：1a（单 vendor 直选）→ 1d（比价 + fallback + **平均寿命**，与自动一起上）
+- **P 标签**：1a（单 vendor 直选）→ 1c-2（`surcharge_rule` 引擎动态求费率 + `vendor_pricing` 多币种）→ 1d（比价 + fallback + **平均寿命**，与自动一起上）
 - **比价维度**：**单价 / 平均寿命 = 每积分能活的时长**（不是只看单价）
 - **归一算价**：跨 vendor 单价 → 一个"每 key 有效积分成本"，含通道费/手续费在内
+- **附加费引擎**：可选注入 `RatesResolver`（由 `internal/pricing.SurchargeResolver` 实现）· 按本次拉号 `EvalContext`（vendor_id / zone / count / passenger.invited / bus.avg_lifespan_h）从 `surcharge_rule` 表命中规则求 `Rates` · 每轮命中细节留痕到 `pull_round_surcharge` · nil resolver 走 env 兜底
 
 ### `internal/deathwatch/` (业务包 10/15)
 
@@ -206,12 +207,12 @@
 ### `internal/bus/` (业务包 13/15)
 
 - **目的**：bus 实体管理（成员 / 邀请码 / 补车规则 / 目标水位）
-- **子概念**：
-  - **1 人 bus** —— 乘客自建，只有一位成员（阶段 1a）
-  - **匿名撮合多人 bus** —— 系统按标签撮合（阶段 1c）
-  - **邀请码组队 bus** —— 认识的人主动组（阶段 2a）
+- **子概念**（1c 定稿 · `kind` 只分"谁建的"·不分行为·见 `06-db-schema.md §车 kind 语义`）：
+  - **用户建的车**（`kind: single` / `team` · 两者行为完全一致）—— 一律带邀请码 · 1 人时独享 · 邀朋友进来就是多人拼车
+  - **系统撮合池**（`kind: anon`）—— 系统建 · 没邀请码 · 谁进由撮合决定
+  - **人数是状态不是类型** —— 独享 / 拼车只看 `member_count`·不看 `kind`
 - **输入**：`CreateBus` / `Join` / `Leave` / `SetInviteCode`
-- **输出**：`Bus { id, name, kind: single|anon|team, members[], refill_watermark, ... }`
+- **输出**：`Bus { id, name, kind, invite_code, members[], refill_watermark, ... }`（`kind` 只标"谁建的"）
 - **依赖**：`passenger`, `infra/db`
 - **谁调它**：`strategy`, `coalescer`, `deathwatch`, `pullrecord`（用户从拉号记录派号进车）
 - **P 标签**：1a（single）→ 1c（anon）→ 2a（team）
@@ -393,7 +394,7 @@
 | 5 | `redeem` | 3a | 1b |
 | 6 | `payment` | 3a | 1b |
 | 7 | `strategy` | 3b | 1a（手动）→ 1d（自动） |
-| 8 | `coalescer` | 3c | 1c（anon）→ 2a（team） |
+| 8 | `coalescer` | 3c | 1c-1（骨架）→ 1c-2（真集单）→ 2a（team） |
 | 9 | `decider` | 3d | 1a → 1d（比价 + fallback） |
 | 10 | `deathwatch` | 3e | 1a（基础）→ 1d（webhook + 自动补车） |
 | 11 | `webhookout` | 3f | 1e |

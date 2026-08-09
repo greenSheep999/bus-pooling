@@ -61,7 +61,9 @@
 
 **编码相关文档**（已就位）：`05-api-contract.md` · `06-db-schema.md` · `07-provider-contract.md` · `08-housepool-contract.md` · `09-transactions.md`（核心交易状态机）· `12-frontend-pages.md`（页面清单）· `13-frontend-research.md`（前端调研 + 主题）· `sprint-1a-frontend.md` + `sprint-1a-backend.md`（阶段 1a 前后端）。
 
-**编码起手前尚待写**：`10-secrets.md`（阶段 1 落码时）· `11-testing-strategy.md`（首 e2e 前）· `13-deployment.md`（首上线前）。
+**编码起手前尚待写**：`10-secrets.md`（阶段 1 落码时）· `11-testing-strategy.md`（首 e2e 前）。
+
+**首上线前**：见 `docs/13-deployment.md`（systemd + Caddy + smoke test + backup）。
 
 ## 快速定位
 
@@ -94,7 +96,7 @@
 go run ./cmd/bus-pooling genkey        # 输出 BP_MASTER_KEY=...，存进 env 别进 git
 
 cp config.example.yaml config.yaml     # config.yaml 已在 .gitignore
-go run ./cmd/bus-pooling migrate up    # 建表（19 张 · 阶段 1a）
+go run ./cmd/bus-pooling migrate up    # 建表（累计 27 张业务表 · 详见 docs/06-db-schema.md § Migration 顺序）
 go run ./cmd/bus-pooling migrate status
 BP_MASTER_KEY=<上面那个> go run ./cmd/bus-pooling serve
 
