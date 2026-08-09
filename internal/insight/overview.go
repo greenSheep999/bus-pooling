@@ -42,7 +42,7 @@ func (s *Store) overviewKPI(ctx context.Context, passengerID string) (KPI, error
 
 	// 累计充值 / 累计花费（不带时间窗，是"永久"字段 · 前端展示"你一共充了多少 / 花了多少"）
 	//   充值展开 = recharge + channel_fee（内部 CLAUDE.md §1.4，channel_fee 是负号，抵掉 recharge 一部分）
-	//   花费展开 = 加价链那 6 层，都是负号（wallet_ledger.amount 里）
+	//   花费展开 = 分项六层，都是负号（wallet_ledger.amount 里）
 	err = s.db.QueryRowContext(ctx, `
 		SELECT
 		  COALESCE(SUM(CASE WHEN reason IN ('recharge','channel_fee','redeem') THEN amount ELSE 0 END), 0),
@@ -56,7 +56,7 @@ func (s *Store) overviewKPI(ctx context.Context, passengerID string) (KPI, error
 		return k, fmt.Errorf("insight: 累计充值/花费: %w", err)
 	}
 
-	// 今日 / 昨日花费（跨所有拉号 · 累加加价链那 6 层的负号绝对值）
+	// 今日 / 昨日花费（跨所有拉号 · 累加分项六层的负号绝对值）
 	now := s.now()
 	today := now.Format("2006-01-02")
 	yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
@@ -274,7 +274,7 @@ func (s *Store) overviewExtract(ctx context.Context, passengerID string) (Extrac
 		{Destination: "push_pool", Count: pushPool},
 	}
 
-	// 今日提取花费（就是当日所有加价链的负号累加，跟 spend_today 语义一致；
+	// 今日提取花费（就是当日所有分项链的负号累加，跟 spend_today 语义一致；
 	// UI 上"提取总花费"跟"今日花费"目前是一个东西）
 	if out.Spend, err = s.spendOnDate(ctx, passengerID, today); err != nil {
 		return out, err

@@ -38,7 +38,7 @@ func TestOverview_TodayVsYesterday(t *testing.T) {
 	today := e.now
 	yesterday := e.now.AddDate(0, 0, -1)
 
-	// 今日消费：加价链两笔（key_cost + service_fee 各一）
+	// 今日消费：分项链两笔（key_cost + service_fee 各一）
 	e.insertLedger("key_cost", -30_000_000, today, "拉号")
 	e.insertLedger("service_fee", -5_000_000, today, "服务费")
 	// 昨日消费一笔
@@ -132,7 +132,7 @@ func TestOverview_ExtractDestinationsMutuallyExclusive(t *testing.T) {
 	}
 }
 
-// TestOverview_NoInternalFieldsInResponse 响应形状不含内部加价分层
+// TestOverview_NoInternalFieldsInResponse 响应形状不含内部分项分层
 func TestOverview_NoInternalFieldsInResponse(t *testing.T) {
 	e := setup(t)
 	out, err := e.st.Overview(context.Background(), e.pid)

@@ -92,7 +92,7 @@ func (m *mockVendor) Usage(context.Context, []string) (*providers.UsageBatch, er
 // ── 工具 ────────────────────────────────────────────
 
 // buildService 起一个装着两家 vendor 的 Service。
-// 91kiro 便宜多货，kiroceo 贵少货 —— autoPick 应该挑 91kiro。
+// 一家便宜多货、另一家贵少货 —— autoPick 应该挑便宜多货那家。
 func buildService(t *testing.T, opts ...func(*mockVendor, *mockVendor)) (*Service, *mockVendor, *mockVendor) {
 	t.Helper()
 	reg := providers.NewRegistry()
@@ -115,7 +115,7 @@ func buildService(t *testing.T, opts ...func(*mockVendor, *mockVendor)) (*Servic
 		t.Fatalf("register ceo: %v", err)
 	}
 
-	// 服务费 5% —— 简单看得出加价链有没生效
+	// 服务费 5% —— 简单看得出分项链有没生效
 	svc, err := New(Config{
 		Registry: reg,
 		Rates:    decider.Rates{Service: 500}, // 5%
@@ -142,7 +142,7 @@ func TestAggregateStock_SumsAvailableAcrossVendors(t *testing.T) {
 	}
 	// 稳定顺序（Registry.Enabled 按 VendorID 排）
 	if got.ByVendor[0].VendorID != string(providers.Vendor91Kiro) {
-		t.Errorf("byVendor[0] = %q, want kiro91", got.ByVendor[0].VendorID)
+		t.Errorf("byVendor[0] = %q, want v01", got.ByVendor[0].VendorID)
 	}
 }
 
@@ -207,7 +207,7 @@ func TestVendorStock_NotFound(t *testing.T) {
 }
 
 func TestVendorStock_MarkupAppliedForNonInvited(t *testing.T) {
-	// 加两层加价：Region 20% + Service 5%
+	// 加两层分项：Region 20% + Service 5%
 	reg := providers.NewRegistry()
 	v := &mockVendor{
 		id: providers.Vendor91Kiro, name: "Kiro Market",
@@ -232,7 +232,7 @@ func TestVendorStock_MarkupAppliedForNonInvited(t *testing.T) {
 		t.Errorf("非邀请单价 = %d, want 126_000_000 (区 20 + 服务 5)", p)
 	}
 
-	// 邀请 → 跳过区域加价 · 只保留服务费 · 100 → 105
+	// 邀请 → 跳过区域分项 · 只保留服务费 · 100 → 105
 	invited, err := svc.VendorStock(context.Background(),
 		string(providers.Vendor91Kiro), Viewer{Invited: true})
 	if err != nil {
@@ -264,10 +264,10 @@ func TestVendorStock_NoInternalTermsInJSON(t *testing.T) {
 }
 
 func TestAutoPick_PicksCheapestWhenNoHistory(t *testing.T) {
-	svc, _, _ := buildService(t) // 91kiro 便宜（30） · kiroceo 贵（50）
+	svc, _, _ := buildService(t) // 一家便宜（30）· 另一家贵（50）
 	pick := svc.AutoPick(context.Background(), "auto", Viewer{Invited: true})
 	if pick.VendorID != string(providers.Vendor91Kiro) {
-		t.Errorf("autoPick = %q, want kiro91", pick.VendorID)
+		t.Errorf("autoPick = %q, want v01", pick.VendorID)
 	}
 	if pick.Reason == "" {
 		t.Error("autoPick 缺 reason")
@@ -317,7 +317,7 @@ func TestAutoPick_ZoneFilter(t *testing.T) {
 
 	pick := svc.AutoPick(context.Background(), "us", Viewer{Invited: true})
 	if pick.VendorID != string(providers.VendorKiroCEO) {
-		t.Errorf("zone=us pick = %q, want kiroceo（91 在 us 缺货）", pick.VendorID)
+		t.Errorf("zone=us pick = %q, want v02（v01 在 us 缺货）", pick.VendorID)
 	}
 }
 

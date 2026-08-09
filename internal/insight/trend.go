@@ -66,7 +66,7 @@ func (s *Store) Trend(
 
 // trendCredits 每日花费（正数）。scope.BusID 时限定该车；scope.VendorID 时限定该家。
 //
-// 花费定义：wallet_ledger 里加价链 6 层的负号绝对值 SUM。
+// 花费定义：wallet_ledger 里分项六层的负号绝对值 SUM。
 // bus scope：join pull_round 找 ref_id in bus 的 rounds，再 sum 那些 rounds
 //
 //	的分项 —— 简化实现直接按 pull_round 表分项累加。
@@ -79,7 +79,7 @@ func (s *Store) trendCredits(
 	if scope.BusID != "" || scope.VendorID != "" {
 		return s.trendCreditsFromRounds(ctx, passengerID, scope, start, byDate)
 	}
-	// 无 scope：直接 wallet_ledger 加价链 6 层
+	// 无 scope：直接 wallet_ledger 分项六层
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT substr(created_at, 1, 10) AS d, COALESCE(SUM(-amount), 0)
 		  FROM wallet_ledger

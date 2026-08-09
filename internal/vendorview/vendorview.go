@@ -2,7 +2,7 @@
 //
 // 存在的理由：
 //   - api 层只想拿"已经按调用者身份处理好、已经算完最终价"的数据
-//   - **加价链和内部 vendor_id 常量不能对外**（CLAUDE.md §0.1 / decisions §8.20）
+//   - **分项链和内部 vendor_id 常量不能对外**（CLAUDE.md §0.1 / decisions §8.20）
 //   - 每家 vendor 有慢查风险，聚合端点要能容忍单家超时不拖全表
 //
 // 命名不叫 "vendors" —— 那容易跟 providers 混。它是**视图层**：把 registry 里
@@ -41,7 +41,7 @@ type Config struct {
 	StockTimeout time.Duration
 }
 
-// New 建 Service。rates 为零值时不加价（真实环境从后台配置注入）。
+// New 建 Service。rates 为零值时零费率（真实环境从后台配置注入）。
 func New(cfg Config) (*Service, error) {
 	if cfg.Registry == nil {
 		return nil, errors.New("vendorview: 缺少 registry")
@@ -58,10 +58,10 @@ func New(cfg Config) (*Service, error) {
 	}, nil
 }
 
-// Viewer 描述调用者身份，用来做**匿名化** + **是否免加价**决策。
+// Viewer 描述调用者身份，用来做**匿名化** + **是否减免**决策。
 //
-// Invited 有注册邀请码 = 看真名 + 免加价（decisions §8.20）。
-// WaiveMarkup 单次免加价（阶段 1a 简化：暂不支持 coupon_code，永远 false）。
+// Invited 有注册邀请码 = 看真名 + 减免（decisions §8.20）。
+// WaiveMarkup 单次减免（阶段 1a 简化：暂不支持 coupon_code，永远 false）。
 type Viewer struct {
 	Invited     bool
 	WaiveMarkup bool
@@ -79,7 +79,7 @@ type AggregateStock struct {
 // VendorStockRow 聚合视图里的一行 —— 只给"哪家" + "多少"，不给单价。
 type VendorStockRow struct {
 	// VendorID 内部 id · 前端拿它去 vendorLabel(id, invited) 做匿名化取色
-	// 对散客视角这个值仍会出现 —— 前端约定不用它渲染成"91kiro"字面量，
+	// 散客视角这个字段走 visibleVendorID · 已被替换为 anon_id ·
 	// 只用来查颜色 / 关联再次请求。若担心还要脱敏，后续可增加 AnonID 字段。
 	VendorID    string `json:"vendor_id"`
 	VendorLabel string `json:"vendor_label"`
@@ -230,7 +230,7 @@ func (s *Service) AggregateStock(ctx context.Context, v Viewer) *AggregateStock 
 			defer wg.Done()
 			label, anon := labelAndAnon(e, v)
 			row := VendorStockRow{
-				VendorID:    string(e.VendorID),
+				VendorID:    visibleVendorID(e.VendorID, v),
 				VendorLabel: label,
 				AnonID:      anon,
 			}
@@ -266,7 +266,7 @@ func (s *Service) VendorStock(ctx context.Context, vendorID string, v Viewer) (*
 	label, anon := labelAndAnon(e, v)
 	cap := e.Vendor.Capability()
 	view := &VendorStockView{
-		VendorID:        string(e.VendorID),
+		VendorID:        visibleVendorID(e.VendorID, v),
 		VendorLabel:     label,
 		AnonID:          anon,
 		Currency:        currencyOfSnapshot(snap),
@@ -274,7 +274,7 @@ func (s *Service) VendorStock(ctx context.Context, vendorID string, v Viewer) (*
 		MaxPerOrder:     snap.MaxPerOrder,
 		MinPerOrder:     snap.MinPerOrder,
 	}
-	// 只有 91kiro 有 hold cap（前端约定其他家 null）；1a 从 snapshot 里
+	// 只有部分 vendor 有 hold cap（前端约定没有的家给 null）；1a 从 snapshot 里
 	// 暂时没有一个稳定的通道拿到，先给 nil，未来 provider 契约扩后再填。
 	_ = cap
 
@@ -348,7 +348,7 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 		if len(entries) > 0 {
 			label, anon = labelAndAnon(entries[0], v)
 			return &AutoPickView{
-				VendorLabel: label, VendorID: string(entries[0].VendorID), AnonID: anon,
+				VendorLabel: label, VendorID: visibleVendorID(entries[0].VendorID, v), AnonID: anon,
 				Zone: nonZeroZonePtr(zoneHint), Available: 0,
 				Reason: "全网暂时缺货",
 			}
@@ -523,7 +523,7 @@ func (s *Service) lookupAny(id string) (providers.VendorEntry, bool) {
 // 分层已经在 decider.Breakdown 里私有化了，vendorview 不再回头拆分。
 //
 // Viewer.Invited=true 或 Viewer.WaiveMarkup=true → 跳过 RegionMarkup / SinglePull /
-// Capability（散客加价那几层）· Service（我方服务费）仍然算。
+// Capability（对散客生效的分项）· Service（我方服务费）仍然算。
 // 简化实现：直接用 decider.Price(unit, 1, rates)；invited 时把这几层 rate 置 0。
 func (s *Service) finalUnitPrice(unit int64, v Viewer) int64 {
 	if unit <= 0 {
@@ -552,6 +552,18 @@ func labelAndAnon(e providers.VendorEntry, v Viewer) (label, anon string) {
 		return e.DisplayName, anon
 	}
 	return anonLabelOf(e.VendorID), anon
+}
+
+// visibleVendorID · **决定 vendor_id 字段是否泄漏真名**（CLAUDE.md §8.20 硬约束）：
+//   - Invited=true：返真 vendor_id
+//   - Invited=false：返 anon_id
+//
+// 所有对外 view struct 的 VendorID 字段**必须**走这个函数拼装。
+func visibleVendorID(id providers.VendorID, v Viewer) string {
+	if v.Invited {
+		return string(id)
+	}
+	return anonIDOf(id)
 }
 
 // anonIDOf 稳定短 id · 无邀请码用户暴露一个短 anon 而不是真 vendor_id 常量
@@ -593,9 +605,8 @@ func zoneLabel(z providers.Zone) string {
 // zoneKey 归一化 zone 到前端 TS 联合类型 "us" | "eu"。
 //
 // 内部 providers.ZoneGeneral 值是 "general"，但前端 Zone 类型只允许 us / eu
-// （见 web/src/types/index.ts）· 无区 vendor（kiroappcc）在 fixtures 里也把 zone
-// 设成 "us"。我方跟着这个约定：general → us。1b 接 kiroappcc 时如果前端类型
-// 扩了才需要改回来。
+// （见 web/src/types/index.ts）· 无区 vendor 在 fixtures 里也把 zone 设成 "us"。
+// 我方跟着这个约定：general → us。前端类型扩了才需要改回来。
 func zoneKey(z providers.Zone) string {
 	switch z {
 	case providers.ZoneEU:
@@ -607,8 +618,8 @@ func zoneKey(z providers.Zone) string {
 }
 
 func currencyOfSnapshot(s *providers.StockSnapshot) string {
-	// 前端约定：credits 或 cny_usd 两种。1a 现有 vendor 都是 credits；
-	// kirodrop 到 1b 才接，接入时按 Balance.Currency 判定。
+	// 前端约定：credits 或 cny_usd 两种。1a 已接的 vendor 都是 credits；
+	// USD 结算的 vendor 接入时按 Balance.Currency 判定。
 	if s != nil && len(s.Zones) > 0 && s.Zones[0].UnitPrice.Currency == providers.CurrencyUSD {
 		return "cny_usd"
 	}

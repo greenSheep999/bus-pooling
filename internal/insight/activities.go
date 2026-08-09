@@ -45,7 +45,7 @@ func (s *Store) Activities(
 	// 1) 钱包类活动（充值 / 兑换 / 质保退款）
 	//
 	// recharge 显示**净到账**（减掉同一次充值订单的 channel_fee，让乘客看到
-	// "我充了 N 就到账 N"，通道费是内部记账细节 · CLAUDE.md §0.1 / §1.4）。
+	// "我充了 N 就到账 N"，手续费是内部记账细节 · CLAUDE.md §0.1 / §1.4）。
 	// 兑换和质保退款没有 channel_fee 抵扣，amount 就是本身。
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT wl.id, wl.reason,
