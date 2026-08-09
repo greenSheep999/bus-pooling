@@ -451,6 +451,23 @@ func (s *Store) MarkNeedManual(ctx context.Context, id, reason string) error {
 	return nil
 }
 
+// IncrRetryCount 累加一行的 retry_count · 返回新值 · 计数落库跨重启保持
+// （P1-B · 原实现放内存·服务重启就清零）
+func (s *Store) IncrRetryCount(ctx context.Context, id string) (int, error) {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE pending_handoff SET retry_count = retry_count + 1, updated_at = ?
+		 WHERE id = ?`, formatTime(s.now()), id)
+	if err != nil {
+		return 0, fmt.Errorf("handoff: 累加 retry_count: %w", err)
+	}
+	var n int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT retry_count FROM pending_handoff WHERE id = ?`, id).Scan(&n); err != nil {
+		return 0, fmt.Errorf("handoff: 读 retry_count: %w", err)
+	}
+	return n, nil
+}
+
 // checkOwnership 批量校验 credential_id 是否都归此乘客。
 //
 // 归属规则：

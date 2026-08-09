@@ -177,12 +177,17 @@ else
   fi
 fi
 
-# ── 步骤 4 · Kill 恢复 · 4 个崩溃窗口（initial / reserved / purchasing / purchased）─────
-banner "step 4 · Kill 恢复 (4 个崩溃窗口)"
-# 手工造 4 行 pending_purchase 各占一个"崩溃时状态"·SIGKILL bp · 重启看 janitor 兜。
-# updated_at 用 2020 · 远超 janitor 任何超时·必被扫。
+# ── 步骤 4 · janitor 恢复集成测试（**非真崩溃窗口** · 手工造 pending 状态）─────
+banner "step 4 · janitor 恢复集成测试 (initial / reserved / purchasing / purchased)"
+# **重要澄清**（审计准确指出）：这不是真"进程在执行到某一步时 SIGKILL"的崩溃窗口测试·
+# 而是"手工在 DB 造 4 种 pending 状态·SIGKILL 后重启·看 janitor 能否兜"的恢复集成测试。
+# 真崩溃窗口需要注入延迟 + 精确时机 SIGKILL·工作量大·1c 补。
 #
-# 通过判据（1a DoD）：没有一行**卡在原状态** · 每行要么 delete · 要么推到终态。
+# 本测试证明的：janitor 在扫到卡在任一状态时·都能做出正确决策（delete / recover / need_manual）。
+# 本测试**不**证明的：在业务真跑到那个状态时崩溃·系统能恢复。
+#
+# updated_at 用 2020 · 远超 janitor 任何超时·必被扫。
+# 通过判据：没有一行**卡在原状态** · 每行要么 delete · 要么推到终态。
 pid=$(sqlite3 "$DB" "SELECT id FROM passenger LIMIT 1;")
 # wallet 补钱 + 冻结 · 3 个非 initial 状态各冻结 30_000_000 = 90_000_000
 # reserved / purchasing / purchased 恢复都要"释放冻结" · 少了会报'冻结额不足'

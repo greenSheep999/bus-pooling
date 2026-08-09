@@ -366,38 +366,42 @@
 
 > **状态图例**：✅ done · ⚙️ code-complete 但缺真上线依赖 · ⏸ 待
 >
-> 最后同步：commit `2eff1ff`（tests/e2e/step 4 扩到 4 崩溃窗口）
+> 最后同步：commit `e664d5a`（P0 修 · readHandoffPlaintext 返 error · assign 三段崩溃安全）
 
 - [x] ✅ 12 个业务/基础设施包骨架都在（当前 21 个包 · 含 6 家 vendor + paymentgw）
-- [x] ✅ 核心表 migration 通过（当前 27 张 · 含 idempotency_record + pending_purchase + pending_assignment + settlement_event + pending_handoff）
+- [x] ✅ 核心表 migration 通过（当前 28 张 · 含 idempotency_record + pending_purchase + pending_assignment + settlement_event + pending_handoff）
 - [ ] ⚙️ 91kiro adapter + kiro.rs client 真实调通
   - 已验：91kiro no_stock 真返·kiro.rs 401 真接（`docs/e2e/log-2026-08-09.md`）
   - **缺**：vendor 有余额时的成功 Purchase → BatchImport → 台账落 `kiro_rs_credential_id`
-- [x] ✅ **状态机 e2e** 全绿：`run-e2e.sh step 4` · 4 崩溃窗口（initial/reserved/purchasing/purchased）janitor 全兜
+- [x] ⚙️ **janitor 恢复集成测试** 全绿（`run-e2e.sh step 4` · 4 种 pending 状态 janitor 全兜）
+  - **审计发现的精确表述**：这不是"业务真跑到某状态时 SIGKILL"的真崩溃窗口·而是
+    "手工造 4 种 pending·SIGKILL 后重启看 janitor 兜"的恢复集成测试。真崩溃窗口需要
+    mock vendor 加延迟 + 精确时机 SIGKILL·1c 补。
 - [x] ✅ **幂等 e2e** 全绿：`run-e2e.sh step 2` · 同 key ×5 字节一致
 - [x] ✅ **并发 e2e** 全绿：`run-e2e.sh step 3 + 3b` · 5 并发余额充足 + 10 并发资金竞争都不超扣
-- [x] ✅ e2e 脚本一键跑绿（`bash tests/e2e/run-e2e.sh` pass 12/12）
-- [x] ✅ `go vet` 无告警（`go vet ./...` 全绿）
-- [x] ✅ 敏感字段 0 命中（仅命中 `password_hash` SQL 列名·非敏感值）
-- [ ] ⏸ 每包有 README（当前 9/21 · 大部分包没 README · 阶段 1b/1c 补）
-- [x] ✅ git commit 干净（每个改动一个 commit·主题清晰）
-- [x] ⚙️ **kiro.rs 版本绑定**（cmd/bus-pooling/main.go:268 · 语义版本比对·非 commit SHA·上游未暴露 build sha endpoint · commit `82d580e` 修 misnaming）
-- [x] ✅ **API 响应无内部术语**（grep `"housepool"|"initiated"|"handed_off"|"kiro_rs_credential_id"|"death_source"` 无命中）
-- [x] ✅ **P0 handoff 数据丢失回归修复**（commit `82832ee` · 占位路径 confirm 不删号）
-- [x] ✅ **assign 走完整状态机**（commit `0e529d1` · initial → external_done → status_updated → completed）
-- [x] ✅ **into_bus 真调 housepool UpdateCredential**（commit `5b4ca86` · 迁 group 到 bus-{id}）
-- [x] ✅ **handoff janitor 扫 confirmed 卡单**（commit `ce68470` · maxRetries 后转 need_manual）
+- [x] ✅ e2e 脚本一键跑绿（`run-e2e.sh` 12/12 + `sprint1a-flows.sh` 23/23）
+- [x] ✅ `go vet` 无告警
+- [x] ✅ 敏感字段 0 命中
+- [ ] ⏸ 每包有 README（当前 9/21 · 阶段 1b/1c 补）
+- [x] ✅ git commit 干净
+- [x] ⚙️ **kiro.rs 版本绑定**（语义版本比对·非 commit SHA · commit `82d580e` misnaming 修 · P2 修 config.example.yaml 用新名）
+- [x] ✅ **API 响应无内部术语**
+- [x] ✅ **P0-1 handoff 占位路径数据保护**（commit `82832ee` · 占位 confirm 不删号）
+- [x] ✅ **P0-2 handoff 真明文模式返 501**（commit `e664d5a` · readHandoffPlaintext 强制 error · 号绝不误删）
+- [x] ✅ **P0-3 assign 三段崩溃安全**（commit `e664d5a` · tx1 initial + tx 外 pool + tx2 completed · AssignJanitor 兜卡单）
+- [x] ✅ **into_bus 真调 housepool UpdateCredential**（commit `5b4ca86`）
+- [x] ✅ **handoff janitor 扫 confirmed**（commit `ce68470` · P1-A/B 修 · maxRetries=3 · retry_count 落库跨重启）
+- [x] ✅ **handoff.Complete 抽公用**（Standards · 消 duplication · api / janitor 共用）
 
-**还差的（1a → done 的路径）**：
-- vendor 有余额跑一次真 Purchase 成功路径 · 落 `kiro_rs_credential_id`
-- 4 主流程完整精确 e2e（登录 → API key → bus pull → 真 handoff 明文 → deathwatch 手动置死）
-- 每包 README 补齐（3-4 天工作量·可放 1b 收尾）
+**还差的（不只是外部依赖）**：
+- **真崩溃窗口测试**：mock vendor 加延迟 · SIGKILL 在业务执行途中而不是造完状态。1c 补
+- **真明文 handoff**：接 kiro.rs 明文 endpoint 后打开 · 撤 501（外部依赖）
+- **vendor 有余额跑真 Purchase**：BatchImport 成功路径 · 落 `kiro_rs_credential_id`
+- **deathwatch worker 真联调**：需 pool 装配 + 真 vendor·当前只测了"号死 → 退款"链路
+- **每包 README**（3-4 天工作量·1b/1c 收尾）
 
-**Sprint 1a 判定**：**code-complete + core-e2e 全绿**·`NOT yet done`。真 done 依赖：
-1. kiro.rs 加明文导出 endpoint（外部依赖 · 需要 kiro.rs 那边改）
-2. vendor 有余额跑一次真 Purchase → BatchImport
-3. 上面"还差的"全打勾
-
+**Sprint 1a 判定**：**主要 happy path + DRY_RUN 集成测试完成 · P0 全修 · NOT yet code-complete**。
+真 code-complete 依赖上面"还差的"里的前两项（真崩溃窗口 + 真明文）· 真 done 还要 vendor 有余额。
 ## Sprint 1a（前后端）结束后 · 下一个 Sprint
 
 **Sprint 1b**（预计 2 周）：

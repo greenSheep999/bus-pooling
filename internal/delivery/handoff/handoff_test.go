@@ -303,6 +303,50 @@ type fakeErr struct{}
 
 func (e *fakeErr) Error() string { return "fake" }
 
+// P1-B 锁：retry_count 落库·跨 Janitor 实例（模拟服务重启）计数保持
+func TestJanitor_ConfirmedRetryPersistsAcrossRestart(t *testing.T) {
+	s, _, pid := setup(t)
+	p, _ := s.IssueToken(context.Background(), IssueTokenInput{
+		PassengerID: pid, CredentialIDs: []string{"c1"},
+	})
+	_ = s.MarkFulfilled(context.Background(), p.ID)
+	_ = s.MarkConfirmed(context.Background(), p.ID)
+	time.Sleep(30 * time.Millisecond)
+
+	// janitor 实例 1：跑 2 次失败·attempts=1、2
+	j1 := NewJanitor(JanitorConfig{
+		Store:      s,
+		StuckAfter: 20 * time.Millisecond,
+		MaxRetries: 3,
+		CompleteFn: func(_ context.Context, _ Pending) error { return errFake },
+	})
+	j1.SweepOnce(context.Background())
+	j1.SweepOnce(context.Background())
+
+	// 模拟服务重启：新造一个 janitor（新内存·如果计数存内存这里就会归零）
+	j2 := NewJanitor(JanitorConfig{
+		Store:      s,
+		StuckAfter: 20 * time.Millisecond,
+		MaxRetries: 3,
+		CompleteFn: func(_ context.Context, _ Pending) error { return errFake },
+	})
+	// 再跑 1 次·attempts 应该是 3（不是 1）
+	rep := j2.SweepOnce(context.Background())
+	// attempts=3 · 不超 MaxRetries=3 · 不转 need_manual
+	if rep.StuckConfirmedManual != 0 {
+		t.Errorf("attempts=3 <= MaxRetries=3 不该转 need_manual · 实际 %d", rep.StuckConfirmedManual)
+	}
+	// 再跑 1 次 · attempts=4 > 3 · 转 need_manual
+	rep = j2.SweepOnce(context.Background())
+	if rep.StuckConfirmedManual != 1 {
+		t.Errorf("attempts=4 > 3 应转 need_manual · 实际 %d", rep.StuckConfirmedManual)
+	}
+	got, _ := s.Get(context.Background(), p.ID)
+	if got.Status != StatusNeedManual {
+		t.Errorf("status = %s, want need_manual", got.Status)
+	}
+}
+
 // janitor 扫过期 fulfilled
 func TestJanitor_ExpiresFulfilled(t *testing.T) {
 	s, _, pid := setup(t)

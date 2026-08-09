@@ -8,8 +8,12 @@
 #   1. 账号 · 注册 + 登录（cookie）+ 建 API key + 用 API key 调 me
 #   2. bus + 拉号 · 建 bus + POST /me/buses/{id}/pull（不是单独拉号）·
 #      号进入 bus-<id> group（credential_ledger.owner_bus_id + current_group）
-#   3. handoff 三段 · 占位路径能跑完（真明文路径需 kiro.rs endpoint · 单独测）
-#   4. deathwatch · 手动置死号 · 触发退款流水
+#   3. handoff 三段 · **占位路径**能跑完（真明文路径需 kiro.rs 明文 endpoint · 本脚本不测）
+#      占位路径 fulfill 返 "PLACEHOLDER:not-a-real-key:*" · confirm 不删号 · 号仍 alive。
+#      真明文路径当前 fulfill 直接 501（readHandoffPlaintext 返 error）· 接了 endpoint 后打开。
+#   4. **模拟 deathwatch 触发退款**（不调 worker · 直接 SQL 置 status=dead + 手插退款流水）
+#      测的是"号死 → warranty_refund 流水 → 余额到账"这条链路·不是 deathwatch worker
+#      主动探测。真 worker 探测需 pool 装配 + 真 vendor · 阶段 1a mock 模式不覆盖。
 #
 # 默认 DRY_RUN=1 + BP_ALLOW_HANDOFF_PLACEHOLDER=1（联调路径）。
 # 通过标准：4 条主流程每步都 ✅ · exit 0；任一 ✗ 报错 exit 1。
@@ -199,8 +203,8 @@ else
   ko "⑦ pending_handoff.status=$ph_status·期望 confirmed_placeholder"
 fi
 
-# ── 主流程 4 · deathwatch · 手动置死号 ─────
-banner "主流程 4 · deathwatch · 手动置死号 → 触发退款"
+# ── 主流程 4 · **模拟 deathwatch**（不调 worker · SQL 手插）· 触发退款链路 ─────
+banner "主流程 4 · **模拟** deathwatch 手动置死号 → 触发退款链路（非 worker 探测）"
 
 # 4.1 拉一号入车（会经历 warranty · 10 分钟保证）
 w_pull=$(curl -sSf -H "$AUTH" -X POST "$BASE/api/me/pull" \

@@ -2,6 +2,7 @@ package handoff
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -32,8 +33,6 @@ type Janitor struct {
 	maxRetries int
 	batchLimit int
 	log        *slog.Logger
-	// 简单的内存重试计数 · 生产真跑起来这个数据应该落库或用 confirmed_at 差值算
-	confirmRetries map[string]int
 }
 
 type JanitorConfig struct {
@@ -49,15 +48,14 @@ type JanitorConfig struct {
 
 func NewJanitor(cfg JanitorConfig) *Janitor {
 	j := &Janitor{
-		store:          cfg.Store,
-		pool:           cfg.Pool,
-		completeFn:     cfg.CompleteFn,
-		interval:       cfg.Interval,
-		stuckAfter:     cfg.StuckAfter,
-		maxRetries:     cfg.MaxRetries,
-		batchLimit:     cfg.BatchLimit,
-		log:            cfg.Logger,
-		confirmRetries: make(map[string]int),
+		store:      cfg.Store,
+		pool:       cfg.Pool,
+		completeFn: cfg.CompleteFn,
+		interval:   cfg.Interval,
+		stuckAfter: cfg.StuckAfter,
+		maxRetries: cfg.MaxRetries,
+		batchLimit: cfg.BatchLimit,
+		log:        cfg.Logger,
 	}
 	if j.interval <= 0 {
 		j.interval = 15 * time.Second
@@ -66,7 +64,8 @@ func NewJanitor(cfg JanitorConfig) *Janitor {
 		j.stuckAfter = 60 * time.Second
 	}
 	if j.maxRetries <= 0 {
-		j.maxRetries = 5
+		// 3 次转人工·跟 docs/09-transactions.md:195 一致
+		j.maxRetries = 3
 	}
 	if j.batchLimit <= 0 {
 		j.batchLimit = 50
@@ -138,7 +137,8 @@ func (j *Janitor) SweepOnce(ctx context.Context) SweepReport {
 	}
 
 	// 3) 卡在 confirmed 的·重试 completeHandoff（外部注入的 completeFn）
-	//    completeFn 为 nil 时（测试 / mock 模式）· 直接根据重试计数决定转 need_manual
+	//    重试计数落库·服务重启不清零（P1-B 修复）
+	//    3 次仍失败转 need_manual（docs/09-transactions.md:195）
 	stuck, err := j.store.FindStuckConfirmed(ctx, j.stuckAfter, j.batchLimit)
 	if err != nil {
 		j.log.Error("handoff janitor 扫 stuck confirmed 失败", "err", err)
@@ -148,23 +148,26 @@ func (j *Janitor) SweepOnce(ctx context.Context) SweepReport {
 		if ctx.Err() != nil {
 			return r
 		}
-		j.confirmRetries[p.ID]++
-		attempts := j.confirmRetries[p.ID]
+		attempts, err := j.store.IncrRetryCount(ctx, p.ID)
+		if err != nil {
+			r.Failed++
+			j.log.Error("handoff janitor 累加 retry_count 失败", "id", p.ID, "err", err)
+			continue
+		}
 		if attempts > j.maxRetries {
 			// 超过重试上限 · 转 need_manual · 让运营查
-			reason := "confirmed → completed 卡住·重试 " + timesStr(attempts) + " 次仍失败"
+			reason := fmt.Sprintf("confirmed → completed 卡住·重试 %d 次仍失败", attempts)
 			if err := j.store.MarkNeedManual(ctx, p.ID, reason); err != nil {
 				r.Failed++
 				j.log.Error("handoff janitor 标 need_manual 失败", "id", p.ID, "err", err)
 				continue
 			}
-			delete(j.confirmRetries, p.ID)
 			r.StuckConfirmedManual++
 			j.log.Warn("handoff confirmed 转 need_manual", "id", p.ID, "attempts", attempts)
 			continue
 		}
 		if j.completeFn == nil {
-			// 没接 completeFn（DRY_RUN / mock）· 不重试外部动作 · 只留 log
+			// 没接 completeFn（DRY_RUN / mock）· 不重试外部动作 · 只 log
 			j.log.Warn("handoff confirmed 卡单但 completeFn=nil · 只计数不重试",
 				"id", p.ID, "attempts", attempts)
 			continue
@@ -179,23 +182,9 @@ func (j *Janitor) SweepOnce(ctx context.Context) SweepReport {
 			j.log.Warn("handoff janitor 推 completed 失败", "id", p.ID, "err", err)
 			continue
 		}
-		delete(j.confirmRetries, p.ID)
 		r.StuckConfirmedRetried++
 		j.log.Info("handoff confirmed 恢复成功", "id", p.ID, "attempts", attempts)
 	}
 
 	return r
-}
-
-func timesStr(n int) string {
-	// 小工具·避免 fmt.Sprintf 一次
-	s := ""
-	if n == 0 {
-		return "0"
-	}
-	for n > 0 {
-		s = string(rune('0'+n%10)) + s
-		n /= 10
-	}
-	return s
 }

@@ -31,8 +31,11 @@ httpx:
 housepool:
   # 我方运维的 kiro.rs 实例
   base_url: "https://kiro.aibbq.xyz"
-  # 绑 kiro.rs 版本防契约漂移（sprint Iss #13）· 留空不校验
-  expected_sha: ""
+  # 绑 kiro.rs **语义版本**（不是 commit SHA · 上游未暴露 build sha）·
+  # 空 = 不校验。启动时对比 GET /admin/system/update/check 里的 current_version ·
+  # 不等则拒启动。**注意**：field 是 expected_version 不是 expected_sha·
+  # 老名字会被 YAML 静默忽略·照示例部署根本不校验版本（P2 修复）。
+  expected_version: ""
 
 # true = vendor 调用走 mock，不产生真实扣款
 # 默认 true —— 宁可开发时忘了关而不扣钱，也不要上线时忘了开而误扣

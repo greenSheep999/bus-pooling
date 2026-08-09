@@ -329,44 +329,8 @@ func (s *Server) selectHandoffMeta(ctx context.Context, credIDs []string) ([]han
 	return out, rows.Err()
 }
 
-// completeHandoff 做 confirm 之后的外部 + 内部收尾（09-transactions §4）：
-//  1. housepool DELETE（幂等：第二次 DELETE 返回 404 也视为成功）
-//  2. credential_ledger.status='handed_off' + handed_off_at
-//
-// **顺序不能反**（CLAUDE.md §7.1）—— 号池删了本地才能标 handed_off，
-// 反过来则可能"本地已标死号，池里还挂着不该在的号"。
+// completeHandoff · 委托给 handoff.Complete 做 confirm 之后的收尾。
+// 两处调用（api / janitor）共用 · 消 Standards duplication。
 func (s *Server) completeHandoff(ctx context.Context, credIDs []string) error {
-	// 先按顺序在 pool 侧 DELETE，全部成功后再一次 tx 更新台账
-	metas, err := s.selectHandoffMeta(ctx, credIDs)
-	if err != nil {
-		return err
-	}
-	if s.pool != nil {
-		for _, m := range metas {
-			if err := s.pool.DeleteCredential(ctx, housepool.CredentialID(m.kiroRSID)); err != nil {
-				// housepool 已删（404）视为成功 —— 幂等重试路径
-				if errors.Is(err, housepool.ErrNotFound) {
-					continue
-				}
-				return fmt.Errorf("api: housepool DELETE %d: %w", m.kiroRSID, err)
-			}
-		}
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	for _, cid := range credIDs {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE credential_ledger
-			   SET status = 'handed_off', handed_off_at = ?
-			 WHERE id = ? AND status != 'handed_off'`, now, cid); err != nil {
-			return fmt.Errorf("api: 标 handed_off %s: %w", cid, err)
-		}
-	}
-	return tx.Commit()
+	return handoff.Complete(ctx, handoff.CompleteDeps{DB: s.db, Pool: s.pool}, credIDs)
 }
