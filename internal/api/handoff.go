@@ -117,12 +117,16 @@ func (s *Server) handleHandoffFulfill(w http.ResponseWriter, r *http.Request) er
 	}
 
 	// **1a 阶段 kiro.rs 侧尚未开放"读明文"admin 端点**（08-housepool-contract §12
-	// 承诺但未定义 endpoint）。开发环境可以用 BP_ALLOW_HANDOFF_PLACEHOLDER=1
-	// 强制返回占位串（**永远不是真号** · 只让前端 UI 联调），生产必须拒绝，
-	// 否则乘客会把占位串当明文用、然后 confirm 触发 DELETE，真号丢了。
-	if os.Getenv("BP_ALLOW_HANDOFF_PLACEHOLDER") != "1" {
+	// 承诺但未定义 endpoint）。readHandoffPlaintext 会返回台账里的打码值 +
+	// "pending-handoff-<id>" 前缀 —— 一眼能看出是占位。前端 UI 能走完三段流程，
+	// 但乘客拿不到能真用的号。
+	//
+	// 生产**必须**接了 kiro.rs 明文 endpoint 才允许上线：
+	// BP_STRICT_HANDOFF=1 时拒占位·返 501 让运维停机。默认关（1a / 1b / 1c
+	// 开发和联调走占位路径）。上线前 checklist 会把这个开关翻上。
+	if os.Getenv("BP_STRICT_HANDOFF") == "1" {
 		return newFail(http.StatusNotImplemented, "handoff_not_ready",
-			"取号功能暂未开放（等 kiro.rs 明文导出端点上线）· 号仍在你的池里，可以派进车或推自己号池")
+			"取号未开放（等 kiro.rs 明文导出端点上线）· 号仍在你的池里，可以派进车或推自己号池")
 	}
 
 	// 明文从 housepool 实时读 —— 关键：明文在**任何**时刻都不能落我方 DB
@@ -201,15 +205,14 @@ func (s *Server) handleHandoffConfirm(w http.ResponseWriter, r *http.Request) er
 
 // readHandoffPlaintext 每号一次从 housepool 读明文。
 //
-// **阶段 1a 的现状**：housepool 接口（`GetCredential`）不返回明文（明文只在
-// 号池 SDK 的 `ImportCredential` 请求里，不在响应里）· kiro.rs 侧目前没有
-// "读明文"的 admin 端点（08-housepool-contract §12 承诺"从 kiro.rs 读明文"但
-// 具体 endpoint 未定义）。
+// **阶段 1a 的现状**：kiro.rs 侧还没开放"读明文"admin 端点
+// （08-housepool-contract §12 承诺但未定义 endpoint）。本方法返回**明确标记为
+// 占位**的响应 —— key 形如 "PLACEHOLDER:not-a-real-key:<credential_id>"，
+// account / vendor_id 是真的（从台账拿）。前端 UI 三段式 flow 能跑完，但拿到
+// 的号不能用。
 //
-// 为了让契约 + 前端 UI 可以联调，本方法基于台账元数据返回**打码占位 + 内部备忘录**
-// 形式的响应 —— account / vendor_id 是真的（存台账里）· key 用 `pending-handoff-<masked>`
-// 前缀清晰标示"这个环境暂未接明文读端点"。**上线前必须把 pool 客户端补齐真的读明文端点**，
-// 见 knownIssues。
+// **上线前**：接 kiro.rs 明文导出端点·替换本方法·同时把 BP_STRICT_HANDOFF=1
+// 打开·防降级路径把占位漏进生产。
 func (s *Server) readHandoffPlaintext(ctx context.Context, credIDs []string) ([]handoffKey, error) {
 	if len(credIDs) == 0 {
 		return nil, nil
@@ -220,10 +223,8 @@ func (s *Server) readHandoffPlaintext(ctx context.Context, credIDs []string) ([]
 	}
 	out := make([]handoffKey, 0, len(rows))
 	for _, m := range rows {
-		key := m.keyMasked
-		if key == "" {
-			key = "pending-handoff-" + m.credentialID
-		}
+		// 明显的占位·别让前端误把 key_masked 当真号渲染
+		key := "PLACEHOLDER:not-a-real-key:" + m.credentialID
 		out = append(out, handoffKey{
 			CredentialID: m.credentialID,
 			Key:          key,

@@ -13,8 +13,7 @@ import (
 // setupHandoff 建 env + 两号 · 返回 env + 密钥 fn + pid + 两个号 id
 func setupHandoff(t *testing.T) (*prEnv, *testEnv, func(*http.Request), string) {
 	t.Helper()
-	// 测试用占位符明文（生产没有 BP_ALLOW_HANDOFF_PLACEHOLDER=1 会返 501）
-	t.Setenv("BP_ALLOW_HANDOFF_PLACEHOLDER", "1")
+	// 默认走占位路径（BP_STRICT_HANDOFF=0）· 生产需要 =1 走真明文（本测试不覆盖）
 	e := newPREnv(t)
 	base := e.toTestEnv()
 	key := seedWithAPIKey(t, base, "hf@e.com", "hfuser", "password123")
@@ -260,10 +259,9 @@ func TestHandoffFulfill_TTLExpired(t *testing.T) {
 	}
 }
 
-// **P0 断言**：未开 BP_ALLOW_HANDOFF_PLACEHOLDER 时 fulfill 必须 501。
-// 没这道锁，前端拿到占位串会当真号显示，乘客 confirm 后我方真号被删，明文丢失。
-func TestHandoffFulfill_RejectedWithoutPlaceholderEnv(t *testing.T) {
-	// setupHandoff 会 t.Setenv 开占位符 · 这里用底层构造绕开
+// **P0 断言**：BP_STRICT_HANDOFF=1 时 fulfill 必须 501。
+// 生产上线前把这个开关翻上·防降级路径把占位串漏进真实交付。
+func TestHandoffFulfill_StrictModeRejectsPlaceholder(t *testing.T) {
 	e := newPREnv(t)
 	base := e.toTestEnv()
 	key := seedWithAPIKey(t, base, "np@e.com", "nptester", "password123")
@@ -272,8 +270,7 @@ func TestHandoffFulfill_RejectedWithoutPlaceholderEnv(t *testing.T) {
 	e.insertRecordCred(t, "c1", pid, "round-1", "alive", 1)
 	withKey := func(r *http.Request) { r.Header.Set("X-API-Key", key) }
 
-	// 显式关掉（防止别的测试 t.Setenv 泄漏进来）
-	t.Setenv("BP_ALLOW_HANDOFF_PLACEHOLDER", "0")
+	t.Setenv("BP_STRICT_HANDOFF", "1")
 
 	_, body := base.do(t, "POST", "/api/me/handoff",
 		map[string]any{"credential_ids": []string{"c1"}}, withKey)
@@ -282,9 +279,8 @@ func TestHandoffFulfill_RejectedWithoutPlaceholderEnv(t *testing.T) {
 
 	status, respBody := base.do(t, "GET", "/api/me/handoff/"+token, nil, withKey)
 	if status != http.StatusNotImplemented {
-		t.Fatalf("生产模式 fulfill 必须 501，得到 %d body=%s", status, respBody)
+		t.Fatalf("STRICT 模式 fulfill 必须 501，得到 %d body=%s", status, respBody)
 	}
-	// 错误码走对外收敛
 	if got := decode[Error](t, respBody); got.Code != "handoff_not_ready" {
 		t.Errorf("code = %q，want handoff_not_ready", got.Code)
 	}
