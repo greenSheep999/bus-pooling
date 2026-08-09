@@ -42,6 +42,11 @@ const (
 	ReasonRegionFee      Reason = "region_fee"
 	ReasonWarrantyRefund Reason = "warranty_refund"
 	ReasonAdminAdjust    Reason = "admin_adjust"
+
+	// 自费号派进多人车的份额清算（decisions §8.23）· 我方是通道不抽成：
+	// 成员付 share_expense · 派入者收 share_income · 两者金额恒等
+	ReasonShareExpense Reason = "share_expense"
+	ReasonShareIncome  Reason = "share_income"
 	// ReasonTopupRefund 充值单被 gateway 退款/反向结算·反向 recharge + channel_fee 两条·
 	// 净变化 = -credits。触发条件：gateway 送 kind=refunded / reversed 的 settlement 事件。
 	ReasonTopupRefund Reason = "topup_refund"
@@ -135,7 +140,30 @@ func (s *Store) apply(ctx context.Context, m Move, sign int64) (Entry, error) {
 // 拉号那种「扣钱 + 建 pull_round + 建 credential_ledger」必须整体原子，
 // 所以需要这个能挂进外部事务的版本（09-transactions §2）。
 // sign: +1 入账 / -1 出账。
+//
+// **balance 挡在 balance>=amount** —— 防止乘客侧超扣。
+// refund / admin_adjust 反向出账时要允许"负余额"（钱已给 gateway 但用户已花了）·
+// 走 ForceApplyTx。
 func ApplyTx(ctx context.Context, tx *sql.Tx, m Move, sign int64) (Entry, error) {
+	return applyTx(ctx, tx, m, sign, false)
+}
+
+// ForceApplyTx 允许 balance 走到负 —— **仅退款 / 反向账 / admin_adjust 用**。
+//
+// 语义：refund 是"把钱退回给 gateway"·不是"用户余额换钱"·所以即使用户已花光·
+// 系统也必须记这笔"负债"（wallet.balance 变负）·让运营看到并追讨。
+//
+// 铁律：**只允许 reason ∈ {topup_refund, admin_adjust}** —— 别处误用会破坏防超扣。
+func ForceApplyTx(ctx context.Context, tx *sql.Tx, m Move, sign int64) (Entry, error) {
+	switch m.Reason {
+	case ReasonTopupRefund, ReasonAdminAdjust:
+	default:
+		return Entry{}, fmt.Errorf("wallet: ForceApplyTx 只允许 topup_refund / admin_adjust · got=%s", m.Reason)
+	}
+	return applyTx(ctx, tx, m, sign, true)
+}
+
+func applyTx(ctx context.Context, tx *sql.Tx, m Move, sign int64, allowNegative bool) (Entry, error) {
 	if m.Amount <= 0 {
 		return Entry{}, ErrNonPositiveAmount
 	}
@@ -143,12 +171,24 @@ func ApplyTx(ctx context.Context, tx *sql.Tx, m Move, sign int64) (Entry, error)
 	nowStr := formatTime(now)
 
 	if sign < 0 {
-		// 条件 UPDATE 是防超扣的第一道：余额不够时影响 0 行，而不是扣成负数。
-		// 事务是 BEGIN IMMEDIATE，所以并发下这一步是串行的。
-		res, err := tx.ExecContext(ctx, `
-			UPDATE wallet SET balance = balance - ?, updated_at = ?
-			WHERE passenger_id = ? AND balance >= ?`,
-			m.Amount, nowStr, m.PassengerID, m.Amount)
+		var (
+			res sql.Result
+			err error
+		)
+		if allowNegative {
+			// 允许负 —— 无条件扣（refund 反向账）
+			res, err = tx.ExecContext(ctx, `
+				UPDATE wallet SET balance = balance - ?, updated_at = ?
+				WHERE passenger_id = ?`,
+				m.Amount, nowStr, m.PassengerID)
+		} else {
+			// 条件 UPDATE 是防超扣的第一道：余额不够时影响 0 行，而不是扣成负数。
+			// 事务是 BEGIN IMMEDIATE，所以并发下这一步是串行的。
+			res, err = tx.ExecContext(ctx, `
+				UPDATE wallet SET balance = balance - ?, updated_at = ?
+				WHERE passenger_id = ? AND balance >= ?`,
+				m.Amount, nowStr, m.PassengerID, m.Amount)
+		}
 		if err != nil {
 			return Entry{}, fmt.Errorf("wallet: 扣款: %w", err)
 		}
@@ -162,6 +202,10 @@ func ApplyTx(ctx context.Context, tx *sql.Tx, m Move, sign int64) (Entry, error)
 			if err := tx.QueryRowContext(ctx,
 				`SELECT count(1) FROM wallet WHERE passenger_id = ?`, m.PassengerID).Scan(&exists); err == nil && exists == 0 {
 				return Entry{}, ErrNotFound
+			}
+			if allowNegative {
+				// 不该发生（无条件 UPDATE 应影响 1 行）
+				return Entry{}, fmt.Errorf("wallet: force 扣款影响 0 行 · 意外")
 			}
 			return Entry{}, ErrInsufficientBalance
 		}
@@ -396,6 +440,32 @@ func (s *Store) List(ctx context.Context, passengerID string, opt ListOptions) (
 		out = append(out, e)
 	}
 	return out, total, rows.Err()
+}
+
+// ── 余额恢复后的欠费状态清理（decisions §8.26） ──
+
+// ClearOverdueStateTx 乘客余额增加后（充值 / 兑换码 / 质保退款）清掉欠费状态：
+//   - `bus_member.skipped_count` 归零
+//   - `status` suspended → active（**自己解挂** · 不用车主批 · §8.26）
+//
+// 放在 wallet 包是因为"余额变多"这个触发点在这里最集中·而且 topup / redeem
+// 都不该为了这条 UPDATE 去依赖 bus 包（层次方向）。
+//
+// **从下一轮开始生效**：只清状态·本轮已算完的分摊不追溯。
+//
+// 只动 `left_at IS NULL` 的行（退出的车不管）· 幂等（没欠费的跑了也无副作用）。
+func ClearOverdueStateTx(ctx context.Context, tx *sql.Tx, passengerID string) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE bus_member
+		   SET skipped_count = 0,
+		       last_skipped_at = NULL,
+		       status = CASE WHEN status = 'suspended' THEN 'active' ELSE status END
+		 WHERE passenger_id = ? AND left_at IS NULL
+		   AND (skipped_count > 0 OR status = 'suspended')`,
+		passengerID); err != nil {
+		return fmt.Errorf("wallet: 清欠费状态: %w", err)
+	}
+	return nil
 }
 
 // ── 每日计数（策略上限用 · decisions §8.27） ──

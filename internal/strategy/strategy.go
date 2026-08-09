@@ -138,7 +138,7 @@ var (
 	ErrNegativeLimit    = errors.New("strategy: 上限不能为负")
 )
 
-// maxPerRoundCount 跟 vendor 侧单次提货上限对齐（91kiro 是 200）。
+// maxPerRoundCount 跟 vendor 侧单次提货上限对齐（部分 vendor 上限为 200）。
 // 这里拦一道是为了早失败 —— 免得走到 vendor 才被 bad_count 拒。
 const maxPerRoundCount = 200
 

@@ -31,7 +31,7 @@ type Config struct {
 	BearerToken string
 	// SettlementSecret client 的 HMAC key（对应 gateway CLI -add-client 时的 settlement_secret）
 	SettlementSecret string
-	// HTTPTimeout 单次请求超时·默认 15s（gateway create 一般 <5s，但要留 waffo 侧握手时间）
+	// HTTPTimeout 单次请求超时·默认 15s（gateway create 一般 <5s，但要留 gateway 侧握手时间）
 	HTTPTimeout time.Duration
 }
 

@@ -54,10 +54,23 @@ func redeemGen(ctx context.Context, cfg config.Config, args []string) error {
 	if *credits <= 0 {
 		return fmt.Errorf("credits 必须 > 0（单位微单位·1 积分 = 1_000_000）")
 	}
+	if *expiresDays < 0 {
+		return fmt.Errorf("expires-days 必须 >= 0（0 = 永不过期）")
+	}
 	if strings.TrimSpace(*prefix) == "" {
 		*prefix = "KIRO"
 	}
 	*prefix = strings.ToUpper(strings.ReplaceAll(*prefix, "-", ""))
+	// 只允许大写字母数字（跟 --help 声明一致 · 防注入 · 也防人工输入混淆）
+	// 长度 1..16 (1..16 兼顾"社群短码" 到 "GIFT2026Q1" 中长码)
+	if len(*prefix) < 1 || len(*prefix) > 16 {
+		return fmt.Errorf("prefix 长度必须 1..16")
+	}
+	for _, c := range *prefix {
+		if !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') {
+			return fmt.Errorf("prefix 只能大写字母数字·非法字符：%q (%c)", *prefix, c)
+		}
+	}
 
 	// DB 直连 · 不需要拉起完整 server
 	d, err := db.Open(ctx, cfg.DB.Path)
@@ -80,7 +93,11 @@ func redeemGen(ctx context.Context, cfg config.Config, args []string) error {
 	// stdout 只输出干净的 code · 方便 pipeline 到 CSV / 社群机器人
 	success, failed := 0, 0
 	for i := 0; i < *count; i++ {
-		code := genCode(*prefix)
+		code, err := genCode(*prefix)
+		if err != nil {
+			// 熵不够 · 立即 fail-hard · 不继续（后续也会失败·且可能残缺入库）
+			return fmt.Errorf("第 %d 条生成随机码失败·中止: %w", i+1, err)
+		}
 		if err := store.Seed(ctx, code, *credits, *memo, expiresAt); err != nil {
 			fmt.Fprintf(os.Stderr, "!! 第 %d 条失败 (%s)：%v\n", i+1, code, err)
 			failed++
@@ -98,11 +115,14 @@ func redeemGen(ctx context.Context, cfg config.Config, args []string) error {
 
 // genCode 生成 "PREFIX-XXXX-XXXX-XXXX" 格式的一次性码
 // hex 12 字节 · 分 3 段 · 大写便于人工输入
-func genCode(prefix string) string {
+// rand.Read 错误立即报 · **不吞** —— CDK 是密钥·熵不够会有碰撞攻击面
+func genCode(prefix string) (string, error) {
 	var b [6]byte
-	_, _ = rand.Read(b[:])
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("crypto/rand: %w", err)
+	}
 	h := strings.ToUpper(hex.EncodeToString(b[:]))
-	return fmt.Sprintf("%s-%s-%s-%s", prefix, h[0:4], h[4:8], h[8:12])
+	return fmt.Sprintf("%s-%s-%s-%s", prefix, h[0:4], h[4:8], h[8:12]), nil
 }
 
 func expiryDesc(t *time.Time) string {

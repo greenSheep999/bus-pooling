@@ -166,6 +166,10 @@ func (s *Store) Consume(ctx context.Context, passengerID, rawCode string) (Resul
 	if err != nil {
 		return Result{}, err
 	}
+	// 兑换码也是"余额变多" → 清欠费状态 + 自己解挂（decisions §8.26）
+	if err := wallet.ClearOverdueStateTx(ctx, tx, passengerID); err != nil {
+		return Result{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return Result{}, fmt.Errorf("redeem: 提交: %w", err)
 	}
