@@ -11,33 +11,38 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { SplitFlapCountdown } from "@/components/ui/split-flap";
 import { avatarColor, avatarLetter, cn, fmtCredits } from "@/lib/utils";
 import { useTheme, type ThemeMode } from "@/lib/theme";
+import { useTranslation } from "react-i18next";
+import { LANGUAGES } from "@/i18n";
 import LogoMark from "@/assets/logo/mark.svg";
 
+/** 5 个 tab · label 走 i18n key（nav.*）· 不 hardcode 文案 */
 const TABS = [
-  { to: "/overview", label: "概览", icon: LayoutDashboard, end: true },
-  { to: "/buses", label: "拼车", icon: Users },
-  { to: "/extract", label: "提取 key", icon: KeyRound },
-  { to: "/dispatch", label: "我的发车", icon: Send },
-  { to: "/docs", label: "对接文档", icon: BookOpen },
+  { to: "/overview", labelKey: "nav.overview", icon: LayoutDashboard, end: true },
+  { to: "/buses", labelKey: "nav.buses", icon: Users },
+  { to: "/extract", labelKey: "nav.extract", icon: KeyRound },
+  { to: "/dispatch", labelKey: "nav.dispatch", icon: Send },
+  { to: "/docs", labelKey: "nav.docs", icon: BookOpen },
 ];
 
 function StockBadge() {
   const { data } = useStock();
+  const { t } = useTranslation();
   const n = data?.total_available;
   /* 移动端只显示"呼吸点 + 数字" · md+ 显示完整"上游 128 个可拉"
      跟 CreditPill 一样的响应式收缩策略 */
   return (
     <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-hairline bg-bg-elevated px-2.5 py-1 sm:gap-2 sm:px-3 sm:py-1.5">
       <span className="size-1.5 rounded-full bg-ok-solid" />
-      <span className="hidden text-label font-medium text-fg-secondary md:inline">上游</span>
+      <span className="hidden text-label font-medium text-fg-secondary md:inline">{t("header.stock_unit")}</span>
       <span className="font-semibold tnum">{n ?? "-"}</span>
-      <Muted className="hidden font-medium md:inline">个可拉</Muted>
+      <Muted className="hidden font-medium md:inline">{t("header.stock_available_suffix")}</Muted>
     </div>
   );
 }
 
 function CreditPill() {
   const { data } = useWallet();
+  const { t } = useTranslation();
   return (
     <Link
       to="/wallet"
@@ -50,7 +55,7 @@ function CreditPill() {
         {data ? fmtCredits(data.balance) : "-"}
       </span>
       {/* 「积分」二字移动端隐藏 · sm+ 才显示 */}
-      <span className="hidden font-semibold text-ok-solid sm:inline">积分</span>
+      <span className="hidden font-semibold text-ok-solid sm:inline">{t("header.credits")}</span>
     </Link>
   );
 }
@@ -61,23 +66,22 @@ function CreditPill() {
  *  真做通知中心时替换 popover 内容 · 拉 GET /api/me/notifications · 加未读小红点 */
 function NotificationsBell() {
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
           className="hidden size-9 place-items-center rounded-full transition-colors hover:bg-bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 sm:grid"
-          aria-label="通知"
+          aria-label={t("header.notifications")}
         >
           <Bell className="size-4 text-fg-secondary" />
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 p-4">
         <div className="space-y-1">
-          <div className="font-semibold">通知中心</div>
-          <p className="text-label text-fg-tertiary">
-            集中式通知开发中 · 现在具体事件分散在这些位置
-          </p>
+          <div className="font-semibold">{t("header.notifications_title")}</div>
+          <p className="text-label text-fg-tertiary">{t("header.notifications_desc")}</p>
         </div>
         <div className="mt-3 space-y-2">
           <Link
@@ -85,7 +89,7 @@ function NotificationsBell() {
             onClick={() => setOpen(false)}
             className="flex items-center justify-between gap-2 rounded-lg p-2 text-label hover:bg-bg-elevated"
           >
-            <span>拉号 / 号失效 / 号入车</span>
+            <span>{t("header.notifications_link_events")}</span>
             <ChevronRight className="size-3.5 text-fg-tertiary" />
           </Link>
           <Link
@@ -93,7 +97,7 @@ function NotificationsBell() {
             onClick={() => setOpen(false)}
             className="flex items-center justify-between gap-2 rounded-lg p-2 text-label hover:bg-bg-elevated"
           >
-            <span>推送日志（webhook）</span>
+            <span>{t("header.notifications_link_webhook")}</span>
             <ChevronRight className="size-3.5 text-fg-tertiary" />
           </Link>
           <Link
@@ -101,7 +105,7 @@ function NotificationsBell() {
             onClick={() => setOpen(false)}
             className="flex items-center justify-between gap-2 rounded-lg p-2 text-label hover:bg-bg-elevated"
           >
-            <span>充值 / 退款流水</span>
+            <span>{t("header.notifications_link_wallet")}</span>
             <ChevronRight className="size-3.5 text-fg-tertiary" />
           </Link>
         </div>
@@ -110,16 +114,16 @@ function NotificationsBell() {
   );
 }
 
-/* 语言：阶段 1a 只有中文，英文占位不可选（见 docs/12-frontend-pages.md §i18n 词条） */
-const LANGS = [
-  { code: "zh-CN", label: "简体中文" },
-  { code: "en", label: "English", soon: true },
-];
+/** 语言列表 · 从 i18n LANGUAGES 派生（阶段 1 支持 zh-CN + en）
+ *  label 是各语言的**本地化自称**（Chinese speakers see 简体中文, English speakers see English），
+ *  不跟随当前 UI 语言变 —— language picker 里让用户看到"目标语言的名字"更容易识别 */
+const LANGS = LANGUAGES.map((l) => ({ code: l.code, label: l.label }));
 
+/** 主题 · label 是 i18n key · 渲染时 t() 出真文案 */
 const THEMES = [
-  { code: "system", label: "跟随系统" },
-  { code: "light", label: "浅色" },
-  { code: "dark", label: "深色" },
+  { code: "system", labelKey: "avatar.theme_system" },
+  { code: "light", labelKey: "avatar.theme_light" },
+  { code: "dark", labelKey: "avatar.theme_dark" },
 ];
 
 type MenuItem =
@@ -138,12 +142,15 @@ type MenuItem =
 function AvatarMenu() {
   const [open, setOpen] = useState(false);
   const [flyout, setFlyout] = useState<number | null>(null);
-  const [lang, setLang] = useState("zh-CN");
+  const { t, i18n } = useTranslation();
   const [theme, setTheme] = useTheme();
   const nav = useNavigate();
   const { data: me } = useMe();
   const seed = me?.email ?? me?.username ?? "?";
   const { bg, fg } = avatarColor(seed);
+
+  const lang = i18n.language;
+  const setLang = (code: string) => { void i18n.changeLanguage(code); };
 
   /* 「我的」= 账号本身（/me）· 「设置」= 设置主入口（/settings 索引页）
      号池 / 机器人通知 / API key 都是设置的**下级**，不跟「设置」并列摆在这里 ——
@@ -151,13 +158,13 @@ function AvatarMenu() {
   const items: MenuItem[] = [
     { icon: User, label: me?.username ?? "-", sub: me?.email, to: "/me" },
     // 社群 · 绑专属邀请码的入口（decisions §8.38 §8.39）
-    { icon: Users, label: "社群", to: "/community" },
-    { icon: Gift, label: "邀请好友", to: "/invite" },
-    { icon: Settings, label: "设置", to: "/settings" },
+    { icon: Users, label: t("avatar.community"), to: "/community" },
+    { icon: Gift, label: t("avatar.invite"), to: "/invite" },
+    { icon: Settings, label: t("avatar.settings"), to: "/settings" },
     { sep: true },
     {
       icon: Globe,
-      label: "语言",
+      label: t("avatar.language"),
       submenu: LANGS,
       value: lang,
       onPick: setLang,
@@ -165,14 +172,14 @@ function AvatarMenu() {
     },
     {
       icon: Moon,
-      label: "主题",
-      submenu: THEMES,
+      label: t("avatar.theme"),
+      submenu: THEMES.map((th) => ({ code: th.code, label: t(th.labelKey) })),
       value: theme,
       onPick: (c: string) => setTheme(c as ThemeMode),
-      hint: THEMES.find((t) => t.code === theme)?.label,
+      hint: t(THEMES.find((th) => th.code === theme)?.labelKey ?? "avatar.theme_system"),
     },
     { sep: true },
-    { icon: LogOut, label: "登出", to: "/login" },
+    { icon: LogOut, label: t("avatar.logout"), to: "/login" },
   ];
 
   return (
@@ -270,6 +277,7 @@ function AvatarMenu() {
 /** 移动端菜单 · logo 右边 chevron 触发 · 向下摊开面板 · < lg 显示 */
 function MobileNav() {
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!open) return;
@@ -308,11 +316,11 @@ function MobileNav() {
           {/* 面板 · 从 header 下方向下展开 · 全宽 */}
           <div className="absolute inset-x-0 top-full z-40 border-b border-hairline bg-bg shadow-pop lg:hidden">
             <nav className="page-container flex flex-col gap-1 py-3">
-              {TABS.map((t) => (
+              {TABS.map((tab) => (
                 <NavLink
-                  key={t.to}
-                  to={t.to}
-                  end={t.end}
+                  key={tab.to}
+                  to={tab.to}
+                  end={tab.end}
                   onClick={() => setOpen(false)}
                   className={({ isActive }) =>
                     cn(
@@ -325,8 +333,8 @@ function MobileNav() {
                     )
                   }
                 >
-                  <t.icon className="size-[16px] shrink-0" />
-                  {t.label}
+                  <tab.icon className="size-[16px] shrink-0" />
+                  {t(tab.labelKey)}
                 </NavLink>
               ))}
             </nav>
@@ -420,6 +428,7 @@ const IconGithub = (props: React.SVGProps<SVGSVGElement>) => (
 /** 底部 footer · 左侧品牌 + 社群 icon · 右侧 3 栏菜单靠右 · 栏间距紧凑
     真实存在的政策入口，不堆 dead link */
 function AppFooter() {
+  const { t } = useTranslation();
   return (
     <footer className="mt-auto border-t border-hairline bg-bg-elevated">
       <div className="page-container py-10">
@@ -454,28 +463,28 @@ function AppFooter() {
           {/* 3 栏菜单 · 每栏至少 120px 保证不瘦成一条 · gap 从内容自然拉开
               lg 起间距 gap-12（48px）· 之前 gap-20 是栏比 gap 还窄的错做法 */}
           <div className="grid grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-3 sm:gap-x-10 lg:gap-x-12 [&>div]:min-w-[120px]">
-            <FooterCol title="产品">
-              <FooterLink to="/overview">概览</FooterLink>
-              <FooterLink to="/buses">拼车</FooterLink>
-              <FooterLink to="/extract">提取 key</FooterLink>
-              <FooterLink to="/dispatch">我的发车</FooterLink>
+            <FooterCol title={t("footer.product")}>
+              <FooterLink to="/overview">{t("nav.overview")}</FooterLink>
+              <FooterLink to="/buses">{t("nav.buses")}</FooterLink>
+              <FooterLink to="/extract">{t("nav.extract")}</FooterLink>
+              <FooterLink to="/dispatch">{t("nav.dispatch")}</FooterLink>
             </FooterCol>
 
-            <FooterCol title="账户">
-              <FooterLink to="/wallet">钱包 / 充值</FooterLink>
-              <FooterLink to="/me">我的</FooterLink>
-              <FooterLink to="/settings">设置</FooterLink>
+            <FooterCol title={t("footer.account")}>
+              <FooterLink to="/wallet">{t("footer.wallet")}</FooterLink>
+              <FooterLink to="/me">{t("footer.me")}</FooterLink>
+              <FooterLink to="/settings">{t("avatar.settings")}</FooterLink>
               {/* footer 里把三类设置也直接列出来（页脚就是给人扫的，多一层点击没意义） */}
-              <FooterLink to="/settings/downstream">我的号池</FooterLink>
-              <FooterLink to="/settings/webhook">机器人通知</FooterLink>
-              <FooterLink to="/settings/api-keys">API key</FooterLink>
+              <FooterLink to="/settings/downstream">{t("footer.downstream")}</FooterLink>
+              <FooterLink to="/settings/webhook">{t("footer.webhook")}</FooterLink>
+              <FooterLink to="/settings/api-keys">{t("footer.api_keys")}</FooterLink>
             </FooterCol>
 
-            <FooterCol title="说明与政策">
-              <FooterLink to="/legal/terms">用户协议</FooterLink>
-              <FooterLink to="/legal/privacy">隐私政策</FooterLink>
-              <FooterLink to="/legal/compliance">合规声明</FooterLink>
-              <FooterLink to="/docs">对接文档</FooterLink>
+            <FooterCol title={t("footer.docs_policy")}>
+              <FooterLink to="/legal/terms">{t("footer.terms")}</FooterLink>
+              <FooterLink to="/legal/privacy">{t("footer.privacy")}</FooterLink>
+              <FooterLink to="/legal/compliance">{t("footer.compliance")}</FooterLink>
+              <FooterLink to="/docs">{t("footer.docs")}</FooterLink>
             </FooterCol>
           </div>
         </div>
@@ -545,6 +554,7 @@ function FooterLink({ to, children }: { to: string; children: React.ReactNode })
 }
 
 export default function AppLayout() {
+  const { t } = useTranslation();
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
       <PromoBar />
@@ -577,11 +587,11 @@ export default function AppLayout() {
         {/* 排 2 · 主导航 tab · lg 才显示（<lg 走下拉展开面板） */}
         <div className="page-container hidden lg:block">
           <nav className="flex items-center gap-1 overflow-x-auto py-1.5">
-            {TABS.map((t) => (
+            {TABS.map((tab) => (
               <NavLink
-                key={t.to}
-                to={t.to}
-                end={t.end}
+                key={tab.to}
+                to={tab.to}
+                end={tab.end}
                 className={({ isActive }) =>
                   cn(
                     "flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 font-medium transition-colors",
@@ -592,8 +602,8 @@ export default function AppLayout() {
                   )
                 }
               >
-                <t.icon className="size-[15px]" />
-                {t.label}
+                <tab.icon className="size-[15px]" />
+                {t(tab.labelKey)}
               </NavLink>
             ))}
           </nav>

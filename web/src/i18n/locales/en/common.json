@@ -1,0 +1,69 @@
+{
+  "nav": {
+    "overview": "Overview",
+    "buses": "Pooling",
+    "extract": "Extract key",
+    "dispatch": "My Dispatch",
+    "docs": "Integration"
+  },
+  "header": {
+    "credits": "credits",
+    "credits_none": "-",
+    "stock_unit": "Upstream",
+    "stock_available_suffix": "available",
+    "notifications": "Notifications",
+    "notifications_title": "Notifications",
+    "notifications_desc": "Central notification center is coming — for now these events live on individual pages",
+    "notifications_link_events": "Pulls / expiries / bus arrivals",
+    "notifications_link_webhook": "Delivery log (webhook)",
+    "notifications_link_wallet": "Top-ups / refunds"
+  },
+  "avatar": {
+    "community": "Community",
+    "invite": "Invite friends",
+    "settings": "Settings",
+    "language": "Language",
+    "theme": "Theme",
+    "theme_system": "Follow system",
+    "theme_light": "Light",
+    "theme_dark": "Dark",
+    "logout": "Sign out",
+    "soon": "Coming soon"
+  },
+  "footer": {
+    "product": "Product",
+    "account": "Account",
+    "docs_policy": "About & policy",
+    "wallet": "Wallet & top-up",
+    "me": "Me",
+    "downstream": "My pool",
+    "webhook": "Bot notifications",
+    "api_keys": "API keys",
+    "terms": "Terms",
+    "privacy": "Privacy",
+    "compliance": "Compliance",
+    "docs": "Integration docs",
+    "brand": "bus-pooling",
+    "tagline": "· beta",
+    "slogan": "Pool a bus · pay less per key"
+  },
+  "action": {
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "retry": "Retry",
+    "loading": "Loading…",
+    "copy": "Copy",
+    "copied": "Copied"
+  },
+  "state": {
+    "empty": "Nothing here yet",
+    "error": "Failed to load",
+    "error_desc": "Network or service error · click retry"
+  }
+}
