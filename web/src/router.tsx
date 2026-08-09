@@ -1,44 +1,64 @@
+import { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import AppLayout from "./layouts/AppLayout";
 import AuthLayout from "./layouts/AuthLayout";
-import Overview from "./pages/Overview";
-import Buses from "./pages/Buses";
-import BusDetail from "./pages/BusDetail";
-import Extract from "./pages/Extract";
-import Prices from "./pages/Prices";
-import Dispatch from "./pages/Dispatch";
-import Docs from "./pages/Docs";
-import WalletPage from "./pages/WalletPage";
-import Settings from "./pages/Settings";
-import Preferences from "./pages/Preferences";
-import Downstream from "./pages/Downstream";
-import Webhook from "./pages/Webhook";
-import ApiKeys from "./pages/ApiKeys";
-import Profile from "./pages/Profile";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
+
+// 每页独立 chunk · 首屏只加载路由匹配到的页
+const Overview = lazy(() => import("./pages/Overview"));
+const Buses = lazy(() => import("./pages/Buses"));
+const BusDetail = lazy(() => import("./pages/BusDetail"));
+const Extract = lazy(() => import("./pages/Extract"));
+const Prices = lazy(() => import("./pages/Prices"));
+const Dispatch = lazy(() => import("./pages/Dispatch"));
+const Docs = lazy(() => import("./pages/Docs"));
+const WalletPage = lazy(() => import("./pages/WalletPage"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Preferences = lazy(() => import("./pages/Preferences"));
+const Downstream = lazy(() => import("./pages/Downstream"));
+const Webhook = lazy(() => import("./pages/Webhook"));
+const ApiKeys = lazy(() => import("./pages/ApiKeys"));
+const AccountSettings = lazy(() => import("./pages/AccountSettings"));
+const Profile = lazy(() => import("./pages/Profile"));
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
+const JoinByLink = lazy(() => import("./pages/JoinByLink"));
+const Community = lazy(() => import("./pages/Community"));
+const Invite = lazy(() => import("./pages/Invite"));
+
+// 页级 Suspense fallback · 保持视觉安静（页头 layout 已渲染 · 只 body 区一个薄条即可）
+function PageFallback() {
+  return <div className="p-6 text-sm text-muted-foreground">加载中…</div>;
+}
+
+function withSuspense(el: React.ReactNode) {
+  return <Suspense fallback={<PageFallback />}>{el}</Suspense>;
+}
 
 export const router = createBrowserRouter([
   {
     element: <AppLayout />,
     children: [
-      { path: "/", element: <Overview /> },
-      { path: "/buses", element: <Buses /> },
-      { path: "/buses/:id", element: <BusDetail /> },
-      { path: "/extract", element: <Extract /> },
-      { path: "/prices", element: <Prices /> },
-      { path: "/dispatch", element: <Dispatch /> },
-      { path: "/docs", element: <Docs /> },
-      { path: "/wallet", element: <WalletPage /> },
+      { path: "/", element: withSuspense(<Overview />) },
+      { path: "/buses", element: withSuspense(<Buses />) },
+      { path: "/buses/:id", element: withSuspense(<BusDetail />) },
+      { path: "/extract", element: withSuspense(<Extract />) },
+      { path: "/prices", element: withSuspense(<Prices />) },
+      { path: "/dispatch", element: withSuspense(<Dispatch />) },
+      { path: "/docs", element: withSuspense(<Docs />) },
+      { path: "/wallet", element: withSuspense(<WalletPage />) },
+      /* promo 跳转目标（config.promo.items 里配的 to） */
+      { path: "/community", element: withSuspense(<Community />) },
+      { path: "/invite", element: withSuspense(<Invite />) },
 
       /* 账号本身不是一种设置 → /me（跟 API 的 GET /api/me 同名）
          设置是主入口 → /settings 索引页，下面挂三类设置 */
-      { path: "/me", element: <Profile /> },
-      { path: "/settings", element: <Settings /> },
-      { path: "/settings/preferences", element: <Preferences /> },
-      { path: "/settings/downstream", element: <Downstream /> },
-      { path: "/settings/webhook", element: <Webhook /> },
-      { path: "/settings/api-keys", element: <ApiKeys /> },
+      { path: "/me", element: withSuspense(<Profile />) },
+      { path: "/settings", element: withSuspense(<Settings />) },
+      { path: "/settings/preferences", element: withSuspense(<Preferences />) },
+      { path: "/settings/downstream", element: withSuspense(<Downstream />) },
+      { path: "/settings/webhook", element: withSuspense(<Webhook />) },
+      { path: "/settings/api-keys", element: withSuspense(<ApiKeys />) },
+      { path: "/settings/account", element: withSuspense(<AccountSettings />) },
       /* 旧路径 · 早期把账号页放在 settings 下，留个跳转别让存过书签的人撞空白页 */
       { path: "/settings/profile", element: <Navigate to="/me" replace /> },
     ],
@@ -46,8 +66,10 @@ export const router = createBrowserRouter([
   {
     element: <AuthLayout />,
     children: [
-      { path: "/login", element: <Login /> },
-      { path: "/register", element: <Register /> },
+      { path: "/login", element: withSuspense(<Login />) },
+      { path: "/register", element: withSuspense(<Register />) },
+      /* 邀请链接落地页 · 未登录也能打开（引导登录后回跳继续加入） */
+      { path: "/join/:code", element: withSuspense(<JoinByLink />) },
     ],
   },
 ]);

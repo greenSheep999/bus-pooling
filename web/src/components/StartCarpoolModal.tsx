@@ -81,6 +81,9 @@ export function StartCarpoolModal({
       daily_spend_limit: dailySpendLimit ? Number(dailySpendLimit) * 1_000_000 : null,
       preferred_vendor: picked,
     };
+    // 建车不传 kind —— 用户建的车都一样（后端默认 single·跟 team 行为一致·都带邀请码）。
+    // 1 个人时是独享·把邀请码给朋友进来就是拼车·不需要建车时选类型。
+    // max_members 走后端 config.bus.max_members·前端不传。
     const bus = await createBus.mutateAsync({ name, strategy });
     onClose();
     nav(`/buses/${bus.id}`);
@@ -133,7 +136,7 @@ export function StartCarpoolModal({
               </Field>
             </div>
 
-            {/* 单价提示 · 向下省视角（不用"议价费"内部术语） */}
+            {/* 单价提示 · 向下省视角（不用内部计费术语） */}
             {bargain ? (
               <Alert tone="neutral" icon={Sparkles} title="拉 2 个及以上单价更低">
                 一次只拉 1 个成本偏高 · 建议至少拉 2 个

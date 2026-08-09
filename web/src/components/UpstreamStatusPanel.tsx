@@ -8,13 +8,13 @@ import type { Zone } from "@/types";
  *  - vendor = auto：展示**系统派号推荐结果**（推荐到谁 + 最终价 + 库存质保成活率 + 理由）
  *    散客默认走这条 · 必须能看到价格才能下单 · 不留"选具体 vendor 看详情"空占位
  *  - vendor = 具体：展示该 vendor 即时状态
- *  单价一律是**最终价**（含附加费）· 前端拿不到原价 */
+ *  单价一律是**最终价**（已含所有分项）· 前端拿不到原价 */
 export function UpstreamStatusPanel({
   vendorId, zone, inviteCode,
 }: {
   vendorId: string;                 // "auto" | 具体 id
   zone: Zone | "auto";
-  /** 消费邀请码 · 填了本次免加价 */
+  /** 消费邀请码 · 填了本次按优惠价 */
   inviteCode?: string;
 }) {
   const isAuto = vendorId === "auto";

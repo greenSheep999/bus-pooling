@@ -116,11 +116,16 @@ const VENDOR_ANON_INDEX: Record<string, string> = Object.fromEntries(
 );
 
 /** vendor 显示名 · 按身份决定真名还是匿名编号
-    @param invited 是否有注册邀请码（社群成员） */
+    @param invited 是否非零售档（wholesale / insider）· decisions §8.39
+    批发和同行都看真名 · 只有零售看编号 */
 export function vendorLabel(id: string, invited: boolean): string {
   if (invited) return vendorName(id);
   return VENDOR_ANON_INDEX[id] ?? "AWS-Q Kiro Vendor";
 }
+
+/** ⚠️ 档次名（retail/wholesale/insider）**只在内部**用 · UI 上不要展示三档差别
+ *  用户视角只有：有专属邀请码（社群成员）vs 没有 · 具体是批发还是同行不对外
+ *  见 CLAUDE.md §0.1 §12.6（对外文案不出现内部术语）· decisions §8.39 */
 
 export function vendorColor(id: string): string {
   return VENDOR_COLOR[id] ?? "#9147FF";

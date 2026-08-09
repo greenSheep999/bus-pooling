@@ -3,9 +3,8 @@ import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from "recharts";
-import { Users } from "lucide-react";
 import {
-  useBusCredentials, useBusPulls, useDownstream, useMe,
+  useBusCredentials, useBusMemberStats, useBusPulls, useDownstream, useMe,
 } from "@/api/hooks";
 import { Card, SectionHead } from "@/components/ui/primitives";
 import { Alert } from "@/components/ui/alert";
@@ -17,7 +16,7 @@ import type { Credential, PullRound } from "@/types";
 /** BusDetail「数据」tab · 阶段 1a 时间维度 4 图 · decisions §8.19
  *  数据源：credentials + pull_rounds 已有字段（不需要新 API）
  *  成员维度阶段 2a 落地（§8.18 分摊扣款接线后）· 现在留 EmptyState 占位 */
-export function BusStats({ busId }: { busId: string }) {
+export default function BusStats({ busId }: { busId: string }) {
   const { data: creds } = useBusCredentials(busId);
   const { data: pulls } = useBusPulls(busId);
   const { data: downstream } = useDownstream();
@@ -45,8 +44,8 @@ export function BusStats({ busId }: { busId: string }) {
         />
       </div>
 
-      {/* 成员维度占位 · 阶段 2a 落地 */}
-      <MembersPlaceholder />
+      {/* 成员维度 · 多人车才显示（1 人车 return null） */}
+      <MemberBreakdown busId={busId} />
     </div>
   );
 }
@@ -364,20 +363,96 @@ function PushSuccessRateChart({
   );
 }
 
-/* ─────────────── 成员维度占位 · 阶段 2a ─────────────── */
+/* ─────────────── 成员维度 · 1c 多人拼车落地 ─────────────── */
 
-function MembersPlaceholder() {
+/** 各成员分到多少号 / 花了多少积分 · 数据来自 pull_round 的实际号数分配
+ *  1 人车只有自己一行（占比 100%）· 没什么可比的·所以只在多人时显示 */
+function MemberBreakdown({ busId }: { busId: string }) {
+  const { data } = useBusMemberStats(busId);
+  const members = data?.members ?? [];
+
+  // 1 人车不显示这块 —— 跟自己比占比没有信息量
+  if (members.length <= 1) return null;
+
+  const totalKeys = data?.total_keys ?? 0;
+  const totalSpend = data?.total_spend ?? 0;
+  const maxKeys = Math.max(1, ...members.map((m) => m.keys_taken));
+  // 有人推过号池才显示推送列（1e 之前恒为 0·没必要占位）
+  const anyPush = members.some((m) => m.pushed_ok + m.push_failed > 0);
+
   return (
-    <Card className="flex items-start gap-3 p-6">
-      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-subtle">
-        <Users className="size-4 text-brand-strong" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="font-semibold">成员维度 · 阶段 2a 开放</div>
-        <p className="mt-0.5 text-label text-fg-tertiary">
-          多人车支持后加：各成员触发拉号次数占比 · 各成员推自己号池成功率对比 · 各成员积分消费占比（按分摊比例）
-        </p>
+    <Card className="p-6">
+      <ChartHead
+        title="成员用量"
+        sub={
+          <>
+            谁分到多少号 · 摊了多少积分 · 共{" "}
+            <span className="font-semibold tnum">{totalKeys}</span> 号 ·{" "}
+            <span className="font-semibold tnum">{fmtCredits(totalSpend)}</span> 积分
+          </>
+        }
+      />
+
+      <div className="space-y-3">
+        {members.map((m) => {
+          const keyPct = totalKeys > 0 ? (m.keys_taken / totalKeys) * 100 : 0;
+          const barPct = (m.keys_taken / maxKeys) * 100;
+          const pushTotal = m.pushed_ok + m.push_failed;
+          return (
+            <div key={m.passenger_id} className="space-y-1.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-medium">{m.username}</span>
+                  {m.role === "owner" && (
+                    <span className="shrink-0 rounded-md bg-brand-subtle px-1.5 py-0.5 text-[10px] font-semibold text-brand-strong">
+                      发起人
+                    </span>
+                  )}
+                  {m.status === "suspended" && (
+                    <span className="shrink-0 rounded-md bg-bg-elevated px-1.5 py-0.5 text-[10px] font-medium text-fg-tertiary">
+                      已挂起
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0 text-label text-fg-tertiary">
+                  <span className="font-semibold tnum text-fg">{m.keys_taken}</span> 号
+                  {" · "}
+                  <span className="tnum">{keyPct.toFixed(0)}%</span>
+                  {" · "}
+                  <span className="font-semibold tnum text-fg">{fmtCredits(m.spend_total)}</span> 积分
+                  {anyPush && pushTotal > 0 && (
+                    <>
+                      {" · 推送 "}
+                      <span className="tnum">
+                        {m.pushed_ok}/{pushTotal}
+                      </span>
+                    </>
+                  )}
+                </span>
+              </div>
+              {/* 横条 · 相对最大值 · 挂起的人用灰色区分 */}
+              <div className="h-2 overflow-hidden rounded-full bg-bg-elevated">
+                <div
+                  className={
+                    m.status === "suspended"
+                      ? "h-full rounded-full bg-fg-tertiary/40"
+                      : "h-full rounded-full bg-brand"
+                  }
+                  style={{ width: `${Math.max(barPct, m.keys_taken > 0 ? 4 : 0)}%` }}
+                />
+              </div>
+              <div className="text-label text-fg-tertiary">
+                参与 <span className="tnum">{m.rounds_joined}</span> 轮 · 分摊比例{" "}
+                <span className="tnum">{m.share_pct}%</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
+
+      <p className="mt-4 text-label text-fg-tertiary">
+        消费按每轮实际分到的号数摊 · 跟分摊比例可能有出入（有人余额不足被跳过时）
+      </p>
     </Card>
   );
 }

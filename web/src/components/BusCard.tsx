@@ -19,12 +19,15 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
   const { data: me } = useMe();
   const { data: creds } = useBusCredentials(bus.id);
   const s = bus.strategy;
+  // 一辆车就是一辆车（CLAUDE.md §2）· label 按当前人数
+  // - anon 搭车池 · 显示"搭车 · N 车友"
+  // - 用户建的车（team/single 遗留）· 1 人显示"独享"·多人显示"N 人拼车"
   const kindLabel =
-    bus.kind === "single"
-      ? "独享 · 个人"
-      : bus.kind === "team"
+    bus.kind === "anon"
+      ? `搭车 · ${bus.member_count} 车友`
+      : bus.member_count > 1
         ? `拼车 · ${bus.member_count} 车友`
-        : `搭车 · ${bus.member_count} 车友`;
+        : "独享";
 
   const seed = bus.name;
   const { bg, fg } = avatarColor(seed);

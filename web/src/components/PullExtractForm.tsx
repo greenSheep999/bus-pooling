@@ -162,7 +162,7 @@ export function PullExtractForm({
           <UpstreamStatusPanel vendorId={vendorId} zone={zone} />
 
           {estimate ? (
-            /* 预估费用卡 · 对外只显示单价 / 服务费 / 小计（decisions §8.20 · 不展示加价链分层） */
+            /* 预估费用卡 · 对外只显示单价 / 服务费 / 小计（decisions §8.20 · 不展示计费分项） */
             <div className="flex flex-col justify-between rounded-xl border border-hairline bg-bg-elevated/40 p-4 text-label">
               <div>
                 <div className="mb-3 font-semibold text-fg">预估费用</div>

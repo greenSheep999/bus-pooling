@@ -171,7 +171,7 @@ function PullSection() {
             code={`// 请求
 {
   "count": 5,
-  "vendor_id": "kiro91",        // 不传 = 让系统比价选
+  "vendor_id": "<vendor_id>",   // 不传 = 让系统比价选（可选值见 /api/vendors/stock）
   "constraints": {
     "max_unit_price": 30000000  // 30 积分
   }
@@ -182,7 +182,7 @@ function PullSection() {
             code={`// 响应
 {
   "pull_round_id": "01H8...",
-  "vendor_id": "kiro91",
+  "vendor_id": "<vendor_id>",
   "purchased": 5,
   "key_cost": 100000000,        // 号价 · 原样转给上游
   "single_pull_fee": 0,          // 只拉 1 个时才有
@@ -235,7 +235,7 @@ function AssignSection() {
             <DestRow
               code="push_pool"
               title="推我的号池"
-              desc="双写到你配的 kiro.rs · 我方保留副本继续监控"
+              desc="双写到你配的号池 · 我方保留副本继续监控"
             />
             <DestRow
               code="handoff"

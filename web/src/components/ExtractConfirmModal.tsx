@@ -142,7 +142,7 @@ export function ExtractConfirmModal({
             </div>
           </Field>
 
-          {/* 合计 · 对外只展示单价 × 数量 / 服务费 / 小计（不展示加价链分层 · §8.20） */}
+          {/* 合计 · 对外只展示单价 × 数量 / 服务费 / 小计（不展示计费分项 · §8.20） */}
           <div className="space-y-1.5 rounded-xl bg-bg-elevated p-4 text-label">
             <FeeRow
               label={discounted != null ? `单价 · ${toCredits(discounted)} × ${info.count}` : "单价"}

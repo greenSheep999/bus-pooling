@@ -1,18 +1,17 @@
 import type { LucideIcon } from "lucide-react";
-import { Bot, ChevronRight, Database, KeyRound, SlidersHorizontal } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Bot, ChevronRight, Database, KeyRound, SlidersHorizontal, UserCog } from "lucide-react";
 import type { ReactNode } from "react";
-import { useApiKeys, useDownstream, useGlobalStrategy, useWebhook } from "@/api/hooks";
+import { useApiKeys, useDownstream, useGlobalStrategy, useMe, useWebhook } from "@/api/hooks";
 import { Card, Chip, Em } from "@/components/ui/primitives";
 import { fmtCredits } from "@/lib/utils";
 
-/** 设置索引 · 设置的主入口
- *  「我的」不在这里 —— 账号本身不是一种设置，它在 /me */
+/** 设置索引 · 设置的主入口 */
 export default function Settings() {
   const { data: gs } = useGlobalStrategy();
   const { data: ds } = useDownstream();
   const { data: wh } = useWebhook();
   const { data: keys } = useApiKeys();
+  const { data: me } = useMe();
 
   const activeKeys = (keys ?? []).filter((k) => !k.revoked).length;
 
@@ -54,7 +53,7 @@ export default function Settings() {
           to="/settings/downstream"
           icon={Database}
           title="我的号池"
-          desc="把号同步到你自己的 kiro.rs · 号死了这边也帮你清"
+          desc="把号同步到你自己的号池 · 号死了这边也帮你清"
           status={
             ds?.connected
               ? <Chip tone="ok" dot>已连通</Chip>
@@ -92,14 +91,21 @@ export default function Settings() {
           }
           meta={keys ? <>共 <Em>{keys.length}</Em> 个 · 已吊销 <Em>{keys.length - activeKeys}</Em> 个</> : null}
         />
-      </div>
 
-      <p className="text-label text-fg-tertiary">
-        每辆车的补车策略跟车绑（decisions §8.6），在
-        <Link to="/buses" className="font-semibold text-brand-strong hover:underline">车详情</Link>
-        里单独配 —— 这里只管全局的上限和新车默认值 · 账号和密码在
-        <Link to="/me" className="font-semibold text-brand-strong hover:underline">我的</Link>
-      </p>
+        <SettingCard
+          to="/settings/account"
+          icon={UserCog}
+          title="账号设置"
+          desc="邮箱 · 用户名 · 密码 · 第三方登录"
+          status={<Chip tone="neutral" dot>密码登录</Chip>}
+          meta={
+            <>
+              邮箱 <Em>{me?.email_verified ? "已绑定" : "未验证"}</Em>
+              {" · "}社交登录 <Em>未绑定</Em>
+            </>
+          }
+        />
+      </div>
     </div>
   );
 }

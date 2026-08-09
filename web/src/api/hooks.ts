@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, del, post, postIdempotent, put } from "./client";
 import type {
-  Activity, ApiKey, ApiKeyCreated, AssignEvent, AutoPickResult, Bus, Credential, DownstreamConfig,
+  Activity, ApiKey, ApiKeyCreated, AssignEvent, AutoPickResult, Bus, BusMemberStats,
+  Credential, DownstreamConfig,
   ExtractEvent, GlobalStrategy, ISOTime, LedgerEntry, Money, Overview, Paged,
   Passenger, PullRound,
   RedeemResult, StockSummary, TimeRange, TopupOrder, TrendMetric, TrendPoint,
@@ -26,6 +27,67 @@ export const useStock = () =>
 
 export const useLedger = () =>
   useQuery({ queryKey: ["ledger"], queryFn: () => api<Paged<LedgerEntry>>("/me/ledger") });
+
+/** 顶部跑马灯活动位 · **公开端点**（未登录也能拉）
+ *  文案 / 跳转 / 倒计时都在后端 config.promo.items · 运营改了不用重新部署前端 */
+export interface PromoItem {
+  id: string;
+  text: string;
+  /** 空 / 缺省 = 不可点（纯公告） */
+  to?: string;
+  /** 空 / 缺省 = 不显示倒计时 · 非空是 RFC3339 */
+  countdown_until?: string;
+}
+
+export const usePromos = () =>
+  useQuery({
+    queryKey: ["promos"],
+    queryFn: () => api<{ items: PromoItem[]; server_now: string }>("/promos"),
+    // 活动位不需要实时 · 5 分钟够了（运营改完最多 5 分钟生效）
+    staleTime: 5 * 60_000,
+    // 未登录也要显示 · 401 不重试（这个端点本来就不需要登录·真 401 说明后端配错了）
+    retry: false,
+  });
+
+/** 个人邀请码 + 邀请记录（decisions §8.29）· 拉人注册平台用
+ *  拉人进车用的是拼车码（bus.invite_code）· 两者不同（§8.38） */
+export interface MyInvite {
+  code: string;
+  invited_count: number;
+  /** 还剩几次手续费减免 */
+  waiver_remaining: number;
+  waiver_used: number;
+  /** 邀请记录（最新在前）· 被邀请人只给脱敏标识（不给第三方完整邮箱） */
+  referrals: InviteReferral[];
+}
+
+export interface InviteReferral {
+  /** 脱敏后的被邀请人（如 zha***@gmail.com） */
+  invitee: string;
+  /** 这条带来几次减免额度 */
+  waiver_granted: number;
+  joined_at: ISOTime;
+}
+
+export const useMyInvite = () =>
+  useQuery({ queryKey: ["myInvite"], queryFn: () => api<MyInvite>("/me/invite") });
+
+/** 补绑专属邀请码 · 拿社群身份（看 vendor 真名 + 社群价）
+ *  一个账号只能绑一次 · 绑完要刷 me（invited 变了·影响全站 vendor 显示名和价格） */
+export const useBindSystemCode = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) =>
+      post<Passenger>("/me/community-code", { code: code.trim().toUpperCase() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["me"] });
+      // vendor 显示名 / 单价都跟 invited 挂钩 · 一起刷
+      qc.invalidateQueries({ queryKey: ["vendorStats"] });
+      qc.invalidateQueries({ queryKey: ["stock"] });
+      qc.invalidateQueries({ queryKey: ["vendorStock"] });
+    },
+  });
+};
 
 /* ── 概览 ── */
 
@@ -79,6 +141,14 @@ export const useBusCredentials = (id: string | undefined) =>
     enabled: !!id,
   });
 
+/** 成员维度统计 · 多人车才有意义（1 人车返 1 条 100% 的行） */
+export const useBusMemberStats = (id: string | undefined) =>
+  useQuery({
+    queryKey: ["busMemberStats", id],
+    queryFn: () => api<BusMemberStats>(`/me/buses/${id}/member-stats`),
+    enabled: !!id,
+  });
+
 export const useBusPulls = (id: string | undefined) =>
   useQuery({
     queryKey: ["busPulls", id],
@@ -86,10 +156,49 @@ export const useBusPulls = (id: string | undefined) =>
     enabled: !!id,
   });
 
+/** 建车 · single / anon / team 三种 kind 都用它 · anon 传 zone + max_unit_price · team 后端生成邀请码 */
 export const useCreateBus = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { name: string; strategy?: unknown }) => post<Bus>("/me/buses", body),
+    mutationFn: (body: {
+      name: string;
+      kind?: "single" | "anon" | "team";
+      strategy?: unknown;
+      max_members?: number;
+      anon_zone?: string;
+      anon_max_unit_price?: number;
+    }) => post<Bus>("/me/buses", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["buses"] }),
+  });
+};
+
+/** 撮合一辆已存在的 anon 车 · zone + max_unit_price 过滤 · auto_join=true 自动加入 */
+export const useMatchAnonBus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { zone?: string; max_unit_price?: number; auto_join?: boolean }) =>
+      post<{ matched: boolean; reason?: string; bus?: Bus }>("/me/buses/anon/match", body),
+    onSuccess: (result) => {
+      if (result.matched) qc.invalidateQueries({ queryKey: ["buses"] });
+    },
+  });
+};
+
+/** 显式加入一辆 anon 车 · 幂等（已成员返 200 + 现状） */
+export const useJoinAnonBus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (busId: string) => post<Bus>(`/me/buses/${busId}/join`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["buses"] }),
+  });
+};
+
+/** 用邀请码加入 team 车 · 幂等 · 无效码返 404 */
+export const useJoinByInviteCode = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) =>
+      post<Bus>("/me/buses/join-by-invite", { invite_code: code.trim().toUpperCase() }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["buses"] }),
   });
 };
@@ -125,7 +234,7 @@ export const useSetMemberSuspended = (busId: string) => {
   });
 };
 
-/** 移除成员 · 剩下的人 share_pct 要重算 · 后端要走全员确认（§8.18） */
+/** 移除成员 · 车主有权直接移除（§8.36）· 剩下的人 share_pct 均分重算 */
 export const useRemoveMember = (busId: string) => {
   const qc = useQueryClient();
   return useMutation({
@@ -171,7 +280,7 @@ export const useDissolveBus = () => {
    端点都在 /me/pull* 名下（跟后端矩阵一致）· "extract" 只是这个页面的中文叫法，
    不是独立资源 —— 单独拉号和拼车拉号是同一个动作，去向不同而已 */
 
-/** 后端估价 · 只暴露对外三项（CLAUDE.md §0.1 · 加价链分层不出）
+/** 后端估价 · 只暴露对外三项（CLAUDE.md §0.1 · 计费分项不出）
  *  用于 ExtractConfirmModal / PullExtractForm 替换本地 pricing.ts 硬编码 */
 export const useEstimate = () =>
   useMutation({
@@ -224,7 +333,7 @@ export const useAssignEvents = () =>
 
 /** 上游 vendor 即时快照 · PullExtractModal 上游状态面板
  *  只在 vendorId 是具体 vendor（不是 "auto"）时才发请求
- *  单价是**最终价**（含附加费）· couponCode 传了则本次减免 · decisions §8.20 */
+ *  单价是**最终价**（已含所有分项）· couponCode 传了则本次减免 · decisions §8.20 */
 export const useVendorStock = (vendorId: string | undefined, couponCode?: string) =>
   useQuery({
     queryKey: ["vendorStock", vendorId, couponCode || null],
@@ -279,14 +388,36 @@ export type AssignBody = {
   bus_id?: string; // into_bus 才带
 };
 
+/** 派进多人车时后端返的份额清算结果（decisions §8.23）
+ *  只给结果 · 不列各人 share_pct / 余额（那些在成员 tab 看） */
+export interface AssignSettlement {
+  /** 车友分摊后你实际收到多少（microunit） */
+  income: Money;
+  /** 因为有人本次跳过·你少收多少 · 0 = 所有人都参与了 */
+  lost: Money;
+  /** 本次跳过的车友（余额不足 / 已挂起） */
+  skipped_usernames: string[];
+}
+
+export interface AssignResult {
+  assigned: number;
+  errors: { credential_id: string; code: string; message: string }[];
+  /** 单人车 / 无清算时后端省略这个字段 */
+  settlement?: AssignSettlement;
+}
+
 export const useAssign = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: AssignBody) => postIdempotent("/me/pull-records/assign", body),
+    mutationFn: (body: AssignBody) =>
+      postIdempotent<AssignResult>("/me/pull-records/assign", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pullRecords"] });
       qc.invalidateQueries({ queryKey: ["assignEvents"] });
       qc.invalidateQueries({ queryKey: ["buses"] });
+      // 清算动了钱包（share_income / share_expense）· 余额和流水都要刷
+      qc.invalidateQueries({ queryKey: ["wallet"] });
+      qc.invalidateQueries({ queryKey: ["ledger"] });
     },
   });
 };
@@ -355,9 +486,9 @@ export const usePull = () => {
 
 /* ── 钱包 · 充值 / 兑换 ── */
 
-/** 生成充值单 → 返回二维码 · 扫码付到 waffo
+/** 生成充值单 → 返回二维码 / 跳转链接 · 付到支付通道
  *  参数是**要净到账的积分**（CLAUDE.md §1.4）· 通道费 5% 加在本金上
- *  1 积分 ≡ 1 元 → paid = credits × 1.05 元 → waffo 显示 USD = paid / 7 */
+ *  1 积分 ≡ 1 元 → paid = credits × 1.05 元 → 通道侧显示 USD = paid / 7 */
 export const useCreateTopup = () => {
   const qc = useQueryClient();
   return useMutation({

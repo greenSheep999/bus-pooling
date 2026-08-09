@@ -15,12 +15,13 @@ export function BusMiniCard({
   active: boolean;
   onClick: () => void;
 }) {
+  // label 按当前人数（一辆车就是一辆车·CLAUDE.md §2）
   const kindLabel =
-    bus.kind === "single"
-      ? "独享 · 个人"
-      : bus.kind === "team"
+    bus.kind === "anon"
+      ? `搭车 · ${bus.member_count} 车友`
+      : bus.member_count > 1
         ? `拼车 · ${bus.member_count} 车友`
-        : `搭车 · ${bus.member_count} 车友`;
+        : "独享";
 
   // 车主头像 · 用车名当种子出个稳定色
   const seed = bus.name;

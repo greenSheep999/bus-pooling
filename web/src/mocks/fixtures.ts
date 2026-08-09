@@ -15,7 +15,10 @@ export const passenger: Passenger = {
   email: "danlio@example.com",
   email_verified: true,
   created_at: ago(24 * 54),
-  /* false = 散客视角（Vendor 01/02 + 加价）· 改 true 看社群视角 · decisions §8.20 */
+  /* 用户档次 · decisions §8.39 · 改这里切视角
+     retail = 零售 · wholesale = 批发 · insider = 同行（看真名+最低价） */
+  tier: "retail",
+  /* 兼容字段 · 跟 tier 保持一致 · 下版后端删这个字段后前端一起删 */
   invited: false,
 };
 
@@ -23,11 +26,11 @@ export const passenger: Passenger = {
     真实后端在 API 层做这个映射 · mock 里活动流 / 流水的文案也要走它，不许 hardcode 真名 */
 const vl = (id: string) => vendorLabel(id, passenger.invited);
 
-/** 附加费率 · decisions §8.20 · 无注册码且无消费码时叠加
+/** 散客费率 · decisions §8.20 · 无注册码且无消费码时适用
     后台可组合多条（当前只有 region_markup）· UI 绝不展示这个数 */
 export const SURCHARGE_RATE = 0.2;
 
-/** 按身份算最终单价 · 有码 = 原价 · 无码 = 原价 × (1 + 加价) */
+/** 按身份算最终单价 · 有码 = 优惠价 · 无码 = 标准价 */
 export const finalPrice = (base: number, waived: boolean) =>
   waived ? base : Math.round(base * (1 + SURCHARGE_RATE));
 
@@ -325,7 +328,7 @@ export const vendorHistories: Record<string, VendorHistory> = {
 };
 
 /* ── 系统派号推荐（auto 模式）· decisions §8.20 ──
-   散客默认走这个 · 综合库存 + 单价 + 30 天成活率择优 · 返回最终价（已含附加费） */
+   散客默认走这个 · 综合库存 + 单价 + 30 天成活率择优 · 返回最终价（已含所有分项） */
 
 export function autoPick(zone: Zone | "auto", waived: boolean): AutoPickResult {
   /* 候选：该 zone 有库存的 vendor */

@@ -93,9 +93,16 @@ export default {
           "0%, 100%": { opacity: "1", transform: "scale(1)" },
           "50%": { opacity: "0.45", transform: "scale(0.85)" },
         },
+        /* 翻牌：旧字符上半片绕底边往下翻走（机场航班牌）
+           只翻 90° —— 翻满 180° 会看到背面，而背面是空的 */
+        splitflap: {
+          "0%": { transform: "rotateX(0deg)", opacity: "1" },
+          "100%": { transform: "rotateX(-90deg)", opacity: "0" },
+        },
       },
       animation: {
         breath: "breath 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        splitflap: "splitflap 400ms ease-in forwards",
       },
     },
   },

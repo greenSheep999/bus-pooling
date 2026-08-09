@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, Plus, Ticket, UserPlus, Users, X } from "lucide-react";
+import { Check, ChevronDown, KeyRound, Plus, Ticket, UserPlus, Users, X } from "lucide-react";
 import {
   useBusPulls, useBuses, useMe,
 } from "@/api/hooks";
@@ -7,7 +7,11 @@ import { BusCard } from "@/components/BusCard";
 import { BusFocalCard } from "@/components/BusFocalCard";
 import { BusMiniCard } from "@/components/BusMiniCard";
 import { StartCarpoolModal } from "@/components/StartCarpoolModal";
+import { JoinAnonModal } from "@/components/JoinAnonModal";
+import { JoinByInviteModal } from "@/components/JoinByInviteModal";
 import { PullNowModal } from "@/components/PullNowModal";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonCard } from "@/components/ui/skeleton";
 import { BareHead, BareList, BareRow, Card, Chip, Em, SectionHead } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 import { LoadMoreButton } from "@/components/ui/load-more-button";
@@ -19,10 +23,13 @@ import {
 import type { Bus, PullResult, PullRound, PushState } from "@/types";
 
 export default function Buses() {
-  const { data: buses } = useBuses();
+  const { data: buses, isLoading: busesLoading } = useBuses();
   const items = buses?.items ?? [];
+  // 首屏骨架 · 只在完全没数据时铺（刷新时保留旧列表不闪）
+  const firstLoad = busesLoading && !buses;
 
-  const [modalKind, setModalKind] = useState<"single" | null>(null);
+  // 3 种入口（decisions §8.11）：single 建自己的车 · anon 搭车 · invite 输拼车码加入
+  const [modalKind, setModalKind] = useState<"single" | "anon" | "invite" | null>(null);
   const [ctaOpen, setCtaOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -41,9 +48,12 @@ export default function Buses() {
   const totalDead = items.reduce((s, b) => s + b.dead_count, 0);
   const totalSpendToday = items.reduce((s, b) => s + b.spend_today, 0);
 
+  const closeModal = () => setModalKind(null);
   return (
     <div className="space-y-section">
-      <StartCarpoolModal open={modalKind !== null} onClose={() => setModalKind(null)} />
+      <StartCarpoolModal open={modalKind === "single"} onClose={closeModal} />
+      <JoinAnonModal open={modalKind === "anon"} onClose={closeModal} />
+      <JoinByInviteModal open={modalKind === "invite"} onClose={closeModal} />
       {pullBus && (
         <PullNowModal
           open={!!pullBus}
@@ -74,15 +84,21 @@ export default function Buses() {
         <StartCarpoolCTA
           open={ctaOpen}
           onToggle={setCtaOpen}
-          onPickSingle={() => {
+          onPick={(kind) => {
             setCtaOpen(false);
-            setModalKind("single");
+            setModalKind(kind);
           }}
         />
       </div>
 
-      {/* 空态 */}
-      {items.length === 0 ? (
+      {/* 首屏加载 · 铺 3 张卡骨架（跟真实列表同形状·加载完不跳位） */}
+      {firstLoad ? (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <SkeletonCard lines={4} />
+          <SkeletonCard lines={4} />
+          <SkeletonCard lines={4} />
+        </div>
+      ) : items.length === 0 ? (
         <Card className="flex flex-col items-center gap-4 p-12 text-center">
           <span className="grid size-12 place-items-center rounded-2xl bg-brand-subtle">
             <Users className="size-6 text-brand-strong" />
@@ -162,13 +178,16 @@ export default function Buses() {
     </div>
   );
 }
-/* 立即拼车 ▾ · 3 选一 · 阶段 1a 只有 single 可点 */
+/* 立即拼车 ▾ · 3 选一（decisions §8.11 原设计 · 一字不改）
+   - 发起拼车     = single
+   - 搭车         = anon（1c 起可点）
+   - 输拼车码加入  = team join（1c 起可点） */
 function StartCarpoolCTA({
-  open, onToggle, onPickSingle,
+  open, onToggle, onPick,
 }: {
   open: boolean;
   onToggle: (v: boolean) => void;
-  onPickSingle: () => void;
+  onPick: (kind: "single" | "anon" | "invite") => void;
 }) {
   return (
     <Popover open={open} onOpenChange={onToggle}>
@@ -180,7 +199,7 @@ function StartCarpoolCTA({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-72">
-        <PopoverItem onSelect={onPickSingle} className="items-start gap-3 p-3">
+        <PopoverItem onSelect={() => onPick("single")} className="items-start gap-3 p-3">
           <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-brand-subtle">
             <Users className="size-4 text-brand-strong" />
           </span>
@@ -190,31 +209,25 @@ function StartCarpoolCTA({
           </div>
         </PopoverItem>
 
-        <div className="flex w-full items-start gap-3 rounded-xl p-3 opacity-45">
-          <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-bg-elevated">
-            <UserPlus className="size-4 text-fg-tertiary" />
+        <PopoverItem onSelect={() => onPick("anon")} className="items-start gap-3 p-3">
+          <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-brand-subtle">
+            <UserPlus className="size-4 text-brand-strong" />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 font-semibold">
-              搭车
-              <Chip tone="neutral" className="text-[10px]">阶段 2b</Chip>
-            </div>
+            <div className="font-semibold">搭车</div>
             <div className="text-label text-fg-tertiary">系统撮合他人拼车 · 共享号池摊单价</div>
           </div>
-        </div>
+        </PopoverItem>
 
-        <div className="flex w-full items-start gap-3 rounded-xl p-3 opacity-45">
-          <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-bg-elevated">
-            <Ticket className="size-4 text-fg-tertiary" />
+        <PopoverItem onSelect={() => onPick("invite")} className="items-start gap-3 p-3">
+          <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-brand-subtle">
+            <Ticket className="size-4 text-brand-strong" />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 font-semibold">
-              输邀请码加入
-              <Chip tone="neutral" className="text-[10px]">阶段 2a</Chip>
-            </div>
-            <div className="text-label text-fg-tertiary">用朋友给的邀请码加入他的车</div>
+            <div className="font-semibold">输拼车码加入</div>
+            <div className="text-label text-fg-tertiary">用朋友给的拼车码加入他的车</div>
           </div>
-        </div>
+        </PopoverItem>
       </PopoverContent>
     </Popover>
   );
@@ -254,26 +267,36 @@ function PoolingPullHistory({ buses }: { buses: string[] }) {
         title="拼车拉号记录"
         sub={`共 ${allRounds.length} 轮 · 只列拼车相关（跟概览混流分开）`}
       />
-      <div className="overflow-x-auto">
-        <div className="min-w-[820px]">
-          <BareHead>
-            <span className="w-[86px] shrink-0">时间</span>
-            <span className="w-14 shrink-0">结果</span>
-            <span className="min-w-0 flex-1">流向</span>
-            <span className="w-20 shrink-0 text-center">号状态</span>
-            <span className="w-24 shrink-0 text-center">推池</span>
-            <span className="w-24 shrink-0 text-right">花费</span>
-          </BareHead>
-          <BareList>
-            {visible.map((r) => <PullHistRow key={r.id} r={r} />)}
-          </BareList>
-        </div>
-      </div>
-      <LoadMoreButton
-        onLoadMore={() => setShown((s) => s + 10)}
-        remain={remain}
-        remainUnit="轮"
-      />
+      {allRounds.length === 0 ? (
+        <EmptyState
+          icon={KeyRound}
+          title="这些车还没拉过号"
+          desc="给车拉一轮号 · 记录会出现在这里"
+        />
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <div className="min-w-[820px]">
+              <BareHead>
+                <span className="w-[86px] shrink-0">时间</span>
+                <span className="w-14 shrink-0">结果</span>
+                <span className="min-w-0 flex-1">流向</span>
+                <span className="w-20 shrink-0 text-center">号状态</span>
+                <span className="w-24 shrink-0 text-center">推池</span>
+                <span className="w-24 shrink-0 text-right">花费</span>
+              </BareHead>
+              <BareList>
+                {visible.map((r) => <PullHistRow key={r.id} r={r} />)}
+              </BareList>
+            </div>
+          </div>
+          <LoadMoreButton
+            onLoadMore={() => setShown((s) => s + 10)}
+            remain={remain}
+            remainUnit="轮"
+          />
+        </>
+      )}
     </div>
   );
 }

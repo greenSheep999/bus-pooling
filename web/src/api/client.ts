@@ -8,6 +8,22 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * 全局 401 处理：session 过期 / 后端重启 · 自动踢到 /login。
+ * - 例外：`/api/login` 和 `/api/register` 本身返 401 是"密码错"·**不算 session 失效**·别踢
+ * - 已经在 /login 或 /register 页时不重复跳
+ * - 用 window.location 而不是 router.navigate · client.ts 在 React 树外·拿不到 router
+ */
+function redirectToLoginOnAuthLoss(path: string) {
+  // /api/login / /api/register 的 401 是登录密码错误 · 让上层 form 展示
+  if (path.includes("/login") || path.includes("/register")) return;
+  const loc = window.location;
+  if (loc.pathname === "/login" || loc.pathname === "/register") return;
+  // 记录被踢前的路径 · 登录后可选跳回
+  const target = loc.pathname + loc.search;
+  window.location.href = `/login?next=${encodeURIComponent(target)}`;
+}
+
 export async function api<T>(
   path: string,
   init?: RequestInit & { params?: Record<string, string | number | undefined> },
@@ -42,6 +58,10 @@ export async function api<T>(
       msg = body.message ?? msg;
     } catch {
       /* ignore */
+    }
+    // 401 = session 失效 · 全局踢到登录页（登录 / 注册页的 401 让上层 form 处理）
+    if (res.status === 401) {
+      redirectToLoginOnAuthLoss(url);
     }
     throw new ApiError(res.status, code, msg);
   }

@@ -10,7 +10,7 @@ const UNIT: Record<string, string> = {
   lifespan: "h",
 };
 
-export function TrendChart({
+export default function TrendChart({
   data,
   metric,
   height = 260, // 220 + ~28 图例 + ~12 峰值 label 上留白，跟没加图例前的 plot 面积一致
@@ -137,28 +137,4 @@ export function TrendChart({
   );
 }
 
-/** 图例：图表下方居中，解释图上标注的语义 */
-export function TrendLegend() {
-  return (
-    <div className="flex items-center justify-center gap-5 pt-3 text-label text-fg-tertiary">
-      <span className="flex items-center gap-1.5">
-        <span className="inline-block h-[2px] w-4 bg-brand" />
-        <span>当期用量</span>
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span
-          className="inline-block h-[2px] w-4"
-          style={{
-            background:
-              "repeating-linear-gradient(to right,#A3A3A3 0,#A3A3A3 3px,transparent 3px,transparent 6px)",
-          }}
-        />
-        <span>期间平均</span>
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span className="inline-block size-2 rounded-full bg-brand ring-2 ring-white" />
-        <span>期间峰值</span>
-      </span>
-    </div>
-  );
-}
+// TrendLegend 已拆到 ./TrendLegend.tsx · 避免使用者仅为图例也拉进 recharts

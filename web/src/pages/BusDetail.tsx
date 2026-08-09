@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  Activity as ActivityIcon, AlertTriangle, ArrowLeft, Bus as BusIcon, Check, Copy,
-  KeyRound, RefreshCw, Send, Settings, Trash2, UserCheck, UserMinus, X, Zap, ZapOff,
+  Activity as ActivityIcon, AlertTriangle, ArrowLeft, Bus as BusIcon, Check,
+  KeyRound, Link2 as LinkIcon, RefreshCw, Send, Settings, Trash2, UserCheck, UserMinus,
+  X, Zap, ZapOff,
 } from "lucide-react";
 import {
   useBus, useBusCredentials, useBusPulls, useDownstream, useMe,
@@ -11,8 +12,11 @@ import {
 import {
   BareHead, BareList, BareRow, Card, Chip, Em, SectionHead,
 } from "@/components/ui/primitives";
+import { lazy, Suspense } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -21,7 +25,8 @@ import { TokenTag, VendorTag } from "@/components/ui/tags";
 import { KpiCard } from "@/components/KpiCard";
 import { PullNowModal } from "@/components/PullNowModal";
 import { BusSettingsModal } from "@/components/BusSettingsModal";
-import { BusStats } from "@/components/BusStats";
+// 图表放 stats tab · 用户点开这个 tab 才拉 recharts
+const BusStats = lazy(() => import("@/components/BusStats"));
 import { EditStrategyPanel } from "@/components/EditStrategyPanel";
 import {
   cn, fmtCredits, fmtLifespan, fmtTime, SUSPEND_AFTER, vendorLabel,
@@ -46,6 +51,7 @@ export default function BusDetail() {
   const nav = useNavigate();
   const { data: bus } = useBus(id);
   const [tab, setTab] = useState<TabKey>("credentials");
+  const [headerCopied, setHeaderCopied] = useState(false);
   const [pullOpen, setPullOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -90,10 +96,42 @@ export default function BusDetail() {
                 {bus.status === "active" ? "活跃" : "已解散"}
               </Chip>
             </div>
-            <p className="text-fg-tertiary">
-              {bus.kind === "single" ? "1 人车" : bus.kind === "team" ? "邀请码车" : "搭车"} ·{" "}
-              创建于 {new Date(bus.created_at).toLocaleDateString("zh-CN")} · 成员{" "}
-              <Em>{bus.member_count}</Em>
+            <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-fg-tertiary">
+              <span>
+                {bus.kind === "anon"
+                  ? "搭车池"
+                  : bus.member_count > 1
+                    ? `${bus.member_count} 人拼车`
+                    : "独享"} ·{" "}
+                创建于 {new Date(bus.created_at).toLocaleDateString("zh-CN")}
+              </span>
+              {/* 头部只放一个动作：复制邀请链接。码不在这儿露（成员 tab 里的链接看得到）·
+                  它是"独享变拼车"的入口·不该埋在第 4 个 tab 里才找得到 */}
+              {bus.kind !== "anon" && bus.invite_code && (
+                <>
+                  <span>·</span>
+                  <span>拼车码</span>
+                  {/* 码当纯文本显示（可选中口述 / 手输）· 不给它单独的复制按钮 */}
+                  <code className="font-mono font-semibold tracking-wider text-fg">
+                    {bus.invite_code}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(
+                        `${window.location.origin}/join/${bus.invite_code}`,
+                      );
+                      setHeaderCopied(true);
+                      setTimeout(() => setHeaderCopied(false), 1600);
+                    }}
+                    title="复制拼车链接 · 发给朋友点开就能上车"
+                    className="inline-flex items-center gap-1 font-medium text-brand-strong underline-offset-2 hover:underline"
+                  >
+                    {headerCopied ? <Check className="size-3.5" /> : <LinkIcon className="size-3.5" />}
+                    {headerCopied ? "链接已复制" : "复制拼车链接"}
+                  </button>
+                </>
+              )}
             </p>
           </div>
 
@@ -166,7 +204,11 @@ export default function BusDetail() {
         <TabsContent value="strategy">
           <EditStrategyPanel busId={id} strategy={bus.strategy} />
         </TabsContent>
-        <TabsContent value="stats"><BusStats busId={id} /></TabsContent>
+        <TabsContent value="stats">
+          <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">加载图表…</div>}>
+            <BusStats busId={id} />
+          </Suspense>
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -179,35 +221,88 @@ function TabMembers({ bus }: { bus: Bus }) {
   const removeMember = useRemoveMember(bus.id);
   const regenCode = useRegenInviteCode(bus.id);
   const [confirmRemove, setConfirmRemove] = useState<BusMember | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(false); // 复制邀请链接
 
   const members = bus.members ?? [];
 
-  /* 1 人车没有成员管理这回事 —— 只有你，没人可挂起也没人可移除 */
-  if (members.length <= 1) {
-    return (
-      <Card className="p-7">
-        <SectionHead title="成员" sub="1 人车 · 只有你 · 号和积分都是你自己的" />
-        <div className="mt-5 flex items-center gap-3 rounded-xl bg-bg-elevated p-4">
-          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-subtle font-semibold text-brand-strong">
-            我
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="font-semibold">{me?.username ?? "我"}</div>
-            <div className="text-label text-fg-tertiary">发起人 · 独享 · 无分摊</div>
-          </div>
-          <Chip tone="brand">我发起</Chip>
-        </div>
-      </Card>
-    );
-  }
+  // 邀请链接 · 朋友点开直接进车（未登录先引导登录再自动回来加入）
+  const inviteLink = bus.invite_code
+    ? `${window.location.origin}/join/${bus.invite_code}`
+    : "";
 
-  const onCopyCode = () => {
-    if (!bus.invite_code) return;
-    navigator.clipboard.writeText(bus.invite_code);
+  const onCopyLink = () => {
+    if (!inviteLink) return;
+    navigator.clipboard.writeText(inviteLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 1600);
   };
+
+  /* 邀请卡片 · 1 人独享和多人拼车**都要显示** ——
+     邀请链接就是"从独享变拼车"的唯一入口·1 人时最需要它。
+     只有系统撮合池（anon）没码（谁进由撮合决定）。
+     只留一个动作：复制链接。码本身在链接尾巴上看得见·不再单独给复制按钮。 */
+  const inviteCard = bus.kind !== "anon" && (
+    <Card className="p-7">
+      <SectionHead title="拉人进车" sub="把链接发给朋友 · 他点开就能上车" />
+
+      {/* 码放大显示 —— 当面口述 / 让对方在「输拼车码加入」手输时用 */}
+      <div className="mt-4 flex items-baseline gap-2">
+        <span className="text-label text-fg-tertiary">拼车码</span>
+        <code className="select-all font-mono text-num font-semibold tracking-widest">
+          {bus.invite_code ?? "—"}
+        </code>
+      </div>
+
+      {/* 链接 + 唯一的复制按钮（发微信 / TG 就用这个） */}
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <input
+          readOnly
+          value={inviteLink || "—"}
+          onFocus={(e) => e.currentTarget.select()}
+          className="h-10 min-w-0 flex-1 rounded-xl border border-hairline bg-bg-elevated px-3 font-mono text-label text-fg-secondary outline-none focus:border-brand"
+        />
+        <Button className="h-10 shrink-0" onClick={onCopyLink} disabled={!inviteLink}>
+          {copied ? <Check /> : <LinkIcon />}
+          {copied ? "已复制" : "复制链接"}
+        </Button>
+      </div>
+
+      <p className="mt-3 text-label text-fg-tertiary">
+        链接泄漏了？
+        <button
+          type="button"
+          onClick={() => regenCode.mutate()}
+          disabled={regenCode.isPending}
+          className="ml-1 font-medium text-brand-strong underline-offset-2 hover:underline disabled:opacity-50"
+        >
+          换一条
+        </button>
+        {" "}· 旧码和旧链接立即失效，已进车的人不受影响
+      </p>
+    </Card>
+  );
+
+  /* 只有你时·没有成员管理这回事 —— 没人可挂起也没人可移除·但拼车码要给 */
+  if (members.length <= 1) {
+    return (
+      <div className="space-y-6">
+        <Card className="p-7">
+          <SectionHead title="成员" sub="只有你 · 独享号池 · 分享拼车码拉朋友加入" />
+          <div className="mt-5 flex items-center gap-3 rounded-xl bg-bg-elevated p-4">
+            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-subtle font-semibold text-brand-strong">
+              我
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold">{me?.username ?? "我"}</div>
+              <div className="text-label text-fg-tertiary">发起人 · 独享 · 无分摊</div>
+            </div>
+            <Chip tone="brand">我发起</Chip>
+          </div>
+        </Card>
+        {inviteCard}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -258,34 +353,7 @@ function TabMembers({ bus }: { bus: Bus }) {
         </p>
       </Card>
 
-      {/* 拉人进车 · 靠邀请码（team 车才有） */}
-      {bus.kind === "team" && (
-        <Card className="p-7">
-          <SectionHead
-            title="拉人进车"
-            sub="把邀请码给他 · 他注册/登录后填码进车 · 进车后分摊比例要全员确认才生效"
-          />
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <code className="rounded-xl border border-hairline bg-bg-elevated px-4 py-2.5 font-mono text-num font-semibold tracking-wider">
-              {bus.invite_code ?? "—"}
-            </code>
-            <Button variant="ghost" onClick={onCopyCode} disabled={!bus.invite_code}>
-              {copied ? <Check /> : <Copy />}
-              {copied ? "已复制" : "复制"}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => regenCode.mutate()}
-              disabled={regenCode.isPending}
-              title="旧码立即失效"
-            >
-              <RefreshCw />
-              换一个
-            </Button>
-          </div>
-          <p className="mt-3 text-label text-fg-tertiary">换码后旧码立即失效，已进车的人不受影响</p>
-        </Card>
-      )}
+      {inviteCard}
 
       {/* 移除确认 · 会改其他人的分摊比例，得说清楚 */}
       <RemoveMemberModal
@@ -426,9 +494,9 @@ function RemoveMemberModal({
           <p className="text-label text-fg-tertiary">他立刻取不到这辆车的号</p>
         </DialogHeader>
         <DialogBody>
-          <Alert tone="warn" icon={AlertTriangle} title="剩下的人分摊比例要重算">
-            他那 <span className="font-semibold tnum">{member?.share_pct}%</span> 要摊给其他人 ·
-            这是改所有人的钱，要等全员确认才生效
+          <Alert tone="warn" icon={AlertTriangle} title="剩下的人分摊比例会重算">
+            他那 <span className="font-semibold tnum">{member?.share_pct}%</span> 会摊给其他人 ·
+            剩下的人平均分 · 立即生效且不可逆
           </Alert>
           <p className="mt-3 text-label text-fg-tertiary">
             只是他暂时没钱的话，用「挂起」更合适 —— 挂起不动分摊比例，他充值后自己就回来了
@@ -448,7 +516,7 @@ function RemoveMemberModal({
 /* ── Tab · 号列表 ── */
 
 function TabCredentials({ busId }: { busId: string }) {
-  const { data: creds } = useBusCredentials(busId);
+  const { data: creds, isLoading } = useBusCredentials(busId);
   const items = creds ?? [];
 
   return (
@@ -466,6 +534,15 @@ function TabCredentials({ busId }: { busId: string }) {
         />
       </div>
 
+      {isLoading && !creds ? (
+        <SkeletonTable rows={5} cols={["w-14", "w-1/3", "w-16", "w-20", "w-16", "w-16"]} />
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={KeyRound}
+          title="这辆车还没有号"
+          desc="点右上「立即拉号」拉一批 · 号会直接进这辆车的池子"
+        />
+      ) : (
       <div className="overflow-x-auto">
         <div className="min-w-[680px]">
           <BareHead>
@@ -481,6 +558,7 @@ function TabCredentials({ busId }: { busId: string }) {
           </BareList>
         </div>
       </div>
+      )}
     </Card>
   );
 }
@@ -545,7 +623,7 @@ function PushCell({ state, ratio }: { state: PushState; ratio: string | null }) 
 }
 
 function TabPulls({ busId }: { busId: string }) {
-  const { data: pulls } = useBusPulls(busId);
+  const { data: pulls, isLoading } = useBusPulls(busId);
   const rounds = pulls ?? [];
 
   return (
@@ -557,6 +635,15 @@ function TabPulls({ busId }: { busId: string }) {
         />
       </div>
 
+      {isLoading && !pulls ? (
+        <SkeletonTable rows={5} cols={["w-20", "w-14", "w-1/3", "w-16", "w-20", "w-20"]} />
+      ) : rounds.length === 0 ? (
+        <EmptyState
+          icon={KeyRound}
+          title="这辆车还没拉过号"
+          desc="点右上「立即拉号」· 每一轮的结果和花费都会记在这里"
+        />
+      ) : (
       <div className="overflow-x-auto">
         <div className="min-w-[720px]">
           <BareHead>
@@ -572,6 +659,7 @@ function TabPulls({ busId }: { busId: string }) {
           </BareList>
         </div>
       </div>
+      )}
     </Card>
   );
 }
@@ -706,17 +794,11 @@ function TabPushes({ busId }: { busId: string }) {
       </div>
 
       {events.length === 0 ? (
-        <div className="grid place-items-center gap-3 py-12 text-center">
-          <span className="grid size-10 place-items-center rounded-full bg-bg-elevated">
-            <Send className="size-4 text-fg-tertiary" />
-          </span>
-          <div>
-            <div className="font-semibold">还没有推送记录</div>
-            <p className="mt-0.5 text-label text-fg-tertiary">
-              配置了「推我的号池」的号才会有推送记录 · 在 设置 · 我的号池 里配 URL
-            </p>
-          </div>
-        </div>
+        <EmptyState
+          icon={Send}
+          title="还没有推送记录"
+          desc="配置了「推我的号池」的号才会有推送记录 · 在 设置 · 我的号池 里配 URL"
+        />
       ) : (
         <div className="overflow-x-auto">
           <div className="min-w-[760px]">

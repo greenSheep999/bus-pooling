@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   Activity as ActivityIcon, Check, ChevronDown, KeyRound, Send,
   TrendingDown, Users, Wallet,
@@ -8,7 +7,17 @@ import {
   useActivities, useMe, useOverview, useStock, useTrend, useVendorStats,
 } from "@/api/hooks";
 import { KpiCard } from "@/components/KpiCard";
-import { TrendChart, TrendLegend } from "@/components/TrendChart";
+import { TrendLegend } from "@/components/TrendLegend";
+import { EmptyState } from "@/components/ui/empty-state";
+import {
+  SkeletonChart, SkeletonKpi, SkeletonRows, SkeletonTable,
+} from "@/components/ui/skeleton";
+
+// TrendChart 走 recharts · 图表出现的位置比首屏靠下 · lazy 一起放到 recharts chunk
+const TrendChart = lazy(() => import("@/components/TrendChart"));
+
+// 图表包（recharts）400+KB · 拆到自己的 chunk · Overview 里图表位置一小块 · fallback 空 div 即可
+const VendorSharePie = lazy(() => import("@/components/VendorSharePie"));
 import { ActivityRow } from "@/components/rows";
 import {
   BareHead, BareList, BareRow, Card, Chip, Em, Label, Meter, Muted, SectionHead, Segmented, Stat,
@@ -188,7 +197,13 @@ function ScopeOption({
    不做右上角"全部→"入口（没落地页），只用底部按钮控制显示条数 */
 const ACT_STEP = 8;
 
-function ActivityFeed({ items, total }: { items: Activity[]; total: number }) {
+function ActivityFeed({
+  items, total, loading,
+}: {
+  items: Activity[];
+  total: number;
+  loading?: boolean;
+}) {
   const [shown, setShown] = useState(ACT_STEP);
   const visible = items.slice(0, shown);
   const remain = Math.max(0, items.length - shown);
@@ -199,20 +214,32 @@ function ActivityFeed({ items, total }: { items: Activity[]; total: number }) {
         title="活动记录"
         sub={`共 ${total} 条 · 拉号 / 补车 / 号失效 / 资金`}
       />
-      {/* 列表容器：窄屏横滚 · 行按内容自然宽度不压缩，badge 不变形 */}
-      <div className="overflow-x-auto">
-        <div className="min-w-[640px]">
-          <BareList>
-            {visible.map((a) => (
-              <ActivityRow key={a.id} a={a} />
-            ))}
-          </BareList>
-        </div>
-      </div>
-      <LoadMoreButton
-        onLoadMore={() => setShown((s) => s + ACT_STEP)}
-        remain={remain}
-      />
+      {loading && items.length === 0 ? (
+        <SkeletonRows rows={4} />
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={ActivityIcon}
+          title="这段时间没有活动"
+          desc="拉号、补车、号失效、充值都会记在这里 · 换个时间范围看看"
+        />
+      ) : (
+        <>
+          {/* 列表容器：窄屏横滚 · 行按内容自然宽度不压缩，badge 不变形 */}
+          <div className="overflow-x-auto">
+            <div className="min-w-[640px]">
+              <BareList>
+                {visible.map((a) => (
+                  <ActivityRow key={a.id} a={a} />
+                ))}
+              </BareList>
+            </div>
+          </div>
+          <LoadMoreButton
+            onLoadMore={() => setShown((s) => s + ACT_STEP)}
+            remain={remain}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -234,13 +261,16 @@ export default function Overview() {
   const [scope, setScope] = useState<Scope>({ kind: "all" });
   const now = useNowSecond();
 
-  const { data: ov } = useOverview(range);
-  const { data: trend } = useTrend(range, metric, {
+  const { data: ov, isLoading: ovLoading } = useOverview(range);
+  const { data: trend, isLoading: trendLoading } = useTrend(range, metric, {
     busId: scope.kind === "bus" ? scope.id : undefined,
     vendor: scope.kind === "vendor" ? scope.id : undefined,
   });
-  const { data: vendors } = useVendorStats();
-  const { data: acts } = useActivities(range);
+  const { data: vendors, isLoading: vendorsLoading } = useVendorStats();
+  const { data: acts, isLoading: actsLoading } = useActivities(range);
+
+  // 首屏骨架：**只在没有任何数据时**铺（换 range 时保留旧数据 · 不闪成灰块）
+  const kpiSkeleton = ovLoading && !ov;
 
   const kpi = ov?.kpi;
   const totalBusCreds = (ov?.buses.items ?? []).reduce((s, b) => s + b.alive, 0);
@@ -273,6 +303,14 @@ export default function Overview() {
       </div>
 
       {/* ── 4 KPI ── */}
+      {kpiSkeleton ? (
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <SkeletonKpi />
+          <SkeletonKpi />
+          <SkeletonKpi />
+          <SkeletonKpi />
+        </div>
+      ) : (
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           focal
@@ -344,6 +382,7 @@ export default function Overview() {
           }
         />
       </div>
+      )}
 
       {/* ── 3 业务线 ── */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -529,7 +568,13 @@ export default function Overview() {
           }
         />
         <div className="mt-5">
-          <TrendChart data={trend ?? []} metric={metric} />
+          {trendLoading && !trend ? (
+            <SkeletonChart height={260} bars={12} />
+          ) : (
+            <Suspense fallback={<SkeletonChart height={260} bars={12} />}>
+              <TrendChart data={trend ?? []} metric={metric} />
+            </Suspense>
+          )}
           <TrendLegend />
         </div>
       </Card>
@@ -561,6 +606,12 @@ export default function Overview() {
               <span className="w-14 shrink-0 text-right">补拉</span>
             </BareHead>
             <BareList>
+              {vendorsLoading && !vendors && (
+                <SkeletonTable
+                  rows={6}
+                  cols={["w-5", "w-24", "w-14", "w-14", "w-24", "w-20", "w-12", "w-12"]}
+                />
+              )}
               {(vendors?.stats ?? []).map((v) => (
                 <BareRow key={v.vendor_id}>
                   <span
@@ -694,24 +745,9 @@ export default function Overview() {
         <Card className="flex flex-col p-7">
           <SectionHead title="Vendor 占比" sub="按 vendor 分布" />
           <div className="relative mt-4 h-[180px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                {/* 饼图只画有数据的（pulls>0）· 图例列表下面全列 */}
-                <Pie
-                  data={(vendors?.share ?? []).filter((s) => s.pulls > 0)}
-                  dataKey="pulls"
-                  nameKey="vendor_id"
-                  innerRadius={58}
-                  outerRadius={84}
-                  paddingAngle={2}
-                  strokeWidth={0}
-                >
-                  {(vendors?.share ?? []).filter((s) => s.pulls > 0).map((s) => (
-                    <Cell key={s.vendor_id} fill={vendorColor(s.vendor_id)} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
+            <Suspense fallback={<div className="h-full" />}>
+              <VendorSharePie data={vendors?.share ?? []} />
+            </Suspense>
             <div className="pointer-events-none absolute inset-0 grid place-items-center">
               <div className="text-center">
                 <div className="text-num font-semibold tnum">
@@ -762,7 +798,7 @@ export default function Overview() {
       </div>
 
       {/* ── 活动记录（裸列表 · 分页加载） ── */}
-      <ActivityFeed items={acts?.items ?? []} total={acts?.total ?? 0} />
+      <ActivityFeed items={acts?.items ?? []} total={acts?.total ?? 0} loading={actsLoading} />
     </div>
   );
 }

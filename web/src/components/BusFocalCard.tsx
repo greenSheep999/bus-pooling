@@ -25,12 +25,13 @@ export function BusFocalCard({
 }) {
   const { data: creds } = useBusCredentials(bus.id);
 
+  // 一辆车就是一辆车（CLAUDE.md §2）· label 按当前人数
   const kindLabel =
-    bus.kind === "single"
-      ? "独享 · 个人"
-      : bus.kind === "team"
+    bus.kind === "anon"
+      ? `搭车 · ${bus.member_count} 车友`
+      : bus.member_count > 1
         ? `拼车 · ${bus.member_count} 车友`
-        : `搭车 · ${bus.member_count} 车友`;
+        : "独享";
 
   const created = new Date(bus.created_at);
   const daysAgo = Math.max(1, Math.floor((Date.now() - created.getTime()) / 86_400_000));
@@ -66,7 +67,7 @@ export function BusFocalCard({
           {role === "owner" && <OwnerBadge />}
         </div>
         <p className="mt-0.5 text-label text-fg-tertiary">
-          {bus.kind === "single" ? (
+          {bus.member_count <= 1 ? (
             <>独享号池 · 你一个人的车</>
           ) : (
             <>
@@ -113,10 +114,13 @@ export function BusFocalCard({
               <ArrowUpRight />
             </Link>
           </Button>
-          {bus.kind !== "single" && (
-            <Button variant="ghost" disabled>
-              <UserPlus />
-              邀请车友
+          {/* 用户建的车都能邀人（系统撮合池不行·它靠撮合不靠码） */}
+          {bus.kind !== "anon" && (
+            <Button variant="ghost" asChild>
+              <Link to={`/buses/${bus.id}`}>
+                <UserPlus />
+                邀请车友
+              </Link>
             </Button>
           )}
         </div>
@@ -165,10 +169,10 @@ function FocalStat({
   );
 }
 
-/* 车友头像组 · 阶段 1a single 只 1 个 · 多人车堆叠显示 */
+/* 车友头像组 · 按 member_count 堆叠·1 人只显示 1 个 */
 function MembersStack({ bus }: { bus: Bus }) {
   const seeds =
-    bus.kind === "single"
+    bus.member_count <= 1
       ? [bus.name]
       : [bus.name, bus.name + "b", bus.name + "c"].slice(0, bus.member_count);
   return (

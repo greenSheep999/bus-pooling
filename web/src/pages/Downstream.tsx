@@ -16,7 +16,7 @@ import { cn, fmtTime } from "@/lib/utils";
 import type { DownstreamConfig } from "@/types";
 
 /** 4 条推送规则 · 跟 DownstreamConfig.rules 一一对应
- *  这是技术页（spec §10），允许出现 kiro.rs 这类术语 —— 类比对接文档 */
+ *  技术页（spec §10）· 但对外文案一律用「你自己的号池」· 不出上游软件名（CLAUDE.md §12.6） */
 const RULES: {
   key: keyof DownstreamConfig["rules"];
   title: string;
@@ -79,7 +79,7 @@ export default function Downstream() {
       <SettingsHead
         crumb="我的号池"
         title="我的号池"
-        desc="把号同步到你自己的 kiro.rs · 我方仍保留副本监控存活，号死了这边也帮你清"
+        desc="把号同步到你自己的号池 · 我方仍保留副本监控存活，号死了这边也帮你清"
         right={
           cfg?.connected
             ? <Chip tone="ok" dot>已连通</Chip>
@@ -119,7 +119,7 @@ export default function Downstream() {
       <Card focal focalTone="brand" className="p-7">
         <SectionHead
           title="号池端点"
-          sub="你自己那台 kiro.rs 的地址和管理密钥 · 我方用它做 BatchImport"
+          sub="你自己那台号池的地址和管理密钥 · 我方用它把号写进去"
         />
 
         <div className="mt-4 space-y-4">

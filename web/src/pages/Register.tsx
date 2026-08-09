@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, Loader2, Ticket, UserPlus } from "lucide-react";
 import { z } from "zod";
 import { useRegister } from "@/api/hooks";
@@ -30,11 +30,19 @@ const schema = z
 type FieldKey = "email" | "username" | "password" | "confirm";
 
 export default function Register() {
-  const nav = useNavigate();
+  // 注册成功后用 window.location 强刷·让 useQuery 拿新 session 重取
+  // ?next= 支持邀请链接场景（/join/:code → 注册 → 回来继续加入）· 只收同源相对路径
+  const [searchParams] = useSearchParams();
+  const nextRaw = searchParams.get("next") ?? "";
+  const nextPath =
+    nextRaw.startsWith("/") && !nextRaw.startsWith("//") ? nextRaw : "/";
+  // ?invite= 预填邀请码（/invite 页复制的链接带的）· 大写归一
+  // **不读这个的话邀请链接等于废的** —— 用户点开看到空输入框·不手动填就没有邀请关系
+  const prefillInvite = (searchParams.get("invite") ?? "").trim().toUpperCase();
   const register = useRegister();
 
   const [form, setForm] = useState({
-    email: "", username: "", password: "", confirm: "", invite: "",
+    email: "", username: "", password: "", confirm: "", invite: prefillInvite,
   });
   /* 只在失焦或提交后才报错 —— 边打字边红是最烦人的表单反馈 */
   const [touched, setTouched] = useState<Partial<Record<FieldKey, boolean>>>({});
@@ -59,7 +67,8 @@ export default function Register() {
         password: form.password,
         ...(form.invite.trim() ? { invite_code: form.invite.trim() } : {}),
       });
-      nav("/");
+      // 强刷跳目标页 · 让所有 useQuery 用新 session 重取
+      window.location.href = nextPath;
     } catch {
       /* 错误渲染在下面 */
     }
@@ -122,7 +131,10 @@ export default function Register() {
 
         {/* 邀请码 · 注册时填，永久绑账号（decisions §8.20）
             这里叫「邀请码」· 支付和提号那个叫「优惠码」，两个词不许混用 */}
-        <Field label="邀请码" hint="选填 · 社群成员才有">
+        <Field
+          label="邀请码"
+          hint={prefillInvite ? "已从邀请链接带入" : "选填 · 专属邀请码或好友邀请码都填这里"}
+        >
           <Input
             value={form.invite}
             onChange={set("invite")}
@@ -132,8 +144,13 @@ export default function Register() {
         </Field>
 
         {form.invite.trim() && (
+          /* 文案要对两种码都成立（decisions §8.29 §8.38）· 后端查白名单自动识别 */
           <Alert tone="brand" icon={Ticket}>
-            填了邀请码 · 注册后免加价，并且能看到上游的真实名字
+            {prefillInvite && form.invite.trim() === prefillInvite
+              ? "邀请码已带入 · 注册后自动生效"
+              : "填了邀请码 · 注册后自动生效"}
+            {" · "}
+            专属邀请码让你拼车更便宜 · 好友邀请码让邀请你的人得手续费减免
           </Alert>
         )}
 

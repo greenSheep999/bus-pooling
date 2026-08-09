@@ -4,13 +4,15 @@ import {
   ShieldCheck, Ticket, TrendingDown, TrendingUp, Wallet as WalletIcon,
 } from "lucide-react";
 import {
-  useCreateTopup, useLedger, useRedeem, useWallet,
+  useCreateTopup, useLedger, useMyInvite, useRedeem, useWallet,
 } from "@/api/hooks";
 import {
   BareHead, BareList, BareRow, Card, Chip, Em, SectionHead, Segmented,
 } from "@/components/ui/primitives";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -24,7 +26,7 @@ const PRESETS = [50, 100, 200, 500];
 
 export default function WalletPage() {
   const { data: wallet } = useWallet();
-  const { data: ledger } = useLedger();
+  const { data: ledger, isLoading: ledgerLoading } = useLedger();
   const entries = ledger?.items ?? [];
 
   /* 累计充值 / 累计消费 · 从流水派生（后端将来会直接给，先从已有数据算）
@@ -93,7 +95,7 @@ export default function WalletPage() {
             </div>
           </Card>
 
-          <LedgerCard entries={entries} />
+          <LedgerCard entries={entries} loading={ledgerLoading && !ledger} />
         </div>
 
         {/* 右：充值 + 兑换码 */}
@@ -143,7 +145,11 @@ function TopupCard() {
   const [order, setOrder] = useState<TopupOrder | null>(null);
 
   const credits = Math.max(0, Math.round(Number(wantCredits) || 0)) * MICRO;
-  const fee = Math.round(credits * 0.05);
+  // 有个人邀请码额度时这单免手续费（decisions §8.29）· 真正的扣减在后端起单时做，
+  // 这里只是**预览** —— 并发下可能被别的单抢走额度，最终以后端返的 fee_waived 为准
+  const { data: myInvite } = useMyInvite();
+  const willWaive = (myInvite?.waiver_remaining ?? 0) > 0;
+  const fee = willWaive ? 0 : Math.round(credits * 0.05);
   const paid = credits + fee; // 乘客实付（CNY 口径，1 积分 ≡ 1 元）
   const valid = credits > 0;
 
@@ -189,10 +195,24 @@ function TopupCard() {
               拉号 / 提取 / 派号都是积分抵扣，跟通道费无关，那些地方不显示 */}
           <div className="space-y-2 rounded-xl border border-hairline bg-bg-elevated/50 p-3.5">
             <Row label="想到账" value={<><Em tone="ok">{toCredits(credits)}</Em> 积分</>} />
-            <Row
-              label={<>waffo 通道费 <span className="text-fg-tertiary">5%</span></>}
-              value={<Em tone="spend">+{toCredits(fee)}</Em>}
-            />
+            {willWaive ? (
+              <Row
+                label={<>手续费 <span className="text-fg-tertiary">5%</span></>}
+                value={
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-fg-tertiary line-through">
+                      +{toCredits(Math.round(credits * 0.05))}
+                    </span>
+                    <Em tone="ok">免</Em>
+                  </span>
+                }
+              />
+            ) : (
+              <Row
+                label={<>手续费 <span className="text-fg-tertiary">5%</span></>}
+                value={<Em tone="spend">+{toCredits(fee)}</Em>}
+              />
+            )}
             <div className="border-t border-hairline pt-2">
               <Row
                 label="你需支付"
@@ -203,7 +223,15 @@ function TopupCard() {
           </div>
 
           <p className="text-label text-fg-tertiary">
-            通道费由支付通道 waffo 收取，我方不加价也不承担 · 之后拉号、提取都是积分抵扣，不再收通道费
+            {willWaive ? (
+              <>
+                这次免手续费（邀请好友攒的额度 · 还剩{" "}
+                <Em plain>{myInvite?.waiver_remaining ?? 0}</Em> 次）·
+                之后拉号、提取都是积分抵扣
+              </>
+            ) : (
+              <>手续费由支付通道收取，我方不加收也不承担 · 之后拉号、提取都是积分抵扣，不再收手续费</>
+            )}
           </p>
 
           <Button
@@ -234,13 +262,13 @@ function Row({
   );
 }
 
-/** 充值单 · 扫码付到 waffo */
+/** 充值单 · 扫码或跳转到支付通道 */
 function TopupOrderModal({
   order, onClose,
 }: { order: TopupOrder | null; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
 
-  /* 有 checkout_url：跳 gateway 收款页（waffo）· 有 qr_content：渲染二维码
+  /* 有 checkout_url：跳支付通道收款页 · 有 qr_content：渲染二维码
      两个都空是老 mock 单·退回旧提示 */
   const checkoutURL = order?.checkout_url ?? "";
   const qrContent = order?.qr_content ?? "";
@@ -256,7 +284,7 @@ function TopupOrderModal({
           </p>
         </DialogHeader>
         <DialogBody>
-          {/* 有 QR 显示 QR，有 checkout URL 显示"打开支付页"·waffo 一般是跳转不是扫码 */}
+          {/* 有 QR 显示 QR，有 checkout URL 显示"打开支付页"·托管通道一般是跳转不是扫码 */}
           {qrContent ? (
             <div className="grid place-items-center rounded-xl border border-hairline bg-bg-elevated p-6">
               <img
@@ -376,6 +404,8 @@ const LEDGER_LABEL: Record<LedgerType, string> = {
   redeem: "兑换",
   refund: "退款",
   warranty_refund: "质保退款",
+  // 正负都用这一个词 —— 金额符号已经说明方向（收 / 付）
+  share: "车友分摊",
 };
 
 type FilterKey = "all" | "in" | "out";
@@ -386,7 +416,12 @@ const FILTERS: { value: FilterKey; label: string }[] = [
   { value: "out", label: "出账" },
 ];
 
-function LedgerCard({ entries }: { entries: LedgerEntry[] }) {
+function LedgerCard({
+  entries, loading,
+}: {
+  entries: LedgerEntry[];
+  loading?: boolean;
+}) {
   const [filter, setFilter] = useState<FilterKey>("all");
 
   /* 筛选按"钱进来还是出去"分，不按内部 type 枚举 —— 用户只关心这个 */
@@ -402,10 +437,23 @@ function LedgerCard({ entries }: { entries: LedgerEntry[] }) {
         right={<Segmented options={FILTERS} value={filter} onChange={setFilter} />}
       />
 
-      {shown.length === 0 ? (
-        <div className="py-12 text-center text-label text-fg-tertiary">
-          {entries.length === 0 ? "还没有流水" : "这个筛选下没有记录"}
-        </div>
+      {loading ? (
+        <SkeletonTable rows={6} cols={["w-20", "w-16", "w-1/3", "w-20", "w-20"]} />
+      ) : shown.length === 0 ? (
+        entries.length === 0 ? (
+          <EmptyState
+            icon={WalletIcon}
+            title="还没有流水"
+            desc="充值、拉号扣款、退款都会记在这里"
+          />
+        ) : (
+          /* 有数据但筛选后为空 —— 引导改筛选·不要引导他去充值 */
+          <EmptyState
+            icon={WalletIcon}
+            title="这个筛选下没有记录"
+            desc="换个筛选条件看看"
+          />
+        )
       ) : (
         <div className="mt-4 overflow-x-auto">
           <div className="min-w-[560px]">

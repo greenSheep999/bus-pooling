@@ -15,15 +15,21 @@ export interface Paged<T> {
 }
 
 // ── 乘客 / 钱包
+/** 用户档次 · decisions §8.39 · 每档"多减一层"
+ *   retail    = 零售 · 无系统邀请码 · Vendor 0N + 全套加价
+ *   wholesale = 批发 · 社群码（TG/Discord）· vendor 真名 + 免区域附加费
+ *   insider   = 同行 · 同行码（同行群邀请制）· vendor 真名 + 免 vendor + 区域附加费 */
+export type PassengerTier = "retail" | "wholesale" | "insider";
+
 export interface Passenger {
   id: string;
   username: string;
   email: string;
   email_verified: boolean;
   created_at: ISOTime;
-  /** 注册时填过邀请码 · decisions §8.20
-   *  true  = 社群：看 vendor 真名 + 无加价
-   *  false = 散客：看 Vendor 01/02 + 默认加价（拉号时填消费码可免） */
+  /** 用户档次（decisions §8.39）· 决定加价链和 vendor 显示名 */
+  tier: PassengerTier;
+  /** 兼容字段（下版删）· 等同 tier != "retail" · 新代码一律用 tier */
   invited: boolean;
 }
 
@@ -38,7 +44,9 @@ export type LedgerType =
   | "spend"
   | "redeem"
   | "refund"
-  | "warranty_refund";
+  | "warranty_refund"
+  /** 车友份额清算（decisions §8.23）· 正=车友分摊回款给我 · 负=我买入份额 */
+  | "share";
 
 export interface LedgerEntry {
   id: string;
@@ -100,6 +108,31 @@ export interface BusMember {
   /** 连续因余额不足被跳过的次数 · 到 SUSPEND_AFTER 自动挂起 · 充值后归零 */
   skipped_count: number;
   last_skipped_at: ISOTime | null;
+}
+
+/** 成员维度统计（decisions §8.19）· GET /me/buses/{id}/member-stats
+ *  后端按 pull_round 的实际号数分配算好占比·前端只画图不算钱 */
+export interface BusMemberStat {
+  passenger_id: string;
+  username: string;
+  role: "owner" | "member";
+  share_pct: number;
+  status: BusMemberStatus;
+  /** 这个成员在这辆车累计分到多少号 */
+  keys_taken: number;
+  /** 参与过几轮拉号 */
+  rounds_joined: number;
+  /** 摊到的积分消费（microunit · 正数 = 花掉多少） */
+  spend_total: Money;
+  /** 推自己号池成功 / 失败数 · 1e 双写落地后才非 0 */
+  pushed_ok: number;
+  push_failed: number;
+}
+
+export interface BusMemberStats {
+  members: BusMemberStat[];
+  total_keys: number;
+  total_spend: Money;
 }
 
 // ── 号（credential）· UI 只有 活 / 已失效
@@ -189,7 +222,7 @@ export interface AutoPickResult {
   vendor_id: string;
   zone: Zone | null;
   available: number;
-  /** 最终单价（已含所有附加费）· 不下发原价 */
+  /** 最终单价（已含所有分项）· 不下发原价 */
   unit_price: Money;
   warranty_minutes: number;
   max_per_order: number;
@@ -232,7 +265,7 @@ export interface VendorRound {
   /** 发车时刻 · ISO */
   time: ISOTime;
   zone: Zone | null;         // null = 该 vendor 不分区
-  /** 这轮的单价 · 已含附加费 */
+  /** 这轮的单价 · 已含所有分项 */
   unit_price: Money;
   /** 这轮产出多少个号（产量越大单价越低 —— 阶梯表） */
   keys_count: number;
@@ -492,10 +525,12 @@ export interface ApiKeyCreated {
    通道费只在充值时收（decisions §8.21）· 之后所有积分抵扣都不再涉及
    接 404bus-payment-gateway 后：后端把 gateway.instructions.checkout_url 透传出来 */
 export interface TopupOrder {
+  /** 这单用掉了一次手续费减免（个人邀请码额度）· 缺省 = 没用 */
+  fee_waived?: boolean;
   order_id: string;
-  /** 支付跳转 URL · gateway 侧 waffo checkout / epusdt cashier / 等 */
+  /** 支付跳转 URL · 支付通道侧的收款页（托管 checkout / 链上 cashier / 等） */
   checkout_url: string;
-  /** 有 QR 的 rail 才给（epusdt 之类）· waffo 一般空 */
+  /** 有 QR 的 rail 才给（链上通道之类）· 托管跳转通道一般空 */
   qr_content?: string;
   paid: Money;
   credits: Money;

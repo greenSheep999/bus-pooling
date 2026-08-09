@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, Loader2, Lock } from "lucide-react";
 import { useLogin } from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/primitives";
 import { Checkbox } from "@/components/ui/checkbox";
 
 export default function Login() {
-  const nav = useNavigate();
+  const [searchParams] = useSearchParams();
   const login = useLogin();
 
   const [account, setAccount] = useState("");
@@ -19,12 +19,19 @@ export default function Login() {
 
   const valid = account.trim() !== "" && password !== "";
 
+  // 被踢时 client.ts 会带 ?next=/somewhere · 登录成功后跳回原路径
+  // 校验：只跳同源相对路径·防 open redirect
+  const nextRaw = searchParams.get("next") ?? "";
+  const nextPath =
+    nextRaw.startsWith("/") && !nextRaw.startsWith("//") ? nextRaw : "/";
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid || login.isPending) return;
     try {
       await login.mutateAsync({ account: account.trim(), password, remember });
-      nav("/");
+      // 用 window.location 强刷·让所有 useQuery 拿新 session 重取（比 invalidate 更彻底）
+      window.location.href = nextPath;
     } catch {
       /* 错误渲染在下面 · 不跳转 */
     }

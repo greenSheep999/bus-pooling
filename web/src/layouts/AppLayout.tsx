@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
-  ArrowRight, BookOpen, Bell, Check, ChevronDown, ChevronRight, Globe,
+  ArrowRight, BookOpen, Bell, Check, ChevronDown, ChevronRight, Gift, Globe,
   KeyRound, LayoutDashboard, LogOut, Moon, Send, Settings,
   User, Users, Wallet,
 } from "lucide-react";
-import { useMe, useStock, useWallet } from "@/api/hooks";
+import { useMe, usePromos, useStock, useWallet } from "@/api/hooks";
 import { Muted } from "@/components/ui/primitives";
+import { SplitFlapCountdown } from "@/components/ui/split-flap";
 import { avatarColor, avatarLetter, cn, fmtCredits } from "@/lib/utils";
 import LogoMark from "@/assets/logo/mark.svg";
 
@@ -90,7 +91,10 @@ function AvatarMenu() {
      并列会让人以为它们跟设置是平级的另外三件事 */
   const items: MenuItem[] = [
     { icon: User, label: me?.username ?? "-", sub: me?.email, to: "/me" },
-    { icon: Settings, label: "设置", to: "/settings", hint: "号池 · 通知 · API key" },
+    // 社群 · 绑专属邀请码的入口（decisions §8.38 §8.39）
+    { icon: Users, label: "社群", to: "/community" },
+    { icon: Gift, label: "邀请好友", to: "/invite" },
+    { icon: Settings, label: "设置", to: "/settings" },
     { sep: true },
     {
       icon: Globe,
@@ -272,30 +276,64 @@ function MobileNav() {
   );
 }
 
-/** 顶部 promo 跑马灯 · 品牌紫底 + 白字居中 + 后箭头
-    条目多时窄屏可以横滚 · 一个条目也 OK */
-const PROMOS = [
-  { text: "阶段 1a · 拼车公测中 · 邀请你的车友一起摊单价 · 立即建车", to: "/buses" },
-  { text: "waffo 支付宝 / 微信充值 · 5% 通道费 pass-through · 无隐藏收费", to: "/wallet" },
-  { text: "开源公益项目 · 无 KYC · 号池全监控 · 号死 30 分钟内自动质保", to: "/docs" },
-];
-
+/** 顶部 promo 跑马灯 · 品牌紫底 + 白字居中
+ *
+ * 文案 / 跳转 / 倒计时全部来自后端 `GET /api/promos`（config.promo.items）——
+ * 运营改文案不用重新部署前端。过期条目服务端就不下发（客户端时钟不可信）。
+ *
+ * 三种形态：
+ *   - 有 `to` → 整条可点 + 后箭头
+ *   - 无 `to` → 纯公告不可点（不给箭头·免得用户以为能点）
+ *   - 有 `countdown_until` → 文案后面跟翻牌倒计时
+ */
 function PromoBar() {
+  const { data } = usePromos();
+  const items = data?.items ?? [];
   const [i, setI] = useState(0);
+
+  // 条目数变了（后端下线一条）时把游标夹回范围内·否则会闪空白
   useEffect(() => {
-    const id = setInterval(() => setI((v) => (v + 1) % PROMOS.length), 6000);
+    if (items.length > 0 && i >= items.length) setI(0);
+  }, [items.length, i]);
+
+  useEffect(() => {
+    if (items.length <= 1) return;
+    const id = setInterval(() => setI((v) => (v + 1) % items.length), 6000);
     return () => clearInterval(id);
-  }, []);
-  const p = PROMOS[i];
+  }, [items.length]);
+
+  if (items.length === 0) return null;
+  const p = items[Math.min(i, items.length - 1)];
+
+  const body = (
+    <>
+      <span className="truncate text-center">{p.text}</span>
+      {p.countdown_until && (
+        <SplitFlapCountdown
+          until={p.countdown_until}
+          serverNow={data?.server_now}
+          className="shrink-0"
+        />
+      )}
+      {p.to && <ArrowRight className="size-3.5 shrink-0" />}
+    </>
+  );
+
   return (
     <div className="bg-brand text-white">
-      <Link
-        to={p.to}
-        className="page-container flex items-center justify-center gap-2 py-1.5 text-label font-medium hover:opacity-90"
-      >
-        <span className="truncate text-center">{p.text}</span>
-        <ArrowRight className="size-3.5 shrink-0" />
-      </Link>
+      {p.to ? (
+        <Link
+          to={p.to}
+          className="page-container flex items-center justify-center gap-2 py-1.5 text-label font-medium hover:opacity-90"
+        >
+          {body}
+        </Link>
+      ) : (
+        /* 无跳转 · 纯公告（不给 hover 也不给箭头 · 别让用户以为能点） */
+        <div className="page-container flex items-center justify-center gap-2 py-1.5 text-label font-medium">
+          {body}
+        </div>
+      )}
     </div>
   );
 }

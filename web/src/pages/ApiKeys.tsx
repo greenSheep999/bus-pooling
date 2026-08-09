@@ -4,6 +4,8 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useApiKeys, useCreateApiKey, useRevokeApiKey } from "@/api/hooks";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import { SettingsHead } from "@/components/SettingsHead";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -20,7 +22,7 @@ import { cn, fmtTime } from "@/lib/utils";
 import type { ApiKey } from "@/types";
 
 export default function ApiKeys() {
-  const { data: keys } = useApiKeys();
+  const { data: keys, isLoading } = useApiKeys();
   const items = keys ?? [];
   const [createOpen, setCreateOpen] = useState(false);
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
@@ -56,17 +58,20 @@ export default function ApiKeys() {
           }
         />
 
-        {items.length === 0 ? (
-          <div className="grid place-items-center gap-3 py-12 text-center">
-            <span className="grid size-10 place-items-center rounded-full bg-bg-elevated">
-              <KeyRound className="size-4 text-fg-tertiary" />
-            </span>
-            <p className="text-label text-fg-tertiary">建一个 key 就能开始调 API</p>
-            <Button variant="brand" size="sm" onClick={() => setCreateOpen(true)}>
-              <Plus />
-              新建 key
-            </Button>
-          </div>
+        {isLoading && !keys ? (
+          <SkeletonTable rows={3} cols={["w-1/3", "w-32", "w-20", "w-16"]} />
+        ) : items.length === 0 ? (
+          <EmptyState
+            icon={KeyRound}
+            title="还没有 key"
+            desc="建一个 key 就能开始调 API"
+            action={
+              <Button variant="brand" size="sm" onClick={() => setCreateOpen(true)}>
+                <Plus />
+                新建 key
+              </Button>
+            }
+          />
         ) : (
           <div className="mt-4 overflow-x-auto">
             <div className="min-w-[680px]">

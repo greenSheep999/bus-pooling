@@ -31,6 +31,8 @@ import { TokenTag, VendorTag } from "@/components/ui/tags";
 import {
   cn, fmtCredits, fmtLifespan, fmtTime, vendorLabel,
 } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import type { AssignEvent, Credential, ExtractEvent, PullResult } from "@/types";
 
 type TabKey = "pending" | "extract-history" | "assign-history";
@@ -223,15 +225,11 @@ function PendingTab({
       </div>
 
       {items.length === 0 ? (
-        <div className="grid place-items-center gap-3 py-12 text-center">
-          <span className="grid size-10 place-items-center rounded-full bg-bg-elevated">
-            <KeyRound className="size-4 text-fg-tertiary" />
-          </span>
-          <div>
-            <div className="font-semibold">还没有待派 key</div>
-            <p className="mt-0.5 text-label text-fg-tertiary">点右上「提取 key」拉一批</p>
-          </div>
-        </div>
+        <EmptyState
+          icon={KeyRound}
+          title="还没有待派 key"
+          desc="点右上「提取 key」拉一批 · 拉到的号在这里选去向"
+        />
       ) : (
         <div className="overflow-x-auto">
           <div className="min-w-[720px]">
@@ -341,7 +339,7 @@ const EXTRACT_RESULT: Record<PullResult, { label: string; tone: "ok" | "warn" | 
 };
 
 function ExtractHistoryTab() {
-  const { data } = useExtractEvents();
+  const { data, isLoading } = useExtractEvents();
   const events = data?.items ?? [];
 
   return (
@@ -353,8 +351,14 @@ function ExtractHistoryTab() {
         />
       </div>
 
-      {events.length === 0 ? (
-        <div className="py-12 text-center text-label text-fg-tertiary">还没有提取历史</div>
+      {isLoading && !data ? (
+        <SkeletonTable rows={5} cols={["w-20", "w-14", "w-1/4", "w-16", "w-20", "w-20"]} />
+      ) : events.length === 0 ? (
+        <EmptyState
+          icon={KeyRound}
+          title="还没有提取历史"
+          desc="点右上「提取 key」拉一批 · 每次操作都会记在这里"
+        />
       ) : (
         <div className="overflow-x-auto">
           <div className="min-w-[760px]">
@@ -450,7 +454,7 @@ const DEST_META: Record<
 };
 
 function AssignHistoryTab() {
-  const { data } = useAssignEvents();
+  const { data, isLoading } = useAssignEvents();
   const events = data?.items ?? [];
 
   return (
@@ -462,8 +466,14 @@ function AssignHistoryTab() {
         />
       </div>
 
-      {events.length === 0 ? (
-        <div className="py-12 text-center text-label text-fg-tertiary">还没有派发历史</div>
+      {isLoading && !data ? (
+        <SkeletonTable rows={5} cols={["w-20", "w-14", "w-1/4", "w-16", "w-20", "w-20"]} />
+      ) : events.length === 0 ? (
+        <EmptyState
+          icon={Send}
+          title="还没有派发历史"
+          desc="把待派的 key 派进车 / 推自己号池 / 拿走 · 记录会出现在这里"
+        />
       ) : (
         <div className="overflow-x-auto">
           <div className="min-w-[760px]">

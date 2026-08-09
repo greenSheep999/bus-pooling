@@ -7,7 +7,7 @@ const ok = async (data: any, ms = 120) => {
   return HttpResponse.json(data);
 };
 
-/** 是否免加价 · decisions §8.20
+/** 是否享优惠价 · decisions §8.20
     有注册邀请码 → 永久免 · 或本次请求带了优惠码 → 单次免 */
 const isWaived = (request: Request): boolean => {
   if (fx.passenger.invited) return true;
@@ -155,7 +155,7 @@ export const handlers = [
   http.post("/api/me/pull", () => ok({ round_id: "rd_new", status: "initiated" }, 800)),
 
   // ── 上游即时快照 + 我方历史（PullExtractModal）· docs/14 §4.3
-  //    单价按身份返回**最终价**（含附加费）· 绝不下发原价 · decisions §8.20
+  //    单价按身份返回**最终价**（已含所有分项）· 绝不下发原价 · decisions §8.20
   http.get("/api/vendors/:vendor_id/stock", ({ params, request }) => {
     const s = fx.vendorStocks[params.vendor_id as string];
     if (!s) return HttpResponse.json({ error: "not_found" }, { status: 404 });
@@ -179,7 +179,7 @@ export const handlers = [
     });
   }),
   // ── vendor 价格走势（Prices 页多线图）· decisions §8.22
-  //    单价按身份返回**最终价**（含附加费）· 显示名按身份匿名化
+  //    单价按身份返回**最终价**（已含所有分项）· 显示名按身份匿名化
   http.get("/api/vendors/prices", ({ request }) => {
     const u = new URL(request.url);
     const days = Number(u.searchParams.get("days") ?? "30");
@@ -319,8 +319,10 @@ export const handlers = [
   }),
   http.post("/api/register", async ({ request }) => {
     const body = (await request.json()) as { invite_code?: string };
-    // 填了邀请码 → 解锁 vendor 真名 + 免加价（§8.20）
-    fx.passenger.invited = !!body.invite_code?.trim();
+    // 填码 → tier 从零售升到同行（mock 简化 · 后端会按 grants_tier 分同行/批发 · decisions §8.39）
+    const hasCode = !!body.invite_code?.trim();
+    fx.passenger.tier = hasCode ? "insider" : "retail";
+    fx.passenger.invited = hasCode; // 兼容字段（下版删）
     return ok({ ok: true }, 500);
   }),
   http.post("/api/logout", () => ok({ ok: true }, 200)),
