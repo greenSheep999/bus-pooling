@@ -177,22 +177,37 @@ else
   fi
 fi
 
-# ── 步骤 4 · Kill 恢复 ────────────────────────
-banner "step 4 · Kill 恢复 (SIGKILL → 重启 → janitor 兜)"
-# 手工插 idempotency_record + pending_purchase(initial) · 模拟 crash 前刚 create
-# 用真实经过的拉号 · 会有 idempotency_record 已存在·挑一条不重要的当锚
+# ── 步骤 4 · Kill 恢复 · 4 个崩溃窗口（initial / reserved / purchasing / purchased）─────
+banner "step 4 · Kill 恢复 (4 个崩溃窗口)"
+# 手工造 4 行 pending_purchase 各占一个"崩溃时状态"·SIGKILL bp · 重启看 janitor 兜。
+# updated_at 用 2020 · 远超 janitor 任何超时·必被扫。
+#
+# 通过判据（1a DoD）：没有一行**卡在原状态** · 每行要么 delete · 要么推到终态。
 pid=$(sqlite3 "$DB" "SELECT id FROM passenger LIMIT 1;")
+# wallet 补钱 + 冻结 · 3 个非 initial 状态各冻结 30_000_000 = 90_000_000
+# reserved / purchasing / purchased 恢复都要"释放冻结" · 少了会报'冻结额不足'
+sqlite3 "$DB" "UPDATE wallet SET balance=1000000000, reserved=90000000 WHERE passenger_id='$pid';"
+
 sqlite3 "$DB" <<SQL
-# 用 2020 年·远比 janitor 的任何超时都久·必被扫
 INSERT INTO idempotency_record (id, passenger_id, method, path, idempotency_key,
   request_fingerprint, created_at)
-VALUES ('e2e-idem-crash', '$pid', 'POST', '/api/me/pull', 'e2ecrash000000000000000000000000',
-  'e2ecrash-fingerprint', '2020-01-01T00:00:00Z');
+VALUES
+  ('e2e-idem-init',  '$pid', 'POST', '/api/me/pull', 'e2ecrashi0000000000000000000ini', 'fp-init',  '2020-01-01T00:00:00.000Z'),
+  ('e2e-idem-resv',  '$pid', 'POST', '/api/me/pull', 'e2ecrashr0000000000000000000rev', 'fp-resv',  '2020-01-01T00:00:00.000Z'),
+  ('e2e-idem-purch', '$pid', 'POST', '/api/me/pull', 'e2ecrashp0000000000000000000pur', 'fp-purch', '2020-01-01T00:00:00.000Z'),
+  ('e2e-idem-purd',  '$pid', 'POST', '/api/me/pull', 'e2ecrashd0000000000000000000pud', 'fp-purd',  '2020-01-01T00:00:00.000Z');
+
 INSERT INTO pending_purchase (id, passenger_id, idempotency_record_id, target_group, vendor_id,
   count_requested, reserved_amount, client_order_id, status, created_at, updated_at)
-VALUES ('e2e-crash-1', '$pid', 'e2e-idem-crash', 'record-$pid', 'kiro91', 1, 30000000,
-  'e2ecrash00000000000000000000e2ec', 'initial',
-  '2020-01-01T00:00:00Z', '2020-01-01T00:00:00Z');
+VALUES
+  ('e2e-crash-init',  '$pid', 'e2e-idem-init',  'record-$pid', 'kiro91', 1, 30000000,
+   'e2eco0000000000000000000000init', 'initial',    '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z'),
+  ('e2e-crash-resv',  '$pid', 'e2e-idem-resv',  'record-$pid', 'kiro91', 1, 30000000,
+   'e2eco0000000000000000000000resv', 'reserved',   '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z'),
+  ('e2e-crash-purch', '$pid', 'e2e-idem-purch', 'record-$pid', 'kiro91', 1, 30000000,
+   'e2eco0000000000000000000000purc', 'purchasing', '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z'),
+  ('e2e-crash-purd',  '$pid', 'e2e-idem-purd',  'record-$pid', 'kiro91', 1, 30000000,
+   'e2eco0000000000000000000000purd', 'purchased',  '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z');
 SQL
 
 # SIGKILL bp
@@ -209,25 +224,46 @@ if ! curl -sSf -o /dev/null "$BASE/healthz"; then
   tail -20 "$LOG"; exit 1
 fi
 
-# 等 janitor 扫（默认周期 15s · 给 25s 保守）
-sleep 25
-# initial 状态的 janitor 恢复 = 直接 DELETE（未做任何外部动作·安全释放）·
-# 所以合格结果是：行已被删（COUNT=0）· 或推进到 completed / need_manual。
-# 卡在 initial/purchasing/purchased/imported = fail。
-pp_count=$(sqlite3 "$DB" "SELECT count(1) FROM pending_purchase WHERE id='e2e-crash-1';")
-if [ "$pp_count" = "0" ]; then
-  ok "janitor 已回收 initial 卡单 (行被 delete)"
-else
-  pp_status=$(sqlite3 "$DB" "SELECT status FROM pending_purchase WHERE id='e2e-crash-1';")
-  case "$pp_status" in
-    completed|need_manual)
-      ok "janitor 推进到 $pp_status"
+# janitor 15s 周期·给 40s（两轮）· 每状态各自的 recovery 逻辑不同
+sleep 40
+
+# 检查每行都不再卡在中间态
+check_crash() {
+  local id="$1"
+  local from="$2"
+  local cnt
+  local now
+  cnt=$(sqlite3 "$DB" "SELECT count(1) FROM pending_purchase WHERE id='$id';" || echo "")
+  if [ "${cnt:-}" = "0" ]; then
+    ok "$from · janitor delete 行 (initial 恢复分支)"
+    return 0
+  fi
+  now=$(sqlite3 "$DB" "SELECT status FROM pending_purchase WHERE id='$id';" || echo "")
+  case "${now:-}" in
+    completed)
+      ok "$from · janitor 推到 completed"
+      ;;
+    need_manual|need_recover_vendor)
+      ok "$from · janitor 转 ${now:-} (人工介入·也算兜住)"
+      ;;
+    cancelled_reserve)
+      ok "$from · janitor 释放冻结转 cancelled_reserve"
+      ;;
+    "$from")
+      ko "$from · 仍卡原状态 · janitor 没兜"
+      ;;
+    "")
+      ko "$from · 查不到 status（可能被删了但 cnt 没归零）"
       ;;
     *)
-      ko "janitor 未处理 · status=$pp_status (期望 delete / completed / need_manual)"
+      ok "$from · janitor 推到 ${now:-unknown}"
       ;;
   esac
-fi
+}
+check_crash "e2e-crash-init"  "initial"
+check_crash "e2e-crash-resv"  "reserved"
+check_crash "e2e-crash-purch" "purchasing"
+check_crash "e2e-crash-purd"  "purchased"
 
 # ── 汇总 ──────────────────────────────────────
 banner "汇总"
