@@ -31,6 +31,12 @@ type prEnv struct {
 }
 
 func newPREnv(t *testing.T) *prEnv {
+	return newPREnvWithPool(t, nil)
+}
+
+// newPREnvWithPool 装配一个 prEnv · 可选带 mock housepool
+// pool != nil 时 · assign into_bus 会调 pool.UpdateCredential 迁 group
+func newPREnvWithPool(t *testing.T, pool *fullMockPool) *prEnv {
 	t.Helper()
 	ctx := context.Background()
 
@@ -46,8 +52,7 @@ func newPREnv(t *testing.T) *prEnv {
 	prs := pullrecord.NewStore(d.DB)
 	hf := handoff.NewStore(d.DB, 0)
 
-	mux := http.NewServeMux()
-	NewServer(ServerDeps{
+	deps := ServerDeps{
 		DB:           d.DB,
 		Passengers:   passenger.NewStore(d.DB),
 		Wallets:      wallets,
@@ -56,7 +61,13 @@ func newPREnv(t *testing.T) *prEnv {
 		PullRecords:  prs,
 		Handoffs:     hf,
 		SecureCookie: false,
-	}).Routes(mux)
+	}
+	if pool != nil {
+		deps.Pool = pool
+	}
+
+	mux := http.NewServeMux()
+	NewServer(deps).Routes(mux)
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(func() {
@@ -391,6 +402,57 @@ func TestAssign_TxAtomicity(t *testing.T) {
 		func(r *http.Request) { r.Header.Set("X-Idempotency-Key", idem) })
 	if !bytes.Equal(respBody, replay) {
 		t.Errorf("重放 body 不一致\nfirst = %s\nreplay = %s", respBody, replay)
+	}
+}
+
+// assign · into_bus 有 housepool pool 时·真调 UpdateCredential 迁 group
+// **09-transactions §5 · 1a 收尾** —— 修 into_bus 不迁 group 的历史缺口
+func TestAssign_IntoBus_MigratesHousepoolGroup(t *testing.T) {
+	pool := &fullMockPool{}
+	e := newPREnvWithPool(t, pool)
+	base := e.toTestEnv()
+	key := seedWithAPIKey(t, base, "grp@e.com", "grpuser", "password123")
+	pid := passengerIDOf(t, base, "grp@e.com")
+
+	sc, cb := base.do(t, "POST", "/api/me/buses",
+		map[string]any{"name": "grp", "kind": "single"},
+		func(r *http.Request) { r.Header.Set("X-API-Key", key) })
+	if sc != http.StatusCreated {
+		t.Fatalf("建车: %d %s", sc, cb)
+	}
+	var b struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(cb, &b)
+	e.insertRound(t, "round-grp")
+	// kiro_rs_credential_id 用非零值 · 才会被 LookupKiroRSCredentialIDs 命中
+	e.insertRecordCred(t, "cgrp1", pid, "round-grp", "alive", 12345)
+
+	idem := "0000000000000000000000000000ff11"
+	status, _ := base.do(t, "POST", "/api/me/pull-records/assign",
+		map[string]any{
+			"credential_ids": []string{"cgrp1"},
+			"destination":    "into_bus",
+			"bus_id":         b.ID,
+		},
+		func(r *http.Request) { r.Header.Set("X-API-Key", key) },
+		func(r *http.Request) { r.Header.Set("X-Idempotency-Key", idem) })
+	if status != http.StatusOK {
+		t.Fatalf("assign: %d", status)
+	}
+
+	// 断言：pool.UpdateCredential 被调了 1 次·target group = bus-{id}
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	if len(pool.updateCalls) != 1 {
+		t.Fatalf("UpdateCredential 调用次数 = %d, want 1", len(pool.updateCalls))
+	}
+	call := pool.updateCalls[0]
+	if uint64(call.ID) != 12345 {
+		t.Errorf("UpdateCredential id = %d, want 12345", call.ID)
+	}
+	if call.Patch.Groups == nil || len(*call.Patch.Groups) != 1 || (*call.Patch.Groups)[0] != "bus-"+b.ID {
+		t.Errorf("Groups = %v, want [bus-%s]", call.Patch.Groups, b.ID)
 	}
 }
 

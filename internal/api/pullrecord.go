@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bus-pooling/bus-pooling/internal/housepool"
 	"github.com/bus-pooling/bus-pooling/internal/pullrecord"
 	"github.com/google/uuid"
 )
@@ -282,6 +283,38 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 	}
 	respBody, _ := json.Marshal(resp)
 
+	// ── 阶段 A · tx 外做外部动作（先外后内 §7.1）──
+	// 只读 SELECT + housepool.UpdateCredential 都放在 tx 之前·
+	// 免 SQLite 单 writer 死锁（tx 开着时任何其他 conn 都不能拿写锁）。
+	// 失败直接返错 · 后续 tx 不开 · 台账干净。
+	//
+	// **1a 简化**：仍然不算 09-transactions §7.1 定义的完整"先外后内 + 二事务 + janitor
+	// 恢复"（那个要求 pending_assignment 先落 initial · 外部动作失败 janitor 兜）。
+	// 这里的顺序是：外部动作 → 全事务（含 initial → completed 状态推进）。真严格的
+	// 崩溃恢复放到 1c 处理。
+	if dest == "into_bus" && s.pool != nil {
+		krIDs, err := s.pullRecords.LookupKiroRSCredentialIDs(r.Context(), req.CredentialIDs, p.ID)
+		if err != nil {
+			return err
+		}
+		targetGroups := []string{"bus-" + req.BusID}
+		for _, cid := range req.CredentialIDs {
+			krID, ok := krIDs[cid]
+			if !ok {
+				// kiro_rs_credential_id 空（DryRun 拉的号 / 遗留数据）· 阶段 1a 允许跳过
+				// 真上线前 assign 应保证所有 credential 都有 krID
+				continue
+			}
+			if err := s.pool.UpdateCredential(r.Context(),
+				housepool.CredentialID(krID),
+				housepool.CredentialPatch{Groups: &targetGroups}); err != nil {
+				return fmt.Errorf("assign into_bus · housepool 迁 group 失败 (cred=%s krID=%d): %w",
+					cid, krID, err)
+			}
+		}
+	}
+
+	// ── 阶段 B · tx 内做本地状态机 + 台账 + 幂等响应 ──
 	tx, err := s.db.BeginTx(r.Context(), nil)
 	if err != nil {
 		return err
@@ -290,11 +323,6 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 
 	// 09-transactions §5 · pending_assignment 状态机：
 	//   initial → external_done → status_updated → completed
-	//
-	// 单事务里全过 4 态·SQLite 单 writer 下不是"分步"·就是让审计能看清转换。
-	// 阶段 1a into_bus 的"external_done"暂时**只是台账语义**·真 housepool group
-	// 迁移在 task #66（into_bus 加真 housepool group 迁移）后触发。
-	// push_pool 的 external 是标 pushed_at（真推 passengerpool 是 1c 的活）。
 	assignIDs := make([]string, 0, len(req.CredentialIDs))
 	now := nowRFC3339()
 	for _, cid := range req.CredentialIDs {
@@ -310,7 +338,7 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	// ① external：改 credential_ledger（阶段 1a 的"外部动作" · 1c 加 housepool group 迁移）
+	// credential_ledger 更新（into_bus 迁 owner_bus_id · push_pool 标 pushed_at）
 	switch dest {
 	case "into_bus":
 		if err := pullrecord.AssignToBusTx(r.Context(), tx, req.CredentialIDs, p.ID, req.BusID); err != nil {

@@ -224,6 +224,53 @@ func AssignToBusTx(ctx context.Context, tx *sql.Tx, credentialIDs []string, pass
 	return nil
 }
 
+// LookupKiroRSCredentialIDs 拿一批本地 credential.id 对应的 kiro.rs 侧 CredentialID。
+//
+// 用来在 assign into_bus 时先调 housepool.UpdateCredential 把 group 迁到 bus-{id} ·
+// **先外后内**（CLAUDE.md §7.1）· 外部动作成功后台账才更新 owner_bus_id。
+//
+// 返回 map 只含**有 kiro_rs_credential_id 的行**（DryRun 拉的号 kiro_rs_id 可能为空）·
+// 调用方自己决定"外部动作不做也接受"还是"要求全部有 id 才继续"。
+func (s *Store) LookupKiroRSCredentialIDs(ctx context.Context, credentialIDs []string, passengerID string) (map[string]uint64, error) {
+	out := make(map[string]uint64, len(credentialIDs))
+	if len(credentialIDs) == 0 {
+		return out, nil
+	}
+	placeholders := ""
+	args := make([]any, 0, len(credentialIDs)+1)
+	args = append(args, passengerID)
+	for i, id := range credentialIDs {
+		if i > 0 {
+			placeholders += ","
+		}
+		placeholders += "?"
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, kiro_rs_credential_id
+		  FROM credential_ledger
+		 WHERE owner_record_passenger_id = ?
+		   AND owner_bus_id IS NULL
+		   AND status != 'handed_off'
+		   AND kiro_rs_credential_id IS NOT NULL
+		   AND id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("pullrecord: 查 kiro_rs id: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			id   string
+			krID uint64
+		)
+		if err := rows.Scan(&id, &krID); err != nil {
+			return nil, err
+		}
+		out[id] = krID
+	}
+	return out, rows.Err()
+}
+
 // MarkPushed 标一批号"已推 passengerpool"（派去向 · push_pool）。
 //
 // **阶段 1a 只做本地标记**（真的推送在 1c）· 号仍留在 record group · 不改归属。
