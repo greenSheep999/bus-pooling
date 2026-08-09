@@ -20,6 +20,7 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/api"
 	"github.com/bus-pooling/bus-pooling/internal/bus"
@@ -256,6 +257,23 @@ func buildDecider(cfg config.Config, sqldb *db.DB, reg *providers.Registry) (*de
 		}, hc)
 		if err != nil {
 			return nil, nil, decider.Rates{}, fmt.Errorf("装配号池客户端: %w", err)
+		}
+		// expected_sha 真校验（Iss #13）· 空 = 不校验
+		// live 模式下强烈建议配·防 kiro.rs 契约漂移后我方误发请求
+		if cfg.Housepool.ExpectedSHA != "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			gotVersion, verErr := poolClient.GetVersion(ctx)
+			cancel()
+			if verErr != nil {
+				return nil, nil, decider.Rates{}, fmt.Errorf(
+					"kiro.rs 版本校验失败·无法拉版本·拒启动: %w", verErr)
+			}
+			if gotVersion != cfg.Housepool.ExpectedSHA {
+				return nil, nil, decider.Rates{}, fmt.Errorf(
+					"kiro.rs 版本对不上·期望 %q·实际 %q·契约可能已漂移·拒启动",
+					cfg.Housepool.ExpectedSHA, gotVersion)
+			}
+			slog.Info("kiro.rs 版本校验通过", "version", gotVersion)
 		}
 		vendor = v
 		pool = poolClient

@@ -58,6 +58,12 @@ type HTTPX struct {
 type Housepool struct {
 	BaseURL string `yaml:"base_url"`
 	// 绑定 kiro.rs 版本防契约漂移（sprint Iss #13）· 空 = 不校验
+	// 启动时调 GET /admin/system/update/check · 比对返回的 current_version
+	// （kiro.rs types.rs UpdateCheckInfo.current_version = CARGO_PKG_VERSION）·
+	// 不等就启动失败·跟 rates 零费率同款守护。
+	//
+	// ExpectedSHA 是兼容旧字段名·实际含义是"expected version"（语义版本字符串）·
+	// 后续可能改字段名。
 	ExpectedSHA string `yaml:"expected_sha"`
 }
 

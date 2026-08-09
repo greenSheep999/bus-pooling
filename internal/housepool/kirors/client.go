@@ -539,3 +539,24 @@ func notYet(op, sprint string) error {
 		Message: fmt.Sprintf("阶段 1a 未实现（计划 %s）", sprint),
 	}
 }
+
+// updateCheckInfo · 对齐 kiro.rs admin/types.rs UpdateCheckInfo · 只挑本地要用的字段
+type updateCheckInfo struct {
+	CurrentVersion string `json:"current_version"`
+	LatestVersion  string `json:"latest_version"`
+	HasUpdate      bool   `json:"has_update"`
+	BuildType      string `json:"build_type"`
+}
+
+// GetVersion 拿 kiro.rs 当前运行版本（= CARGO_PKG_VERSION）。
+//
+// 走 GET /admin/system/update/check · 返回体里的 current_version 就是我方要
+// 用来做契约漂移校验的值。这个 endpoint 会同步调 GitHub API 查 latest_release·
+// force=false 走 5min 缓存·启动检查可接受这个延迟。
+func (c *Client) GetVersion(ctx context.Context) (string, error) {
+	var info updateCheckInfo
+	if err := c.do(ctx, "GetVersion", http.MethodGet, "/admin/system/update/check", nil, nil, &info); err != nil {
+		return "", err
+	}
+	return info.CurrentVersion, nil
+}
