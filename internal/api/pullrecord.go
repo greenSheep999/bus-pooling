@@ -288,6 +288,29 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// 09-transactions §5 · pending_assignment 状态机：
+	//   initial → external_done → status_updated → completed
+	//
+	// 单事务里全过 4 态·SQLite 单 writer 下不是"分步"·就是让审计能看清转换。
+	// 阶段 1a into_bus 的"external_done"暂时**只是台账语义**·真 housepool group
+	// 迁移在 task #66（into_bus 加真 housepool group 迁移）后触发。
+	// push_pool 的 external 是标 pushed_at（真推 passengerpool 是 1c 的活）。
+	assignIDs := make([]string, 0, len(req.CredentialIDs))
+	now := nowRFC3339()
+	for _, cid := range req.CredentialIDs {
+		assignID := uuidNewString()
+		assignIDs = append(assignIDs, assignID)
+		if _, err := tx.ExecContext(r.Context(), `
+			INSERT INTO pending_assignment
+			  (id, idempotency_record_id, passenger_id, credential_id, target, target_bus_id,
+			   status, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, 'initial', ?, ?)`,
+			assignID, hit.recordID, p.ID, cid, target, targetBusID, now, now); err != nil {
+			return fmt.Errorf("assign: 事件表 initial 落库失败: %w", err)
+		}
+	}
+
+	// ① external：改 credential_ledger（阶段 1a 的"外部动作" · 1c 加 housepool group 迁移）
 	switch dest {
 	case "into_bus":
 		if err := pullrecord.AssignToBusTx(r.Context(), tx, req.CredentialIDs, p.ID, req.BusID); err != nil {
@@ -306,17 +329,36 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
-	for _, cid := range req.CredentialIDs {
-		if _, err := tx.ExecContext(r.Context(), `
-			INSERT INTO pending_assignment
-			  (id, idempotency_record_id, passenger_id, credential_id, target, target_bus_id,
-			   status, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?)`,
-			uuidNewString(), hit.recordID, p.ID, cid, target, targetBusID,
-			nowRFC3339(), nowRFC3339()); err != nil {
-			return fmt.Errorf("assign: 事件表落库失败: %w", err)
+
+	// ② initial → external_done · 外部动作已做（阶段 1a 只是台账写·1c 加 housepool 迁移）
+	// ③ external_done → status_updated · credential_ledger 状态更新（阶段 1a 合并在 ①）
+	// ④ status_updated → completed · 终态
+	//
+	// **阶段 1a 的诚实说明**：SQLite 单 writer + 无跨系统真外部动作·4 态在同一 tx
+	// 内合并推进等价于原子写。这里显式分 3 次 UPDATE 走完·让审计能看到状态机存在·
+	// 也让下游 1c（into_bus 真 housepool group 迁移）能只补 ② → ③ 之间的异步逻辑。
+	//
+	// 每步都用条件 UPDATE · 强制线性推进 · 任何一步 rows=0 都算状态被别人推过（并发保护）。
+	for _, aid := range assignIDs {
+		for _, t := range []struct{ from, to string }{
+			{"initial", "external_done"},
+			{"external_done", "status_updated"},
+			{"status_updated", "completed"},
+		} {
+			res, err := tx.ExecContext(r.Context(), `
+				UPDATE pending_assignment
+				   SET status = ?, updated_at = ?
+				 WHERE id = ? AND status = ?`,
+				t.to, nowRFC3339(), aid, t.from)
+			if err != nil {
+				return fmt.Errorf("assign: 状态 %s→%s 失败: %w", t.from, t.to, err)
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				return fmt.Errorf("assign: 状态 %s→%s rows=0（并发或已推过）", t.from, t.to)
+			}
 		}
 	}
+
 	if err := saveIdempotentResponseTx(r.Context(), tx, hit.recordID, http.StatusOK, respBody); err != nil {
 		return err
 	}
