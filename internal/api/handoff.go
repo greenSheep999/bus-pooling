@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/delivery/handoff"
@@ -113,6 +114,15 @@ func (s *Server) handleHandoffFulfill(w http.ResponseWriter, r *http.Request) er
 	if pending.Status == handoff.StatusCompleted ||
 		pending.Status == handoff.StatusConfirmed {
 		return newFail(http.StatusConflict, CodeConflict, "这批号已交出，不能再取明文")
+	}
+
+	// **1a 阶段 kiro.rs 侧尚未开放"读明文"admin 端点**（08-housepool-contract §12
+	// 承诺但未定义 endpoint）。开发环境可以用 BP_ALLOW_HANDOFF_PLACEHOLDER=1
+	// 强制返回占位串（**永远不是真号** · 只让前端 UI 联调），生产必须拒绝，
+	// 否则乘客会把占位串当明文用、然后 confirm 触发 DELETE，真号丢了。
+	if os.Getenv("BP_ALLOW_HANDOFF_PLACEHOLDER") != "1" {
+		return newFail(http.StatusNotImplemented, "handoff_not_ready",
+			"取号功能暂未开放（等 kiro.rs 明文导出端点上线）· 号仍在你的池里，可以派进车或推自己号池")
 	}
 
 	// 明文从 housepool 实时读 —— 关键：明文在**任何**时刻都不能落我方 DB

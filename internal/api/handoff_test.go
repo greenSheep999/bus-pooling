@@ -13,6 +13,8 @@ import (
 // setupHandoff 建 env + 两号 · 返回 env + 密钥 fn + pid + 两个号 id
 func setupHandoff(t *testing.T) (*prEnv, *testEnv, func(*http.Request), string) {
 	t.Helper()
+	// 测试用占位符明文（生产没有 BP_ALLOW_HANDOFF_PLACEHOLDER=1 会返 501）
+	t.Setenv("BP_ALLOW_HANDOFF_PLACEHOLDER", "1")
 	e := newPREnv(t)
 	base := e.toTestEnv()
 	key := seedWithAPIKey(t, base, "hf@e.com", "hfuser", "password123")
@@ -255,5 +257,35 @@ func TestHandoffFulfill_TTLExpired(t *testing.T) {
 	time.Sleep(60 * time.Millisecond)
 	if _, err := e.handoffs.GetByToken(context.Background(), p.DownloadToken); err != handoff.ErrTokenExpired {
 		t.Errorf("过期后应 ErrTokenExpired，得到 %v", err)
+	}
+}
+
+// **P0 断言**：未开 BP_ALLOW_HANDOFF_PLACEHOLDER 时 fulfill 必须 501。
+// 没这道锁，前端拿到占位串会当真号显示，乘客 confirm 后我方真号被删，明文丢失。
+func TestHandoffFulfill_RejectedWithoutPlaceholderEnv(t *testing.T) {
+	// setupHandoff 会 t.Setenv 开占位符 · 这里用底层构造绕开
+	e := newPREnv(t)
+	base := e.toTestEnv()
+	key := seedWithAPIKey(t, base, "np@e.com", "nptester", "password123")
+	pid := passengerIDOf(t, base, "np@e.com")
+	e.insertRound(t, "round-1")
+	e.insertRecordCred(t, "c1", pid, "round-1", "alive", 1)
+	withKey := func(r *http.Request) { r.Header.Set("X-API-Key", key) }
+
+	// 显式关掉（防止别的测试 t.Setenv 泄漏进来）
+	t.Setenv("BP_ALLOW_HANDOFF_PLACEHOLDER", "0")
+
+	_, body := base.do(t, "POST", "/api/me/handoff",
+		map[string]any{"credential_ids": []string{"c1"}}, withKey)
+	init := decode[map[string]string](t, body)
+	token := init["download_token"]
+
+	status, respBody := base.do(t, "GET", "/api/me/handoff/"+token, nil, withKey)
+	if status != http.StatusNotImplemented {
+		t.Fatalf("生产模式 fulfill 必须 501，得到 %d body=%s", status, respBody)
+	}
+	// 错误码走对外收敛
+	if got := decode[Error](t, respBody); got.Code != "handoff_not_ready" {
+		t.Errorf("code = %q，want handoff_not_ready", got.Code)
 	}
 }

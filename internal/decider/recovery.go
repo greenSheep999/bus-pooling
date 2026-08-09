@@ -26,9 +26,7 @@ func (o *Orchestrator) Recover(ctx context.Context, p Pending) error {
 	case StatusPurchased:
 		return o.recoverPurchased(ctx, p)
 	case StatusImported:
-		// imported 崩了 = settle 事务没提交 · settle 是幂等的（用条件 UPDATE 推 completed）
-		// 但 CommitReservedTx 会重复扣款 —— 所以这里保守转 need_manual，让人工核对
-		return o.markNeedManual(ctx, p.ID, StatusImported, "imported→completed 恢复未实现，人工核对 ledger")
+		return o.recoverImported(ctx, p)
 	}
 	// 终态 / need_* 不该被扫到；扫到了就当无操作
 	return nil
@@ -108,6 +106,55 @@ func (o *Orchestrator) finishFromPurchased(ctx context.Context, p Pending, resul
 		return err
 	}
 	if _, err := o.settle(ctx, p.ID, p, result, credIDs); err != nil {
+		return err
+	}
+	return nil
+}
+
+// recoverImported 处理"号已进池但 settle 事务没提交"的崩溃窗口（review P0-4）。
+//
+// 判断幂等的关键：settle 事务提交时会写 pull_round 一行 + pending_purchase.status=completed。
+// 事务原子，所以三种可能：
+//   - pending 还是 imported / pull_round 不存在 → settle 事务从未提交 → 重跑
+//   - pending 已 completed → 事务提交过（说明 janitor 早于状态 poll 拿到旧行）→ 无操作
+//
+// 重跑要拿到"当时那批 vendor 号"—— 用同 client_order_id 重放 vendor.Purchase 拿回原批
+// （幂等 vendor 保证）· 号池的 BatchImport 也是幂等（同 key 返 duplicate 事件）。
+// 无幂等的 vendor 只能报警人工。
+func (o *Orchestrator) recoverImported(ctx context.Context, p Pending) error {
+	if !o.vendor.Capability().SupportsIdempotency {
+		return o.markNeedManual(ctx, p.ID, StatusImported,
+			"vendor 无幂等键，imported→completed 无法安全恢复")
+	}
+
+	// 幂等重放 vendor · 拿回原批 keys（当时那次的完整信息）
+	result, err := o.vendor.Purchase(ctx, providers.PurchaseRequest{
+		Count:         p.CountRequested,
+		ClientOrderID: p.ClientOrderID,
+	})
+	if err != nil {
+		return err
+	}
+	if result.Purchased == 0 {
+		// 极端：重放返 0 但状态是 imported —— 说明状态和 vendor 对不上，转人工
+		return o.markNeedManual(ctx, p.ID, StatusImported,
+			"imported 恢复 · vendor 重放返 0 成交，状态不一致")
+	}
+
+	// 号池 BatchImport 幂等 · 已导入的返 duplicate，credential_ids 走 duplicate 事件里的 id
+	credIDs, err := o.importToPool(ctx, p.TargetGroup, result)
+	if err != nil {
+		return o.markNeedManual(ctx, p.ID, StatusImported,
+			fmt.Sprintf("恢复期号池重导失败: %v", err))
+	}
+
+	// 走 settle · 里面的条件 UPDATE 会把 imported→completed，重复调不会双扣（第二次 RowsAffected=0 报 ErrStaleTransition）
+	if _, err := o.settle(ctx, p.ID, p, result, credIDs); err != nil {
+		// 特殊：如果这行已经推到 completed（前一次 settle 事务其实提交了，只是我方没记录）
+		// 那 advancePendingTx 里的条件 UPDATE 会命中 ErrStaleTransition —— 幂等成功
+		if errors.Is(err, ErrStaleTransition) {
+			return nil
+		}
 		return err
 	}
 	return nil

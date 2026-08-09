@@ -171,10 +171,12 @@ export const useDissolveBus = () => {
    端点都在 /me/pull* 名下（跟后端矩阵一致）· "extract" 只是这个页面的中文叫法，
    不是独立资源 —— 单独拉号和拼车拉号是同一个动作，去向不同而已 */
 
+/** 后端估价 · 只暴露对外三项（CLAUDE.md §0.1 · 加价链分层不出）
+ *  用于 ExtractConfirmModal / PullExtractForm 替换本地 pricing.ts 硬编码 */
 export const useEstimate = () =>
   useMutation({
-    mutationFn: (body: { vendor_id: string; count: number }) =>
-      post<{ key_cost: number; single_pull_fee: number; service_fee: number; total: number }>(
+    mutationFn: (body: { vendor_id: string; zone?: string; count: number; coupon_code?: string }) =>
+      post<{ unit_price: number; service_fee: number; total: number }>(
         "/me/pull/estimate",
         body,
       ),

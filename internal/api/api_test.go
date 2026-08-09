@@ -405,15 +405,13 @@ func TestTenantIsolation(t *testing.T) {
 		t.Fatalf("B 看到了余额 %v，应为 0（串号了）", got["balance"])
 	}
 
-	// A 的 key 列表里不该有 B 的
+	// A 的 key 列表里不该有 B 的（前端 TS 契约：ApiKey[] 纯数组）
 	_, body = e.do(t, "GET", "/api/me/api-keys", nil, func(r *http.Request) {
 		r.Header.Set("X-API-Key", keyA)
 	})
-	keys := decode[struct {
-		Items []map[string]any `json:"items"`
-	}](t, body)
-	if len(keys.Items) != 1 {
-		t.Fatalf("A 看到 %d 个 key，应为 1", len(keys.Items))
+	keys := decode[[]map[string]any](t, body)
+	if len(keys) != 1 {
+		t.Fatalf("A 看到 %d 个 key，应为 1", len(keys))
 	}
 }
 

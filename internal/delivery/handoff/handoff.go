@@ -13,6 +13,7 @@ package handoff
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -130,8 +131,10 @@ func (s *Store) IssueToken(ctx context.Context, in IssueTokenInput) (*Pending, e
 	now := s.now()
 	expires := now.Add(s.ttl)
 	p := Pending{
-		ID:            s.newID(),
-		PassengerID:   in.PassengerID,
+		ID:          s.newID(),
+		PassengerID: in.PassengerID,
+		// Pending.DownloadToken 保留**明文** —— 只此一次返给 handler，之后 API 层
+		// 从 URL 拿明文再 hash 查 · 明文永远不落库
 		DownloadToken: token,
 		CredentialIDs: in.CredentialIDs,
 		Status:        StatusTokenIssued,
@@ -139,17 +142,25 @@ func (s *Store) IssueToken(ctx context.Context, in IssueTokenInput) (*Pending, e
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
+	// 落库存 hash · 跟 session / API key 一样标准（review 指出 token 明文存是漏洞）
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO pending_handoff
 		  (id, passenger_id, download_token, credential_ids_json, status,
 		   fulfill_count, expires_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
-		p.ID, p.PassengerID, p.DownloadToken, string(credIDsJSON),
+		p.ID, p.PassengerID, hashToken(token), string(credIDsJSON),
 		string(p.Status), formatTime(expires), formatTime(now), formatTime(now))
 	if err != nil {
 		return nil, fmt.Errorf("handoff: 写 pending_handoff: %w", err)
 	}
 	return &p, nil
+}
+
+// hashToken 对 handoff download_token 做 sha256 · 落库时用。
+// 跟 passenger.hashAPIKey / session hash 用同一手法。
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 // GetByToken 按 token 读一行 · 校验 TTL（过期直接返 ErrTokenExpired）。
@@ -171,7 +182,8 @@ func (s *Store) GetByToken(ctx context.Context, token string) (*Pending, error) 
 }
 
 func (s *Store) getByTokenNoTTL(ctx context.Context, token string) (*Pending, error) {
-	row := s.db.QueryRowContext(ctx, selectPending+` WHERE download_token = ?`, token)
+	// 用 hash 查（落库是 hash）· scanRow 已经不把 hash 塞进 Pending.DownloadToken。
+	row := s.db.QueryRowContext(ctx, selectPending+` WHERE download_token = ?`, hashToken(token))
 	p, err := scanRow(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrTokenExpired
@@ -413,11 +425,15 @@ func scanRow(r rowScanner) (Pending, error) {
 	var p Pending
 	var status, credsJSON, expiresAt, createdAt, updatedAt string
 	var fulfilledAt, confirmedAt, completedAt sql.NullString
-	if err := r.Scan(&p.ID, &p.PassengerID, &p.DownloadToken, &credsJSON,
+	// download_token 列里存的是 hash · 扔进本地变量避免污染 Pending.DownloadToken
+	// （明文只在 IssueToken 那一刻存在，此处永远不该"知道"明文）
+	var storedTokenHash string
+	if err := r.Scan(&p.ID, &p.PassengerID, &storedTokenHash, &credsJSON,
 		&status, &p.FulfillCount, &fulfilledAt, &confirmedAt, &completedAt,
 		&expiresAt, &p.Error, &createdAt, &updatedAt); err != nil {
 		return p, err
 	}
+	_ = storedTokenHash // 只用来吸收扫描列，不外传
 	p.Status = Status(status)
 	if err := json.Unmarshal([]byte(credsJSON), &p.CredentialIDs); err != nil {
 		return p, fmt.Errorf("handoff: 解 credential_ids: %w", err)

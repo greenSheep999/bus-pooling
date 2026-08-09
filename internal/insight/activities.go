@@ -43,12 +43,24 @@ func (s *Store) Activities(
 	var all []Activity
 
 	// 1) 钱包类活动（充值 / 兑换 / 质保退款）
+	//
+	// recharge 显示**净到账**（减掉同一次充值订单的 channel_fee，让乘客看到
+	// "我充了 N 就到账 N"，通道费是内部记账细节 · CLAUDE.md §0.1 / §1.4）。
+	// 兑换和质保退款没有 channel_fee 抵扣，amount 就是本身。
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, reason, amount, COALESCE(memo, ''), created_at
-		  FROM wallet_ledger
-		 WHERE passenger_id = ?
-		   AND reason IN ('recharge','redeem','warranty_refund')
-		 ORDER BY created_at DESC
+		SELECT wl.id, wl.reason,
+		       wl.amount + COALESCE((
+		         SELECT SUM(fee.amount) FROM wallet_ledger fee
+		          WHERE fee.passenger_id = wl.passenger_id
+		            AND fee.reason = 'channel_fee'
+		            AND fee.ref_type = wl.ref_type
+		            AND fee.ref_id = wl.ref_id
+		       ), 0) AS net_amount,
+		       COALESCE(wl.memo, ''), wl.created_at
+		  FROM wallet_ledger wl
+		 WHERE wl.passenger_id = ?
+		   AND wl.reason IN ('recharge','redeem','warranty_refund')
+		 ORDER BY wl.created_at DESC
 		 LIMIT ?`, passengerID, fetch)
 	if err != nil {
 		return nil, 0, fmt.Errorf("insight: 活动流 ledger: %w", err)

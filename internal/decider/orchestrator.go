@@ -305,3 +305,15 @@ func translateVendorErr(err error) error {
 	}
 	return err
 }
+
+// VendorStock 直接问底层 vendor 拿库存快照 · api 层的 estimate 端点用。
+// nil zone = vendor 默认（91kiro 是 us）。
+func (o *Orchestrator) VendorStock(ctx context.Context, zone providers.Zone) (*providers.StockSnapshot, error) {
+	return o.vendor.Stock(ctx, providers.StockOptions{Zone: nonZeroZone(zone)})
+}
+
+// PriceEstimate 按当前 rates 算一次预估（不下单 · 不动状态）。
+// 对外只返 Total / UnitPrice / ServiceFee（其它分层由 Breakdown 私有字段承）。
+func (o *Orchestrator) PriceEstimate(unitCost int64, count int) Breakdown {
+	return Price(unitCost, count, o.rates)
+}

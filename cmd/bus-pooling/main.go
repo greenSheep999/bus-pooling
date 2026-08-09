@@ -187,6 +187,30 @@ func buildVendorRegistry(cfg config.Config) (*providers.Registry, error) {
 	return r, nil
 }
 
+// ratesFromEnv 从 env 读加价链各层费率（basis point · 1 bp = 0.01%）。
+// **具体率不进代码 · §8.20** —— 生产由 ops 通过 env 注入（未来后台配置）。
+func ratesFromEnv() decider.Rates {
+	bp := func(name string) decider.Rate {
+		v := os.Getenv(name)
+		if v == "" {
+			return 0
+		}
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 0 {
+			slog.Warn("费率 env 值非法，按 0 处理", "env", name, "value", v)
+			return 0
+		}
+		return decider.Rate(n)
+	}
+	return decider.Rates{
+		VendorMarkup: bp("BP_RATE_VENDOR_BP"),
+		RegionMarkup: bp("BP_RATE_REGION_BP"),
+		SinglePull:   bp("BP_RATE_SINGLE_PULL_BP"),
+		Capability:   bp("BP_RATE_CAPABILITY_BP"),
+		Service:      bp("BP_RATE_SERVICE_BP"),
+	}
+}
+
 // buildDecider 装配拉号编排器 + 返回同一份 pool（deathwatch / vendorview
 // 都要复用这一份 —— 别在两处各建一份 kirors.Client）。
 //
@@ -238,8 +262,15 @@ func buildDecider(cfg config.Config, sqldb *db.DB, reg *providers.Registry) (*de
 		slog.Warn("拉号走 LIVE 链路 · 会产生真扣款", "vendor", providers.Vendor91Kiro)
 	}
 
-	// Rates 阶段 1a 暂零 · 生产前从后台配置注入（`decisions §8.34`）
-	rates := decider.Rates{}
+	// Rates 从环境 basis point 读（1 bp = 0.01%）· 生产前 ops 从后台配置注入
+	rates := ratesFromEnv()
+	// live 模式下**零费率拒启动** —— 那意味着号价 pass-through 没有收入，
+	// 是配错不是设计。DRY_RUN 允许零，方便本地跑通闭环。
+	if live && rates == (decider.Rates{}) {
+		return nil, nil, decider.Rates{}, fmt.Errorf(
+			"live 模式必须显式配费率：BP_RATE_SERVICE_BP=<n> 等 · 零费率是配错防身",
+		)
+	}
 
 	return decider.New(decider.Config{
 		DB:     sqldb.DB,

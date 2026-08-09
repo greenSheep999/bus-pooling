@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -109,6 +110,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/me/strategy", handler(s.RequireAuth(s.handleGetStrategy)))
 	mux.Handle("PUT /api/me/strategy", handler(s.RequireAuth(s.handlePutStrategy)))
 	mux.Handle("POST /api/me/pull", handler(s.RequireAuth(s.handlePull)))
+	mux.Handle("POST /api/me/pull/estimate", handler(s.RequireAuth(s.handleEstimate)))
 
 	// bus（阶段 1a 只 single kind）
 	mux.Handle("POST /api/me/buses", handler(s.RequireAuth(s.handleCreateBus)))
@@ -117,6 +119,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/me/buses/{bus_id}/leave", handler(s.RequireAuth(s.handleLeaveBus)))
 	mux.Handle("DELETE /api/me/buses/{bus_id}", handler(s.RequireAuth(s.handleDissolveBus)))
 	mux.Handle("POST /api/me/buses/{bus_id}/pull", handler(s.RequireAuth(s.handleBusPull)))
+	mux.Handle("GET /api/me/buses/{bus_id}/credentials", handler(s.RequireAuth(s.handleBusCredentials)))
+	mux.Handle("GET /api/me/buses/{bus_id}/pulls", handler(s.RequireAuth(s.handleBusPulls)))
 
 	// 拉号记录 · 派去向（进车 / 推池）· handoff 三段式（05-api-contract §5 / §5b）
 	mux.Handle("GET /api/me/pull-records", handler(s.RequireAuth(s.handleListPullRecords)))
@@ -125,14 +129,20 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/me/handoff", handler(s.RequireAuth(s.handleHandoffInit)))
 	mux.Handle("GET /api/me/handoff/{token}", handler(s.RequireAuth(s.handleHandoffFulfill)))
 	mux.Handle("POST /api/me/handoff/{token}/confirm", handler(s.RequireAuth(s.handleHandoffConfirm)))
+	// 事件流（前端「提取历史 / 派发历史」tab）
+	mux.Handle("GET /api/me/pull/events", handler(s.RequireAuth(s.handleListPullEvents)))
+	mux.Handle("GET /api/me/assign/events", handler(s.RequireAuth(s.handleListAssignEvents)))
 
 	// 兑换码 + 充值（05-api-contract §3）
 	mux.Handle("POST /api/me/redeem", handler(s.RequireAuth(s.handleRedeem)))
 	mux.Handle("POST /api/me/topup", handler(s.RequireAuth(s.handleCreateTopup)))
 	mux.Handle("GET /api/me/topup/{order_id}", handler(s.RequireAuth(s.handleGetTopupOrder)))
 	mux.Handle("GET /api/me/topup-orders", handler(s.RequireAuth(s.handleListTopupOrders)))
-	// dev 内部端点，接了真 waffo 后删掉（改成签名验证的 /api/webhooks/waffo）
-	mux.Handle("POST /api/internal/topup/{order_id}/paid", handler(s.RequireAuth(s.handleDevMarkTopupPaid)))
+	// dev 内部端点 · **仅在 BP_ENABLE_DEV_TOPUP=1 时挂**（P0：任何用户能给自己充钱 · 生产禁用）。
+	// 接了真 waffo 后**删掉**，改成签名校验的 /api/webhooks/waffo。
+	if os.Getenv("BP_ENABLE_DEV_TOPUP") == "1" {
+		mux.Handle("POST /api/internal/topup/{order_id}/paid", handler(s.RequireAuth(s.handleDevMarkTopupPaid)))
+	}
 
 	// vendors 只读（05-api-contract §9）· 全部要鉴权
 	mux.Handle("GET /api/vendors/stock", handler(s.RequireAuth(s.handleVendorsStock)))
@@ -365,7 +375,8 @@ func (s *Server) handleListAPIKeys(w http.ResponseWriter, r *http.Request) error
 	for _, k := range keys {
 		items = append(items, apiKeyOf(k))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	// 前端 TS: ApiKey[]（纯数组 · 非分页）· 契约以 TS 为准
+	writeJSON(w, http.StatusOK, items)
 	return nil
 }
 

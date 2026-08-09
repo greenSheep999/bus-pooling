@@ -74,14 +74,20 @@ func TestIssueToken_Ok(t *testing.T) {
 	if len(p.DownloadToken) != 32 {
 		t.Errorf("token 长度 %d，应 32 hex", len(p.DownloadToken))
 	}
-	// DB 里能找到这行
-	var st string
+	// DB 里 download_token 存的是 hash（review 修补：token 明文永不落库）
+	var st, storedToken string
 	if err := dbConn.QueryRow(
-		`SELECT status FROM pending_handoff WHERE download_token = ?`, p.DownloadToken).Scan(&st); err != nil {
+		`SELECT status, download_token FROM pending_handoff WHERE id = ?`, p.ID).Scan(&st, &storedToken); err != nil {
 		t.Fatal(err)
 	}
 	if st != "token_issued" {
 		t.Errorf("DB 里 status = %s", st)
+	}
+	if storedToken == p.DownloadToken {
+		t.Errorf("download_token 落库应是 hash 不是明文")
+	}
+	if storedToken != hashToken(p.DownloadToken) {
+		t.Errorf("download_token 应等于 sha256(明文)")
 	}
 }
 
