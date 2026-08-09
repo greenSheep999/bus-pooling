@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -61,7 +63,19 @@ func (d *DryRunVendor) Stock(_ context.Context, _ providers.StockOptions) (*prov
 	}, nil
 }
 
-func (d *DryRunVendor) Purchase(_ context.Context, req providers.PurchaseRequest) (*providers.PurchaseResult, error) {
+func (d *DryRunVendor) Purchase(ctx context.Context, req providers.PurchaseRequest) (*providers.PurchaseResult, error) {
+	// e2e 崩溃窗口测试用 · BP_DRY_RUN_PURCHASE_DELAY_MS=<n> 让 Purchase 前 sleep n ms ·
+	// 让 e2e 脚本能在业务真跑到 purchasing 状态的中间发 SIGKILL · 造真崩溃窗口。
+	// 生产环境**绝不该设**（不然每笔拉号都真延迟）。
+	if v := os.Getenv("BP_DRY_RUN_PURCHASE_DELAY_MS"); v != "" {
+		if ms, err := strconv.Atoi(v); err == nil && ms > 0 {
+			select {
+			case <-time.After(time.Duration(ms) * time.Millisecond):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	}
 	unit := d.UnitPrice
 	if unit <= 0 {
 		unit = 30 * 1_000_000
