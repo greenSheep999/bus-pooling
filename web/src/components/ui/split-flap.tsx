@@ -41,7 +41,9 @@ function Flap({ char, className }: { char: string; className?: string }) {
   return (
     <span
       className={cn(
-        "relative inline-block overflow-hidden rounded-[3px] bg-fg/85 px-[3px] text-center",
+        // 机场翻牌 · 固定深底白字（不跟随主题）· 机械感来源就是那块深塑料
+        // 用固定色不用 --fg/--bg · 否则深色下会变成白底黑字（破坏翻牌语义）
+        "relative inline-block overflow-hidden rounded-[3px] bg-neutral-800 px-[3px] text-center",
         "font-mono text-white tabular-nums",
         className,
       )}
@@ -57,14 +59,14 @@ function Flap({ char, className }: { char: string; className?: string }) {
           className="absolute inset-0 z-10 block origin-bottom animate-splitflap"
           style={{ backfaceVisibility: "hidden" }}
         >
-          <span className="block bg-fg/85">{prev}</span>
+          <span className="block bg-neutral-800">{prev}</span>
         </span>
       )}
 
       {/* 中缝 · 机械感来源（一条极细的暗线） */}
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-1/2 z-20 h-px bg-black/25"
+        className="pointer-events-none absolute inset-x-0 top-1/2 z-20 h-px bg-black/40"
       />
     </span>
   );

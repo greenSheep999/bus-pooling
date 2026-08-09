@@ -26,6 +26,11 @@ export function Skeleton({
   );
 }
 
+/** 一行文字骨架 · 常用在 InfoRow / 内嵌值处 · 传固定宽度以贴近实际内容 */
+export function SkeletonLine({ w = 100, h = 14 }: { w?: number | string; h?: number }) {
+  return <Skeleton className="inline-block align-middle rounded-md" style={{ width: w, height: h }} />;
+}
+
 /** KPI 卡骨架 · 对应 KpiCard（标签 + 大数字 + 副行） */
 export function SkeletonKpi() {
   return (

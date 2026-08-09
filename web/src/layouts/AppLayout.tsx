@@ -40,14 +40,16 @@ function CreditPill() {
   return (
     <Link
       to="/wallet"
-      className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-credit-bg px-2.5 py-1 transition-opacity hover:opacity-85 sm:gap-2 sm:px-3.5 sm:py-1.5"
+      // 底用 credit-solid 低透明度（浅色 8% / 深色 12%）· 表达"credit 语义"但不喧宾夺主
+      // 字用 credit-solid 保留识别度 · 深色下天然融合（透明底叠深底 → 更暗，不刺）
+      className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-ok-solid/10 px-2.5 py-1 transition-opacity hover:opacity-80 sm:gap-2 sm:px-3.5 sm:py-1.5 dark:bg-ok-solid/[.14]"
     >
-      <Wallet className="size-3.5 shrink-0 text-credit-fg" />
-      <span className="font-semibold tnum text-credit-fg">
+      <Wallet className="size-3.5 shrink-0 text-ok-solid" />
+      <span className="font-semibold tnum text-ok-solid">
         {data ? fmtCredits(data.balance) : "-"}
       </span>
       {/* 「积分」二字移动端隐藏 · sm+ 才显示 */}
-      <span className="hidden font-semibold text-credit-fg sm:inline">积分</span>
+      <span className="hidden font-semibold text-ok-solid sm:inline">积分</span>
     </Link>
   );
 }

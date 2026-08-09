@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Card, Chip, SectionHead } from "@/components/ui/primitives";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 /** 账号设置 · 邮箱 / 用户名 / 密码 / 社交登录绑定
@@ -47,15 +48,17 @@ function AccountInfoCard() {
         <InfoRow
           label="邮箱"
           value={
-            <span className="flex items-center gap-2">
-              <span className="truncate">{me?.email ?? "-"}</span>
-              {me?.email_verified
-                ? <Chip tone="ok" icon={<BadgeCheck className="size-3" />}>已验证</Chip>
-                : <Chip tone="warn">未验证</Chip>}
-            </span>
+            me ? (
+              <span className="flex items-center gap-2">
+                <span className="truncate">{me.email}</span>
+                {me.email_verified
+                  ? <Chip tone="ok" icon={<BadgeCheck className="size-3" />}>已验证</Chip>
+                  : <Chip tone="warn">未验证</Chip>}
+              </span>
+            ) : <SkeletonLine w={220} />
           }
         />
-        <InfoRow label="用户名" value={me?.username ?? "-"} />
+        <InfoRow label="用户名" value={me ? me.username : <SkeletonLine w={120} />} />
         <InfoRow
           label="注册时间"
           value={
@@ -63,7 +66,7 @@ function AccountInfoCard() {
               ? new Date(me.created_at).toLocaleDateString("zh-CN", {
                   year: "numeric", month: "2-digit", day: "2-digit",
                 })
-              : "-"
+              : <SkeletonLine w={100} />
           }
         />
       </div>

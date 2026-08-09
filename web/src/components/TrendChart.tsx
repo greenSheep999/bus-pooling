@@ -38,11 +38,11 @@ export default function TrendChart({
           </linearGradient>
         </defs>
 
-        {/* 网格实线要比平均虚线更浅，不然俩灰打架 · currentColor 在 SVG 不稳，硬色值 */}
+        {/* 网格实线走 hairline · 深色深灰 · 浅色浅灰 · 不抢曲线视觉 */}
         <CartesianGrid
           strokeDasharray="0"
           vertical={false}
-          stroke="#F2F2F2"
+          stroke="hsl(var(--hairline))"
         />
 
         <XAxis
@@ -51,7 +51,7 @@ export default function TrendChart({
           axisLine={false}
           interval="preserveStartEnd"
           minTickGap={48}
-          tick={{ fontSize: 11, fill: "#A3A3A3" }}
+          tick={{ fontSize: 11, fill: "hsl(var(--fg-tertiary))" }}
           tickFormatter={(d: string) => {
             const [, m, dd] = d.split("-");
             return `${Number(m)}/${dd}`;
@@ -62,7 +62,7 @@ export default function TrendChart({
           tickLine={false}
           axisLine={false}
           width={52}
-          tick={{ fontSize: 11, fill: "#A3A3A3" }}
+          tick={{ fontSize: 11, fill: "hsl(var(--fg-tertiary))" }}
         />
 
         <Tooltip
@@ -108,24 +108,24 @@ export default function TrendChart({
           strokeWidth={2}
           fill="url(#gradTrend)"
           dot={false}
-          activeDot={{ r: 4, fill: "#9147FF", stroke: "#fff", strokeWidth: 2 }}
+          activeDot={{ r: 4, fill: "#9147FF", stroke: "hsl(var(--bg))", strokeWidth: 2 }}
         />
 
-        {/* 峰值点 · 品牌色实心 · 附日期 label */}
+        {/* 峰值点 · 品牌色实心 · 描边跟随底色（深色下 = 深底描边 · 保留"点从背景抠出来"的观感） */}
         {peak && (
           <ReferenceDot
             x={peak.date}
             y={peak.value}
             r={4}
             fill="#9147FF"
-            stroke="#fff"
+            stroke="hsl(var(--bg))"
             strokeWidth={2}
             ifOverflow="visible"
           >
             <Label
               value={`峰值 ${peak.value} ${unit} · ${peak.date.slice(5).replace("-", "/")}`}
               position="top"
-              fill="#6420C7"
+              fill="hsl(var(--brand-strong))"
               fontSize={11}
               fontWeight={600}
               offset={10}
