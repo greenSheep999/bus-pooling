@@ -258,7 +258,8 @@ func TestAssign_IntoBus(t *testing.T) {
 			"destination":    "into_bus",
 			"bus_id":         busResp.ID,
 		},
-		func(r *http.Request) { r.Header.Set("X-API-Key", key) })
+		func(r *http.Request) { r.Header.Set("X-API-Key", key) },
+		func(r *http.Request) { r.Header.Set("X-Idempotency-Key", "00000000000000000000000000000001") })
 	if status != http.StatusOK {
 		t.Fatalf("assign 失败: status=%d body=%s", status, body)
 	}
@@ -293,7 +294,8 @@ func TestAssign_PushPool(t *testing.T) {
 			"credential_ids": []string{"c1"},
 			"destination":    "push_pool",
 		},
-		func(r *http.Request) { r.Header.Set("X-API-Key", key) })
+		func(r *http.Request) { r.Header.Set("X-API-Key", key) },
+		func(r *http.Request) { r.Header.Set("X-Idempotency-Key", "00000000000000000000000000000002") })
 	if status != http.StatusOK {
 		t.Fatalf("assign 失败: status=%d body=%s", status, body)
 	}
@@ -323,7 +325,8 @@ func TestAssign_RejectsHandoff(t *testing.T) {
 			"credential_ids": []string{"c1"},
 			"destination":    "handoff",
 		},
-		func(r *http.Request) { r.Header.Set("X-API-Key", key) })
+		func(r *http.Request) { r.Header.Set("X-API-Key", key) },
+		func(r *http.Request) { r.Header.Set("X-Idempotency-Key", "00000000000000000000000000000003") })
 	if status != http.StatusBadRequest {
 		t.Errorf("destination=handoff 应 400，得到 %d", status)
 	}
@@ -360,7 +363,8 @@ func TestAssign_IntoBusRejectsOtherBus(t *testing.T) {
 			"destination":    "into_bus",
 			"bus_id":         busResp.ID,
 		},
-		func(r *http.Request) { r.Header.Set("X-API-Key", keyA) })
+		func(r *http.Request) { r.Header.Set("X-API-Key", keyA) },
+		func(r *http.Request) { r.Header.Set("X-Idempotency-Key", "00000000000000000000000000000004") })
 	if status != http.StatusNotFound {
 		t.Errorf("派进别人车该 404，得到 %d", status)
 	}

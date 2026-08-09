@@ -180,6 +180,80 @@ func (s *Server) handleLeaveBus(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// PUT /api/me/buses/{bus_id} · 改车名（前端 useRenameBus 只发 {name}）
+type renameBusReq struct {
+	Name string `json:"name"`
+}
+
+func (s *Server) handleUpdateBus(w http.ResponseWriter, r *http.Request) error {
+	p, err := mustCaller(r)
+	if err != nil {
+		return err
+	}
+	busID := r.PathValue("bus_id")
+	var req renameBusReq
+	if err := decodeJSON(r, &req); err != nil {
+		return err
+	}
+	err = s.buses.Rename(r.Context(), busID, p.ID, req.Name)
+	switch {
+	case errors.Is(err, bus.ErrNotFound), errors.Is(err, bus.ErrNotMember):
+		return ErrNotFound("找不到这辆车")
+	case errors.Is(err, bus.ErrDissolved):
+		return ErrConflict(CodeConflict, "车已解散")
+	case err != nil && err.Error() == "bus: 车名不能为空":
+		return ErrBadRequest("车名不能为空")
+	case err != nil && err.Error() == "bus: 车名不能超过 40 字":
+		return ErrBadRequest("车名不能超过 40 字")
+	case err != nil:
+		return err
+	}
+	// 返回改名后的完整对象（跟前端 useRenameBus onSuccess 一致）
+	b, err := s.buses.Get(r.Context(), busID)
+	if err != nil {
+		return err
+	}
+	resp, err := s.buildBusResponse(r, b)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, resp)
+	return nil
+}
+
+// PUT /api/me/buses/{bus_id}/strategy · 改车级策略
+func (s *Server) handleUpdateBusStrategy(w http.ResponseWriter, r *http.Request) error {
+	p, err := mustCaller(r)
+	if err != nil {
+		return err
+	}
+	busID := r.PathValue("bus_id")
+	var st busStrategyDT
+	if err := decodeJSON(r, &st); err != nil {
+		return err
+	}
+	err = s.buses.UpdateStrategy(r.Context(), busID, p.ID, bus.Strategy{
+		AutoRefillEnabled: st.AutoRefillEnabled,
+		RefillWatermark:   st.RefillWatermark,
+		RefillMinCount:    st.RefillMinCount,
+		PerRoundCount:     st.PerRoundCount,
+		MaxUnitPrice:      st.MaxUnitPrice,
+		DailyRoundLimit:   st.DailyRoundLimit,
+		DailySpendLimit:   st.DailySpendLimit,
+		PreferredVendor:   st.PreferredVendor,
+	})
+	switch {
+	case errors.Is(err, bus.ErrNotFound), errors.Is(err, bus.ErrNotMember):
+		return ErrNotFound("找不到这辆车")
+	case errors.Is(err, bus.ErrDissolved):
+		return ErrConflict(CodeConflict, "车已解散")
+	case err != nil:
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	return nil
+}
+
 func (s *Server) handleDissolveBus(w http.ResponseWriter, r *http.Request) error {
 	p, err := mustCaller(r)
 	if err != nil {

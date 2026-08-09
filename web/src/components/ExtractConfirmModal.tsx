@@ -9,7 +9,6 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
-import { previewFees } from "@/lib/pricing";
 import { fmtCredits, toCredits } from "@/lib/utils";
 import type { Money, Zone } from "@/types";
 
@@ -23,6 +22,8 @@ export interface ExtractConfirmInfo {
   /** 服务端给的最终单价 · 填优惠码后由父层重算 */
   unitPrice: Money | null;
   warrantyMinutes: number;
+  /** 后端 estimate 结果（对外三项）· 父层用 useEstimate 拿 */
+  estimate?: { unit_price: Money; service_fee: Money; total: Money } | null;
 }
 
 /** 提取确认窗 · decisions §8.20
@@ -46,14 +47,12 @@ export function ExtractConfirmModal({
 
   const code = coupon.trim();
 
-  /* 费用预览 · 后端就绪后换成 useEstimate()（见 lib/pricing.ts） */
-  const fees = previewFees({
-    unitPrice: info.unitPrice ?? 0,
-    count: info.count,
-    couponApplied: !!applied,
-  });
-  const { keyCost, singlePullFee, serviceFee: svcFee, total } = fees;
-  const discounted = info.unitPrice == null ? null : fees.unitPrice;
+  /* 费用来自后端 · 对外三项（unit_price / service_fee / total）· 无本地定价
+     优惠码折后价在后端 estimate 里算（1a 未接优惠码计算 · 参数带上但目前不减免） */
+  const est = info.estimate;
+  const total = est?.total ?? (info.unitPrice != null ? info.unitPrice * info.count : 0);
+  const svcFee = est?.service_fee ?? 0;
+  const discounted = est?.unit_price ?? info.unitPrice;
 
   /* 全局单价上限（decisions §8.27）· 超了不给确认
      判的是**优惠码折后价** —— 用码压到线内就该放行 */
@@ -143,20 +142,15 @@ export function ExtractConfirmModal({
             </div>
           </Field>
 
-          {/* 合计 */}
+          {/* 合计 · 对外只展示单价 × 数量 / 服务费 / 小计（不展示加价链分层 · §8.20） */}
           <div className="space-y-1.5 rounded-xl bg-bg-elevated p-4 text-label">
             <FeeRow
-              label={discounted != null ? `号价 · ${toCredits(discounted)} × ${info.count}` : "号价"}
-              value={`${fmtCredits(keyCost)} 积分`}
+              label={discounted != null ? `单价 · ${toCredits(discounted)} × ${info.count}` : "单价"}
+              value={`${fmtCredits(discounted != null ? discounted * info.count : 0)} 积分`}
             />
-            {singlePullFee > 0 && (
-              <FeeRow label="拉 1 个偏高" value={`+${fmtCredits(singlePullFee)} 积分`} muted />
+            {svcFee > 0 && (
+              <FeeRow label="服务费" value={`${fmtCredits(svcFee)} 积分`} muted />
             )}
-            <FeeRow
-              label={`服务费 · 1 × ${info.count}`}
-              value={`${toCredits(svcFee)} 积分`}
-              muted
-            />
             <div className="mt-2 border-t border-hairline pt-2">
               <FeeRow
                 label="合计扣除"

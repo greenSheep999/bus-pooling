@@ -117,6 +117,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/me/buses", handler(s.RequireAuth(s.handleListBuses)))
 	mux.Handle("GET /api/me/buses/{bus_id}", handler(s.RequireAuth(s.handleGetBus)))
 	mux.Handle("POST /api/me/buses/{bus_id}/leave", handler(s.RequireAuth(s.handleLeaveBus)))
+	mux.Handle("PUT /api/me/buses/{bus_id}", handler(s.RequireAuth(s.handleUpdateBus)))
+	mux.Handle("PUT /api/me/buses/{bus_id}/strategy", handler(s.RequireAuth(s.handleUpdateBusStrategy)))
 	mux.Handle("DELETE /api/me/buses/{bus_id}", handler(s.RequireAuth(s.handleDissolveBus)))
 	mux.Handle("POST /api/me/buses/{bus_id}/pull", handler(s.RequireAuth(s.handleBusPull)))
 	mux.Handle("GET /api/me/buses/{bus_id}/credentials", handler(s.RequireAuth(s.handleBusCredentials)))

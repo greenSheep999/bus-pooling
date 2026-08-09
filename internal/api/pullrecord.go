@@ -1,13 +1,20 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/pullrecord"
+	"github.com/google/uuid"
 )
+
+func uuidNewString() string            { return uuid.NewString() }
+func nowRFC3339() string               { return time.Now().UTC().Format(time.RFC3339Nano) }
+func slogWarn(msg string, args ...any) { slog.Warn(msg, args...) }
 
 // pullRecord + assign 端点。对外只暴露前端 Credential 类型的字段（web/src/types/index.ts）·
 // housepool 侧的 kiro_rs_credential_id / current_group / death_source 等**绝不出响应体**
@@ -183,9 +190,33 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		return newFail(http.StatusServiceUnavailable, CodeInternal, "拉号记录服务暂未装配")
 	}
 
-	var req assignRequest
-	if err := decodeJSON(r, &req); err != nil {
+	body, err := readBody(r)
+	if err != nil {
 		return err
+	}
+	var req assignRequest
+	if err := decodeStrict(body, &req); err != nil {
+		return err
+	}
+
+	// 幂等（05-api-contract §幂等键 · 派去向"必须"带）
+	key := r.Header.Get("X-Idempotency-Key")
+	if key == "" {
+		return newFail(http.StatusBadRequest, CodeBadIdempotencyKey,
+			"派去向必须带 X-Idempotency-Key（32 位十六进制）")
+	}
+	hit, err := ensureIdempotencyRecord(r.Context(), s.db, p.ID, r.Method, r.URL.Path, key, body)
+	if err != nil {
+		return err
+	}
+	switch hit.status {
+	case idemReplay:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(hit.responseStatus)
+		_, _ = w.Write(hit.responseBody)
+		return nil
+	case idemConflict:
+		return ErrIdempotencyConflict()
 	}
 	if len(req.CredentialIDs) == 0 {
 		return ErrBadRequest("至少要选一个号")
@@ -247,9 +278,36 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, assignResponse{
+	// 落 pending_assignment 一行 status=completed · 供 /me/assign/events 查
+	// 一次 assign 派了 N 个号 · 落 N 行（每号一条，pending_assignment 表就是 per-credential）
+	target := "to-bus"
+	var targetBusID any = nil
+	if dest == "push_pool" {
+		target = "to-passengerpool"
+	} else if req.BusID != "" {
+		targetBusID = req.BusID
+	}
+	for _, cid := range req.CredentialIDs {
+		if _, err := s.db.ExecContext(r.Context(), `
+			INSERT INTO pending_assignment
+			  (id, idempotency_record_id, passenger_id, credential_id, target, target_bus_id,
+			   status, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?)`,
+			uuidNewString(), hit.recordID, p.ID, cid, target, targetBusID,
+			nowRFC3339(), nowRFC3339()); err != nil {
+			// pending_assignment 落库失败不影响真实派发（派已经完成），只影响事件流
+			slogWarn("assign 事件落库失败", "err", err, "cred", cid)
+		}
+	}
+
+	resp := assignResponse{
 		Assigned: len(req.CredentialIDs),
 		Errors:   []assignErrItem{},
-	})
+	}
+	respBody, _ := json.Marshal(resp)
+	_ = saveIdempotentResponse(r.Context(), s.db, hit.recordID, http.StatusOK, respBody)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(respBody)
 	return nil
 }

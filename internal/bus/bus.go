@@ -257,6 +257,67 @@ func (s *Store) Dissolve(ctx context.Context, busID, passengerID string) error {
 	return nil
 }
 
+// Rename 改车名 · 只有 creator 能改（1a 单人车 = 唯一成员）。
+func (s *Store) Rename(ctx context.Context, busID, passengerID, newName string) error {
+	if newName == "" {
+		return fmt.Errorf("bus: 车名不能为空")
+	}
+	if n := len([]rune(newName)); n > 40 {
+		return fmt.Errorf("bus: 车名不能超过 40 字")
+	}
+	b, err := s.Get(ctx, busID)
+	if err != nil {
+		return err
+	}
+	if b.Status == StatusDissolved {
+		return ErrDissolved
+	}
+	if b.CreatorID != passengerID {
+		return ErrNotMember
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE bus SET name = ? WHERE id = ? AND status = 'active'`,
+		newName, busID)
+	if err != nil {
+		return fmt.Errorf("bus: 改名: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrDissolved
+	}
+	return nil
+}
+
+// UpdateStrategy 改车级策略。只有 creator 能改（1a 单人车规则）。
+// 传入 Strategy 整体替换（前端每次 PUT 完整对象）· nil 字段视为清空。
+func (s *Store) UpdateStrategy(ctx context.Context, busID, passengerID string, st Strategy) error {
+	b, err := s.Get(ctx, busID)
+	if err != nil {
+		return err
+	}
+	if b.Status == StatusDissolved {
+		return ErrDissolved
+	}
+	if b.CreatorID != passengerID {
+		return ErrNotMember
+	}
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE bus SET auto_refill_enabled = ?, refill_watermark = ?, refill_min_count = ?,
+		               per_round_count = ?, max_unit_price = ?,
+		               daily_round_limit = ?, daily_spend_limit = ?, preferred_vendor = ?
+		 WHERE id = ? AND status = 'active'`,
+		boolToInt(st.AutoRefillEnabled), st.RefillWatermark, nullableInt(st.RefillMinCount),
+		nullableInt(st.PerRoundCount), nullableInt64(st.MaxUnitPrice),
+		nullableInt(st.DailyRoundLimit), nullableInt64(st.DailySpendLimit),
+		nullableString(st.PreferredVendor), busID)
+	if err != nil {
+		return fmt.Errorf("bus: 改策略: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrDissolved
+	}
+	return nil
+}
+
 // Members 列车里所有活跃成员（按加入时间正序）。
 func (s *Store) Members(ctx context.Context, busID string) ([]Member, error) {
 	rows, err := s.db.QueryContext(ctx, `

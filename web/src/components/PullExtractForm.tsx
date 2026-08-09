@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select";
 import { UpstreamStatusPanel } from "@/components/UpstreamStatusPanel";
 import { ExtractConfirmModal } from "@/components/ExtractConfirmModal";
-import { previewFees } from "@/lib/pricing";
+import { useEstimate } from "@/api/hooks";
 import { fmtCredits, toCredits, vendorLabel } from "@/lib/utils";
 import type { Zone } from "@/types";
 
@@ -69,12 +69,27 @@ export function PullExtractForm({
     : vendorLabel(vendorId, invited);
   const effectiveZone = isAuto ? pick?.zone ?? null : activeZone ? (stock!.zones.length === 1 ? null : activeZone.zone) : null;
 
-  /* 预估费用 · auto 和具体 vendor 都要有（散客默认 auto · 必须能看到花多少）
-     后端就绪后换成 useEstimate()（见 lib/pricing.ts） */
-  const estimate = useMemo(
-    () => (unitPrice == null ? null : previewFees({ unitPrice, count })),
-    [unitPrice, count],
-  );
+  /* 预估费用 · 走后端 /me/pull/estimate（对外只三项：unit_price / service_fee / total） */
+  const estimateMut = useEstimate();
+  const [estimate, setEstimate] = useState<{ unit_price: number; service_fee: number; total: number } | null>(null);
+  useEffect(() => {
+    if (unitPrice == null || isAuto || vendorId === "auto") {
+      // 系统派号那条 auto 分支还没接（后端 estimate 需要 vendor_id）· 先按单价 × count 估
+      // TODO(1a): auto-pick 端点应返回 estimate 一起给
+      setEstimate(unitPrice == null ? null : {
+        unit_price: unitPrice,
+        service_fee: 0,
+        total: unitPrice * count,
+      });
+      return;
+    }
+    let alive = true;
+    estimateMut.mutateAsync({ vendor_id: vendorId, zone: effectiveZone ?? undefined, count })
+      .then((r) => { if (alive) setEstimate(r); })
+      .catch(() => { if (alive) setEstimate(null); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId, effectiveZone, count, unitPrice, isAuto]);
 
   const bargain = count === 1;
   const outOfStock = available === 0;
@@ -147,23 +162,18 @@ export function PullExtractForm({
           <UpstreamStatusPanel vendorId={vendorId} zone={zone} />
 
           {estimate ? (
-            /* 预估费用卡 · 跟左侧上游状态卡 UI 完全统一 */
+            /* 预估费用卡 · 对外只显示单价 / 服务费 / 小计（decisions §8.20 · 不展示加价链分层） */
             <div className="flex flex-col justify-between rounded-xl border border-hairline bg-bg-elevated/40 p-4 text-label">
               <div>
                 <div className="mb-3 font-semibold text-fg">预估费用</div>
                 <div className="space-y-1.5">
                   <FeeRow
-                    label={unitPrice != null ? `号价 · ${toCredits(unitPrice)} × ${count}` : "号价"}
-                    value={`${fmtCredits(estimate.keyCost)} 积分`}
+                    label={`单价 · ${count} 个`}
+                    value={`${toCredits(estimate.unit_price)} × ${count} 积分`}
                   />
-                  {estimate.singlePullFee > 0 && (
-                    <FeeRow
-                      label="拉 1 个偏高"
-                      value={`+${fmtCredits(estimate.singlePullFee)} 积分`}
-                      muted
-                    />
+                  {estimate.service_fee > 0 && (
+                    <FeeRow label="服务费" value={`${fmtCredits(estimate.service_fee)} 积分`} muted />
                   )}
-                  <FeeRow label={`服务费 · 1 × ${count}`} value={`${toCredits(estimate.serviceFee)} 积分`} muted />
                   {/* 通道费只在充值积分时收 · 拉号/提取都是抵扣积分 · decisions §8.21 · 不显示 */}
                 </div>
               </div>
@@ -231,6 +241,7 @@ export function PullExtractForm({
           count,
           unitPrice,
           warrantyMinutes: (isAuto ? pick?.warranty_minutes : stock?.warranty_minutes) ?? 0,
+          estimate,
         }}
       />
     </>
