@@ -7,12 +7,12 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// wire → 归一化。所有 kiro.ooo 字段口径的翻译都在这个文件里，
+// wire → 归一化。所有 本 vendor 字段口径的翻译都在这个文件里，
 // adapter.go 只管发请求 / 判错。
 
-// credits 把 kiro.ooo 的积分转成归一化 Money。
+// credits 把 本 vendor 的积分转成归一化 Money。
 //
-// kiro.ooo 是 6 家里**唯一显式把积分挂钩 CNY 的家**（档案 §4：1 积分 = 1 元），
+// 本 vendor 是 6 家里**唯一显式把积分挂钩 CNY 的家**（档案 §4：1 积分 = 1 元），
 // 但仍标 CurrencyCredit —— 1:1 是当前兑换率，不是恒等式，让 decider 显式换算。
 func credits(v int64) providers.Money {
 	return providers.Money{Amount: creditToMicro(v), Currency: providers.CurrencyCredit}
@@ -79,8 +79,8 @@ func toPurchaseResult(pr *purchaseResp, requested int, replayed bool, raw json.R
 
 // toStockSnapshot 翻译 stock 响应。
 //
-// kiro.ooo 的 stock 主字段是 `claimable`（档案 §6），优先取；
-// 若为 0 再回退到 public_available（兼容 91kiro / kiro.ceo 字段口径）。
+// 本 vendor 的 stock 主字段是 `claimable`（档案 §6），优先取；
+// 若为 0 再回退到 public_available（兼容其他家常用字段口径）。
 func toStockSnapshot(sr *stockResp, raw json.RawMessage) *providers.StockSnapshot {
 	avail := sr.Stock.Claimable
 	if avail == 0 {

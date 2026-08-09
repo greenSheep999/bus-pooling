@@ -2,14 +2,14 @@ package kiroappcc
 
 // wire types — vendor 私有，不外暴。
 //
-// kiroappcc 与其他 5 家最大差别（vendor 档案 §14）：
+// 本 vendor 与其他 5 家最大差别（vendor 档案 §14）：
 //   - **camelCase 字段** —— `availableKeys` / `keyPrice` / `pointsCost` / `retryAfter`
 //   - **无幂等键** —— claim 请求没有 client_order_id，响应也没有 order_id
 //   - **key payload 极简** —— 单个 `{key}`；批量 `{keys: [...]}`
 //   - **错误 envelope 嵌套** —— `{error: {type, message}}`
 
 // balanceResp `GET /openapi/balance` —— 只有一个 balance 字段（vendor 档案 §5）。
-// **注意**：kiroappcc 是 6 家里唯一没有 `/openapi/profile` 的，spent/earned 拿不到。
+// **注意**：本 vendor 是 6 家里唯一没有 `/openapi/profile` 的，spent/earned 拿不到。
 type balanceResp struct {
 	Balance int64 `json:"balance"`
 }

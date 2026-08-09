@@ -109,7 +109,7 @@ func (a *Adapter) Purchase(ctx context.Context, req providers.PurchaseRequest) (
 		return nil, fmt.Errorf("kiroceo: 解析 purchase: %w", err)
 	}
 
-	// Replayed 恒为 false：91kiro 对重放返回**字节完全一致**的响应（档案 §7），
+	// Replayed 恒为 false：其他 vendor 对重放返回**字节完全一致**的响应（档案 §7），
 	// 也就是说响应里没有任何字段能区分首次成交与重放 —— 回显的 client_order_id
 	// 首次也一样。这里**不能**拿 "id 对得上" 当重放判据，那会永远为 true，
 	// 上层若据此跳过扣费 / 台账就全错了。真要判重放，只能靠我方自己的
@@ -171,7 +171,7 @@ func (a *Adapter) KeyHealth(_ context.Context, _ string) (*providers.KeyHealth, 
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroCEO,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "91kiro 没有单 key 存活探测端点",
+		Message:  "本 vendor 没有单 key 存活探测端点",
 	}
 }
 
@@ -179,7 +179,7 @@ func (a *Adapter) KeyStats(_ context.Context, _ providers.KeyStatsOptions) (*pro
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroCEO,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "91kiro 没有 key stats 端点",
+		Message:  "本 vendor 没有 key stats 端点",
 	}
 }
 
@@ -212,7 +212,7 @@ func (a *Adapter) Usage(_ context.Context, _ []string) (*providers.UsageBatch, e
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroCEO,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "91kiro usage 需逐 key 调用，不走 batch 接口",
+		Message:  "本 vendor usage 需逐 key 调用·不走 batch 接口",
 	}
 }
 
@@ -325,7 +325,7 @@ func sentinelFor(code string, status int) error {
 
 // ── WebhookParser interface ─────────────────────────
 
-// VerifySignature · kiro.ceo webhook **无 HMAC 签名**（docs.js 未定义 header 或算法）·
+// VerifySignature · 本 vendor webhook **无 HMAC 签名**（docs.js 未定义 header 或算法）·
 // 接收端只能靠 URL 秘密路径 / query token 自保护。
 //
 // 我方策略：**总返 ErrNoSignature** · 上层收到这个错误意味着"这家不签"·

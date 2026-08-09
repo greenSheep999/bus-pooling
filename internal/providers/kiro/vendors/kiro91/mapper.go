@@ -7,12 +7,12 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// wire → 归一化。所有 91kiro 字段口径的翻译都在这个文件里，
+// wire → 归一化。所有 本 vendor 字段口径的翻译都在这个文件里，
 // adapter.go 只管发请求 / 判错。
 
-// credits 把 91kiro 的积分转成归一化 Money。
+// credits 把 本 vendor 的积分转成归一化 Money。
 //
-// 91kiro 的 credit 与 CNY 1:1（档案 §3「积分：1:1 充值」），但**仍标成
+// 本 vendor 的 credit 与 CNY 1:1（档案 §3「积分：1:1 充值」），但**仍标成
 // CurrencyCredit 而不是 CNY** —— 1:1 是这家当前的兑换率，不是恒等式。
 // 标 credit 让 decider 显式做换算，换率变了只改一处。
 func credits(v int64) providers.Money {
@@ -38,7 +38,7 @@ func parseTime(s string) *time.Time {
 
 // toKeyPayloads 翻译 keys[]。
 //
-// 91kiro 给四件套 {key, account, password, issuer_url}（Capability.KeyPayloadShape）。
+// 本 vendor 给四件套 {key, account, password, issuer_url}（Capability.KeyPayloadShape）。
 // **逐把的 paid 是权威值** —— 混价单里 Σ paid == total_credits，
 // 而 unit_price × 数量 不等于它（档案 §7）。
 func toKeyPayloads(items []keyItem) []providers.KeyPayload {

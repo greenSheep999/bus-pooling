@@ -7,10 +7,10 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// wire → 归一化。kiroappcc 字段口径的翻译都在这个文件里，
+// wire → 归一化。本 vendor 字段口径的翻译都在这个文件里，
 // adapter.go 只管发请求 / 判错。
 
-// credits 把 kiroappcc 的积分转成归一化 Money。
+// credits 把 本 vendor 的积分转成归一化 Money。
 //
 // vendor 档案 §4：单价 50 积分 / 个，币种就是积分（无 CNY 直换率暴露）。
 // 标 CurrencyCredit 让 decider 显式做换算，换率变了只改一处。
@@ -25,7 +25,7 @@ func creditToMicro(v int64) int64 {
 
 // toKeyPayloads 归一化 claim 响应的 keys。
 //
-// kiroappcc 的 KeyPayloadShape 是 JustKey —— account / password / issuer_url / region
+// 本 vendor 的 KeyPayloadShape 是 JustKey —— account / password / issuer_url / region
 // **一律没有**（Capability.KeyPayloadShape）。逐把的 Paid 也没有（vendor 只给 pointsCost
 // 总额），Paid 留零值，权威值走 PurchaseResult.TotalCost。
 func toKeyPayloads(single string, batch []string) []providers.KeyPayload {
@@ -44,7 +44,7 @@ func toKeyPayloads(single string, batch []string) []providers.KeyPayload {
 
 // toPurchaseResult 翻译 claim 响应。
 //
-// **kiroappcc 没有 client_order_id / order_id / warranty_until** —— 那几个字段留空。
+// **本 vendor 没有 client_order_id / order_id / warranty_until** —— 那几个字段留空。
 // **UnitPrice 走 stock 上次读到的 keyPrice**，vendor 在 claim 响应里不回 unit price，
 // 但骨架期没有 stock 缓存，先把 UnitPrice 留零，让 decider 从上次 Stock 快照里取。
 // **TotalCost = pointsCost**（车主自取时为 0 —— vendor 档案 §7 特权）。

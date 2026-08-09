@@ -102,7 +102,7 @@ func TestRegistryEnabledVsAll(t *testing.T) {
 	}
 	for _, e := range en {
 		if e.VendorID == VendorKiroCEO {
-			t.Error("停用的 kiroceo 不该出现在 Enabled() 里")
+			t.Error("停用的 vendor 不该出现在 Enabled() 里")
 		}
 	}
 

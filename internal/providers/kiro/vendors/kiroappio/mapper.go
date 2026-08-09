@@ -7,10 +7,10 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// wire → 归一化。所有 kiroapp.io 字段口径的翻译都在这个文件里，
+// wire → 归一化。所有 本 vendor 字段口径的翻译都在这个文件里，
 // adapter.go 只管发请求 / 判错。
 
-// credits 把 kiroapp.io 的积分转成归一化 Money。
+// credits 把 本 vendor 的积分转成归一化 Money。
 //
 // 积分与 CNY 1:1 是这家当前的兑换率，不是恒等式，所以标 CurrencyCredit
 // 让 decider 显式做换算，换率变了只改一处。

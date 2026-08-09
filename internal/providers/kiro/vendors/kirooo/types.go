@@ -4,7 +4,7 @@ package kirooo
 
 type profileResp struct {
 	Profile struct {
-		// kiro.ooo 用 `credits` 字段名（不同于 91kiro / kiro.ceo 的 balance）
+		// 本 vendor 用 `credits` 字段名（跟其他家的 balance 命名不同 · 见 mapper）
 		Credits int64 `json:"credits"`
 		Spent   int64 `json:"spent"`
 		Earned  int64 `json:"earned"`
@@ -82,7 +82,7 @@ func (e *errorResp) msg() string {
 	return e.Error
 }
 
-// webhookPayload — kiro.ooo webhook 载荷（vendor 档案 §11）
+// webhookPayload — 本 vendor webhook 载荷（vendor 档案 §11）
 //
 // 事件类型：`new_keys_available` / `all_keys_dead` / `test`（**不叫 webhook_test**）·
 // `client_order_id` 与 `purchase_order_id` 字面同值（后者是老名字，档案 §11）·

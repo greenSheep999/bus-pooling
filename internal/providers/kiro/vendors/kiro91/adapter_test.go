@@ -443,7 +443,7 @@ func TestPurchaseFreeKeyHasNoWarranty(t *testing.T) {
 }
 
 // TestStockDefaultZoneNotSent 不传 zone 时请求体里就不该有 zone 字段 ——
-// 91kiro 缺省 = 只取美国区，让服务端自己决定（档案 §7）。
+// 缺省 = 只取美国区，让服务端自己决定（档案 §7）。
 func TestPurchaseOmitsEmptyZone(t *testing.T) {
 	var gotBody purchaseReq
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -468,7 +468,7 @@ func TestPurchaseOmitsEmptyZone(t *testing.T) {
 	}
 }
 
-// TestPurchaseNeverClaimsReplayed 91kiro 对重放返回**字节完全一致**的响应，
+// TestPurchaseNeverClaimsReplayed 本 vendor 对重放返回**字节完全一致**的响应，
 // 也就是响应里没有任何字段能区分首次成交与重放（回显的 client_order_id 首次也一样）。
 //
 // 所以 Purchase 必须恒报 Replayed=false。曾经写成 `pr.ClientOrderID == req.ClientOrderID`
@@ -490,7 +490,7 @@ func TestPurchaseNeverClaimsReplayed(t *testing.T) {
 		t.Fatalf("Purchase: %v", err)
 	}
 	if got.Replayed {
-		t.Error("Purchase 不该报 Replayed —— 91kiro 响应里没有重放信号，判重放要靠我方 pull_round 状态机")
+		t.Error("Purchase 不该报 Replayed —— 响应里没有重放信号，判重放要靠我方 pull_round 状态机")
 	}
 }
 
@@ -546,7 +546,7 @@ func TestStockExcludesPrivate(t *testing.T) {
 	}
 }
 
-// TestUnsupportedCapabilities 91kiro 没有这几个端点 —— 必须返回 ErrNotSupported，
+// TestUnsupportedCapabilities 本 vendor 没有这几个端点 —— 必须返回 ErrNotSupported，
 // 让 deathwatch 走 housepool 探活而不是等一个不存在的接口。
 func TestUnsupportedCapabilities(t *testing.T) {
 	a := newTestAdapter(t, "http://unused")

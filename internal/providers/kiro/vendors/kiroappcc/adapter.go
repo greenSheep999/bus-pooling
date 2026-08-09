@@ -48,7 +48,7 @@ func (a *Adapter) ID() providers.VendorID           { return providers.VendorKir
 func (a *Adapter) ProviderID() providers.ProviderID { return providers.ProviderKiro }
 func (a *Adapter) DisplayName() string              { return "Kiro App CC" }
 
-// Capability 反映 kiroappcc 独家差异（vendor 档案 §14）：
+// Capability 反映 本 vendor 独家差异（vendor 档案 §14）：
 //   - **不支持幂等键**（本 vendor 最大接入风险 —— 网络超时重试会双扣）
 //   - **不支持区域**（单价一档到底）
 //   - **有 webhook 但无签名**（VerifySignature 恒返 ErrNoSignature）
@@ -122,7 +122,7 @@ func (a *Adapter) OrderKeys(_ context.Context, _ string) (*providers.PurchaseRes
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroAppCC,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kiroappcc 无 /openapi/orders 端点，不支持补拉",
+		Message:  "本 vendor 无 /openapi/orders 端点，不支持补拉",
 	}
 }
 
@@ -156,7 +156,7 @@ func (a *Adapter) KeyHealth(_ context.Context, _ string) (*providers.KeyHealth, 
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroAppCC,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kiroappcc 没有单 key 存活探测端点",
+		Message:  "本 vendor 没有单 key 存活探测端点",
 	}
 }
 
@@ -164,7 +164,7 @@ func (a *Adapter) KeyStats(_ context.Context, _ providers.KeyStatsOptions) (*pro
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroAppCC,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kiroappcc 没有 key stats 端点",
+		Message:  "本 vendor 没有 key stats 端点",
 	}
 }
 
@@ -173,7 +173,7 @@ func (a *Adapter) Redeem(_ context.Context, _ string) (*providers.RedeemResult, 
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroAppCC,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kiroappcc 无 /openapi 兑换端点，只能走网页 UI",
+		Message:  "本 vendor 无 /openapi 兑换端点，只能走网页 UI",
 	}
 }
 
@@ -181,12 +181,12 @@ func (a *Adapter) Usage(_ context.Context, _ []string) (*providers.UsageBatch, e
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroAppCC,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kiroappcc 无 key usage 端点",
+		Message:  "本 vendor 无 key usage 端点",
 	}
 }
 
 // newReq —— **Authorization: Bearer <api key>**（vendor 档案 §2）。
-// 注意 kiroappcc 的 sk- 前缀跟 OpenAI 撞名，别在客户端搞混。
+// 注意 本 vendor 的 sk- 前缀跟 OpenAI 撞名，别在客户端搞混。
 func (a *Adapter) newReq(ctx context.Context, method, path string, body []byte) (*http.Request, error) {
 	u := strings.TrimRight(a.cfg.BaseURL, "/") + path
 	var req *http.Request
@@ -213,7 +213,7 @@ func (a *Adapter) newReq(ctx context.Context, method, path string, body []byte) 
 	return req, nil
 }
 
-// parseError kiroappcc 错误 envelope 独家嵌套（vendor 档案 §12）：
+// parseError 本 vendor 错误 envelope 独家嵌套（vendor 档案 §12）：
 //
 //	{"error": {"type": "<code>", "message": "<msg>"}, "retryAfter": 180}
 //
@@ -247,10 +247,10 @@ func (a *Adapter) parseError(resp *httpx.Response) error {
 	return ae
 }
 
-// sentinelFor kiroappcc 没有全表 code 枚举（vendor 档案 §12）。
+// sentinelFor 本 vendor 没有全表 code 枚举（vendor 档案 §12）。
 // 已知 code 只有 `rate_limit_exceeded`，其余靠 status 判。
 //
-// **先判 code 再判 status**（跟 91kiro / kiroceo 同规矩，防同状态不同语义压平）。
+// **先判 code 再判 status**（跟 其他 vendor / 其他 vendor 同规矩，防同状态不同语义压平）。
 func sentinelFor(code string, status int) error {
 	switch code {
 	case "rate_limit_exceeded":
@@ -276,7 +276,7 @@ func sentinelFor(code string, status int) error {
 	case status >= 500:
 		return providers.ErrUpstream
 	case status >= 400:
-		// 未识别的 4xx 一律当"请求有问题"（同 kiroceo 注释：给 ErrUpstream 会被
+		// 未识别的 4xx 一律当"请求有问题"（同 其他 vendor 注释：给 ErrUpstream 会被
 		// Retryable 判可重试白烧配额）
 		return providers.ErrBadRequest
 	}
@@ -285,7 +285,7 @@ func sentinelFor(code string, status int) error {
 
 // ── WebhookParser interface ─────────────────────────
 
-// VerifySignature · kiroappcc webhook **无签名**（vendor 档案 §10 明示：
+// VerifySignature · 本 vendor webhook **无签名**（vendor 档案 §10 明示：
 // 没有 header 或算法说明，是 6 家里 webhook 文档最简的）。
 //
 // 我方策略：**总返 ErrNoSignature** · handler 决定是否接受无签名家。

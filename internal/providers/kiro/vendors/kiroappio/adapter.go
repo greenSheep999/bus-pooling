@@ -168,7 +168,7 @@ func (a *Adapter) KeyHealth(_ context.Context, _ string) (*providers.KeyHealth, 
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroAppIO,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kiroapp.io 没有单 key 存活探测端点",
+		Message:  "本 vendor 没有单 key 存活探测端点",
 	}
 }
 
@@ -176,7 +176,7 @@ func (a *Adapter) KeyStats(_ context.Context, _ providers.KeyStatsOptions) (*pro
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroAppIO,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kiroapp.io 没有 key stats 端点",
+		Message:  "本 vendor 没有 key stats 端点",
 	}
 }
 
@@ -209,7 +209,7 @@ func (a *Adapter) Usage(_ context.Context, _ []string) (*providers.UsageBatch, e
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroAppIO,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kiroapp.io usage 需逐 key 调用，不走 batch 接口",
+		Message:  "本 vendor usage 需逐 key 调用，不走 batch 接口",
 	}
 }
 
@@ -318,7 +318,7 @@ func sentinelFor(code string, status int) error {
 
 // ── WebhookParser interface ─────────────────────────
 
-// VerifySignature · kiroapp.io webhook 无 HMAC 签名（档案未定义 header 或算法）·
+// VerifySignature · 本 vendor webhook 无 HMAC 签名（档案未定义 header 或算法）·
 // 接收端只能靠 URL 秘密路径 / query token 自保护。
 //
 // 我方策略：总返 ErrNoSignature · 由 handler 决定要不要接。

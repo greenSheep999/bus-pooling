@@ -39,7 +39,7 @@ type Zone string
 const (
 	ZoneUS Zone = "us"
 	ZoneEU Zone = "eu"
-	// ZoneGeneral 用于不分区的 vendor（kiroappcc）
+	// ZoneGeneral 用于不分区的 vendor
 	ZoneGeneral Zone = "general"
 )
 
@@ -47,7 +47,7 @@ const (
 type Money struct {
 	Amount int64
 	// Currency "credit"（vendor 内部积分）| "CNY" | "USD"
-	// 混币的换算在 decider 里做（kirodrop 报 USD · decisions §8.30）
+	// 混币的换算在 decider 里做（decisions §8.30）
 	Currency string
 }
 
@@ -61,18 +61,18 @@ const (
 type KeyPayloadShape string
 
 const (
-	// KeyPayloadFourTuple {key, account, password, issuer_url} —— 91kiro / kiroceo / kirooo / kiroappio
+	// KeyPayloadFourTuple {key, account, password, issuer_url}
 	KeyPayloadFourTuple KeyPayloadShape = "four_tuple"
-	// KeyPayloadJustKey 只有 key —— kiroappcc
+	// KeyPayloadJustKey 只有 key
 	KeyPayloadJustKey KeyPayloadShape = "just_key"
-	// KeyPayloadKeyRegion {key, region} —— kirodrop
+	// KeyPayloadKeyRegion {key, region}
 	KeyPayloadKeyRegion KeyPayloadShape = "key_region"
 )
 
 // Capability 声明每家的能力差异。
 //
-// **为什么不做"最大公约数"接口**（契约 §3）：每家能力不一样（91kiro 有幂等键、
-// kiroappcc 没有）。若统一到最差水平，有幂等键的家也用不上，那就把「网络超时可能
+// **为什么不做"最大公约数"接口**（契约 §3）：各家能力不同（幂等键 / 分区 /
+// webhook 签名等）。若统一到最差水平，有幂等键的家也用不上，那就把「网络超时可能
 // 双扣」这个风险扩散到所有家了。上层要用「有幂等键才这么做」就查这里。
 type Capability struct {
 	SupportsIdempotency   bool
@@ -87,11 +87,11 @@ type Capability struct {
 	MaxPerOrder           int
 }
 
-// Vendor 是 6 家都实现的最小接口。
+// Vendor 是各家 adapter 都要实现的最小接口。
 type Vendor interface {
 	ID() VendorID
 	ProviderID() ProviderID
-	// DisplayName 面向用户的名字（"Kiro Market"）· 匿名编号由上层按 invited 决定
+	// DisplayName 面向用户的名字 · 匿名编号由上层按 invited 决定
 	DisplayName() string
 	Capability() Capability
 
@@ -114,8 +114,8 @@ type Vendor interface {
 // ── Stock ────────────────────────────────────────────
 
 type StockOptions struct {
-	// Zone nil = 用 vendor 默认。**注意 91kiro 的默认是"只取美国区"**，
-	// 想要欧区必须显式传（契约 §4.1 / vendor 档案 §7）
+	// Zone nil = 用 vendor 默认。**某些 vendor 的默认可能是"只取一个区"**·
+	// 需要跨区必须显式传（契约 §4.1 / vendor 档案 §7）
 	Zone *Zone
 }
 
@@ -150,9 +150,9 @@ type PurchaseRequest struct {
 	// **重试时必须传同一个值**，否则会变成两笔独立订单。
 	ClientOrderID string
 	Zone          *Zone
-	// OrderID 部分 vendor 支持指定批次（kiroappio / kirodrop）
+	// OrderID 部分 vendor 支持指定批次
 	OrderID *string
-	// MaxTotal 价格保护（kirodrop 支持）
+	// MaxTotal 价格保护（部分 vendor 支持）
 	MaxTotal *Money
 }
 

@@ -46,7 +46,7 @@ var (
 type APIError struct {
 	VendorID   VendorID
 	StatusCode int
-	// VendorCode vendor 的稳定错误标识（91kiro 的 code 字段）· 判这个不判文案
+	// VendorCode vendor 的稳定错误标识 · 判这个不判文案
 	VendorCode  string
 	Message     string
 	RetryAfter  *time.Duration

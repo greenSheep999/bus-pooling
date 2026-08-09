@@ -18,10 +18,9 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers/kiro/vendors/kirooo"
 )
 
-// Config 是 kiro provider 下各家的配置。
+// Config 是 kiro provider 下各家 vendor 的配置。
 //
-// 6 家 vendor（1a: kiro91 · 1b: kiroceo/kirooo/kiroappio/kirodrop/kiroappcc）。
-// **不预留空字段**：加一家时同时加 config 和 adapter · 省得留一堆没实现的开关。
+// **不预留空字段**：加一家 vendor 时同时加 config 和 adapter · 省得留一堆没实现的开关。
 type Config struct {
 	Kiro91    VendorConfig
 	KiroCEO   VendorConfig
@@ -55,7 +54,6 @@ func Register(r *providers.Registry, cfg Config) error {
 		return fmt.Errorf("kiro: registry 为空")
 	}
 
-	// kiro91
 	a91, err := kiro91.New(kiro91.Config{
 		BaseURL:       cfg.Kiro91.BaseURL,
 		APIKey:        cfg.Kiro91.APIKey,
@@ -70,7 +68,6 @@ func Register(r *providers.Registry, cfg Config) error {
 		return fmt.Errorf("kiro: 注册 kiro91: %w", err)
 	}
 
-	// kiroceo
 	if cfg.KiroCEO.BaseURL != "" {
 		aCEO, err := kiroceo.New(kiroceo.Config{
 			BaseURL: cfg.KiroCEO.BaseURL, APIKey: cfg.KiroCEO.APIKey,
@@ -86,7 +83,6 @@ func Register(r *providers.Registry, cfg Config) error {
 		}
 	}
 
-	// kirooo
 	if cfg.KiroOOO.BaseURL != "" {
 		aOOO, err := kirooo.New(kirooo.Config{
 			BaseURL: cfg.KiroOOO.BaseURL, APIKey: cfg.KiroOOO.APIKey,
@@ -102,7 +98,6 @@ func Register(r *providers.Registry, cfg Config) error {
 		}
 	}
 
-	// kiroappio
 	if cfg.KiroAppIO.BaseURL != "" {
 		aIO, err := kiroappio.New(kiroappio.Config{
 			BaseURL: cfg.KiroAppIO.BaseURL, APIKey: cfg.KiroAppIO.APIKey,
@@ -118,7 +113,6 @@ func Register(r *providers.Registry, cfg Config) error {
 		}
 	}
 
-	// kiroappcc
 	if cfg.KiroAppCC.BaseURL != "" {
 		aCC, err := kiroappcc.New(kiroappcc.Config{
 			BaseURL: cfg.KiroAppCC.BaseURL, APIKey: cfg.KiroAppCC.APIKey,
@@ -134,7 +128,6 @@ func Register(r *providers.Registry, cfg Config) error {
 		}
 	}
 
-	// kirodrop
 	if cfg.KiroDrop.BaseURL != "" {
 		aDrop, err := kirodrop.New(kirodrop.Config{
 			BaseURL: cfg.KiroDrop.BaseURL, APIKey: cfg.KiroDrop.APIKey,

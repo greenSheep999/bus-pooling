@@ -167,7 +167,7 @@ func (a *Adapter) KeyHealth(_ context.Context, _ string) (*providers.KeyHealth, 
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroDrop,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kirodrop 没有单 key 存活探测端点",
+		Message:  "本 vendor 没有单 key 存活探测端点",
 	}
 }
 
@@ -175,7 +175,7 @@ func (a *Adapter) KeyStats(_ context.Context, _ providers.KeyStatsOptions) (*pro
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroDrop,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kirodrop 没有 key stats 端点",
+		Message:  "本 vendor 没有 key stats 端点",
 	}
 }
 
@@ -208,17 +208,17 @@ func (a *Adapter) Usage(_ context.Context, _ []string) (*providers.UsageBatch, e
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroDrop,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kirodrop usage 需逐 key 调用，不走 batch 接口",
+		Message:  "本 vendor usage 需逐 key 调用，不走 batch 接口",
 	}
 }
 
-// Reservation 预约库存 —— kirodrop 特有端点（GET /api/v1/reservation?quantity=N&region=X）。
+// Reservation 预约库存 —— 本 vendor 特有端点（GET /api/v1/reservation?quantity=N&region=X）。
 // 阶段 1a 不实现，返 ErrNotSupported。留着提醒后续接入。
 func (a *Adapter) Reservation(_ context.Context, _ int, _ string) error {
 	return &providers.APIError{
 		VendorID: providers.VendorKiroDrop,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kirodrop reservation 阶段 1a 未接入",
+		Message:  "本 vendor reservation 阶段 1a 未接入",
 	}
 }
 
@@ -323,11 +323,11 @@ func sentinelFor(code string, status int) error {
 
 // ── WebhookParser interface ─────────────────────────
 //
-// kirodrop 的签名跟 91kiro 同算法（HMAC-SHA256 over ts + "." + body、±5min 时窗），
+// 本 vendor 的签名跟 其他 vendor 同算法（HMAC-SHA256 over ts + "." + body、±5min 时窗），
 // **只是 header 名和 prefix 不同**：
-//   - Signature header : X-Kiro-Signature   （91kiro 是 X-KM-Signature）
-//   - Timestamp header : X-Kiro-Timestamp   （91kiro 是 X-KM-Timestamp）
-//   - Prefix           : v1=<hex>           （91kiro 是 sha256=<hex>）
+//   - Signature header : X-Kiro-Signature   （其他 vendor 是 X-KM-Signature）
+//   - Timestamp header : X-Kiro-Timestamp   （其他 vendor 是 X-KM-Timestamp）
+//   - Prefix           : v1=<hex>           （其他 vendor 是 sha256=<hex>）
 
 func (a *Adapter) VerifySignature(secret string, headers http.Header, rawBody []byte) error {
 	if secret == "" {

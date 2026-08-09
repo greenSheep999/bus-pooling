@@ -15,10 +15,10 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// kiro.ooo adapter — 参照 kiroceo 骨架 · 差异：
+// adapter — 本 vendor 差异：
 //   - Base URL 已含 /api，endpoint 相对路径**不再重复 /api 前缀**
 //   - 拉号入口是 `/my/keys/claim`（不是 /my/purchase）
-//   - Webhook 无 HMAC 签名（同 kiroceo，档案 §11）
+//   - Webhook 无 HMAC 签名（档案 §11）
 //   - Profile 字段是 `credits`（不是 balance）
 
 type Config struct {
@@ -90,7 +90,7 @@ func (a *Adapter) Stock(ctx context.Context, opts providers.StockOptions) (*prov
 }
 
 func (a *Adapter) Purchase(ctx context.Context, req providers.PurchaseRequest) (*providers.PurchaseResult, error) {
-	// kiro.ooo 拉号入口：POST /my/keys/claim（档案 §7）
+	// 本 vendor 拉号入口：POST /my/keys/claim（档案 §7）
 	// Body 只吃 {count, client_order_id}，不带 zone 字段（档案未列 zone 参数）
 	body := purchaseReq{
 		Count:         req.Count,
@@ -162,7 +162,7 @@ func (a *Adapter) Balance(ctx context.Context) (*providers.Balance, error) {
 	if err := json.Unmarshal(resp.Body, &pr); err != nil {
 		return nil, fmt.Errorf("kirooo: 解析 profile: %w", err)
 	}
-	// kiro.ooo 字段名 `credits`（不同于 91kiro/kiro.ceo 的 balance）
+	// 本 vendor 字段名 `credits`（跟其他家 balance 命名不同）
 	return &providers.Balance{
 		VendorID: providers.VendorKiroOOO,
 		Balance:  credits(pr.Profile.Credits),
@@ -176,7 +176,7 @@ func (a *Adapter) KeyHealth(_ context.Context, _ string) (*providers.KeyHealth, 
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroOOO,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kiro.ooo 没有单 key 存活探测端点",
+		Message:  "本 vendor 没有单 key 存活探测端点",
 	}
 }
 
@@ -184,16 +184,16 @@ func (a *Adapter) KeyStats(_ context.Context, _ providers.KeyStatsOptions) (*pro
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroOOO,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kiro.ooo 没有 key stats 端点",
+		Message:  "本 vendor 没有 key stats 端点",
 	}
 }
 
 func (a *Adapter) Redeem(_ context.Context, _ string) (*providers.RedeemResult, error) {
-	// 档案 §8：kiro.ooo 走 USDT 上链充值，**没有兑换码 / 支付宝**（独家）
+	// 档案 §8：本 vendor 走 USDT 上链充值，**没有兑换码 / 支付宝**（独家）
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroOOO,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kiro.ooo 不做兑换码，充值走 USDT 上链",
+		Message:  "本 vendor 不做兑换码，充值走 USDT 上链",
 	}
 }
 
@@ -201,7 +201,7 @@ func (a *Adapter) Usage(_ context.Context, _ []string) (*providers.UsageBatch, e
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroOOO,
 		Sentinel: providers.ErrNotSupported,
-		Message:  "kiro.ooo usage 未见 batch 接口",
+		Message:  "本 vendor usage 未见 batch 接口",
 	}
 }
 
@@ -257,9 +257,9 @@ func (a *Adapter) parseError(resp *httpx.Response) error {
 
 // sentinelFor 把 vendor 的 code 映射到统一 sentinel。
 //
-// kiro.ooo 档案 §13：没有全表 code 枚举，只明写"取不到货 4xx / 限流 429"。
-// 这里保留 kiroceo 那套 code 判断作为**兼容尝试**（同为 kiro provider 家族，
-// code 命名大概率相近），命中不了退回按 status 判。
+// 档案 §13：没有全表 code 枚举·只明写"取不到货 4xx / 限流 429"。
+// 保留同 provider 家族其他 vendor 的 code 判断作为**兼容尝试**（命名大概率相近）·
+// 命中不了退回按 status 判。
 func sentinelFor(code string, status int) error {
 	switch code {
 	case "unauthenticated", "invalid_api_key":
@@ -310,7 +310,7 @@ func sentinelFor(code string, status int) error {
 
 // ── WebhookParser interface ─────────────────────────
 
-// VerifySignature · kiro.ooo webhook **无 HMAC 签名**（档案 §11 原文：
+// VerifySignature · 本 vendor webhook **无 HMAC 签名**（档案 §11 原文：
 // 「不带签名，请自己用不可猜的 URL 路径当口令」）。
 //
 // 策略：**总返 ErrNoSignature** · 上层收到这个错误意味着"这家不签"·
@@ -325,9 +325,9 @@ func (a *Adapter) Parse(rawBody []byte, _ http.Header) (*providers.WebhookEvent,
 		return nil, fmt.Errorf("kirooo: 解析 webhook: %w", err)
 	}
 
-	// kiro.ooo 里 client_order_id 与 purchase_order_id 字面同值（档案 §11：
+	// 本 vendor 里 client_order_id 与 purchase_order_id 字面同值（档案 §11：
 	// purchase_order_id 是 client_order_id 的老名字）· 优先取 purchase_order_id
-	// 保持归一化字段跟 91kiro/kiroceo 一致，若空再兜底 client_order_id。
+	// 保持归一化字段跟同 provider 其他家 vendor 一致·若空再兜底 client_order_id。
 	orderID := wp.PurchaseOrderID
 	if orderID == "" {
 		orderID = wp.ClientOrderID
@@ -349,7 +349,7 @@ func (a *Adapter) Parse(rawBody []byte, _ http.Header) (*providers.WebhookEvent,
 	case "all_keys_dead":
 		evt.EventType = providers.EventAllKeysDead
 	case "test":
-		// kiro.ooo 测试事件叫 `test`（不是 webhook_test，档案 §11）
+		// 本 vendor 测试事件叫 `test`（不是 webhook_test，档案 §11）
 		evt.EventType = providers.EventTest
 	default:
 		evt.EventType = providers.EventType(wp.Event)
