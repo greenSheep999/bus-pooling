@@ -184,8 +184,8 @@ CREATE TABLE pull_round (
   count_purchased           INTEGER NOT NULL,
   -- 计费分项 · 逐层乘的每层增量（decisions §8.34）· 分项之和 = total_debit
   key_cost_total            INTEGER NOT NULL,               -- microunit
-  vendor_fee_total          INTEGER NOT NULL DEFAULT 0,     -- vendor 附加费（1b 才非 0）
-  region_fee_total          INTEGER NOT NULL DEFAULT 0,     -- 区域附加费（1b 才非 0）
+  vendor_fee_total          INTEGER NOT NULL DEFAULT 0,     -- vendor 分项（1b 才非 0）
+  region_fee_total          INTEGER NOT NULL DEFAULT 0,     -- 区域分项（1b 才非 0）
   single_pull_fee_total     INTEGER NOT NULL DEFAULT 0,
   capability_fee_total      INTEGER NOT NULL DEFAULT 0,
   service_fee_total         INTEGER NOT NULL,

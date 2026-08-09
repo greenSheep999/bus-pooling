@@ -20,13 +20,21 @@ var wantTables = []string{
 	"passenger", "passenger_api_key", "passenger_daily_counter",
 	"passenger_downstream", "passenger_strategy_default",
 	"pending_assignment", "pending_dissolution", "pending_handoff", "pending_purchase",
+	"pending_topup", // migration 010 · pending_topup 状态机（1b P1-C）
 	"pull_intent", "pull_round",
 	"redeem_code",
 	"session",
 	"settlement_event",
 	"topup_order",
+	"pull_round_surcharge", // migration 015 · 1b P1-2B · 每轮命中的 surcharge 快照
+	"surcharge_rule",       // migration 015 · 1b P1-2B · 5 类分项统一表
 	"vendor_account",
+	"vendor_pricing", // migration 013 · 1b P1-2A · vendor 报价换算表
 	"wallet", "wallet_ledger",
+	// migration 019 · 1c · 邀请码体系（decisions §8.29 / §8.32）
+	"system_invite_code",   // 我方发给社群的码 · 只有它能置 invited=1
+	"personal_invite_code", // 每人一个 · 只给手续费减免额度·不改身份
+	"invite_referral",      // 谁邀请了谁 · 防刷 + 溯源
 }
 
 func openTestDB(t *testing.T) *DB {
@@ -235,7 +243,11 @@ func TestCredentialOwnershipCheck(t *testing.T) {
 	})
 }
 
-// wallet 的 CHECK：余额和冻结都不能为负（超扣的第一道防线）
+// wallet 的 CHECK：**只**冻结不能为负（超扣的第一道防线）。
+// 余额 CHECK 在 009_wallet_allow_negative.sql 里 drop 了 —— refund 时允许负余额
+// 记"负债"（P0-B 修·wallet.ForceApplyTx）。防超扣改成应用层：Debit/Reserve 里的
+// 条件 UPDATE `WHERE balance >= amount` 挡在扣款前·ForceApplyTx 才走无条件 UPDATE
+// （只允许 topup_refund / admin_adjust 走）。
 func TestWalletNonNegativeCheck(t *testing.T) {
 	d := openTestDB(t)
 	ctx := context.Background()
@@ -244,10 +256,12 @@ func TestWalletNonNegativeCheck(t *testing.T) {
 	}
 	seed(t, d)
 
+	// balance 允许负（P0-B · refund 负债）
 	if _, err := d.ExecContext(ctx,
-		`UPDATE wallet SET balance = -1 WHERE passenger_id = 'p1'`); err == nil {
-		t.Fatal("余额置负应该被 CHECK 拒绝")
+		`UPDATE wallet SET balance = -1 WHERE passenger_id = 'p1'`); err != nil {
+		t.Fatalf("balance 应允许负（009 之后）: %v", err)
 	}
+	// reserved 仍不能负（冻结额是应用层协议·不能负）
 	if _, err := d.ExecContext(ctx,
 		`UPDATE wallet SET reserved = -1 WHERE passenger_id = 'p1'`); err == nil {
 		t.Fatal("冻结置负应该被 CHECK 拒绝")

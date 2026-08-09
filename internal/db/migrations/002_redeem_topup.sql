@@ -23,7 +23,7 @@ CREATE TABLE redeem_code (
 );
 CREATE INDEX idx_redeem_used_by ON redeem_code(used_by);
 
--- 充值单。乘客发起 → 落 pending 行 + 生成 pay_url；等 waffo webhook 到才 MarkPaid，
+-- 充值单。乘客发起 → 落 pending 行 + 生成 pay_url；等 支付网关 webhook 到才 MarkPaid，
 -- 那时才落 wallet_ledger 两条：recharge + channel_fee（CLAUDE.md §1.4）。
 --
 -- 字段口径：
@@ -34,7 +34,7 @@ CREATE INDEX idx_redeem_used_by ON redeem_code(used_by);
 CREATE TABLE topup_order (
   id                     TEXT PRIMARY KEY,               -- UUID v7 · 对外叫 order_id
   passenger_id           TEXT NOT NULL,
-  channel                TEXT NOT NULL,                   -- 目前只有 waffo
+  channel                TEXT NOT NULL,                   -- 目前只启用一家 hosted
   credits                INTEGER NOT NULL,                -- microunit · 净到账
   channel_fee            INTEGER NOT NULL,                -- microunit · 通道费
   paid                   INTEGER NOT NULL,                -- microunit · credits + channel_fee

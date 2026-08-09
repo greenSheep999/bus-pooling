@@ -3,7 +3,7 @@
 -- pending_handoff 加两个占位路径专用状态（P0 · handoff 数据丢失回归修复）
 --
 -- 背景：上一轮为了让联调三段跑通·把 fulfill 默认放行占位字符串
--- （PLACEHOLDER:not-a-real-key:*）·但 confirm 分支仍走真 DELETE 到 kiro.rs·
+-- （PLACEHOLDER:not-a-real-key:*）·但 confirm 分支仍走真 DELETE 到 housepool·
 -- 用户拿到假号后 confirm 会真删号池里的号·明文永久丢失。
 --
 -- 修：区分"真明文 fulfilled" vs "占位 placeholder_delivered"·后者的 confirm
