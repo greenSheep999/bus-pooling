@@ -11,8 +11,10 @@ import (
 
 // importToPool 把 vendor 拉到的号导入号池指定 group，返回号池侧的 credential id。
 //
-// vendor 给的四件套 → 号池要的 ImportCredential 归一化。**只对号池成功导入的号返 id** ——
-// duplicate / failed 都跳过，让上层按实际数处理（避免"我以为进池了，实际没有"）。
+// duplicate 事件也算成功 —— 崩溃恢复走重放路径时，号池 BatchImport 幂等，
+// 相同 KiroAPIKey 会返 duplicate + 原 CredentialID。忽略 duplicate 会让
+// recoverImported 永远拿不到 id · imported→need_manual 死路。
+// 只有 failed / rolled-back 事件才当失败跳过。
 func (o *Orchestrator) importToPool(
 	ctx context.Context,
 	group string,
@@ -41,8 +43,11 @@ func (o *Orchestrator) importToPool(
 
 	ids := make([]housepool.CredentialID, 0, len(purchase.Keys))
 	for evt := range result.Events {
-		if evt.Status == housepool.ImportStatusVerified && evt.CredentialID != nil {
-			ids = append(ids, *evt.CredentialID)
+		switch evt.Status {
+		case housepool.ImportStatusVerified, housepool.ImportStatusDuplicate:
+			if evt.CredentialID != nil {
+				ids = append(ids, *evt.CredentialID)
+			}
 		}
 	}
 	// 排空 Summary，确保流关闭时 Err() 有值

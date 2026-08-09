@@ -22,7 +22,7 @@ func TestCreateTopupHappyPath(t *testing.T) {
 	got := decode[map[string]any](t, body)
 
 	// 契约字段（对齐 TS TopupOrder）都在
-	for _, k := range []string{"order_id", "qr_payload", "paid", "credits", "expires_at", "status", "created_at"} {
+	for _, k := range []string{"order_id", "checkout_url", "paid", "credits", "expires_at", "status", "created_at"} {
 		if _, ok := got[k]; !ok {
 			t.Errorf("响应缺 %q，got %v", k, got)
 		}

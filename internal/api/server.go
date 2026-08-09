@@ -19,6 +19,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/housepool"
 	"github.com/bus-pooling/bus-pooling/internal/insight"
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
+	"github.com/bus-pooling/bus-pooling/internal/paymentgw"
 	"github.com/bus-pooling/bus-pooling/internal/pullrecord"
 	"github.com/bus-pooling/bus-pooling/internal/redeem"
 	"github.com/bus-pooling/bus-pooling/internal/strategy"
@@ -45,6 +46,10 @@ type Server struct {
 	vendorView  *vendorview.Service
 	insights    *insight.Store
 	downstreams *downstream.Store
+	// paymentGW 接 404bus-payment-gateway·nil = 未装配（走 dev mock 端点）
+	paymentGW *paymentgw.Client
+	// paymentGWSuccessURL waffo checkout 完成后回跳的前端 URL·可选
+	paymentGWSuccessURL string
 	// secureCookie 生产环境要 true（HTTPS）· 本地 http 调试设 false 否则 cookie 不生效
 	secureCookie bool
 }
@@ -63,10 +68,12 @@ type ServerDeps struct {
 	PullRecords  *pullrecord.Store
 	Handoffs     *handoff.Store
 	Pool         housepool.HousePool
-	VendorView   *vendorview.Service
-	Insights     *insight.Store
-	Downstreams  *downstream.Store
-	SecureCookie bool
+	VendorView          *vendorview.Service
+	Insights            *insight.Store
+	Downstreams         *downstream.Store
+	PaymentGW           *paymentgw.Client
+	PaymentGWSuccessURL string
+	SecureCookie        bool
 }
 
 func NewServer(d ServerDeps) *Server {
@@ -82,10 +89,12 @@ func NewServer(d ServerDeps) *Server {
 		pullRecords:  d.PullRecords,
 		handoffs:     d.Handoffs,
 		pool:         d.Pool,
-		vendorView:   d.VendorView,
-		insights:     d.Insights,
-		downstreams:  d.Downstreams,
-		secureCookie: d.SecureCookie,
+		vendorView:          d.VendorView,
+		insights:            d.Insights,
+		downstreams:         d.Downstreams,
+		paymentGW:           d.PaymentGW,
+		paymentGWSuccessURL: d.PaymentGWSuccessURL,
+		secureCookie:        d.SecureCookie,
 	}
 }
 
@@ -144,6 +153,15 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	// 接了真 waffo 后**删掉**，改成签名校验的 /api/webhooks/waffo。
 	if os.Getenv("BP_ENABLE_DEV_TOPUP") == "1" {
 		mux.Handle("POST /api/internal/topup/{order_id}/paid", handler(s.RequireAuth(s.handleDevMarkTopupPaid)))
+	}
+
+	// 404bus-payment-gateway settlement 回调
+	//
+	// 挂点跟 gateway CLI -add-client 时提供的 settlement_url 一致。
+	// 无鉴权（用签名验证）· 不加 RequireAuth · 契约要求接收后立刻记录 event_id
+	// 再返 2xx（慢的活异步做），阶段 1a 直接同步做完（MarkPaid 是本地 SQL·<10ms）。
+	if s.paymentGW != nil {
+		mux.Handle("POST /api/hooks/paymentgw/settlement", handler(s.handleGatewaySettlement))
 	}
 
 	// vendors 只读（05-api-contract §9）· 全部要鉴权

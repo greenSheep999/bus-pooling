@@ -48,19 +48,22 @@ const (
 
 // Order 一张充值单的内部形状。
 type Order struct {
-	ID             string
-	PassengerID    string
-	Channel        string
-	Credits        int64 // 净到账积分
-	ChannelFee     int64 // 通道费
-	Paid           int64 // 用户付的总积分 = Credits + ChannelFee
-	PayURL         string
-	Status         Status
-	ExpiresAt      time.Time
-	PaidAt         time.Time
-	WalletLedgerID string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID               string
+	PassengerID      string
+	Channel          string
+	Credits          int64 // 净到账积分
+	ChannelFee       int64 // 通道费
+	Paid             int64 // 用户付的总积分 = Credits + ChannelFee
+	PayURL           string
+	CheckoutURL      string // gateway.instructions.checkout_url · 前端跳转
+	QRContent        string // 有 QR 的 rail 才给
+	GatewayPaymentID string // gateway 返的 pay_xxx · 内部关联·不对外
+	Status           Status
+	ExpiresAt        time.Time
+	PaidAt           time.Time
+	WalletLedgerID   string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // Breakdown 是给起单时算钱的辅助结构。
@@ -126,9 +129,90 @@ func (s *Store) CreateOrder(ctx context.Context, passengerID, channel string, cr
 	return Order{
 		ID: id, PassengerID: passengerID, Channel: channel,
 		Credits: b.Credits, ChannelFee: b.ChannelFee, Paid: b.Paid,
-		PayURL: payURL, Status: StatusPending, ExpiresAt: exp,
+		PayURL: payURL, CheckoutURL: payURL, Status: StatusPending, ExpiresAt: exp,
 		CreatedAt: now, UpdatedAt: now,
 	}, nil
+}
+
+// AttachGateway 把 gateway 侧的信息回写到已建的 topup_order。
+//
+// 起单流程：先 CreateOrder 落一行 pending（拿到我方 id 作为 client_order_id），
+// 然后调 gateway.CreatePayment 拿 payment_id + checkout_url，回来 AttachGateway。
+// 这样即使 gateway 调用失败，也不会污染 wallet；乘客可以对同 order_id 重试建单。
+//
+// 空 gatewayPaymentID / qrContent 存 NULL 而不是空串·UNIQUE 索引才能允许多单共存。
+func (s *Store) AttachGateway(ctx context.Context, orderID, gatewayPaymentID, checkoutURL, qrContent string) error {
+	now := formatTime(time.Now().UTC())
+	var gwArg any = gatewayPaymentID
+	if gatewayPaymentID == "" {
+		gwArg = nil
+	}
+	var qrArg any = qrContent
+	if qrContent == "" {
+		qrArg = nil
+	}
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE topup_order
+		   SET gateway_payment_id = ?, checkout_url = ?, qr_content = ?, updated_at = ?
+		 WHERE id = ? AND status = 'pending'`,
+		gwArg, checkoutURL, qrArg, now, orderID)
+	if err != nil {
+		return fmt.Errorf("topup: 回写 gateway 字段: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrOrderNotPending
+	}
+	return nil
+}
+
+// FindByGatewayPaymentID · gateway 回调时用来反查我方 order。
+// 回调 body 里带 client_order_id（= 我方 id），但 gateway_payment_id 更稳
+// （client_order_id 可能被人伪造·gateway_payment_id 是 gateway 分配的）。
+func (s *Store) FindByGatewayPaymentID(ctx context.Context, gatewayPaymentID string) (Order, error) {
+	var (
+		o         Order
+		expiresAt string
+		createdAt string
+		updatedAt string
+		paidAt    sql.NullString
+		ledgerID  sql.NullString
+		gwID      sql.NullString
+		checkout  sql.NullString
+		qr        sql.NullString
+	)
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, passenger_id, channel, credits, channel_fee, paid, pay_url,
+		       status, expires_at, paid_at, wallet_ledger_id, created_at, updated_at,
+		       gateway_payment_id, checkout_url, qr_content
+		FROM topup_order WHERE gateway_payment_id = ?`, gatewayPaymentID).Scan(
+		&o.ID, &o.PassengerID, &o.Channel, &o.Credits, &o.ChannelFee, &o.Paid,
+		&o.PayURL, (*string)(&o.Status), &expiresAt, &paidAt, &ledgerID,
+		&createdAt, &updatedAt, &gwID, &checkout, &qr)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Order{}, ErrNotFound
+	}
+	if err != nil {
+		return Order{}, fmt.Errorf("topup: 反查订单: %w", err)
+	}
+	o.ExpiresAt = parseTime(expiresAt)
+	o.CreatedAt = parseTime(createdAt)
+	o.UpdatedAt = parseTime(updatedAt)
+	if paidAt.Valid {
+		o.PaidAt = parseTime(paidAt.String)
+	}
+	if ledgerID.Valid {
+		o.WalletLedgerID = ledgerID.String
+	}
+	if gwID.Valid {
+		o.GatewayPaymentID = gwID.String
+	}
+	if checkout.Valid {
+		o.CheckoutURL = checkout.String
+	}
+	if qr.Valid {
+		o.QRContent = qr.String
+	}
+	return o, nil
 }
 
 // MarkPaid webhook 到账时调用。原子做三件事：
@@ -249,7 +333,14 @@ func (s *Store) Get(ctx context.Context, passengerID, orderID string) (Order, er
 	return o, nil
 }
 
-func (s *Store) getBy(ctx context.Context, orderID string) (Order, error) {
+// rowScanner sql.Row / sql.Rows 共用接口·让 hydrateOrder 一份代码
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+// hydrateOrder 从一行读取所有 topup_order 列到 Order。
+// 列顺序要跟下面的 SELECT 保持一致。加列时同时改这里。
+func hydrateOrder(scan rowScanner) (Order, error) {
 	var (
 		o         Order
 		expiresAt string
@@ -257,59 +348,59 @@ func (s *Store) getBy(ctx context.Context, orderID string) (Order, error) {
 		updatedAt string
 		paidAt    sql.NullString
 		ledgerID  sql.NullString
+		gwID      sql.NullString
+		checkout  sql.NullString
+		qr        sql.NullString
 	)
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, passenger_id, channel, credits, channel_fee, paid, pay_url,
-		       status, expires_at, paid_at, wallet_ledger_id, created_at, updated_at
-		FROM topup_order WHERE id = ?`, orderID).Scan(
+	if err := scan.Scan(
 		&o.ID, &o.PassengerID, &o.Channel, &o.Credits, &o.ChannelFee, &o.Paid,
 		&o.PayURL, (*string)(&o.Status), &expiresAt, &paidAt, &ledgerID,
-		&createdAt, &updatedAt)
+		&createdAt, &updatedAt, &gwID, &checkout, &qr,
+	); err != nil {
+		return Order{}, err
+	}
+	o.ExpiresAt = parseTime(expiresAt)
+	o.CreatedAt = parseTime(createdAt)
+	o.UpdatedAt = parseTime(updatedAt)
+	if paidAt.Valid {
+		o.PaidAt = parseTime(paidAt.String)
+	}
+	if ledgerID.Valid {
+		o.WalletLedgerID = ledgerID.String
+	}
+	if gwID.Valid {
+		o.GatewayPaymentID = gwID.String
+	}
+	if checkout.Valid {
+		o.CheckoutURL = checkout.String
+	}
+	if qr.Valid {
+		o.QRContent = qr.String
+	}
+	return o, nil
+}
+
+const selectOrderCols = `id, passenger_id, channel, credits, channel_fee, paid, pay_url,
+	status, expires_at, paid_at, wallet_ledger_id, created_at, updated_at,
+	gateway_payment_id, checkout_url, qr_content`
+
+func (s *Store) getBy(ctx context.Context, orderID string) (Order, error) {
+	o, err := hydrateOrder(s.db.QueryRowContext(ctx,
+		`SELECT `+selectOrderCols+` FROM topup_order WHERE id = ?`, orderID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Order{}, ErrNotFound
 	}
 	if err != nil {
 		return Order{}, fmt.Errorf("topup: 查订单: %w", err)
 	}
-	o.ExpiresAt = parseTime(expiresAt)
-	o.CreatedAt = parseTime(createdAt)
-	o.UpdatedAt = parseTime(updatedAt)
-	if paidAt.Valid {
-		o.PaidAt = parseTime(paidAt.String)
-	}
-	if ledgerID.Valid {
-		o.WalletLedgerID = ledgerID.String
-	}
 	return o, nil
 }
 
 func (s *Store) getInTx(ctx context.Context, tx *sql.Tx, orderID string) (Order, error) {
-	var (
-		o         Order
-		expiresAt string
-		createdAt string
-		updatedAt string
-		paidAt    sql.NullString
-		ledgerID  sql.NullString
-	)
-	err := tx.QueryRowContext(ctx, `
-		SELECT id, passenger_id, channel, credits, channel_fee, paid, pay_url,
-		       status, expires_at, paid_at, wallet_ledger_id, created_at, updated_at
-		FROM topup_order WHERE id = ?`, orderID).Scan(
-		&o.ID, &o.PassengerID, &o.Channel, &o.Credits, &o.ChannelFee, &o.Paid,
-		&o.PayURL, (*string)(&o.Status), &expiresAt, &paidAt, &ledgerID,
-		&createdAt, &updatedAt)
+	o, err := hydrateOrder(tx.QueryRowContext(ctx,
+		`SELECT `+selectOrderCols+` FROM topup_order WHERE id = ?`, orderID))
 	if err != nil {
 		return Order{}, fmt.Errorf("topup: 事务内查订单: %w", err)
-	}
-	o.ExpiresAt = parseTime(expiresAt)
-	o.CreatedAt = parseTime(createdAt)
-	o.UpdatedAt = parseTime(updatedAt)
-	if paidAt.Valid {
-		o.PaidAt = parseTime(paidAt.String)
-	}
-	if ledgerID.Valid {
-		o.WalletLedgerID = ledgerID.String
 	}
 	return o, nil
 }
@@ -342,12 +433,9 @@ func (s *Store) List(ctx context.Context, passengerID string, opt ListOptions) (
 		return nil, 0, fmt.Errorf("topup: 统计: %w", err)
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, passenger_id, channel, credits, channel_fee, paid, pay_url,
-		       status, expires_at, COALESCE(paid_at,''), COALESCE(wallet_ledger_id,''),
-		       created_at, updated_at
-		FROM topup_order `+where+`
-		ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+selectOrderCols+` FROM topup_order `+where+`
+		 ORDER BY created_at DESC LIMIT ? OFFSET ?`,
 		append(args, opt.Limit, opt.Offset)...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("topup: 查列表: %w", err)
@@ -356,28 +444,10 @@ func (s *Store) List(ctx context.Context, passengerID string, opt ListOptions) (
 
 	var out []Order
 	for rows.Next() {
-		var (
-			o         Order
-			expiresAt string
-			paidAt    string
-			ledgerID  string
-			createdAt string
-			updatedAt string
-		)
-		if err := rows.Scan(
-			&o.ID, &o.PassengerID, &o.Channel, &o.Credits, &o.ChannelFee, &o.Paid,
-			&o.PayURL, (*string)(&o.Status), &expiresAt, &paidAt, &ledgerID,
-			&createdAt, &updatedAt,
-		); err != nil {
+		o, err := hydrateOrder(rows)
+		if err != nil {
 			return nil, 0, err
 		}
-		o.ExpiresAt = parseTime(expiresAt)
-		o.CreatedAt = parseTime(createdAt)
-		o.UpdatedAt = parseTime(updatedAt)
-		if paidAt != "" {
-			o.PaidAt = parseTime(paidAt)
-		}
-		o.WalletLedgerID = ledgerID
 		out = append(out, o)
 	}
 	return out, total, rows.Err()

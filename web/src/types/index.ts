@@ -489,14 +489,20 @@ export interface ApiKeyCreated {
 }
 
 /* ── 充值 ──
-   通道费只在充值时收（decisions §8.21）· 之后所有积分抵扣都不再涉及 */
+   通道费只在充值时收（decisions §8.21）· 之后所有积分抵扣都不再涉及
+   接 404bus-payment-gateway 后：后端把 gateway.instructions.checkout_url 透传出来 */
 export interface TopupOrder {
   order_id: string;
-  /** 收款二维码内容 · 前端渲染成 QR */
-  qr_payload: string;
+  /** 支付跳转 URL · gateway 侧 waffo checkout / epusdt cashier / 等 */
+  checkout_url: string;
+  /** 有 QR 的 rail 才给（epusdt 之类）· waffo 一般空 */
+  qr_content?: string;
   paid: Money;
   credits: Money;
   expires_at: ISOTime;
+  status?: "pending" | "paid" | "failed";
+  paid_at?: ISOTime;
+  created_at?: ISOTime;
 }
 
 export interface RedeemResult {

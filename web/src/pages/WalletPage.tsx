@@ -240,35 +240,49 @@ function TopupOrderModal({
 }: { order: TopupOrder | null; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
 
+  /* 有 checkout_url：跳 gateway 收款页（waffo）· 有 qr_content：渲染二维码
+     两个都空是老 mock 单·退回旧提示 */
+  const checkoutURL = order?.checkout_url ?? "";
+  const qrContent = order?.qr_content ?? "";
+
   return (
     <Dialog open={!!order} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-[420px]">
         <DialogHeader>
-          <DialogTitle>扫码支付</DialogTitle>
+          <DialogTitle>去支付</DialogTitle>
           <p className="text-label text-fg-tertiary">
             付 <Em>{order ? toCredits(order.paid) : 0}</Em> 元 ·
             到账 <Em tone="ok">{order ? toCredits(order.credits) : 0}</Em> 积分
           </p>
         </DialogHeader>
         <DialogBody>
-          {/* QR 占位 · 真实环境渲染 waffo 返回的收款码 */}
-          <div className="grid place-items-center rounded-xl border border-hairline bg-bg-elevated p-6">
-            <div className="grid size-40 place-items-center rounded-lg border border-hairline bg-bg">
-              <span className="text-label text-fg-tertiary">收款二维码</span>
+          {/* 有 QR 显示 QR，有 checkout URL 显示"打开支付页"·waffo 一般是跳转不是扫码 */}
+          {qrContent ? (
+            <div className="grid place-items-center rounded-xl border border-hairline bg-bg-elevated p-6">
+              <img
+                alt="收款二维码"
+                className="size-40 rounded-lg border border-hairline bg-white"
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrContent)}`}
+              />
             </div>
-          </div>
+          ) : (
+            <div className="grid place-items-center rounded-xl border border-hairline bg-bg-elevated p-6">
+              <p className="text-label text-fg-tertiary">点下面按钮跳去支付页</p>
+            </div>
+          )}
 
           <div className="mt-3 flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded-lg border border-hairline bg-bg-elevated px-3 py-2 font-mono text-label">
-              {order?.qr_payload}
+              {checkoutURL || qrContent}
             </code>
             <Button
               variant="ghost"
               size="icon"
               aria-label="复制支付链接"
               onClick={() => {
-                if (!order) return;
-                navigator.clipboard.writeText(order.qr_payload);
+                const s = checkoutURL || qrContent;
+                if (!s) return;
+                navigator.clipboard.writeText(s);
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1600);
               }}
@@ -276,6 +290,16 @@ function TopupOrderModal({
               {copied ? <Check /> : <Copy />}
             </Button>
           </div>
+
+          {checkoutURL && (
+            <Button
+              className="mt-3 w-full"
+              variant="brand"
+              onClick={() => window.open(checkoutURL, "_blank", "noopener,noreferrer")}
+            >
+              打开支付页
+            </Button>
+          )}
 
           <Alert tone="neutral" icon={ShieldCheck} className="mt-3">
             支付完成后积分自动到账 · 15 分钟内有效 · 未付款自动作废

@@ -23,6 +23,7 @@ var wantTables = []string{
 	"pull_intent", "pull_round",
 	"redeem_code",
 	"session",
+	"settlement_event",
 	"topup_order",
 	"vendor_account",
 	"wallet", "wallet_ledger",

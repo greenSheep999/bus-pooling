@@ -204,10 +204,11 @@ export const handlers = [
     const { credits } = topupBreakdown(paid);
     return ok({
       order_id: `to_${Date.now()}`,
-      // 真实环境是 waffo 返回的收款链接 · mock 拿个假的给 QR 渲染
-      qr_payload: `https://pay.waffo.example/checkout/${Date.now()}?amount=${paid / 1_000_000}`,
+      // 真实环境是 gateway.instructions.checkout_url · mock 拿个假的
+      checkout_url: `https://pay.waffo.example/checkout/${Date.now()}?amount=${paid / 1_000_000}`,
       paid, credits,
       expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+      status: "pending" as const,
     }, 600);
   }),
   http.post("/api/me/redeem", async ({ request }) => {

@@ -34,6 +34,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/httpx"
 	"github.com/bus-pooling/bus-pooling/internal/insight"
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
+	"github.com/bus-pooling/bus-pooling/internal/paymentgw"
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 	"github.com/bus-pooling/bus-pooling/internal/providers/kiro"
 	"github.com/bus-pooling/bus-pooling/internal/pullrecord"
@@ -346,22 +347,41 @@ func runServe(ctx context.Context, cfg config.Config) error {
 
 	handoffs := handoff.NewStore(database.DB, 0) // 0 = 默认 TTL
 
+	// paymentgw client · 三个环境变量都要有才装配·任缺其一走 dev mock 路径
+	// BP_GW_BASE / BP_GW_TOKEN / BP_GW_SETTLEMENT_SECRET
+	// BP_GW_SUCCESS_URL 可选·waffo checkout 完成后回跳我方前端 URL
+	var pgw *paymentgw.Client
+	if base, tok, sec := os.Getenv("BP_GW_BASE"), os.Getenv("BP_GW_TOKEN"), os.Getenv("BP_GW_SETTLEMENT_SECRET"); base != "" && tok != "" && sec != "" {
+		c, err := paymentgw.New(paymentgw.Config{
+			BaseURL: base, BearerToken: tok, SettlementSecret: sec,
+		})
+		if err != nil {
+			return fmt.Errorf("paymentgw 装配: %w", err)
+		}
+		pgw = c
+		slog.Info("payment gateway 已装配", "base", base)
+	} else {
+		slog.Warn("payment gateway 未装配（BP_GW_BASE/TOKEN/SETTLEMENT_SECRET 缺失）· 走 dev mock topup 路径")
+	}
+
 	apiSrv := api.NewServer(api.ServerDeps{
-		DB:           database.DB,
-		Passengers:   passenger.NewStore(database.DB),
-		Wallets:      wallet.NewStore(database.DB),
-		Strategies:   strategy.NewStore(database.DB),
-		Buses:        bus.NewStore(database.DB),
-		Decider:      orch,
-		Redeems:      redeem.NewStore(database.DB),
-		Topups:       topup.NewStore(database.DB),
-		PullRecords:  pullrecord.NewStore(database.DB),
-		Handoffs:     handoffs,
-		Pool:         poolClient, // 可能为 nil（mock 模式）· handler 有 nil 兜底
-		VendorView:   vendorSvc,
-		Insights:     insight.NewStore(database.DB),
-		Downstreams:  downstream.NewStore(database.DB, cipher),
-		SecureCookie: secureCookie,
+		DB:                  database.DB,
+		Passengers:          passenger.NewStore(database.DB),
+		Wallets:             wallet.NewStore(database.DB),
+		Strategies:          strategy.NewStore(database.DB),
+		Buses:               bus.NewStore(database.DB),
+		Decider:             orch,
+		Redeems:             redeem.NewStore(database.DB),
+		Topups:              topup.NewStore(database.DB),
+		PullRecords:         pullrecord.NewStore(database.DB),
+		Handoffs:            handoffs,
+		Pool:                poolClient, // 可能为 nil（mock 模式）· handler 有 nil 兜底
+		VendorView:          vendorSvc,
+		Insights:            insight.NewStore(database.DB),
+		Downstreams:         downstream.NewStore(database.DB, cipher),
+		PaymentGW:           pgw,
+		PaymentGWSuccessURL: os.Getenv("BP_GW_SUCCESS_URL"),
+		SecureCookie:        secureCookie,
 	})
 	apiSrv.Routes(mux)
 
