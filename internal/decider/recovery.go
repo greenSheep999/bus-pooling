@@ -36,13 +36,18 @@ func (o *Orchestrator) Recover(ctx context.Context, p Pending) error {
 //   - vendor 有幂等键 → 用同 client_order_id 重放
 //   - vendor 无幂等键 → 直接转 need_manual（无法安全判断是否扣款）
 func (o *Orchestrator) recoverPurchasing(ctx context.Context, p Pending) error {
-	if !o.vendor.Capability().SupportsIdempotency {
+	vendor, err := o.vendorFor(providers.VendorID(p.VendorID))
+	if err != nil {
+		return o.markNeedManual(ctx, p.ID, StatusPurchasing,
+			fmt.Sprintf("vendor %q 未装配·无法恢复", p.VendorID))
+	}
+	if !vendor.Capability().SupportsIdempotency {
 		return o.markNeedManual(ctx, p.ID, StatusPurchasing,
 			"vendor 无幂等键，purchasing 无法安全恢复")
 	}
 
 	// 重放：vendor 会返回原批（若之前成功），或明确 no_stock（若之前根本没成交）
-	result, err := o.vendor.Purchase(ctx, providers.PurchaseRequest{
+	result, err := vendor.Purchase(ctx, providers.PurchaseRequest{
 		Count:         p.CountRequested,
 		ClientOrderID: p.ClientOrderID,
 	})
@@ -82,7 +87,12 @@ func (o *Orchestrator) recoverPurchased(ctx context.Context, p Pending) error {
 		// purchased 但没 order_id 是不该发生的（AdvanceWith 一起写的）· 报警
 		return o.markNeedManual(ctx, p.ID, StatusPurchased, "purchased 状态缺 vendor_order_id")
 	}
-	result, err := o.vendor.OrderKeys(ctx, p.VendorOrderID)
+	vendor, err := o.vendorFor(providers.VendorID(p.VendorID))
+	if err != nil {
+		return o.markNeedManual(ctx, p.ID, StatusPurchased,
+			fmt.Sprintf("vendor %q 未装配·无法恢复", p.VendorID))
+	}
+	result, err := vendor.OrderKeys(ctx, p.VendorOrderID)
 	if err != nil {
 		if errors.Is(err, providers.ErrNotFound) {
 			// vendor 那边找不到 · 但状态是 purchased 说明 Purchase 曾成功 —— 转人工
@@ -105,7 +115,8 @@ func (o *Orchestrator) finishFromPurchased(ctx context.Context, p Pending, resul
 	if err := o.state.Advance(ctx, p.ID, StatusPurchased, StatusImported); err != nil {
 		return err
 	}
-	if _, err := o.settle(ctx, p.ID, p, result, credIDs); err != nil {
+	// 恢复时用落库的 reserve_split 还原分摊方案（多人车才非空）
+	if _, err := o.settle(ctx, p.ID, p, result, credIDs, p.SplitPlanFromReserve()); err != nil {
 		return err
 	}
 	return nil
@@ -122,13 +133,18 @@ func (o *Orchestrator) finishFromPurchased(ctx context.Context, p Pending, resul
 // （幂等 vendor 保证）· 号池的 BatchImport 也是幂等（同 key 返 duplicate 事件）。
 // 无幂等的 vendor 只能报警人工。
 func (o *Orchestrator) recoverImported(ctx context.Context, p Pending) error {
-	if !o.vendor.Capability().SupportsIdempotency {
+	vendor, err := o.vendorFor(providers.VendorID(p.VendorID))
+	if err != nil {
+		return o.markNeedManual(ctx, p.ID, StatusImported,
+			fmt.Sprintf("vendor %q 未装配·无法恢复", p.VendorID))
+	}
+	if !vendor.Capability().SupportsIdempotency {
 		return o.markNeedManual(ctx, p.ID, StatusImported,
 			"vendor 无幂等键，imported→completed 无法安全恢复")
 	}
 
 	// 幂等重放 vendor · 拿回原批 keys（当时那次的完整信息）
-	result, err := o.vendor.Purchase(ctx, providers.PurchaseRequest{
+	result, err := vendor.Purchase(ctx, providers.PurchaseRequest{
 		Count:         p.CountRequested,
 		ClientOrderID: p.ClientOrderID,
 	})
@@ -149,7 +165,7 @@ func (o *Orchestrator) recoverImported(ctx context.Context, p Pending) error {
 	}
 
 	// 走 settle · 里面的条件 UPDATE 会把 imported→completed，重复调不会双扣（第二次 RowsAffected=0 报 ErrStaleTransition）
-	if _, err := o.settle(ctx, p.ID, p, result, credIDs); err != nil {
+	if _, err := o.settle(ctx, p.ID, p, result, credIDs, p.SplitPlanFromReserve()); err != nil {
 		// 特殊：如果这行已经推到 completed（前一次 settle 事务其实提交了，只是我方没记录）
 		// 那 advancePendingTx 里的条件 UPDATE 会命中 ErrStaleTransition —— 幂等成功
 		if errors.Is(err, ErrStaleTransition) {

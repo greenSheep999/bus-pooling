@@ -114,7 +114,7 @@ func (d *DryRunVendor) OrderKeys(_ context.Context, orderID string) (*providers.
 	}
 }
 
-// DryRunPool 是 DRY_RUN 下的假号池 —— 假号进假池，不污染真 kiro.rs。
+// DryRunPool 是 DRY_RUN 下的假号池 —— 假号进假池·不污染真 housepool。
 //
 // 用 nano 时间戳做 id 起点 —— in-memory 计数器重启会归零，但 credential_ledger
 // 里那些老行还在，会撞 UNIQUE 约束。用 UnixNano 单调递增，重启不复用。

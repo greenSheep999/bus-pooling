@@ -7,8 +7,10 @@ package decider
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -50,14 +52,39 @@ type Pending struct {
 	VendorID       string
 	ClientOrderID  string
 	CountRequested int
-	// ReservedAmount 冻结的积分（microunit）
+	// ReservedAmount 冻结的积分（microunit）· 多人车时 = 各成员冻结额之和
 	ReservedAmount int64
-	Status         Status
-	VendorOrderID  string
-	PullRoundID    string
-	Error          string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// ReserveSplit 多人车这轮谁冻了多少（microunit）· 空 = 单人（老数据也是空）
+	// settle 和崩溃恢复都要它才知道"该退给谁多少"（migration 017）
+	ReserveSplit map[string]int64
+	Status        Status
+	VendorOrderID string
+	PullRoundID   string
+	Error         string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+// SplitPlanFromReserve 把落库的 reserve_split 还原成 SplitPlan（崩溃恢复用）。
+// 空 map → 空 plan · settle 会退回"全归发起人"的单人语义。
+func (p Pending) SplitPlanFromReserve() SplitPlan {
+	if len(p.ReserveSplit) == 0 {
+		return SplitPlan{}
+	}
+	parts := make([]Participant, 0, len(p.ReserveSplit))
+	var total int64
+	// 排序保证确定性（map 遍历顺序随机 · 余数分配要可复现）
+	ids := make([]string, 0, len(p.ReserveSplit))
+	for id := range p.ReserveSplit {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		amt := p.ReserveSplit[id]
+		parts = append(parts, Participant{PassengerID: id, Amount: amt})
+		total += amt
+	}
+	return SplitPlan{Participants: parts, Total: total}
 }
 
 var (
@@ -169,15 +196,27 @@ const selectPending = `
 	SELECT id, idempotency_record_id, passenger_id, COALESCE(bus_id, ''), target_group,
 	       vendor_id, client_order_id, count_requested, reserved_amount, status,
 	       COALESCE(vendor_order_id, ''), COALESCE(pull_round_id, ''), COALESCE(error, ''),
-	       created_at, updated_at
+	       created_at, updated_at, COALESCE(reserve_split_json, '')
 	  FROM pending_purchase`
+
+// decodeReserveSplit 解 reserve_split_json · 空串 / 坏 JSON 返 nil（退回单人语义）。
+func decodeReserveSplit(raw string) map[string]int64 {
+	if raw == "" {
+		return nil
+	}
+	var m map[string]int64
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return nil
+	}
+	return m
+}
 
 func (s *Store) scanOne(row *sql.Row) (*Pending, error) {
 	var p Pending
-	var status, createdAt, updatedAt string
+	var status, createdAt, updatedAt, splitJSON string
 	err := row.Scan(&p.ID, &p.IdempotencyRecordID, &p.PassengerID, &p.BusID, &p.TargetGroup,
 		&p.VendorID, &p.ClientOrderID, &p.CountRequested, &p.ReservedAmount, &status,
-		&p.VendorOrderID, &p.PullRoundID, &p.Error, &createdAt, &updatedAt)
+		&p.VendorOrderID, &p.PullRoundID, &p.Error, &createdAt, &updatedAt, &splitJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrPendingNotFound
 	}
@@ -187,6 +226,7 @@ func (s *Store) scanOne(row *sql.Row) (*Pending, error) {
 	p.Status = Status(status)
 	p.CreatedAt = parseTime(createdAt)
 	p.UpdatedAt = parseTime(updatedAt)
+	p.ReserveSplit = decodeReserveSplit(splitJSON)
 	return &p, nil
 }
 
@@ -206,12 +246,13 @@ func (s *Store) FindStale(ctx context.Context, status Status, olderThan time.Dur
 	var out []Pending
 	for rows.Next() {
 		var p Pending
-		var st, createdAt, updatedAt string
+		var st, createdAt, updatedAt, splitJSON string
 		if err := rows.Scan(&p.ID, &p.IdempotencyRecordID, &p.PassengerID, &p.BusID, &p.TargetGroup,
 			&p.VendorID, &p.ClientOrderID, &p.CountRequested, &p.ReservedAmount, &st,
-			&p.VendorOrderID, &p.PullRoundID, &p.Error, &createdAt, &updatedAt); err != nil {
+			&p.VendorOrderID, &p.PullRoundID, &p.Error, &createdAt, &updatedAt, &splitJSON); err != nil {
 			return nil, err
 		}
+		p.ReserveSplit = decodeReserveSplit(splitJSON)
 		p.Status = Status(st)
 		p.CreatedAt = parseTime(createdAt)
 		p.UpdatedAt = parseTime(updatedAt)

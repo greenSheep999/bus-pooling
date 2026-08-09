@@ -60,7 +60,7 @@ func TestJanitorReleasesStaleReserved(t *testing.T) {
 	p := newPending(pid)
 	p.ReservedAmount = 100 * testMicro
 	id, _ := o.state.Create(ctx, p)
-	if err := o.reserveFunds(ctx, id, pid, p.ReservedAmount); err != nil {
+	if _, err := o.reserveFunds(ctx, id, pid, "", p.ReservedAmount, 1); err != nil {
 		t.Fatal(err)
 	}
 	forceOldUpdatedAt(t, o, id)
@@ -93,7 +93,7 @@ func TestJanitorReplaysPurchasingWithIdempotentVendor(t *testing.T) {
 	p := newPending(pid)
 	p.ReservedAmount = 100 * testMicro
 	id, _ := o.state.Create(ctx, p)
-	if err := o.reserveFunds(ctx, id, pid, p.ReservedAmount); err != nil {
+	if _, err := o.reserveFunds(ctx, id, pid, "", p.ReservedAmount, 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := o.state.Advance(ctx, id, StatusReserved, StatusPurchasing); err != nil {
@@ -143,7 +143,7 @@ func TestJanitorPurchasingNoStockReleases(t *testing.T) {
 	p := newPending(pid)
 	p.ReservedAmount = 90 * testMicro
 	id, _ := o.state.Create(ctx, p)
-	if err := o.reserveFunds(ctx, id, pid, p.ReservedAmount); err != nil {
+	if _, err := o.reserveFunds(ctx, id, pid, "", p.ReservedAmount, 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := o.state.Advance(ctx, id, StatusReserved, StatusPurchasing); err != nil {
@@ -176,7 +176,7 @@ func TestJanitorPurchasingWithoutIdempotencyGoesManual(t *testing.T) {
 	o, vendor, _, pid := newOrchTest(t)
 	ctx := context.Background()
 
-	// 关掉 vendor 幂等能力（模拟 kiroappcc）
+	// 关掉 vendor 幂等能力（模拟无幂等能力 vendor）
 	origCap := vendor.capability
 	vendor.capability = &providers.Capability{SupportsIdempotency: false}
 	t.Cleanup(func() { vendor.capability = origCap })
@@ -184,7 +184,7 @@ func TestJanitorPurchasingWithoutIdempotencyGoesManual(t *testing.T) {
 	p := newPending(pid)
 	p.ReservedAmount = 100 * testMicro
 	id, _ := o.state.Create(ctx, p)
-	if err := o.reserveFunds(ctx, id, pid, p.ReservedAmount); err != nil {
+	if _, err := o.reserveFunds(ctx, id, pid, "", p.ReservedAmount, 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := o.state.Advance(ctx, id, StatusReserved, StatusPurchasing); err != nil {

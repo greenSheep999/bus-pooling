@@ -24,7 +24,7 @@ func (o *Orchestrator) importToPool(
 	creds := make([]housepool.ImportCredential, 0, len(purchase.Keys))
 	for _, k := range purchase.Keys {
 		creds = append(creds, housepool.ImportCredential{
-			// 91kiro 的四件套映射到号池 · ksk 走 KiroAPIKey，AWS Identity Center 三件套走对应字段
+			// vendor 四件套映射到号池 · key 走 KiroAPIKey · account/password/issuer_url 走对应字段
 			KiroAPIKey: k.Key,
 			Email:      k.Account,
 			IssuerURL:  k.IssuerURL,

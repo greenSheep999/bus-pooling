@@ -21,33 +21,33 @@ func TestPriceIsMultiplicativeNotAdditive(t *testing.T) {
 	}
 }
 
-// 服务费作用在**已加价的小计**上，不是基数。
+// 服务费作用在**已分项的小计**上，不是基数。
 func TestServiceFeeAppliesToMarkedUpSubtotal(t *testing.T) {
 	base := Price(100*micro, 1, Rates{Service: 400})
 	marked := Price(100*micro, 1, Rates{VendorMarkup: 5000, Service: 400})
 
 	if base.ServiceFee != 4*micro {
-		t.Errorf("无加价时服务费 = %d，want 4_000_000", base.ServiceFee)
+		t.Errorf("零分项时服务费 = %d，want 4_000_000", base.ServiceFee)
 	}
 	// 150 × 4% = 6
 	if marked.ServiceFee != 6*micro {
-		t.Errorf("有加价时服务费 = %d，want 6_000_000", marked.ServiceFee)
+		t.Errorf("有分项时服务费 = %d，want 6_000_000", marked.ServiceFee)
 	}
 	if marked.ServiceFee <= base.ServiceFee {
 		t.Error("服务费应随小计变大")
 	}
 }
 
-// 单次议价只在 count==1 时上链。
+// 单次分项只在 count==1 时上链。
 func TestSinglePullOnlyAppliesWhenCountIsOne(t *testing.T) {
 	batch := Price(100*micro, 3, testRates)
 	if batch.singlePullFee != 0 {
-		t.Errorf("count=3 时单次议价 = %d，want 0", batch.singlePullFee)
+		t.Errorf("count=3 时单次分项 = %d，want 0", batch.singlePullFee)
 	}
 
 	single := Price(100*micro, 1, testRates)
 	if single.singlePullFee == 0 {
-		t.Error("count=1 时单次议价必须上链")
+		t.Error("count=1 时单次分项必须上链")
 	}
 	if single.UnitPrice <= batch.UnitPrice {
 		t.Errorf("单拉单价 %d 应高于批量 %d", single.UnitPrice, batch.UnitPrice)
@@ -104,7 +104,7 @@ func TestIdentityHoldsAcrossManyInputs(t *testing.T) {
 					t.Errorf("总额(%d) != 单价(%d)×%d", got.Total, got.UnitPrice, n)
 				}
 				if got.UnitPrice < cost {
-					t.Errorf("加价后单价 %d 低于号价 %d", got.UnitPrice, cost)
+					t.Errorf("分项后单价 %d 低于号价 %d", got.UnitPrice, cost)
 				}
 			}
 		}
