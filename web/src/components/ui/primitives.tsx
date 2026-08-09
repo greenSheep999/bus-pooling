@@ -168,12 +168,16 @@ export function Stat({
 
 type ChipTone = "ok" | "warn" | "danger" | "brand" | "neutral";
 
+/** Chip 底色 · 用 solid 色的低透明覆盖（不用固定 bg-*-bg）
+ *   浅色下 solid/10 ≈ 极浅底 · 深色下 solid/15 ≈ 深底微透彩色
+ *   字继续走 fg 变量 · 两模式都够对比度
+ *   见 CLAUDE.md §视觉 - 深色下不用高饱和实色底 */
 const CHIP: Record<ChipTone, string> = {
-  ok: "bg-ok-bg text-ok-fg",
-  warn: "bg-warn-bg text-warn-fg",
-  danger: "bg-danger-bg text-danger-fg",
-  brand: "bg-brand-subtle text-brand-strong",
-  neutral: "bg-bg-elevated text-fg-tertiary",
+  ok: "bg-ok-solid/10 text-ok-fg dark:bg-ok-solid/[.15]",
+  warn: "bg-warn-solid/10 text-warn-fg dark:bg-warn-solid/[.15]",
+  danger: "bg-danger-solid/10 text-danger-fg dark:bg-danger-solid/[.15]",
+  brand: "bg-brand/10 text-brand-strong dark:bg-brand/[.15]",
+  neutral: "bg-fg/[.06] text-fg-tertiary dark:bg-fg/[.10]",
 };
 
 export function Chip({

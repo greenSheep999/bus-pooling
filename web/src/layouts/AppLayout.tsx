@@ -261,8 +261,10 @@ function MobileNav() {
                   className={({ isActive }) =>
                     cn(
                       "flex items-center gap-3 rounded-xl px-3 py-2.5 font-medium transition-colors",
+                      // 选中态 · primary 前景色反色（light 黑 dark 白）· 用户要求菜单不用品牌色
+                      // 品牌紫留给"每页主操作"（brand 按钮）· 见 CLAUDE.md §视觉
                       isActive
-                        ? "bg-brand-subtle font-semibold text-brand-strong"
+                        ? "bg-fg font-semibold text-bg"
                         : "text-fg-secondary hover:bg-bg-elevated hover:text-fg",
                     )
                   }
@@ -532,8 +534,9 @@ export default function AppLayout() {
                 className={({ isActive }) =>
                   cn(
                     "flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 font-medium transition-colors",
+                    // 桌面 tab 选中态 · primary 反色 · 品牌紫留给主 CTA
                     isActive
-                      ? "bg-brand-subtle font-semibold text-brand-strong"
+                      ? "bg-fg font-semibold text-bg"
                       : "text-fg-secondary hover:bg-bg-elevated hover:text-fg",
                   )
                 }

@@ -564,7 +564,7 @@ function AssignEventRow({ e }: { e: AssignEvent }) {
         <div className="border-t border-hairline bg-bg-elevated/40 px-1 py-2">
           {/* 拿走的号我方已删明文 · 说明为什么没有"重新下载" */}
           {e.destination === "handoff" && (
-            <div className="mx-1 mb-2 flex items-start gap-2 rounded-lg bg-warn-bg/40 px-2.5 py-2 text-label">
+            <div className="mx-1 mb-2 flex items-start gap-2 rounded-lg bg-warn-solid/10 px-2.5 py-2 text-label dark:bg-warn-solid/[.14]">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warn-fg" />
               <span className="text-fg-secondary">
                 明文已交给你并从我方删除 · <strong className="text-fg">无法重新下载</strong> ·

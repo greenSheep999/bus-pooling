@@ -11,19 +11,22 @@ import { cn } from "@/lib/utils";
  */
 type AlertTone = "ok" | "warn" | "danger" | "neutral" | "brand";
 
+/** Alert 底色跟 Chip 同思路 · solid 色低透明覆盖
+ *   浅色下 solid/8 ~ 淡色底 · 深色下 solid/12 ~ 深底微透彩色
+ *   前景 fg 变量两模式都用 · 见 CLAUDE.md §视觉 - 深色下不用高饱和实色底 */
 const TONE: Record<AlertTone, { wrap: string; icon: string; title: string }> = {
   ok: {
-    wrap: "bg-ok-bg",
+    wrap: "bg-ok-solid/10 dark:bg-ok-solid/[.14]",
     icon: "text-ok-fg",
     title: "text-ok-fg",
   },
   warn: {
-    wrap: "border border-warn-fg/20 bg-warn-bg/40",
+    wrap: "bg-warn-solid/10 dark:bg-warn-solid/[.14] border border-warn-solid/20",
     icon: "text-warn-fg",
     title: "text-warn-fg",
   },
   danger: {
-    wrap: "bg-danger-bg",
+    wrap: "bg-danger-solid/10 dark:bg-danger-solid/[.14]",
     icon: "text-danger-fg",
     title: "text-danger-fg",
   },
@@ -33,7 +36,7 @@ const TONE: Record<AlertTone, { wrap: string; icon: string; title: string }> = {
     title: "text-fg",
   },
   brand: {
-    wrap: "bg-brand-subtle/50",
+    wrap: "bg-brand/8 dark:bg-brand/[.14]",
     icon: "text-brand-strong",
     title: "text-brand-strong",
   },

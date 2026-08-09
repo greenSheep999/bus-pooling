@@ -189,7 +189,7 @@ export function ExtractConfirmModal({
           <Button type="button" variant="ghost" onClick={onClose}>取消</Button>
           <Button
             type="button"
-            variant="brand"
+            variant="primary"
             disabled={pending || overCap}
             onClick={() => onConfirm(applied ?? undefined)}
           >
