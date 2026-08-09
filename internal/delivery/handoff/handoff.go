@@ -39,6 +39,13 @@ const (
 	StatusExpired             Status = "expired"
 	StatusExpiredAfterFulfill Status = "expired_after_fulfill"
 	StatusNeedManual          Status = "need_manual"
+
+	// StatusPlaceholderDelivered 联调路径专用（BP_ALLOW_HANDOFF_PLACEHOLDER=1）·
+	// fulfill 返占位字符串时推到这个状态·**不允许**接下来走真明文 confirm DELETE 分支。
+	StatusPlaceholderDelivered Status = "placeholder_delivered"
+	// StatusConfirmedPlaceholder 占位路径 confirm 后的终态·**不做**任何外部动作·
+	// 号仍在 pool 里·避免降级路径删真号。
+	StatusConfirmedPlaceholder Status = "confirmed_placeholder"
 )
 
 var (
@@ -245,6 +252,65 @@ func (s *Store) MarkConfirmed(ctx context.Context, id string) error {
 			return err
 		}
 		if p.Status == StatusConfirmed || p.Status == StatusCompleted {
+			return nil
+		}
+		return ErrStaleTransition
+	}
+	return nil
+}
+
+// MarkPlaceholderDelivered · **仅联调路径** · 占位字符串给出去时用。
+//
+// 跟 MarkFulfilled 的关键差别：目标状态是 placeholder_delivered · **不是**
+// fulfilled。这样后续 confirm handler 一看状态就知道号是假的·必须走
+// MarkConfirmedPlaceholder 而不能走真 DELETE 分支。
+//
+// **绝不能**在生产（BP_HANDOFF_TRUE_PLAINTEXT=1）路径下调这个方法。
+func (s *Store) MarkPlaceholderDelivered(ctx context.Context, id string) error {
+	now := s.now()
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE pending_handoff
+		   SET status = 'placeholder_delivered',
+		       fulfilled_at = COALESCE(fulfilled_at, ?),
+		       fulfill_count = fulfill_count + 1,
+		       updated_at = ?
+		 WHERE id = ? AND status IN ('token_issued', 'placeholder_delivered')`,
+		formatTime(now), formatTime(now), id)
+	if err != nil {
+		return fmt.Errorf("handoff: 推进 placeholder_delivered: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrStaleTransition
+	}
+	return nil
+}
+
+// MarkConfirmedPlaceholder · **仅联调路径** · placeholder_delivered → confirmed_placeholder。
+//
+// **不做**任何外部动作·号仍在 pool 里。跟 MarkConfirmed + MarkCompleted 不同：
+// - MarkConfirmed → completeHandoff（外部 DELETE） → MarkCompleted
+// - MarkConfirmedPlaceholder → 什么都不做 → 终态
+//
+// 保证降级路径永远不会真删号。
+func (s *Store) MarkConfirmedPlaceholder(ctx context.Context, id string) error {
+	now := s.now()
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE pending_handoff
+		   SET status = 'confirmed_placeholder',
+		       confirmed_at = COALESCE(confirmed_at, ?),
+		       completed_at = COALESCE(completed_at, ?),
+		       updated_at = ?
+		 WHERE id = ? AND status = 'placeholder_delivered'`,
+		formatTime(now), formatTime(now), formatTime(now), id)
+	if err != nil {
+		return fmt.Errorf("handoff: 推进 confirmed_placeholder: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		p, err := s.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		if p.Status == StatusConfirmedPlaceholder {
 			return nil
 		}
 		return ErrStaleTransition

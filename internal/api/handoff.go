@@ -116,25 +116,44 @@ func (s *Server) handleHandoffFulfill(w http.ResponseWriter, r *http.Request) er
 		return newFail(http.StatusConflict, CodeConflict, "这批号已交出，不能再取明文")
 	}
 
-	// **1a 阶段 kiro.rs 侧尚未开放"读明文"admin 端点**（08-housepool-contract §12
-	// 承诺但未定义 endpoint）。readHandoffPlaintext 会返回台账里的打码值 +
-	// "pending-handoff-<id>" 前缀 —— 一眼能看出是占位。前端 UI 能走完三段流程，
-	// 但乘客拿不到能真用的号。
+	// ── P0 数据丢失保护（撤销上一轮的默认降级） ────────────────
 	//
-	// 生产**必须**接了 kiro.rs 明文 endpoint 才允许上线：
-	// BP_STRICT_HANDOFF=1 时拒占位·返 501 让运维停机。默认关（1a / 1b / 1c
-	// 开发和联调走占位路径）。上线前 checklist 会把这个开关翻上。
-	if os.Getenv("BP_STRICT_HANDOFF") == "1" {
-		return newFail(http.StatusNotImplemented, "handoff_not_ready",
-			"取号未开放（等 kiro.rs 明文导出端点上线）· 号仍在你的池里，可以派进车或推自己号池")
+	// 三种模式（默认拒·两个开关分别开占位路径的不同段）：
+	//
+	// 1) **默认** · fulfill 直接 501 · 状态不推进 · confirm 也走不下去。
+	//    这是唯一安全的默认 —— kiro.rs 明文 endpoint 还没接。
+	//    对应 docs/05-api-contract §handoff 的"号池明文未开放"路径。
+	//
+	// 2) `BP_ALLOW_HANDOFF_PLACEHOLDER=1` · fulfill 返显式占位字符串
+	//    "PLACEHOLDER:not-a-real-key:<id>" · **但 pending 状态推进到
+	//    placeholder_delivered**（非 fulfilled）· confirm 拒绝走 DELETE
+	//    分支 —— 只做 handoff 状态 → confirmed_placeholder。这样：
+	//    - 前端联调三段流程能跑
+	//    - 号不会被真删（confirm 分支下面有 handoff.StatusPlaceholder 拒绝）
+	//    - 明显不是真号 · 前端也能识别
+	//
+	// 3) `BP_HANDOFF_TRUE_PLAINTEXT=1` + kiro.rs 明文 endpoint 接了 · 走真明文
+	//    → fulfilled → confirm DELETE · **生产唯一允许的模式**。
+	//    阶段 1a-1c 这个开关不放·1c 后接明文端点才放。
+	if os.Getenv("BP_HANDOFF_TRUE_PLAINTEXT") != "1" {
+		if os.Getenv("BP_ALLOW_HANDOFF_PLACEHOLDER") != "1" {
+			return newFail(http.StatusNotImplemented, "handoff_not_ready",
+				"取号功能未开放（kiro.rs 明文导出端点未接）· 号仍在你的池里，可以派进车或推自己号池")
+		}
+		// 联调路径：返占位 · 状态推进到 placeholder_delivered（非 fulfilled）
+		keys := s.readHandoffPlaceholder(pending.CredentialIDs)
+		if err := s.handoffs.MarkPlaceholderDelivered(r.Context(), pending.ID); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, handoffFulfillResponse{Keys: keys})
+		return nil
 	}
 
-	// 明文从 housepool 实时读 —— 关键：明文在**任何**时刻都不能落我方 DB
+	// 真明文路径（生产）· kiro.rs 明文 endpoint 已接
 	keys, err := s.readHandoffPlaintext(r.Context(), pending.CredentialIDs)
 	if err != nil {
 		return err
 	}
-
 	// 推进 fulfilled（幂等 · 后续 GET 同 token 只累加 fulfill_count）
 	if err := s.handoffs.MarkFulfilled(r.Context(), pending.ID); err != nil {
 		return err
@@ -142,6 +161,24 @@ func (s *Server) handleHandoffFulfill(w http.ResponseWriter, r *http.Request) er
 
 	writeJSON(w, http.StatusOK, handoffFulfillResponse{Keys: keys})
 	return nil
+}
+
+// readHandoffPlaceholder · 显式占位·不假装是真明文
+// 只在 BP_ALLOW_HANDOFF_PLACEHOLDER=1 时被调用（联调用）
+func (s *Server) readHandoffPlaceholder(credIDs []string) []handoffKey {
+	if len(credIDs) == 0 {
+		return nil
+	}
+	out := make([]handoffKey, 0, len(credIDs))
+	for _, id := range credIDs {
+		out = append(out, handoffKey{
+			CredentialID: id,
+			Key:          "PLACEHOLDER:not-a-real-key:" + id,
+			VendorID:     "",
+			Account:      "",
+		})
+	}
+	return out
 }
 
 // handleHandoffConfirm · POST /api/me/handoff/{token}/confirm
@@ -173,16 +210,31 @@ func (s *Server) handleHandoffConfirm(w http.ResponseWriter, r *http.Request) er
 		return newFail(http.StatusNotFound, "token_expired", "下载链接已过期")
 	}
 	// 只有 fulfilled 状态可以 confirm（token_issued 时还没取过明文，不能就直接删）
-	// completed / confirmed 幂等静默返回 ok
+	// completed / confirmed / confirmed_placeholder 幂等静默返回 ok
 	switch pending.Status {
 	case handoff.StatusFulfilled:
-		// go ahead
-	case handoff.StatusConfirmed, handoff.StatusCompleted:
+		// 真明文路径 · 走 DELETE 交号
+	case handoff.StatusPlaceholderDelivered:
+		// **占位路径** · 明文是假的 · 号绝不能删 · 只推进到 confirmed_placeholder
+		// 前端调 confirm 时前端知道拿到的是占位 · 但保留 200 让联调三段能跑完
+		if err := s.handoffs.MarkConfirmedPlaceholder(r.Context(), pending.ID); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":       true,
+			"warning":  "placeholder mode · 号未删除 · 明文是占位不能用",
+			"real_key": false,
+		})
+		return nil
+	case handoff.StatusConfirmed, handoff.StatusCompleted,
+		handoff.StatusConfirmedPlaceholder:
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return nil
 	default:
 		return newFail(http.StatusConflict, CodeConflict, "还没取过明文，不能确认")
 	}
+
+	// ── 真明文路径（生产·BP_HANDOFF_TRUE_PLAINTEXT=1 才能进这里）──
 
 	// ① 先把状态推 confirmed（占位锁 · 防两次 confirm 同时进入 DELETE）
 	if err := s.handoffs.MarkConfirmed(r.Context(), pending.ID); err != nil {
