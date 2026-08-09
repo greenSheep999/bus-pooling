@@ -46,6 +46,10 @@ type topupOrderResponse struct {
 // 那边收款链接的常规 TTL，跟通道商合同一致，改的话得同步改 waffo 侧。
 const TopupOrderTTL = 15 * time.Minute
 
+// usdRateCNY 展示层 CNY/USD 汇率（CLAUDE.md §1.4）。const 而不是配置：
+// 阶段 1a 汇率写死·等接了汇率服务再放开。前端和后端保持一致。
+const usdRateCNY int64 = 7
+
 // moneyMicro 内部所有 money 都是整数微单位 · 1 CNY = 1_000_000
 const moneyMicro int64 = 1_000_000
 
@@ -129,12 +133,17 @@ func (s *Server) handleCreateTopup(w http.ResponseWriter, r *http.Request) error
 		// gateway 侧的 asset = CNY（1 积分 ≡ 1 元 · 前端已知汇率展示层做换算）
 		// gateway 的 waffo_checkout rail 支持 USD/CNY 等 fiat（openapi Asset pattern 是宽的）·
 		// 由 gateway 侧配 waffo store 币种决定是否被 waffo 拒。
+		// gateway 走 waffo·1a 先都按 USD 走·汇率展示层做（CLAUDE.md §1.4）：
+		// 1 积分 ≡ 1 CNY · 支付 USD = (积分 + 通道费) / 7 · 汇率是内部 const
+		// order.Paid 是 CNY 微单位 · / usdRateCNY 得 USD 微单位（同样 6 位小数）
+		usdMicro := order.Paid / usdRateCNY
 		gwReq := paymentgw.CreatePaymentRequest{
 			ClientOrderID:    order.ID,
 			ProviderKind:     "waffo_checkout",
-			ExpectedAmount:   microToDecimalString(order.Paid),
-			ExpectedAsset:    "CNY",
+			ExpectedAmount:   microToDecimalString(usdMicro),
+			ExpectedAsset:    "USD",
 			PayerEmail:       p.Email,
+			PayerReference:   p.ID, // waffo 认证 checkout 要求·稳定标识用于对账去重
 			ExpiresInSeconds: int(TopupOrderTTL / time.Second),
 		}
 		if s.paymentGWSuccessURL != "" {
