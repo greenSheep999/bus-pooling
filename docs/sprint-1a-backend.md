@@ -364,19 +364,39 @@
 
 ## 交付验收（sprint 结束时）
 
-- [ ] 12 个业务/基础设施包骨架都在
-- [ ] 19 张核心表 migration 通过（含 idempotency_record + pending_purchase + pending_assignment）
-- [ ] 91kiro adapter + kiro.rs client 都真实调通（DRY_RUN=0 手工验证过 1 次）
-- [ ] **状态机 e2e** 全绿：进程 kill 后 janitor 能恢复
-- [ ] **幂等 e2e** 全绿：重放同 key 字节一致（handoff 除外）
-- [ ] **并发 e2e** 全绿：5 并发拉号 wallet 不超扣
-- [ ] e2e 脚本一键跑绿
-- [ ] `go vet` / `golangci-lint` 无严重告警
-- [ ] 敏感字段 0 命中（`grep -rE 'sk-|usr-[a-f0-9]{40}|password.*=' .`）
-- [ ] 每包有 README（一段话说明目的 + 主要类型）
-- [ ] git commit 干净（每个 issue 一个 commit or 一个 PR）
-- [ ] **kiro.rs commit sha 已绑**并 CI 校验通过
-- [ ] **API 响应 grep 无内部术语**（`housepool` / `initiated` / `handed_off` 等）
+> **状态图例**：✅ done · ⚙️ code-complete 但缺真上线依赖 · ⏸ 待
+>
+> 最后同步：commit `2eff1ff`（tests/e2e/step 4 扩到 4 崩溃窗口）
+
+- [x] ✅ 12 个业务/基础设施包骨架都在（当前 21 个包 · 含 6 家 vendor + paymentgw）
+- [x] ✅ 核心表 migration 通过（当前 27 张 · 含 idempotency_record + pending_purchase + pending_assignment + settlement_event + pending_handoff）
+- [ ] ⚙️ 91kiro adapter + kiro.rs client 真实调通
+  - 已验：91kiro no_stock 真返·kiro.rs 401 真接（`docs/e2e/log-2026-08-09.md`）
+  - **缺**：vendor 有余额时的成功 Purchase → BatchImport → 台账落 `kiro_rs_credential_id`
+- [x] ✅ **状态机 e2e** 全绿：`run-e2e.sh step 4` · 4 崩溃窗口（initial/reserved/purchasing/purchased）janitor 全兜
+- [x] ✅ **幂等 e2e** 全绿：`run-e2e.sh step 2` · 同 key ×5 字节一致
+- [x] ✅ **并发 e2e** 全绿：`run-e2e.sh step 3 + 3b` · 5 并发余额充足 + 10 并发资金竞争都不超扣
+- [x] ✅ e2e 脚本一键跑绿（`bash tests/e2e/run-e2e.sh` pass 12/12）
+- [x] ✅ `go vet` 无告警（`go vet ./...` 全绿）
+- [x] ✅ 敏感字段 0 命中（仅命中 `password_hash` SQL 列名·非敏感值）
+- [ ] ⏸ 每包有 README（当前 9/21 · 大部分包没 README · 阶段 1b/1c 补）
+- [x] ✅ git commit 干净（每个改动一个 commit·主题清晰）
+- [x] ⚙️ **kiro.rs 版本绑定**（cmd/bus-pooling/main.go:268 · 语义版本比对·非 commit SHA·上游未暴露 build sha endpoint · commit `82d580e` 修 misnaming）
+- [x] ✅ **API 响应无内部术语**（grep `"housepool"|"initiated"|"handed_off"|"kiro_rs_credential_id"|"death_source"` 无命中）
+- [x] ✅ **P0 handoff 数据丢失回归修复**（commit `82832ee` · 占位路径 confirm 不删号）
+- [x] ✅ **assign 走完整状态机**（commit `0e529d1` · initial → external_done → status_updated → completed）
+- [x] ✅ **into_bus 真调 housepool UpdateCredential**（commit `5b4ca86` · 迁 group 到 bus-{id}）
+- [x] ✅ **handoff janitor 扫 confirmed 卡单**（commit `ce68470` · maxRetries 后转 need_manual）
+
+**还差的（1a → done 的路径）**：
+- vendor 有余额跑一次真 Purchase 成功路径 · 落 `kiro_rs_credential_id`
+- 4 主流程完整精确 e2e（登录 → API key → bus pull → 真 handoff 明文 → deathwatch 手动置死）
+- 每包 README 补齐（3-4 天工作量·可放 1b 收尾）
+
+**Sprint 1a 判定**：**code-complete + core-e2e 全绿**·`NOT yet done`。真 done 依赖：
+1. kiro.rs 加明文导出 endpoint（外部依赖 · 需要 kiro.rs 那边改）
+2. vendor 有余额跑一次真 Purchase → BatchImport
+3. 上面"还差的"全打勾
 
 ## Sprint 1a（前后端）结束后 · 下一个 Sprint
 

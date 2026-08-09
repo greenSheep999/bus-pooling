@@ -229,13 +229,27 @@ web/
 
 ## 交付验收
 
-- [ ] 12 页都能进
-- [ ] 4 条主流程能点通（登录 / 建车拉号 / 单独拉号派去向 / 钱包）
-- [ ] MSW 假数据全覆盖，无真实 fetch 失败
-- [ ] 术语审查 grep 无内部词
-- [ ] 状态展示只有收敛后的 2-3 态（不出现 `initiated` / `imported` 等内部枚举）
-- [ ] Bun build 无报错
-- [ ] 用户 Review 清单归档
+> **状态图例**：✅ done · ⚙️ code-complete 但缺依赖 · ⏸ 待
+>
+> 最后同步：commit `2eff1ff`
+
+- [x] ✅ 16 页都能进（12 页最小 + 4 页 · 覆盖概览/提取/车/钱包/设置/prices/register/login/账户）
+- [x] ⚙️ 4 条主流程能点通
+  - 登录 · ✅ 前端 Login 页 + register 后自动登录
+  - 建车拉号 · ✅ 建车 + `/me/buses/{id}/pull`
+  - 单独拉号派去向 · ✅ Extract 页 + assign 弹窗（into_bus / push_pool / handoff 三段）
+  - 钱包 · ✅ topup 走 gateway checkout_url 或 dev endpoint mark paid
+- [x] ✅ MSW 假数据全覆盖（`VITE_USE_MOCK=1` 时用 · 默认 =0 走真后端）
+- [x] ✅ 术语审查 grep 无内部词（`vendor_id` 是决策标识·不算内部术语·被 `vendorLabel` 匿名化）
+- [x] ✅ 状态展示收敛（`Bus / PullRound / TopupOrder / Credential` 都按 §12.5 收敛过）
+- [x] ✅ `npm run build` 通过（有 1.19 MB 主 chunk 提示·非阻塞）
+- [ ] ⏸ 用户 Review 清单归档（本轮审计已经算一次·后续继续跟）
+
+**未打勾但真跑过的**：
+- [x] ✅ 前后端联调（浏览器手验 · 12 页 0 console error 见 `docs/e2e/log-2026-08-09.md`）
+- [x] ✅ 真 payment gateway（浏览器测过 waffo test checkout 页跳转）
+
+**Sprint 1a 前端判定**：**基本 done**·差 vendor 有余额跑一次全流程存档。
 
 ## Sprint 1a 前端 · 完成后开 · Sprint 1a 后端
 
