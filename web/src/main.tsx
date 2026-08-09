@@ -12,9 +12,14 @@ const qc = new QueryClient({
 });
 
 async function boot() {
-  if (import.meta.env.DEV) {
+  // VITE_USE_MOCK: "1" = MSW（假数据 · 独立开发前端用）· 默认关，走 vite proxy 到真后端
+  const useMock = import.meta.env.VITE_USE_MOCK === "1";
+  if (import.meta.env.DEV && useMock) {
     const { worker } = await import("./mocks/browser");
     await worker.start({ onUnhandledRequest: "bypass", quiet: true });
+    console.info("[bus-pooling] MSW 已启用 · 走假数据");
+  } else if (import.meta.env.DEV) {
+    console.info("[bus-pooling] 真后端模式 · fetch /api/* → :8080");
   }
 
   createRoot(document.getElementById("root")!).render(

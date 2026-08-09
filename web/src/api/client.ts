@@ -37,7 +37,8 @@ export async function api<T>(
     let msg = res.statusText;
     try {
       const body = await res.json();
-      code = body.error ?? code;
+      // 后端错误形状 { code, message, retry_after? }（05-api-contract §错误响应）
+      code = body.code ?? body.error ?? code;
       msg = body.message ?? msg;
     } catch {
       /* ignore */

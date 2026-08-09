@@ -110,9 +110,29 @@ curl localhost:8080/healthz
 ```bash
 cd web
 npm install
-npm run dev        # localhost:3000 · MSW mock 全部 API，不依赖后端
+npm run dev        # localhost:3100 · 走 vite proxy 到后端 :8080
 npm run build      # tsc -b + vite build
 npm run lint
+```
+
+**MSW 假数据模式**（独立开发前端时用，不用起后端）：
+
+```bash
+VITE_USE_MOCK=1 npm run dev
+```
+
+默认（`VITE_USE_MOCK` 空或 `0`）走真后端 · fetch `/api/*` 经 vite proxy 转发到 `localhost:8080`。启动时浏览器 console 会打 `[bus-pooling] 真后端模式` 或 `MSW 已启用` 提示当前走哪边。
+
+**前后端一起跑**（两个 tab）：
+
+```bash
+# tab 1
+BP_MASTER_KEY=$(go run ./cmd/bus-pooling genkey | tr -d '\n') go run ./cmd/bus-pooling migrate up
+BP_MASTER_KEY=... BP_INSECURE_COOKIE=1 go run ./cmd/bus-pooling serve
+
+# tab 2
+cd web && npm run dev
+# 浏览器打开 http://localhost:3100
 ```
 
 > **前端类型检查必须用 `npm run build`（内含 `tsc -b`）** —— 根 `tsconfig.json` 用
