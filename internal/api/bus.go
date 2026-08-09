@@ -15,19 +15,32 @@ import (
 // Bus 相关端点。响应形状对齐 web/src/types/index.ts 的 Bus / BusMember。
 
 type busResponse struct {
-	ID          string       `json:"id"`
-	Name        string       `json:"name"`
-	Kind        string       `json:"kind"`
-	Status      string       `json:"status"`
-	MemberCount int          `json:"member_count"`
-	InviteCode  *string      `json:"invite_code"`
-	CreatedAt   string       `json:"created_at"`
-	Members     []memberResp `json:"members"`
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	Kind        string        `json:"kind"`
+	Status      string        `json:"status"`
+	MemberCount int           `json:"member_count"`
+	InviteCode  *string       `json:"invite_code"`
+	CreatedAt   string        `json:"created_at"`
+	Members     []memberResp  `json:"members"`
+	Strategy    busStrategyDT `json:"strategy"`
 	// 号池汇总 · 1a 先给 0（Iss #10 只做元数据，号统计在 §credentials 端点单独查）
 	AliveCount         int   `json:"alive_count"`
 	DeadCount          int   `json:"dead_count"`
 	SpendToday         int64 `json:"spend_today"`
 	AvgLifespanSeconds int64 `json:"avg_lifespan_seconds"`
+}
+
+// busStrategyDT 对齐前端 BusStrategy（TS 是权威 · CLAUDE.md §0）
+type busStrategyDT struct {
+	AutoRefillEnabled bool    `json:"auto_refill_enabled"`
+	RefillWatermark   int     `json:"refill_watermark"`
+	RefillMinCount    *int    `json:"refill_min_count"`
+	PerRoundCount     *int    `json:"per_round_count"`
+	MaxUnitPrice      *int64  `json:"max_unit_price"`
+	DailyRoundLimit   *int    `json:"daily_round_limit"`
+	DailySpendLimit   *int64  `json:"daily_spend_limit"`
+	PreferredVendor   *string `json:"preferred_vendor"`
 }
 
 type memberResp struct {
@@ -44,7 +57,12 @@ type memberResp struct {
 
 type createBusReq struct {
 	Name string `json:"name"`
+	// Kind 可选 · 空 = single（阶段 1a 只支持 single）
 	Kind string `json:"kind"`
+	// Strategy 建车时的初始策略（前端已收集 · TS BusStrategy 形状）
+	Strategy *busStrategyDT `json:"strategy"`
+	// InviteCodeHint team 车专用（1a 忽略）
+	InviteCodeHint string `json:"invite_code_hint"`
 }
 
 func (s *Server) handleCreateBus(w http.ResponseWriter, r *http.Request) error {
@@ -61,11 +79,24 @@ func (s *Server) handleCreateBus(w http.ResponseWriter, r *http.Request) error {
 		kind = bus.KindSingle
 	}
 
-	b, err := s.buses.Create(r.Context(), bus.CreateInput{
+	in := bus.CreateInput{
 		Name:      req.Name,
 		Kind:      kind,
 		CreatorID: p.ID,
-	})
+	}
+	if req.Strategy != nil {
+		in.Strategy = &bus.Strategy{
+			AutoRefillEnabled: req.Strategy.AutoRefillEnabled,
+			RefillWatermark:   req.Strategy.RefillWatermark,
+			RefillMinCount:    req.Strategy.RefillMinCount,
+			PerRoundCount:     req.Strategy.PerRoundCount,
+			MaxUnitPrice:      req.Strategy.MaxUnitPrice,
+			DailyRoundLimit:   req.Strategy.DailyRoundLimit,
+			DailySpendLimit:   req.Strategy.DailySpendLimit,
+			PreferredVendor:   req.Strategy.PreferredVendor,
+		}
+	}
+	b, err := s.buses.Create(r.Context(), in)
 	switch {
 	case errors.Is(err, bus.ErrBadKind):
 		return ErrBadRequest("阶段 1a 只支持 single 车")
@@ -303,6 +334,16 @@ func (s *Server) buildBusResponse(r *http.Request, b *bus.Bus) (busResponse, err
 		MemberCount: len(members), InviteCode: invite,
 		CreatedAt: b.CreatedAt.Format("2006-01-02T15:04:05.000Z"),
 		Members:   mResp,
+		Strategy: busStrategyDT{
+			AutoRefillEnabled: b.Strategy.AutoRefillEnabled,
+			RefillWatermark:   b.Strategy.RefillWatermark,
+			RefillMinCount:    b.Strategy.RefillMinCount,
+			PerRoundCount:     b.Strategy.PerRoundCount,
+			MaxUnitPrice:      b.Strategy.MaxUnitPrice,
+			DailyRoundLimit:   b.Strategy.DailyRoundLimit,
+			DailySpendLimit:   b.Strategy.DailySpendLimit,
+			PreferredVendor:   b.Strategy.PreferredVendor,
+		},
 	}, nil
 }
 

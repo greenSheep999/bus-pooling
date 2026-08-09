@@ -40,6 +40,20 @@ type Bus struct {
 	MaxMembers  int    // 0 = 不限
 	CreatedAt   time.Time
 	DissolvedAt *time.Time
+	Strategy    Strategy
+}
+
+// Strategy 每车一策略（decisions §8.6）· 落 bus 表同名列。
+// 指针字段 nil = 不限 / 未设。
+type Strategy struct {
+	AutoRefillEnabled bool
+	RefillWatermark   int
+	RefillMinCount    *int
+	PerRoundCount     *int
+	MaxUnitPrice      *int64
+	DailyRoundLimit   *int
+	DailySpendLimit   *int64
+	PreferredVendor   *string
 }
 
 // Member 是车里一个成员的行。
@@ -68,11 +82,12 @@ type Store struct {
 
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
-// CreateInput 建车入参。
+// CreateInput 建车入参。Strategy 为 nil = 用零值（不自动补车、上限全空）。
 type CreateInput struct {
 	Name      string
 	Kind      Kind
 	CreatorID string
+	Strategy  *Strategy
 }
 
 // Create 建一辆 single 车 + creator 作为 owner 成员，一个事务。
@@ -98,6 +113,9 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (*Bus, error) {
 		CreatorID: in.CreatorID,
 		CreatedAt: time.Now().UTC(),
 	}
+	if in.Strategy != nil {
+		b.Strategy = *in.Strategy
+	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -107,10 +125,23 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (*Bus, error) {
 
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO bus
-		  (id, name, kind, creator_passenger_id, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
+		  (id, name, kind, creator_passenger_id, status, created_at,
+		   auto_refill_enabled, refill_watermark, refill_min_count,
+		   per_round_count, max_unit_price,
+		   daily_round_limit, daily_spend_limit, preferred_vendor)
+		VALUES (?, ?, ?, ?, ?, ?,
+		        ?, ?, ?,
+		        ?, ?,
+		        ?, ?, ?)`,
 		b.ID, b.Name, string(b.Kind), b.CreatorID, string(b.Status),
-		formatTime(b.CreatedAt)); err != nil {
+		formatTime(b.CreatedAt),
+		boolToInt(b.Strategy.AutoRefillEnabled), b.Strategy.RefillWatermark,
+		nullableInt(b.Strategy.RefillMinCount),
+		nullableInt(b.Strategy.PerRoundCount),
+		nullableInt64(b.Strategy.MaxUnitPrice),
+		nullableInt(b.Strategy.DailyRoundLimit),
+		nullableInt64(b.Strategy.DailySpendLimit),
+		nullableString(b.Strategy.PreferredVendor)); err != nil {
 		return nil, fmt.Errorf("bus: 建车: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -272,38 +303,42 @@ func (s *Store) isActiveMember(ctx context.Context, busID, passengerID string) (
 
 const selectBus = `SELECT id, name, kind, status, creator_passenger_id,
                           COALESCE(invite_code, ''), COALESCE(max_members, 0),
-                          created_at, dissolved_at
+                          created_at, dissolved_at,
+                          auto_refill_enabled, refill_watermark, refill_min_count,
+                          per_round_count, max_unit_price,
+                          daily_round_limit, daily_spend_limit, preferred_vendor
                      FROM bus`
 
 func (s *Store) scanBus(row *sql.Row) (*Bus, error) {
 	b := &Bus{}
-	var kind, status, createdAt string
-	var dissolvedAt sql.NullString
-	err := row.Scan(&b.ID, &b.Name, &kind, &status, &b.CreatorID,
-		&b.InviteCode, &b.MaxMembers, &createdAt, &dissolvedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("bus: 读车: %w", err)
-	}
-	b.Kind = Kind(kind)
-	b.Status = Status(status)
-	b.CreatedAt = parseTime(createdAt)
-	if dissolvedAt.Valid {
-		t := parseTime(dissolvedAt.String)
-		b.DissolvedAt = &t
+	if err := scanBusFields(row, b); err != nil {
+		return nil, err
 	}
 	return b, nil
 }
 
-func scanBusRow(rows *sql.Rows) (*Bus, error) {
-	b := &Bus{}
+// scanner 让 Row 和 Rows 都能塞进 scanBusFields。
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+func scanBusFields(sc scanner, b *Bus) error {
 	var kind, status, createdAt string
 	var dissolvedAt sql.NullString
-	if err := rows.Scan(&b.ID, &b.Name, &kind, &status, &b.CreatorID,
-		&b.InviteCode, &b.MaxMembers, &createdAt, &dissolvedAt); err != nil {
-		return nil, err
+	var autoRefill int
+	var refillMinCount, perRoundCount, dailyRoundLimit sql.NullInt64
+	var maxUnitPrice, dailySpendLimit sql.NullInt64
+	var preferredVendor sql.NullString
+	err := sc.Scan(&b.ID, &b.Name, &kind, &status, &b.CreatorID,
+		&b.InviteCode, &b.MaxMembers, &createdAt, &dissolvedAt,
+		&autoRefill, &b.Strategy.RefillWatermark, &refillMinCount,
+		&perRoundCount, &maxUnitPrice,
+		&dailyRoundLimit, &dailySpendLimit, &preferredVendor)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("bus: 读车: %w", err)
 	}
 	b.Kind = Kind(kind)
 	b.Status = Status(status)
@@ -312,7 +347,67 @@ func scanBusRow(rows *sql.Rows) (*Bus, error) {
 		t := parseTime(dissolvedAt.String)
 		b.DissolvedAt = &t
 	}
+	b.Strategy.AutoRefillEnabled = autoRefill != 0
+	if refillMinCount.Valid {
+		v := int(refillMinCount.Int64)
+		b.Strategy.RefillMinCount = &v
+	}
+	if perRoundCount.Valid {
+		v := int(perRoundCount.Int64)
+		b.Strategy.PerRoundCount = &v
+	}
+	if maxUnitPrice.Valid {
+		v := maxUnitPrice.Int64
+		b.Strategy.MaxUnitPrice = &v
+	}
+	if dailyRoundLimit.Valid {
+		v := int(dailyRoundLimit.Int64)
+		b.Strategy.DailyRoundLimit = &v
+	}
+	if dailySpendLimit.Valid {
+		v := dailySpendLimit.Int64
+		b.Strategy.DailySpendLimit = &v
+	}
+	if preferredVendor.Valid {
+		s := preferredVendor.String
+		b.Strategy.PreferredVendor = &s
+	}
+	return nil
+}
+
+func scanBusRow(rows *sql.Rows) (*Bus, error) {
+	b := &Bus{}
+	if err := scanBusFields(rows, b); err != nil {
+		return nil, err
+	}
 	return b, nil
+}
+
+// ── null helpers ────────────────────────────────────
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+func nullableInt(p *int) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+func nullableInt64(p *int64) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+func nullableString(p *string) any {
+	if p == nil {
+		return nil
+	}
+	return *p
 }
 
 const timeLayout = "2006-01-02T15:04:05.000Z"
