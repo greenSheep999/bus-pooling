@@ -242,7 +242,7 @@ func TestNoProxyMatching(t *testing.T) {
 		{"kiro.aibbq.xyz", []string{"aibbq.xyz"}, true},
 		{"aibbq.xyz", []string{"aibbq.xyz"}, true},
 		{"evil-aibbq.xyz", []string{"aibbq.xyz"}, false}, // 不能只做后缀字符串匹配
-		{"api.91kiro.com", []string{"aibbq.xyz"}, false},
+		{"api.example.local", []string{"aibbq.xyz"}, false},
 		{"localhost", []string{"localhost", "127.0.0.1"}, true},
 		{"KIRO.AIBBQ.XYZ", []string{"aibbq.xyz"}, true}, // 大小写不敏感
 		{"anything", nil, false},

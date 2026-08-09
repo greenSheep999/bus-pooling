@@ -22,6 +22,10 @@ type Config struct {
 	HTTPX     HTTPX     `yaml:"httpx"`
 	Housepool Housepool `yaml:"housepool"`
 	Vendors   Vendors   `yaml:"vendors"`
+	Decider   Decider   `yaml:"decider"`
+	Bus       Bus       `yaml:"bus"`
+	Pull      Pull      `yaml:"pull"`
+	Promo     Promo     `yaml:"promo"`
 
 	// DryRun=true 时 vendor 调用走 mock，不产生真实扣款（sprint Iss #13）。
 	// 默认 true —— 宁可开发时忘了关而不扣钱，也不要上线时忘了开而误扣。
@@ -57,22 +61,19 @@ type HTTPX struct {
 
 type Housepool struct {
 	BaseURL string `yaml:"base_url"`
-	// ExpectedVersion 绑 kiro.rs 语义版本（**不是 commit SHA**）·空 = 不校验。
+	// ExpectedVersion 绑 housepool 语义版本（**不是 commit SHA**）·空 = 不校验。
 	//
-	// 启动时调 GET /admin/system/update/check · 比对返回的 current_version
-	// （kiro.rs types.rs UpdateCheckInfo.current_version = CARGO_PKG_VERSION ·
-	// 例："0.42.1"）·不等就启动失败·跟 rates 零费率同款守护。
+	// 启动时调 housepool 版本探测端点 · 比对返回的 current_version ·
+	// 不等就启动失败 · 跟 rates 零费率同款守护 · 防契约漂移。
 	//
-	// **要绑真 commit SHA** · 需 kiro.rs 加暴露 build info 的 endpoint ·
-	// 目前上游不提供 · 只能对比语义版本。字段名从 ExpectedSHA 改了 · 老 yaml/env
-	// 的兼容读取见 applyEnv（同时接受两个 env 名）。
+	// 字段名从 ExpectedSHA 改了 · 老 yaml/env 的兼容读取见 applyEnv。
 	ExpectedVersion string `yaml:"expected_version"`
 }
 
 // Vendors 各家 vendor 的**非敏感**配置。
 //
-// 6 家 kiro 系 vendor 全接入（1a: kiro91 · 1b: 加 5 家）。空 BaseURL = 不装配那家 ·
-// registry 层跳过（不参与比价 · 不注册）。
+// 空 BaseURL = 不装配那家 · registry 层跳过（不参与比价 · 不注册）。
+// 敏感值（API key / webhook secret）不在这里 · 从 env 读。
 type Vendors struct {
 	Kiro91    Vendor `yaml:"kiro91"`
 	KiroCEO   Vendor `yaml:"kiroceo"`
@@ -89,11 +90,77 @@ type Vendor struct {
 	BaseURL string `yaml:"base_url"`
 }
 
+// Decider · 拉号决策器的配置（比价算法·default vendor 之类）。
+//
+// 阶段 1a-1b：DefaultVendor 决定"客户端不传 vendor_id 时用哪家"·**必须显式配**。
+// 未来（1d+）真比价算法上线后·这个字段变成"算法失败时的兜底"。
+type Decider struct {
+	// DefaultVendor · 客户端不传 vendor_id 时用的默认 · live 模式必填。
+	DefaultVendor string `yaml:"default_vendor"`
+}
+
+// Bus · 拼车实体的系统级配置（跟成员 / 撮合 / 邀请码相关）。
+//
+// 具体值走 config.yaml · 别写死在代码里（CLAUDE.md §7.3 铁律：
+// 具体阈值 / 上限不进代码 · 只进 config / 后台 / 文档）。
+type Bus struct {
+	// MaxMembers · 每辆车最多几人 · 阶段 1c 硬性上限
+	// 应用范围：包括用户建的 team 车 + 系统建的 anon 搭车池
+	// 忽略前端传入的 max_members 入参·全走 config
+	MaxMembers int `yaml:"max_members"`
+}
+
+// Promo · 顶部跑马灯活动位（系统配置 · 不是给用户改的）。
+//
+// 为什么走 config 而不是硬编在前端：文案 / 倒计时 / 开关都是运营要随时改的东西，
+// 改一次不该重新 build 部署前端。前端从 `GET /api/promos` 拉。
+//
+// **文案铁律**（改之前先过 CLAUDE.md §12.6 + 00 §7.5 规则 B）：
+//   - 不出通道商 / vendor 真名 · 不出内部阶段标签（1a/1b）· 不出计费分项结构
+//   - **不承诺任何时长 / 质量指标**（规则 B：我方不承诺号的可用时长）
+type Promo struct {
+	Items []PromoItem `yaml:"items"`
+}
+
+// PromoItem 一条活动。
+type PromoItem struct {
+	// ID 稳定标识 · 前端用它做 key（顺序可能变）
+	ID string `yaml:"id"`
+	// Text 展示文案
+	Text string `yaml:"text"`
+	// To 点击去哪 · 空 = 不可点（纯公告）
+	To string `yaml:"to"`
+	// Enabled false = 不下发（下线一条活动不用删配置）
+	Enabled bool `yaml:"enabled"`
+	// CountdownUntil 倒计时截止（RFC3339 · 空 = 不显示倒计时）
+	// 到点后这条自动不下发 —— 免得运营忘了关，过期活动还挂着
+	CountdownUntil string `yaml:"countdown_until"`
+}
+
+// Pull · 拉号参数的全局配置（decisions §8.35 #18）。
+//
+// 目标：**避免并发打爆上游 + 尽量拉到号**。每辆车 / 每个乘客的策略在自己的
+// `bus.per_round_count` 等字段里，这里是系统级的**兜底和区间** —— 谁也不能超。
+type Pull struct {
+	// DefaultCount · 客户端没指定数量时拉几个
+	DefaultCount int `yaml:"default_count"`
+	// MinCount / MaxCount · 单次拉号数量的允许区间 · 超出直接拒（不静默截断 ——
+	// 静默改数量用户会以为系统坏了）
+	MinCount int `yaml:"min_count"`
+	MaxCount int `yaml:"max_count"`
+	// MaxConcurrentPerVendor · 同一 vendor 同时最多几个在飞的拉号请求
+	// 0 = 不限（阶段 1c 单机够用 · 上量后必须设）
+	MaxConcurrentPerVendor int `yaml:"max_concurrent_per_vendor"`
+	// MaxConcurrentPerPassenger · 同一乘客同时最多几个在飞的拉号
+	// 防一个人刷爆额度 · 也防他自己的并发互相挤冻结
+	MaxConcurrentPerPassenger int `yaml:"max_concurrent_per_passenger"`
+}
+
 // Secrets 全部来自 env。
 type Secrets struct {
 	// MasterKey AES-256-GCM 主密钥 · 32 字节的 hex（64 个字符）
 	MasterKey string
-	// HousepoolAdminKey 我方 kiro.rs 的 admin API key
+	// HousepoolAdminKey · housepool admin API key
 	HousepoolAdminKey string
 
 	// vendor API keys · 主动拉号用
@@ -105,7 +172,7 @@ type Secrets struct {
 	KiroDropAPIKey  string
 
 	// vendor webhook secrets · 收 vendor 回调时验签用
-	// 只有 kiro91 和 kirodrop 走 HMAC（其他 4 家 vendor 侧无签名）
+	// 只有支持 HMAC 的 vendor 才需要配（其他家 vendor 侧无签名·靠 URL 保密）
 	Kiro91WebhookSecret   string
 	KiroDropWebhookSecret string
 }
@@ -139,15 +206,23 @@ func Default() Config {
 			RetryBaseWait: 500 * time.Millisecond,
 		},
 		Vendors: Vendors{
-			// 默认 Enabled=false —— 没显式开就不该悄悄开始花钱
-			// BaseURL 从 docs/vendors/*.md §1 抄
-			Kiro91:    Vendor{BaseURL: "https://api.91kiro.com"},
-			KiroCEO:   Vendor{BaseURL: "https://kiro.ceo"},
-			KiroOOO:   Vendor{BaseURL: "https://kiro.ooo/api"},
-			KiroAppIO: Vendor{BaseURL: "http://kiroapp.io"},
-			KiroAppCC: Vendor{BaseURL: "https://kiroapp.cc"},
-			KiroDrop:  Vendor{BaseURL: "https://drop.kiro.ss"},
+			// 默认 Enabled=false · BaseURL 空 —— 上游 URL 从 config.yaml 或 env 传入
+			// 不硬编到代码（CLAUDE.md §0.1）· vendor 档案 URL 参考 docs/vendors/*.md
 		},
+		Bus: Bus{
+			// 默认 5 · 阶段 1c 每辆车硬性上限（config.yaml 可覆盖）
+			MaxMembers: 5,
+		},
+		Pull: Pull{
+			// 默认拉 3 个 · 区间 1-50 · 并发暂不限（单机 1c 够用）
+			DefaultCount:              3,
+			MinCount:                  1,
+			MaxCount:                  50,
+			MaxConcurrentPerVendor:    0,
+			MaxConcurrentPerPassenger: 3,
+		},
+		// Promo 默认空 —— 文案是运营内容·不硬编在代码里（config.yaml 配）
+		Promo: Promo{},
 		DryRun: true,
 	}
 }
@@ -217,6 +292,11 @@ func applyEnv(cfg *Config) {
 	applyVendorEnv(&cfg.Vendors.KiroAppCC, "BP_VENDOR_KIROAPPCC_URL", "BP_VENDOR_KIROAPPCC_ENABLED")
 	applyVendorEnv(&cfg.Vendors.KiroDrop, "BP_VENDOR_KIRODROP_URL", "BP_VENDOR_KIRODROP_ENABLED")
 
+	// decider · default vendor
+	if v := os.Getenv("BP_DECIDER_DEFAULT_VENDOR"); v != "" {
+		cfg.Decider.DefaultVendor = v
+	}
+
 	cfg.Secrets.MasterKey = os.Getenv(EnvMasterKey)
 	cfg.Secrets.HousepoolAdminKey = os.Getenv(EnvHousepoolAdminKey)
 	cfg.Secrets.Kiro91APIKey = os.Getenv(EnvKiro91APIKey)
@@ -257,6 +337,22 @@ func (c Config) Validate() error {
 	// 开了一家 vendor 却没给 base_url —— 拉号时才炸不如现在就说
 	if c.Vendors.Kiro91.Enabled && c.Vendors.Kiro91.BaseURL == "" {
 		return errors.New("vendors.kiro91.enabled=true 但 base_url 为空")
+	}
+	// bus.max_members 零 = 建的车没人能加·连 owner 都进不去 · 拒启动
+	if c.Bus.MaxMembers <= 0 {
+		return errors.New("bus.max_members 必须 > 0")
+	}
+	// 拉号区间自相矛盾 → 拒启动（min > max 会让所有拉号都失败·启动时就该发现）
+	if c.Pull.MinCount <= 0 {
+		return errors.New("pull.min_count 必须 > 0")
+	}
+	if c.Pull.MaxCount < c.Pull.MinCount {
+		return fmt.Errorf("pull.max_count(%d) 不能小于 pull.min_count(%d)",
+			c.Pull.MaxCount, c.Pull.MinCount)
+	}
+	if c.Pull.DefaultCount < c.Pull.MinCount || c.Pull.DefaultCount > c.Pull.MaxCount {
+		return fmt.Errorf("pull.default_count(%d) 必须落在 [%d, %d] 区间内",
+			c.Pull.DefaultCount, c.Pull.MinCount, c.Pull.MaxCount)
 	}
 	return nil
 }

@@ -215,13 +215,14 @@ func TestValidate(t *testing.T) {
 }
 
 // vendor 默认必须是关的 —— 没显式开就不该悄悄开始花钱
+// **不再假设 base_url 有默认值** —— 上游 URL 从 config.yaml / env 传入·不硬编到代码
 func TestVendorDefaultsDisabled(t *testing.T) {
 	cfg := Default()
 	if cfg.Vendors.Kiro91.Enabled {
-		t.Error("kiro91 默认应为 disabled")
+		t.Error("vendor 默认应为 disabled")
 	}
-	if cfg.Vendors.Kiro91.BaseURL == "" {
-		t.Error("默认应带 91kiro 的官方 base_url（开的时候不用再查文档）")
+	if cfg.Vendors.Kiro91.BaseURL != "" {
+		t.Errorf("默认 base_url 应为空·实际 %q · 上游 URL 不能硬编", cfg.Vendors.Kiro91.BaseURL)
 	}
 }
 
@@ -229,7 +230,8 @@ func TestVendorDefaultsDisabled(t *testing.T) {
 func TestVendorSecretsFromEnvOnly(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "c.yaml")
 	// 故意在 yaml 里塞 api_key 字段 —— 应该被忽略（struct 里没这个字段）
-	body := "vendors:\n  kiro91:\n    enabled: true\n    api_key: should-be-ignored\n"
+	// base_url 必填（默认不硬编）
+	body := "vendors:\n  kiro91:\n    enabled: true\n    base_url: https://example.local\n    api_key: should-be-ignored\n"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -256,6 +258,7 @@ func TestRequireSecretsChecksEnabledVendorKey(t *testing.T) {
 		c := Default()
 		c.Secrets.MasterKey = "mk"
 		c.Vendors.Kiro91.Enabled = true
+		c.Vendors.Kiro91.BaseURL = "https://example.local"
 		return c
 	}
 
