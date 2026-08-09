@@ -224,6 +224,85 @@ func TestJanitor_ExpiresTokenIssued(t *testing.T) {
 	}
 }
 
+// janitor 扫卡在 confirmed 的行 · completeFn 重试成功 → completed
+func TestJanitor_ConfirmedRetrySuccess(t *testing.T) {
+	s, _, pid := setup(t)
+	p, _ := s.IssueToken(context.Background(), IssueTokenInput{
+		PassengerID: pid, CredentialIDs: []string{"c1"},
+	})
+	if err := s.MarkFulfilled(context.Background(), p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkConfirmed(context.Background(), p.ID); err != nil {
+		t.Fatal(err)
+	}
+	// 等 stuckAfter 过
+	time.Sleep(60 * time.Millisecond)
+
+	completeCalled := 0
+	j := NewJanitor(JanitorConfig{
+		Store:      s,
+		StuckAfter: 50 * time.Millisecond,
+		CompleteFn: func(_ context.Context, _ Pending) error {
+			completeCalled++
+			return nil
+		},
+	})
+	rep := j.SweepOnce(context.Background())
+	if rep.StuckConfirmedRetried != 1 {
+		t.Errorf("StuckConfirmedRetried = %d, want 1", rep.StuckConfirmedRetried)
+	}
+	if completeCalled != 1 {
+		t.Errorf("completeFn 调用次数 = %d, want 1", completeCalled)
+	}
+	got, _ := s.Get(context.Background(), p.ID)
+	if got.Status != StatusCompleted {
+		t.Errorf("status = %s, want completed", got.Status)
+	}
+}
+
+// janitor 扫卡在 confirmed 的行 · completeFn 一直失败 → 超 maxRetries 转 need_manual
+func TestJanitor_ConfirmedMaxRetriesToManual(t *testing.T) {
+	s, _, pid := setup(t)
+	p, _ := s.IssueToken(context.Background(), IssueTokenInput{
+		PassengerID: pid, CredentialIDs: []string{"c1"},
+	})
+	_ = s.MarkFulfilled(context.Background(), p.ID)
+	_ = s.MarkConfirmed(context.Background(), p.ID)
+	time.Sleep(60 * time.Millisecond)
+
+	j := NewJanitor(JanitorConfig{
+		Store:      s,
+		StuckAfter: 50 * time.Millisecond,
+		MaxRetries: 2,
+		CompleteFn: func(_ context.Context, _ Pending) error {
+			return errFake
+		},
+	})
+	// 前 2 次失败 · 不到上限
+	j.SweepOnce(context.Background())
+	j.SweepOnce(context.Background())
+	got, _ := s.Get(context.Background(), p.ID)
+	if got.Status != StatusConfirmed {
+		t.Errorf("2 次失败后 status = %s, want 仍 confirmed", got.Status)
+	}
+	// 第 3 次 · attempts=3 > maxRetries=2 · 转 need_manual
+	rep := j.SweepOnce(context.Background())
+	if rep.StuckConfirmedManual != 1 {
+		t.Errorf("StuckConfirmedManual = %d, want 1", rep.StuckConfirmedManual)
+	}
+	got, _ = s.Get(context.Background(), p.ID)
+	if got.Status != StatusNeedManual {
+		t.Errorf("status = %s, want need_manual", got.Status)
+	}
+}
+
+var errFake = &fakeErr{}
+
+type fakeErr struct{}
+
+func (e *fakeErr) Error() string { return "fake" }
+
 // janitor 扫过期 fulfilled
 func TestJanitor_ExpiresFulfilled(t *testing.T) {
 	s, _, pid := setup(t)

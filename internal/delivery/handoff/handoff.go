@@ -406,6 +406,51 @@ func (s *Store) FindStale(ctx context.Context, status Status, limit int) ([]Pend
 	return out, rows.Err()
 }
 
+// FindStuckConfirmed 找卡在 confirmed 但没推到 completed 的行·超时阈值 stuckAfter。
+//
+// 触发场景：confirm handler 已推状态 confirmed·但接下来的 housepool DELETE
+// 失败（网络断 · 崩溃 · kiro.rs 503）· pending_handoff 卡在 confirmed·
+// **号还在 pool 里没删** —— janitor 定期扫这些·重试 completeHandoff 或转 need_manual。
+//
+// 用 confirmed_at 而不是 expires_at 判"卡了多久"（confirmed 之后已经不看 TTL）。
+func (s *Store) FindStuckConfirmed(ctx context.Context, stuckAfter time.Duration, limit int) ([]Pending, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	cutoff := s.now().Add(-stuckAfter)
+	rows, err := s.db.QueryContext(ctx,
+		selectPending+` WHERE status = 'confirmed' AND confirmed_at IS NOT NULL AND confirmed_at < ? ORDER BY confirmed_at LIMIT ?`,
+		formatTime(cutoff), limit)
+	if err != nil {
+		return nil, fmt.Errorf("handoff: 扫 stuck confirmed: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Pending
+	for rows.Next() {
+		p, err := scanRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// MarkNeedManual 把 pending_handoff 标 need_manual（human 介入）· janitor 重试若干次后调。
+func (s *Store) MarkNeedManual(ctx context.Context, id, reason string) error {
+	now := s.now()
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE pending_handoff
+		   SET status = 'need_manual', error = ?, updated_at = ?
+		 WHERE id = ? AND status != 'need_manual'`,
+		reason, formatTime(now), id)
+	if err != nil {
+		return fmt.Errorf("handoff: 标 need_manual: %w", err)
+	}
+	return nil
+}
+
 // checkOwnership 批量校验 credential_id 是否都归此乘客。
 //
 // 归属规则：

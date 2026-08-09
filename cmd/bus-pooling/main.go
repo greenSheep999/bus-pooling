@@ -419,8 +419,34 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		slog.Info("janitor 已启动")
 	}
 
-	// handoff janitor 扫过期 token · Store 自己防 nil，跑起来不依赖 pool
-	handoffJanitor := handoff.NewJanitor(handoff.JanitorConfig{Store: handoffs})
+	// handoff janitor · 扫过期 token + 卡在 confirmed 的行
+	// pool 非 nil 时（live 模式）·装完整 completeFn 让 confirmed 卡单能重试 DELETE
+	handoffJanitorCfg := handoff.JanitorConfig{Store: handoffs}
+	if poolClient != nil {
+		handoffJanitorCfg.Pool = poolClient
+		// completeFn · 重试 completeHandoff 的外部动作
+		// 简化：只重试 pool.DeleteCredential（依赖 credential_ledger 存 kiro_rs_credential_id）
+		// 真的完整版应该跟 api.completeHandoff 共享逻辑·1c 抽公用包时统一
+		handoffJanitorCfg.CompleteFn = func(ctx context.Context, p handoff.Pending) error {
+			for _, cid := range p.CredentialIDs {
+				var krID uint64
+				err := database.DB.QueryRowContext(ctx,
+					`SELECT kiro_rs_credential_id FROM credential_ledger WHERE id = ? AND kiro_rs_credential_id IS NOT NULL`,
+					cid).Scan(&krID)
+				if err != nil {
+					continue // credential 没 krID·跳过
+				}
+				if err := poolClient.DeleteCredential(ctx, housepool.CredentialID(krID)); err != nil {
+					return fmt.Errorf("重试 DeleteCredential(cred=%s krID=%d): %w", cid, krID, err)
+				}
+				// 台账标 handed_off
+				_, _ = database.DB.ExecContext(ctx,
+					`UPDATE credential_ledger SET status='handed_off' WHERE id = ?`, cid)
+			}
+			return nil
+		}
+	}
+	handoffJanitor := handoff.NewJanitor(handoffJanitorCfg)
 	go handoffJanitor.Run(ctx)
 	slog.Info("handoff janitor 已启动")
 
