@@ -2,8 +2,10 @@ import { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import AppLayout from "./layouts/AppLayout";
 import AuthLayout from "./layouts/AuthLayout";
+import RootGate from "./pages/RootGate";
 
 // 每页独立 chunk · 首屏只加载路由匹配到的页
+const Landing = lazy(() => import("./pages/Landing"));
 const Overview = lazy(() => import("./pages/Overview"));
 const Buses = lazy(() => import("./pages/Buses"));
 const BusDetail = lazy(() => import("./pages/BusDetail"));
@@ -35,10 +37,13 @@ function withSuspense(el: React.ReactNode) {
 }
 
 export const router = createBrowserRouter([
+  /* 根路径独立分组 · 已登录 → Overview（AppLayout 包住）· 未登录 → Landing（自带 header）
+     RootGate 内部按 useMe 分流 · 未登录不套 AppLayout（否则头栏会去拉 me / stock 崩） */
+  { path: "/", element: withSuspense(<RootGate />) },
   {
     element: <AppLayout />,
     children: [
-      { path: "/", element: withSuspense(<Overview />) },
+      { path: "/overview", element: withSuspense(<Overview />) },
       { path: "/buses", element: withSuspense(<Buses />) },
       { path: "/buses/:id", element: withSuspense(<BusDetail />) },
       { path: "/extract", element: withSuspense(<Extract />) },

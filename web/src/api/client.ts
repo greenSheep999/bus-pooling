@@ -14,11 +14,23 @@ export class ApiError extends Error {
  * - 已经在 /login 或 /register 页时不重复跳
  * - 用 window.location 而不是 router.navigate · client.ts 在 React 树外·拿不到 router
  */
+/** 未登录也能停留的路径 · 401 到这些路径不踢
+ *  - `/` = Landing（RootGate 内部判空显示 Landing）
+ *  - `/login` / `/register` = 登录/注册页
+ *  - `/join/:code` = 邀请链接落地 · 引导注册后回跳 */
+const PUBLIC_PATHS = ["/", "/login", "/register"];
+function isPublicPath(pathname: string): boolean {
+  if (PUBLIC_PATHS.includes(pathname)) return true;
+  if (pathname.startsWith("/join/")) return true;
+  return false;
+}
+
 function redirectToLoginOnAuthLoss(path: string) {
   // /api/login / /api/register 的 401 是登录密码错误 · 让上层 form 展示
   if (path.includes("/login") || path.includes("/register")) return;
   const loc = window.location;
-  if (loc.pathname === "/login" || loc.pathname === "/register") return;
+  // 白名单路径不踢 · 让页面自己处理未登录态（Landing / JoinByLink）
+  if (isPublicPath(loc.pathname)) return;
   // 记录被踢前的路径 · 登录后可选跳回
   const target = loc.pathname + loc.search;
   window.location.href = `/login?next=${encodeURIComponent(target)}`;

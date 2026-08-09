@@ -13,7 +13,7 @@ import { useTheme, type ThemeMode } from "@/lib/theme";
 import LogoMark from "@/assets/logo/mark.svg";
 
 const TABS = [
-  { to: "/", label: "概览", icon: LayoutDashboard, end: true },
+  { to: "/overview", label: "概览", icon: LayoutDashboard, end: true },
   { to: "/buses", label: "拼车", icon: Users },
   { to: "/extract", label: "提取 key", icon: KeyRound },
   { to: "/dispatch", label: "我的发车", icon: Send },
@@ -397,7 +397,7 @@ function AppFooter() {
               lg 起间距 gap-12（48px）· 之前 gap-20 是栏比 gap 还窄的错做法 */}
           <div className="grid grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-3 sm:gap-x-10 lg:gap-x-12 [&>div]:min-w-[120px]">
             <FooterCol title="产品">
-              <FooterLink to="/">概览</FooterLink>
+              <FooterLink to="/overview">概览</FooterLink>
               <FooterLink to="/buses">拼车</FooterLink>
               <FooterLink to="/extract">提取 key</FooterLink>
               <FooterLink to="/dispatch">我的发车</FooterLink>
