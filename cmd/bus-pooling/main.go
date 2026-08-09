@@ -93,8 +93,10 @@ func run(cmd, cfgPath string, args []string) error {
 		return runMigrate(ctx, cfg, args)
 	case "serve":
 		return runServe(ctx, cfg)
+	case "redeem":
+		return runRedeem(ctx, cfg, args)
 	default:
-		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey）", cmd)
+		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem）", cmd)
 	}
 }
 
