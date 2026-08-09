@@ -22,6 +22,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/secrets"
 	"github.com/bus-pooling/bus-pooling/internal/strategy"
 	"github.com/bus-pooling/bus-pooling/internal/topup"
+	"github.com/bus-pooling/bus-pooling/internal/topupchannel"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
 
@@ -87,8 +88,9 @@ func newEnvBase(t *testing.T, mkDecider func(*db.DB) *decider.Orchestrator) *tes
 		Topups:      topups,
 		PullRecords: pullrecord.NewStore(d.DB),
 		Handoffs:    handoff.NewStore(d.DB, 0),
-		Insights:    insight.NewStore(d.DB),
-		Downstreams: downstream.NewStore(d.DB, cipher),
+		Insights:      insight.NewStore(d.DB),
+		Downstreams:   downstream.NewStore(d.DB, cipher),
+		TopupChannels: topupchannel.New(nil), // 默认一家 hosted 启 · 其他关
 		// VendorView / Pool 保留 nil —— handler 里各自有 nil 兜底（返 503）
 		SecureCookie: false,
 	})

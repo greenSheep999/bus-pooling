@@ -121,7 +121,7 @@ func (s *Server) handleHandoffFulfill(w http.ResponseWriter, r *http.Request) er
 	// 三种模式（默认拒·两个开关分别开占位路径的不同段）：
 	//
 	// 1) **默认** · fulfill 直接 501 · 状态不推进 · confirm 也走不下去。
-	//    这是唯一安全的默认 —— kiro.rs 明文 endpoint 还没接。
+	//    这是唯一安全的默认 —— housepool 明文 endpoint 还没接。
 	//    对应 docs/05-api-contract §handoff 的"号池明文未开放"路径。
 	//
 	// 2) `BP_ALLOW_HANDOFF_PLACEHOLDER=1` · fulfill 返显式占位字符串
@@ -132,13 +132,13 @@ func (s *Server) handleHandoffFulfill(w http.ResponseWriter, r *http.Request) er
 	//    - 号不会被真删（confirm 分支下面有 handoff.StatusPlaceholder 拒绝）
 	//    - 明显不是真号 · 前端也能识别
 	//
-	// 3) `BP_HANDOFF_TRUE_PLAINTEXT=1` + kiro.rs 明文 endpoint 接了 · 走真明文
+	// 3) `BP_HANDOFF_TRUE_PLAINTEXT=1` + housepool 明文 endpoint 接了 · 走真明文
 	//    → fulfilled → confirm DELETE · **生产唯一允许的模式**。
 	//    阶段 1a-1c 这个开关不放·1c 后接明文端点才放。
 	if os.Getenv("BP_HANDOFF_TRUE_PLAINTEXT") != "1" {
 		if os.Getenv("BP_ALLOW_HANDOFF_PLACEHOLDER") != "1" {
 			return newFail(http.StatusNotImplemented, "handoff_not_ready",
-				"取号功能未开放（kiro.rs 明文导出端点未接）· 号仍在你的池里，可以派进车或推自己号池")
+				"取号功能未开放（housepool 明文导出端点未接）· 号仍在你的池里，可以派进车或推自己号池")
 		}
 		// 联调路径：返占位 · 状态推进到 placeholder_delivered（非 fulfilled）
 		keys := s.readHandoffPlaceholder(pending.CredentialIDs)
@@ -149,7 +149,7 @@ func (s *Server) handleHandoffFulfill(w http.ResponseWriter, r *http.Request) er
 		return nil
 	}
 
-	// 真明文路径（生产）· kiro.rs 明文 endpoint 已接
+	// 真明文路径（生产）· housepool 明文 endpoint 已接
 	keys, err := s.readHandoffPlaintext(r.Context(), pending.CredentialIDs)
 	if err != nil {
 		return err
@@ -255,7 +255,7 @@ func (s *Server) handleHandoffConfirm(w http.ResponseWriter, r *http.Request) er
 	return nil
 }
 
-// errHandoffPlaintextUnavailable 真明文路径的兜底：kiro.rs 明文 endpoint 还没接·
+// errHandoffPlaintextUnavailable 真明文路径的兜底：housepool 明文 endpoint 还没接·
 // 就不许有任何"能返 keys"的代码路径·上一轮审计报告的 P0：BP_HANDOFF_TRUE_PLAINTEXT=1
 // 进真明文分支·readHandoffPlaintext 却返 PLACEHOLDER·confirm 又走 DELETE 删真号。
 // 现在 · 真明文路径永远 error 出去·pending_handoff 状态不推进·号不删。
@@ -263,14 +263,14 @@ var errHandoffPlaintextUnavailable = &Fail{
 	Status: http.StatusNotImplemented,
 	Err: &Error{
 		Code:    "handoff_plaintext_unavailable",
-		Message: "取号明文暂未开放（kiro.rs 明文导出端点未接·联系管理员）",
+		Message: "取号明文暂未开放（本 vendor 明文导出端点未接·联系管理员）",
 	},
 }
 
-// readHandoffPlaintext 从 housepool 读**真明文** —— 只在真接了 kiro.rs 明文 endpoint
+// readHandoffPlaintext 从 housepool 读**真明文** —— 只在真接了 housepool 明文 endpoint
 // 之后才会有实现。
 //
-// **当前实现是拒绝** —— 因为 kiro.rs 侧还没开放"读明文"admin 端点
+// **当前实现是拒绝** —— 因为 housepool 侧还没开放"读明文"admin 端点
 // （08-housepool-contract §12 承诺但未定义 endpoint）·任何走到这个函数的代码
 // 路径都会返 error·pending_handoff 状态不推 fulfilled·confirm 分支就走不了 DELETE。
 //
@@ -278,7 +278,7 @@ var errHandoffPlaintextUnavailable = &Fail{
 // + MarkPlaceholderDelivered · 状态推到 placeholder_delivered · confirm 分支特判走
 // MarkConfirmedPlaceholder 不删号。**跟这个函数**完全无关。
 //
-// **上线**：接了 kiro.rs 明文 endpoint 后·把下面 return error 换成真调 pool 读明文。
+// **上线**：接了 housepool 明文 endpoint 后·把下面 return error 换成真调 pool 读明文。
 func (s *Server) readHandoffPlaintext(_ context.Context, _ []string) ([]handoffKey, error) {
 	return nil, errHandoffPlaintextUnavailable
 }

@@ -15,7 +15,7 @@ import (
 // 内部术语（vendor_id / bus_id）在响应里是**元数据**：
 //   - vendor_id：前端拿去查颜色 / 名字（VENDOR_NAME 映射）· 不是"内部术语泄漏"
 //   - bus_id：前端跳转链接 · 是稳定引用
-// 加价链分层字段（key_cost / vendor_fee / …）**永远不出响应体**（CLAUDE.md §0.1）。
+// 分项链分层字段（key_cost / vendor_fee / …）**永远不出响应体**（CLAUDE.md §0.1）。
 //
 // 用**独立接口**装依赖（不直接吃 *insight.Store）· 好处：
 //   - handler_test 里可以喂 mock，不依赖 Server 装配（不用等 ServerDeps 加字段）

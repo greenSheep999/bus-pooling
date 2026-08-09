@@ -11,10 +11,16 @@ const (
 	LedgerRedeem         LedgerType = "redeem"
 	LedgerRefund         LedgerType = "refund"
 	LedgerWarrantyRefund LedgerType = "warranty_refund"
+	// LedgerShare · 车友之间的份额清算（decisions §8.23）· 金额正负表示方向：
+	// 正 = 车友分摊回款给我（我派号进车）· 负 = 我买入别人派进来的号份额
+	//
+	// 为什么单开一类不并进 topup/spend：这是**乘客之间**的内部转移·
+	// 既不是充值（没花真钱）也不是消费（钱没出系统）· 并进去对账会算错
+	LedgerShare LedgerType = "share"
 )
 
 // spendInternalReasons 对外 spend（拉号消费）展开的内部 reason 集合。
-// **只含加价链那几层** —— 通道费和运营调整是别的动作，不归这里。
+// **只含分项链那几层** —— 手续费和运营调整是别的动作，不归这里。
 var spendInternalReasons = []wallet.Reason{
 	wallet.ReasonKeyCost,
 	wallet.ReasonVendorFee,
@@ -47,6 +53,8 @@ func internalReasonsFor(publicType string) []wallet.Reason {
 	case LedgerRefund:
 		// gateway 退款 (topup_refund) 和运营调整 (admin_adjust) 对外都是 refund
 		return []wallet.Reason{wallet.ReasonAdminAdjust, wallet.ReasonTopupRefund}
+	case LedgerShare:
+		return []wallet.Reason{wallet.ReasonShareIncome, wallet.ReasonShareExpense}
 	case LedgerSpend:
 		return spendInternalReasons
 	default:
@@ -65,6 +73,8 @@ func publicLedgerType(r wallet.Reason) LedgerType {
 		return LedgerWarrantyRefund
 	case wallet.ReasonAdminAdjust, wallet.ReasonTopupRefund:
 		return LedgerRefund
+	case wallet.ReasonShareIncome, wallet.ReasonShareExpense:
+		return LedgerShare
 	case wallet.ReasonKeyCost, wallet.ReasonVendorFee, wallet.ReasonRegionFee,
 		wallet.ReasonSinglePullFee, wallet.ReasonCapabilityFee, wallet.ReasonServiceFee:
 		return LedgerSpend

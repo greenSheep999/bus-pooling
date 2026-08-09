@@ -409,7 +409,7 @@ func (s *Store) FindStale(ctx context.Context, status Status, limit int) ([]Pend
 // FindStuckConfirmed 找卡在 confirmed 但没推到 completed 的行·超时阈值 stuckAfter。
 //
 // 触发场景：confirm handler 已推状态 confirmed·但接下来的 housepool DELETE
-// 失败（网络断 · 崩溃 · kiro.rs 503）· pending_handoff 卡在 confirmed·
+// 失败（网络断 · 崩溃 · housepool 503）· pending_handoff 卡在 confirmed·
 // **号还在 pool 里没删** —— janitor 定期扫这些·重试 completeHandoff 或转 need_manual。
 //
 // 用 confirmed_at 而不是 expires_at 判"卡了多久"（confirmed 之后已经不看 TTL）。

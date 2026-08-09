@@ -42,6 +42,8 @@ type Watcher struct {
 	log          *slog.Logger
 	// now 便于测试注入时钟
 	now func() time.Time
+	// refunds 质保退款的库操作 · nil = 不跑退款（老装配 / 测试）
+	refunds RefundStore
 }
 
 // Config 装配参数。零值全部走默认。
@@ -53,6 +55,8 @@ type Config struct {
 	Logger       *slog.Logger
 	// Now 只在测试里覆盖；生产用默认 time.Now
 	Now func() time.Time
+	// Refunds 质保退款库操作 · nil = 不跑退款（1c 起装 NewSQLRefundStore(db)）
+	Refunds RefundStore
 }
 
 // New 构造 Watcher。DB 和 Pool 必须非空。
@@ -64,6 +68,7 @@ func New(cfg Config) *Watcher {
 		probeTimeout: cfg.ProbeTimeout,
 		log:          cfg.Logger,
 		now:          cfg.Now,
+		refunds:      cfg.Refunds,
 	}
 	if w.interval <= 0 {
 		w.interval = 5 * time.Minute
@@ -85,7 +90,7 @@ func New(cfg Config) *Watcher {
 // 装配位置：main.serve 里跟 janitor 一样 `go w.Run(ctx)`（sprint-1a-backend Iss #12）。
 func (w *Watcher) Run(ctx context.Context) {
 	// 启动时先扫一次 —— 别等 5 分钟才第一次工作
-	w.SweepOnce(ctx)
+	w.sweepAndRefund(ctx)
 	t := time.NewTicker(w.interval)
 	defer t.Stop()
 	for {
@@ -93,8 +98,26 @@ func (w *Watcher) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			w.SweepOnce(ctx)
+			w.sweepAndRefund(ctx)
 		}
+	}
+}
+
+// sweepAndRefund 标死号 + 跑质保退款（00 §7.5 规则 B）。
+//
+// 顺序有讲究：先标死再退款 —— 退款要求号已经是 dead 状态。
+// 退款失败不影响标死（各自独立事务）。
+func (w *Watcher) sweepAndRefund(ctx context.Context) {
+	w.SweepOnce(ctx)
+	if w.refunds == nil {
+		return
+	}
+	rep := w.RefundOnce(ctx, 100)
+	if rep.Refunded > 0 || rep.Errors > 0 {
+		w.log.Info("质保退款一轮",
+			"scanned", rep.Scanned, "refunded", rep.Refunded,
+			"skipped", rep.Skipped, "errors", rep.Errors,
+			"credits", rep.TotalCredits)
 	}
 }
 

@@ -1,4 +1,4 @@
-// Package kirors 是 housepool.HousePool 针对 kiro.rs 的实现。
+// Package kirors 是 housepool.HousePool 针对 housepool 后端的实现。
 //
 // **上层不 import 这个包** —— 只 import internal/housepool（契约 §1）。
 //
@@ -22,11 +22,11 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/httpx"
 )
 
-// adminPrefix 所有 admin 端点的前缀（kiro.rs src/main.rs 的 .nest("/api/admin", …)）。
+// adminPrefix 所有 admin 端点的前缀（housepool /api/admin 前缀）。
 // Config.BaseURL 只填到域名，这个前缀由 client 内部拼（契约 §10b ⑤）。
 const adminPrefix = "/api/admin"
 
-// authHeader kiro.rs 支持 x-api-key 或 Authorization: Bearer，我方统一用前者。
+// authHeader housepool 支持 x-api-key 或 Authorization: Bearer，我方统一用前者。
 const authHeader = "x-api-key"
 
 type Config struct {
@@ -160,7 +160,7 @@ func idPath(prefix string, id uint64, suffix string) string {
 
 func (c *Client) ListCredentials(ctx context.Context, filter housepool.CredentialFilter) ([]housepool.Credential, *housepool.PoolSnapshot, error) {
 	q := url.Values{}
-	// kiro.rs 侧一次返全量，group 过滤在我方做 —— 池子规模（百级）下这样更简单，
+	// housepool 一次返全量，group 过滤在我方做 —— 池子规模（百级）下这样更简单，
 	// 也避免依赖它的 query 参数语义（那个没在契约里固定）
 	var wire wireCredentialList
 	if err := c.do(ctx, "ListCredentials", http.MethodGet, "/credentials", q, nil, &wire); err != nil {
@@ -194,7 +194,7 @@ func hasAnyGroup(have, want []string) bool {
 }
 
 func (c *Client) GetCredential(ctx context.Context, id housepool.CredentialID) (*housepool.Credential, error) {
-	// kiro.rs 没有单号 GET —— 从列表里挑（契约 §11 的端点表里 GetCredential 对应
+	// housepool 没有单号 GET —— 从列表里挑（契约 §11 的端点表里 GetCredential 对应
 	// GET /credentials/{id}，但源码里那个路由只有 delete/put，所以走列表过滤）
 	creds, _, err := c.ListCredentials(ctx, housepool.CredentialFilter{IncludeDisabled: true})
 	if err != nil {
@@ -226,7 +226,7 @@ func (c *Client) UpdateCredential(ctx context.Context, id housepool.CredentialID
 }
 
 func (c *Client) SetDisabled(ctx context.Context, id housepool.CredentialID, disabled bool) error {
-	// body 只有 disabled —— 传不进自定义 reason，kiro.rs 一律写 Manual（契约 §10b ④）
+	// body 只有 disabled —— 传不进自定义 reason，housepool 一律写 Manual（契约 §10b ④）
 	return c.do(ctx, "SetDisabled", http.MethodPost,
 		idPath("/credentials", uint64(id), "/disabled"), nil,
 		wireSetDisabledRequest{Disabled: disabled}, nil)
@@ -276,7 +276,7 @@ func (c *Client) GetBalance(ctx context.Context, id housepool.CredentialID) (*ho
 // TestCredential 探活。
 //
 // **这是唯一可靠的判死手段**（契约 §DisabledReason 判据）：返回 error 即判死。
-// 对 disabled 的号也能调 —— kiro.rs 的 prepare_request_token 不看 disabled。
+// 对 disabled 的号也能调 —— housepool 的 prepare_request_token 不看 disabled。
 func (c *Client) TestCredential(ctx context.Context, id housepool.CredentialID) error {
 	return c.do(ctx, "TestCredential", http.MethodPost,
 		idPath("/credentials", uint64(id), "/test"), nil, nil, nil)
@@ -291,7 +291,7 @@ func (c *Client) RefreshToken(ctx context.Context, id housepool.CredentialID) er
 
 // BatchImport 走 SSE 流。
 //
-// kiro.rs 返回的是**一个**流，summary 是流里 status=="summary" 的最后一个事件
+// housepool 返回的是**一个**流，summary 是流里 status=="summary" 的最后一个事件
 // （契约 §10b ③）。我方拆成两个 channel 让上层用起来清楚。
 //
 // 上层用法：
@@ -540,7 +540,7 @@ func notYet(op, sprint string) error {
 	}
 }
 
-// updateCheckInfo · 对齐 kiro.rs admin/types.rs UpdateCheckInfo · 只挑本地要用的字段
+// updateCheckInfo · 对齐 housepool admin UpdateCheckInfo · 只挑本地要用的字段
 type updateCheckInfo struct {
 	CurrentVersion string `json:"current_version"`
 	LatestVersion  string `json:"latest_version"`
@@ -548,7 +548,7 @@ type updateCheckInfo struct {
 	BuildType      string `json:"build_type"`
 }
 
-// GetVersion 拿 kiro.rs 当前运行版本（= CARGO_PKG_VERSION）。
+// GetVersion 拿 housepool 当前运行版本（= CARGO_PKG_VERSION）。
 //
 // 走 GET /admin/system/update/check · 返回体里的 current_version 就是我方要
 // 用来做契约漂移校验的值。这个 endpoint 会同步调 GitHub API 查 latest_release·

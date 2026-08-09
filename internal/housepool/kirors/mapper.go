@@ -136,7 +136,7 @@ func deref(p *string) string {
 	return *p
 }
 
-// parseTimePtr 容忍几种时间写法。kiro.rs 主要给 RFC3339，但不同字段来源不完全一致。
+// parseTimePtr 容忍几种时间写法。housepool 主要给 RFC3339，但不同字段来源不完全一致。
 func parseTimePtr(s *string) *time.Time {
 	if s == nil || *s == "" {
 		return nil

@@ -1,6 +1,6 @@
 // Package downstream 存乘客的两份下游配置：
 //
-//   - passengerpool 地址 + admin token（我方双写号池时用这份 token 调他的 kiro.rs）
+//   - passengerpool 地址 + admin token（我方双写号池时用这份 token 调他的 housepool）
 //   - webhook 地址 + 签名 secret（我方推事件时用这份 secret 做 HMAC-SHA256）
 //
 // 铁律（CLAUDE.md §11 + docs/06-db-schema §3）：
@@ -262,7 +262,7 @@ func (s *Store) DecryptWebhookSecret(encrypted []byte) (string, error) {
 // ── 工具 ────────────────────────────────────────────
 
 // generateSecretHex 生成 32 字节 = 64 位 hex 的 webhook secret。
-// 跟 vendor 侧 HMAC 长度一致（91kiro / kiro drop 都用 SHA-256）。
+// 跟 vendor 侧 HMAC 长度一致（SHA-256）。
 func generateSecretHex() (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {

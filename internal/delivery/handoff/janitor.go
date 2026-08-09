@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
-
-	"github.com/bus-pooling/bus-pooling/internal/housepool"
 )
 
 // Janitor 定期扫两类卡单：
@@ -16,14 +14,13 @@ import (
 // **不删 credential** —— 09-transactions §4：token 过期后号仍留在池里（disabled=true），
 // 乘客可以重新发起 POST /me/handoff。confirmed 卡单是**必须处理**的·因为状态已经承诺
 // 号会交给用户·pool DELETE 迟迟不做会导致运营看到 pool 里有"已交出但未删"的号。
+//
+// 外部动作（housepool.DeleteCredential）走 completeFn·由装配层注入 handoff.Complete
+// 的适配版·janitor 自己不再持 pool 引用（消 Standards duplication）。
 type Janitor struct {
 	store *Store
-	// pool 用来重试 housepool.DeleteCredential · nil = 只标状态不做外部动作
-	// （mock 模式 / DRY_RUN 下 pool 是 nil · janitor 依然运行但 confirmed sweep 走
-	//  need_manual 兜底）
-	pool housepool.HousePool
 	// completeHandoffFn · 外注入的"重新做完整外部动作"函数·避免 handoff 包依赖 api 层
-	// 一般是 api.completeHandoff 的适配版·nil = 不做（跟 pool=nil 效果一样）
+	// 一般是装配层封装的 handoff.Complete · nil = 不做外部动作·卡单最终转 need_manual
 	completeFn func(ctx context.Context, p Pending) error
 	// interval 两次扫的间隔 · 0 = 15s（跟 decider janitor 一致）
 	interval time.Duration
@@ -37,7 +34,6 @@ type Janitor struct {
 
 type JanitorConfig struct {
 	Store      *Store
-	Pool       housepool.HousePool
 	CompleteFn func(ctx context.Context, p Pending) error
 	Interval   time.Duration
 	StuckAfter time.Duration
@@ -49,7 +45,6 @@ type JanitorConfig struct {
 func NewJanitor(cfg JanitorConfig) *Janitor {
 	j := &Janitor{
 		store:      cfg.Store,
-		pool:       cfg.Pool,
 		completeFn: cfg.CompleteFn,
 		interval:   cfg.Interval,
 		stuckAfter: cfg.StuckAfter,

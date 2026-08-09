@@ -6,8 +6,8 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
 
-// 加价链的分层 reason 一律映射成 spend，对外只看到"花了多少"，
-// 不该看到内部怎么加价（CLAUDE.md §0.1 · decisions §8.20）。
+// 分项链的分层 reason 一律映射成 spend，对外只看到"花了多少"，
+// 不该看到内部怎么分项（CLAUDE.md §0.1 · decisions §8.20）。
 func TestPublicLedgerTypeHidesMarkupLayers(t *testing.T) {
 	mustHide := []wallet.Reason{
 		wallet.ReasonKeyCost, wallet.ReasonVendorFee, wallet.ReasonRegionFee,
@@ -16,7 +16,7 @@ func TestPublicLedgerTypeHidesMarkupLayers(t *testing.T) {
 	for _, r := range mustHide {
 		got := publicLedgerType(r)
 		if got != LedgerSpend {
-			t.Errorf("%q 应映射到 spend（隐藏加价层），得到 %q", r, got)
+			t.Errorf("%q 应映射到 spend（隐藏分项层），得到 %q", r, got)
 		}
 	}
 }
@@ -43,7 +43,7 @@ func TestPublicLedgerTypeBasicMappings(t *testing.T) {
 }
 
 // channel_fee 不该混进 spend —— 那是充值上下文，不是拉号消费。
-// 混一起前端筛"我这次拉号花了多少"会把通道费也算进去。
+// 混一起前端筛"我这次拉号花了多少"会把手续费也算进去。
 func TestSpendDoesNotIncludeTopupOrAdjustReasons(t *testing.T) {
 	spend := internalReasonsFor(string(LedgerSpend))
 	for _, r := range spend {

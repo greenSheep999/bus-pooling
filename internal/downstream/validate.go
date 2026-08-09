@@ -12,7 +12,7 @@ import (
 // 拒绝内网 / 回环 / 云元数据地址 —— 防 SSRF：用户配一个 http://169.254.169.254/latest/…
 // 之后我方后端拉起 webhook 或 passengerpool 测试，就会拿到我们云主机的 IAM 凭证。
 //
-// **不拒绝**未解析的域名 —— 有些自建 kiro.rs 走内网 DNS，公网解析失败但服务能通。
+// **不拒绝**未解析的域名 —— 有些自建 housepool 走内网 DNS，公网解析失败但服务能通。
 // SSRF 的关键防线在 IP 层（IP literal 直接拉黑，DNS 解析结果拉黑），域名合法性由
 // httpx 层的 timeout + DNS 失败自然处理。
 func ValidateTargetURL(raw string) error {

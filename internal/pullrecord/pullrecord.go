@@ -37,13 +37,13 @@ const (
 // / owner_record_passenger_id / vendor_order_id （CLAUDE.md §0.1 §12.6）。
 type Record struct {
 	ID          string     // credential_ledger.id（我方 UUID · 对外派发用这个）
-	VendorID    string     // 91kiro / kiroceo / …（vendor 内部 id · 对外展示走 vendorLabel 映射）
+	VendorID    string     // vendor 内部 id · 对外展示走 vendorLabel 映射
 	Status      Status     // alive | dead
 	KeyMasked   string     // ksk_live_xxxx…xxx · 只前后 + 中间省略号，永远不落明文
 	Region      string     // us-east-1 / eu-central-1
 	CreditsUsed int64      // microunit · 已消耗额度快照
 	PulledAt    time.Time  // 号入池时间
-	WarrantyUnt *time.Time // 质保截止 · null = 无质保 vendor（如 kiroappcc）
+	WarrantyUnt *time.Time // 质保截止 · null = 无质保 vendor
 	DeadAt      *time.Time // 存活时为空；死了带值
 	PushedAt    *time.Time // 推 passengerpool 时间 · null = 未推
 	PushFailed  bool       // 推送失败过（push_error_code 非空且 attempts 已到上限）
@@ -138,11 +138,27 @@ func (s *Store) Get(ctx context.Context, recordID, passengerID string) (*Record,
 	return &r, nil
 }
 
+// querier 兼容 *sql.DB / *sql.Tx —— GetOwnerships 在 tx1 内被调用时必须走同一 tx ·
+// 避免 SQLite IMMEDIATE 事务持有 writer 时另一路读走另一连接卡死（driver 池化连接·
+// 写锁未释放前另一连接会等 busy_timeout）。
+type querier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
 // GetOwnerships 批量校验一批 credential_id 是否都归此乘客（派去向 / handoff 前做归属校验）。
 //
 // 返回 map[credential_id]bool · true = 属于该乘客的待派号 · false = 不属于或已 handoff
 // 未在结果里出现的 id 视为"不存在"（等价 false）。
 func (s *Store) GetOwnerships(ctx context.Context, credentialIDs []string, passengerID string) (map[string]bool, error) {
+	return getOwnerships(ctx, s.db, credentialIDs, passengerID)
+}
+
+// GetOwnershipsTx 事务版·跟 GetOwnerships 语义一致·让 tx1 里做归属校验不死锁。
+func GetOwnershipsTx(ctx context.Context, tx *sql.Tx, credentialIDs []string, passengerID string) (map[string]bool, error) {
+	return getOwnerships(ctx, tx, credentialIDs, passengerID)
+}
+
+func getOwnerships(ctx context.Context, q querier, credentialIDs []string, passengerID string) (map[string]bool, error) {
 	out := make(map[string]bool, len(credentialIDs))
 	if len(credentialIDs) == 0 {
 		return out, nil
@@ -164,7 +180,7 @@ func (s *Store) GetOwnerships(ctx context.Context, credentialIDs []string, passe
 	// 2. 已进车的号（owner_bus_id → bus → creator 或 bus_member）· 阶段 1a 单人车
 	//    简化：只放行 record group 归属；进车号的 handoff 走 bus 权限，这里不管
 	// 本方法专给"派去向" / "handoff" 用：目标是 record group 里的未派号
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := q.QueryContext(ctx, `
 		SELECT id FROM credential_ledger
 		 WHERE owner_record_passenger_id = ?
 		   AND owner_bus_id IS NULL
@@ -224,7 +240,7 @@ func AssignToBusTx(ctx context.Context, tx *sql.Tx, credentialIDs []string, pass
 	return nil
 }
 
-// LookupKiroRSCredentialIDs 拿一批本地 credential.id 对应的 kiro.rs 侧 CredentialID。
+// LookupKiroRSCredentialIDs 拿一批本地 credential.id 对应的 housepool 侧 CredentialID。
 //
 // 用来在 assign into_bus 时先调 housepool.UpdateCredential 把 group 迁到 bus-{id} ·
 // **先外后内**（CLAUDE.md §7.1）· 外部动作成功后台账才更新 owner_bus_id。
@@ -256,6 +272,47 @@ func (s *Store) LookupKiroRSCredentialIDs(ctx context.Context, credentialIDs []s
 		   AND id IN (`+placeholders+`)`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("pullrecord: 查 kiro_rs id: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			id   string
+			krID uint64
+		)
+		if err := rows.Scan(&id, &krID); err != nil {
+			return nil, err
+		}
+		out[id] = krID
+	}
+	return out, rows.Err()
+}
+
+// LookupKiroRSByID **不校验归属** · 只按 credential.id 查 kiro_rs_credential_id。
+//
+// 用途：janitor 的 reconcile 场景 —— credential 归属可能已变（owner_record_passenger_id=NULL
+// 或已迁到别的 bus）·主 lookup 会漏。janitor 只关心"这号在池里的 kr_id 是啥"·
+// 归属校验交给 janitor 自己按 pending_assignment 里的 (passenger_id, target_bus_id) 做。
+func (s *Store) LookupKiroRSByID(ctx context.Context, credentialIDs []string) (map[string]uint64, error) {
+	out := make(map[string]uint64, len(credentialIDs))
+	if len(credentialIDs) == 0 {
+		return out, nil
+	}
+	placeholders := ""
+	args := make([]any, 0, len(credentialIDs))
+	for i, id := range credentialIDs {
+		if i > 0 {
+			placeholders += ","
+		}
+		placeholders += "?"
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, kiro_rs_credential_id
+		  FROM credential_ledger
+		 WHERE kiro_rs_credential_id IS NOT NULL
+		   AND id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("pullrecord: 查 kiro_rs id（按 id）: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {

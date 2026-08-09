@@ -105,7 +105,7 @@ func TestOverview_HappyPath(t *testing.T) {
 			t.Errorf("overview 响应缺 %q 键", k)
 		}
 	}
-	// 响应体里**不许**含加价链分层字段
+	// 响应体里**不许**含分项链分层字段
 	blocklist := []string{"key_cost", "vendor_fee", "region_fee",
 		"single_pull_fee", "capability_fee", "housepool", "record_group"}
 	low := strings.ToLower(string(body))
@@ -171,7 +171,7 @@ func TestTrend_MetricValidation(t *testing.T) {
 func TestTrend_ScopeMutex(t *testing.T) {
 	f := &fakeInsight{}
 	h := handleTrendWith(f, nil)
-	status, _ := call(t, h, "GET", "/api/me/trend?bus_id=b1&vendor=91kiro", withPassenger("p1"))
+	status, _ := call(t, h, "GET", "/api/me/trend?bus_id=b1&vendor=vtest", withPassenger("p1"))
 	if status != http.StatusBadRequest {
 		t.Errorf("同传 bus_id + vendor status=%d，应=400", status)
 	}

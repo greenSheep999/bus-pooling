@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"github.com/bus-pooling/bus-pooling/internal/bus"
@@ -57,12 +58,16 @@ type memberResp struct {
 
 type createBusReq struct {
 	Name string `json:"name"`
-	// Kind 可选 · 空 = single（阶段 1a 只支持 single）
+	// Kind 可选 · 空 = single（1a: single · 1c: anon · 2a: team）
 	Kind string `json:"kind"`
 	// Strategy 建车时的初始策略（前端已收集 · TS BusStrategy 形状）
 	Strategy *busStrategyDT `json:"strategy"`
 	// InviteCodeHint team 车专用（1a 忽略）
 	InviteCodeHint string `json:"invite_code_hint"`
+	// anon 专用（1c-1）
+	MaxMembers       int    `json:"max_members,omitempty"`
+	AnonZone         string `json:"anon_zone,omitempty"`
+	AnonMaxUnitPrice int64  `json:"anon_max_unit_price,omitempty"` // microunit
 }
 
 func (s *Server) handleCreateBus(w http.ResponseWriter, r *http.Request) error {
@@ -80,9 +85,12 @@ func (s *Server) handleCreateBus(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	in := bus.CreateInput{
-		Name:      req.Name,
-		Kind:      kind,
-		CreatorID: p.ID,
+		Name:             req.Name,
+		Kind:             kind,
+		CreatorID:        p.ID,
+		MaxMembers:       req.MaxMembers,
+		AnonZone:         req.AnonZone,
+		AnonMaxUnitPrice: req.AnonMaxUnitPrice,
 	}
 	if req.Strategy != nil {
 		in.Strategy = &bus.Strategy{
@@ -99,7 +107,7 @@ func (s *Server) handleCreateBus(w http.ResponseWriter, r *http.Request) error {
 	b, err := s.buses.Create(r.Context(), in)
 	switch {
 	case errors.Is(err, bus.ErrBadKind):
-		return ErrBadRequest("阶段 1a 只支持 single 车")
+		return ErrBadRequest(err.Error())
 	case err != nil:
 		return err
 	}
@@ -383,8 +391,136 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// matchAnonReq · POST /api/me/buses/anon/match 请求
+type matchAnonReq struct {
+	Zone         string `json:"zone,omitempty"`
+	MaxUnitPrice int64  `json:"max_unit_price,omitempty"` // microunit
+	// AutoJoin=true 时·撮合到就直接加成员（一次调用完事）· 默认 false 让前端确认
+	AutoJoin bool `json:"auto_join,omitempty"`
+}
+
+// matchAnonResp · 撮合成功返 matched=true + bus 详情 · 未找到 matched=false
+type matchAnonResp struct {
+	Matched bool         `json:"matched"`
+	Bus     *busResponse `json:"bus,omitempty"`
+	// Reason · 未匹配时说明（no_match / already_member / …）
+	Reason string `json:"reason,omitempty"`
+}
+
+// handleMatchAnonBus · POST /api/me/buses/anon/match
+//
+// 1c-1 · 匿名撮合骨架：找一辆已存在的活跃 anon bus 匹配·成功可选自动 join。
+//
+// **未启用集单窗口**：真意图池 + 定时合流是 1c-2 · 现阶段前端拿到 bus_id 后
+// 走原有的 POST /api/me/buses/{id}/pull 拉号（多人同 bus 各自触发·decider 各自算账）。
+func (s *Server) handleMatchAnonBus(w http.ResponseWriter, r *http.Request) error {
+	p, err := mustCaller(r)
+	if err != nil {
+		return err
+	}
+	var req matchAnonReq
+	body, err := readBody(r)
+	if err != nil {
+		return err
+	}
+	if len(body) > 0 {
+		if err := decodeStrict(body, &req); err != nil {
+			return err
+		}
+	}
+
+	b, err := s.buses.FindMatchable(r.Context(), bus.MatchOptions{
+		PassengerID:  p.ID,
+		Zone:         req.Zone,
+		MaxUnitPrice: req.MaxUnitPrice,
+	})
+	switch {
+	case errors.Is(err, bus.ErrNoMatch):
+		writeJSON(w, http.StatusOK, matchAnonResp{Matched: false, Reason: "no_match"})
+		return nil
+	case err != nil:
+		return err
+	}
+
+	// 可选自动 join
+	if req.AutoJoin {
+		if err := s.buses.Join(r.Context(), b.ID, p.ID); err != nil {
+			switch {
+			case errors.Is(err, bus.ErrAlreadyMember):
+				// 幂等：已加入等价成功
+			case errors.Is(err, bus.ErrBusFull):
+				writeJSON(w, http.StatusOK, matchAnonResp{Matched: false, Reason: "bus_full"})
+				return nil
+			case errors.Is(err, bus.ErrDissolved):
+				writeJSON(w, http.StatusOK, matchAnonResp{Matched: false, Reason: "dissolved"})
+				return nil
+			default:
+				return err
+			}
+		}
+		// 加入后重读（member list 变了）
+		b, err = s.buses.Get(r.Context(), b.ID)
+		if err != nil {
+			return err
+		}
+	}
+
+	resp, err := s.buildBusResponse(r, b)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, matchAnonResp{Matched: true, Bus: &resp})
+	return nil
+}
+
+// handleJoinBus · POST /api/me/buses/{bus_id}/join · 显式加入一辆 anon bus
+//
+// 幂等：已成员返 200 + 现状（不算错·前端可重试）· 车满 409 · 已解散 410 · 车不是 anon 400。
+func (s *Server) handleJoinBus(w http.ResponseWriter, r *http.Request) error {
+	p, err := mustCaller(r)
+	if err != nil {
+		return err
+	}
+	busID := r.PathValue("bus_id")
+	if busID == "" {
+		return ErrBadRequest("缺 bus_id")
+	}
+
+	if err := s.buses.Join(r.Context(), busID, p.ID); err != nil {
+		switch {
+		case errors.Is(err, bus.ErrAlreadyMember):
+			// 幂等·下面走返 200 + 现状
+		case errors.Is(err, bus.ErrNotFound):
+			return ErrNotFound("找不到这辆车")
+		case errors.Is(err, bus.ErrBadKind):
+			return ErrBadRequest("这辆车不允许加入")
+		case errors.Is(err, bus.ErrBusFull):
+			return newFail(http.StatusConflict, "bus_full", "车已满")
+		case errors.Is(err, bus.ErrDissolved):
+			return newFail(http.StatusGone, "bus_dissolved", "车已解散")
+		default:
+			return err
+		}
+	}
+	b, err := s.buses.Get(r.Context(), busID)
+	if err != nil {
+		return err
+	}
+	resp, err := s.buildBusResponse(r, b)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, resp)
+	return nil
+}
+
 // buildBusResponse 把 bus.Bus 拼成对外响应，含成员列表。
 func (s *Server) buildBusResponse(r *http.Request, b *bus.Bus) (busResponse, error) {
+	// 1c 之前建的车没邀请码 · 读到就补（老数据自愈 · 不做 migration）
+	// 补失败不阻塞响应 —— 邀请码不是车能不能用的前提
+	if err := s.buses.EnsureInviteCode(r.Context(), b); err != nil {
+		slog.Warn("补邀请码失败·不阻塞", "bus_id", b.ID, "err", err)
+	}
 	members, err := s.buses.Members(r.Context(), b.ID)
 	if err != nil {
 		return busResponse{}, err
@@ -438,6 +574,125 @@ func (s *Server) passengerBriefFor(r *http.Request, passengerID string) (string,
 		return "", 0, err
 	}
 	return p.Username, bal.Balance, nil
+}
+
+// joinByInviteReq · POST /api/me/buses/join-by-invite 请求体
+type joinByInviteReq struct {
+	InviteCode string `json:"invite_code"`
+}
+
+// handleJoinByInvite · POST /api/me/buses/join-by-invite · 用邀请码加入 team bus。
+//
+// 语义：
+//   - 邀请码无效 / 车已解散 → 404（不区分·避免枚举）
+//   - 车满 409 · 已成员 200 幂等
+func (s *Server) handleJoinByInvite(w http.ResponseWriter, r *http.Request) error {
+	p, err := mustCaller(r)
+	if err != nil {
+		return err
+	}
+	var req joinByInviteReq
+	if err := decodeJSON(r, &req); err != nil {
+		return err
+	}
+	if req.InviteCode == "" {
+		return ErrBadRequest("缺拼车码")
+	}
+	b, err := s.buses.JoinByInviteCode(r.Context(), req.InviteCode, p.ID)
+	switch {
+	case errors.Is(err, bus.ErrInvalidInvite):
+		return ErrNotFound("拼车码无效或车已解散")
+	case errors.Is(err, bus.ErrAlreadyMember):
+		// 幂等 · 返当前车状态
+		found, ferr := s.buses.FindByInviteCode(r.Context(), req.InviteCode)
+		if ferr != nil {
+			return ferr
+		}
+		b = found
+	case errors.Is(err, bus.ErrBusFull):
+		return newFail(http.StatusConflict, "bus_full", "车已满")
+	case errors.Is(err, bus.ErrDissolved):
+		return ErrNotFound("拼车码无效或车已解散")
+	case err != nil:
+		return err
+	}
+	resp, err := s.buildBusResponse(r, b)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, resp)
+	return nil
+}
+
+// handleRemoveMember · DELETE /api/me/buses/{bus_id}/members/{pid}
+//
+// 车主移除成员 · 剩下的人 share_pct 重算（decisions §8.18）。
+// **不退**被移除者已花的钱（提前下车不退）· 他的历史轮次质保退款照旧（§8.35 #19）。
+func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) error {
+	caller, err := mustCaller(r)
+	if err != nil {
+		return err
+	}
+	busID := r.PathValue("bus_id")
+	targetID := r.PathValue("pid")
+	if busID == "" || targetID == "" {
+		return ErrBadRequest("缺 bus_id 或成员 id")
+	}
+
+	switch err := s.buses.RemoveMember(r.Context(), busID, caller.ID, targetID); {
+	case errors.Is(err, bus.ErrNotFound):
+		return ErrNotFound("找不到这辆车")
+	case errors.Is(err, bus.ErrNotMember):
+		return ErrNotFound("这个人不在车里")
+	case errors.Is(err, bus.ErrNotOwner):
+		return newFail(http.StatusForbidden, "not_owner", err.Error())
+	case errors.Is(err, bus.ErrDissolved):
+		return newFail(http.StatusGone, "bus_dissolved", "车已解散")
+	case err != nil:
+		return err
+	}
+
+	// 返回移除后的车（前端要刷新成员列表和新的分摊比例）
+	b, err := s.buses.Get(r.Context(), busID)
+	if err != nil {
+		return err
+	}
+	resp, err := s.buildBusResponse(r, b)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, resp)
+	return nil
+}
+
+// handleRegenInviteCode · POST /api/me/buses/{bus_id}/invite-code · owner 换邀请码。
+//
+// 权限：只 owner 可换 · 非 owner 返 403。
+// 效果：旧邀请码立即失效（DB UPDATE 覆盖）。
+func (s *Server) handleRegenInviteCode(w http.ResponseWriter, r *http.Request) error {
+	p, err := mustCaller(r)
+	if err != nil {
+		return err
+	}
+	busID := r.PathValue("bus_id")
+	if busID == "" {
+		return ErrBadRequest("缺 bus_id")
+	}
+	code, err := s.buses.RegenerateInviteCode(r.Context(), busID, p.ID)
+	switch {
+	case errors.Is(err, bus.ErrNotFound):
+		return ErrNotFound("找不到这辆车")
+	case errors.Is(err, bus.ErrNotOwner):
+		return newFail(http.StatusForbidden, "not_owner", "只有车主能换拼车码")
+	case errors.Is(err, bus.ErrBadKind):
+		return ErrBadRequest("系统撮合的搭车池没有拼车码")
+	case errors.Is(err, bus.ErrDissolved):
+		return newFail(http.StatusGone, "bus_dissolved", "车已解散")
+	case err != nil:
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"invite_code": code})
+	return nil
 }
 
 // 兜底：io / json / errors 全用到了

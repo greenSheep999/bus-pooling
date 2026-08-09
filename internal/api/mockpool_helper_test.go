@@ -14,6 +14,7 @@ type fullMockPool struct {
 	updateCalls    []updateCall
 	deleteCalls    []housepool.CredentialID
 	failUpdateNext bool // true = 下次 UpdateCredential 返错·测失败回滚
+	updateBlock    chan struct{}
 }
 
 type updateCall struct {
@@ -21,7 +22,20 @@ type updateCall struct {
 	Patch housepool.CredentialPatch
 }
 
+// updateBlocker 让测试卡住 UpdateCredential · 造并发窗口（P0-1 复现用）
+func (p *fullMockPool) BlockUpdates(ch chan struct{}) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.updateBlock = ch
+}
+
 func (p *fullMockPool) UpdateCredential(_ context.Context, id housepool.CredentialID, patch housepool.CredentialPatch) error {
+	p.mu.Lock()
+	block := p.updateBlock
+	p.mu.Unlock()
+	if block != nil {
+		<-block
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.failUpdateNext {

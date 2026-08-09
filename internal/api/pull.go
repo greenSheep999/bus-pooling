@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -15,7 +16,7 @@ import (
 // pullRequest / pullResponse 是 POST /api/me/pull 的对外形状（05-api-contract §5）。
 //
 // **对外只暴露最终三项金额** + `credential_ids`（派发用）+ 元信息。
-// 加价链的各分层（key_cost / vendor_fee / …）**不出响应体**（CLAUDE.md §0.1）。
+// 各分层（key_cost / vendor_fee / …）**不出响应体**（CLAUDE.md §0.1）。
 type pullRequest struct {
 	Count    int    `json:"count"`
 	VendorID string `json:"vendor_id,omitempty"` // 乘客偏好；服务端可否决
@@ -70,6 +71,19 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 	if req.Zone == "auto" {
 		req.Zone = ""
 	}
+	// 请求指定 vendor 时·校验已装配·否则 400（防让请求走到 decider 才发现）
+	if req.VendorID != "" && s.decider != nil {
+		known := false
+		for _, id := range s.decider.KnownVendors() {
+			if string(id) == req.VendorID {
+				known = true
+				break
+			}
+		}
+		if !known {
+			return ErrBadRequest("请求的 vendor 未装配·请换或不填")
+		}
+	}
 
 	key := r.Header.Get("X-Idempotency-Key")
 	if key == "" {
@@ -113,14 +127,14 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	// 交给 decider 走完 5 状态。
-	// req.VendorID 前端可能传偏好，阶段 1a decider 还没接乘客偏好选路（Iss #11），
-	// 传进去也不用。留在请求体里给幂等指纹签名 —— 换 vendor 就应该是新的拉号请求
+	// 交给 decider 走完 5 状态。1b 起支持 request 指定 vendor · 空 = defaultVendor。
+	// **换 vendor 就应该是新的拉号请求** —— req.VendorID 参与幂等指纹签名。
 	result, err := s.decider.Pull(r.Context(), decider.PullInput{
 		PassengerID:         p.ID,
 		BusID:               "",
 		Count:               req.Count,
 		Zone:                providers.Zone(req.Zone),
+		VendorID:            providers.VendorID(req.VendorID),
 		IdempotencyRecordID: hit.recordID,
 	})
 	if err != nil {
@@ -181,6 +195,26 @@ func translateDeciderErr(err error) *Fail {
 	case errors.Is(err, decider.ErrNeedManual):
 		return newFail(http.StatusInternalServerError, CodeInternal,
 			"这笔拉号需要客服核对，请稍等")
+
+	// 并发限流（§8.35 #18）· 429 让客户端稍后重试 —— 不是失败·是"现在别挤"
+	case errors.Is(err, decider.ErrPassengerBusy):
+		return &Fail{Status: http.StatusTooManyRequests,
+			Err: &Error{Code: CodeRateLimited, Message: "你有拉号正在进行中，等它完成再试"}}
+	case errors.Is(err, decider.ErrVendorBusy):
+		return &Fail{Status: http.StatusTooManyRequests,
+			Err: &Error{Code: CodeRateLimited, Message: "当前拉号请求太多，稍后再试"}}
+	// 数量超区间 → 400。**不能直接透 err.Error()** —— 那串带内部包名前缀
+	// （CLAUDE.md §0.1 对外 message 不出内部术语）· 用 decider 给的纯数字重组
+	case errors.Is(err, decider.ErrCountOutOfRange):
+		if lo, hi, ok := decider.CountRangeOf(err); ok {
+			return ErrBadRequest(fmt.Sprintf("一次最少 %d 个、最多 %d 个", lo, hi))
+		}
+		return ErrBadRequest("拉号数量超出允许范围")
+
+	// 车里没人能分摊（全挂起 / 全余额不足）· §8.35 #3/#4
+	case errors.Is(err, decider.ErrNoPayableMember):
+		return ErrConflict("no_payable_member",
+			"车里没有能分摊的车友 · 等他们充值或先解挂")
 	}
 	// 未识别的返 nil，让上层当 500 处理（把细节留在日志里）
 	return nil

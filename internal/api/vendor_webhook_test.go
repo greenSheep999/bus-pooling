@@ -32,7 +32,7 @@ func TestVendorWebhook_NoHMACVendorAccepts(t *testing.T) {
 	}
 }
 
-// TestVendorWebhook_HMACRequiresSecret · 91kiro 未配 secret 返 401
+// TestVendorWebhook_HMACRequiresSecret · vendor slug (HMAC 家) 未配 secret 返 401
 func TestVendorWebhook_HMACRequiresSecret(t *testing.T) {
 	env := newEnv(t)
 	// 不 setenv BP_VENDOR_KIRO91_WEBHOOK_SECRET
@@ -40,7 +40,7 @@ func TestVendorWebhook_HMACRequiresSecret(t *testing.T) {
 	status, _ := env.do(t, "POST", "/api/webhooks/vendor/91kiro",
 		map[string]any{"x": 1})
 	if status != http.StatusUnauthorized {
-		t.Errorf("91kiro 未配密钥应 401·得到 %d", status)
+		t.Errorf("HMAC vendor 未配密钥应 401·得到 %d", status)
 	}
 }
 
@@ -61,10 +61,10 @@ func TestVendorWebhook_HMACBadSignature(t *testing.T) {
 // TestVendorWebhook_HMACGoodSignature · 签名对 200
 func TestVendorWebhook_HMACGoodSignature(t *testing.T) {
 	env := newEnv(t)
-	secret := "test-secret-kiro91"
+	secret := "test-secret"
 	t.Setenv("BP_VENDOR_KIRO91_WEBHOOK_SECRET", secret)
 
-	// 手工造签 · 跟 91kiro 契约一致：sha256(ts + "." + body)
+	// 手工造签 · 跟 本 vendor 契约一致：sha256(ts + "." + body)
 	ts := fmt.Sprintf("%d", time.Now().Unix())
 	body := []byte(`{"event":"credential.dead","credential_id":"abc"}`)
 	mac := hmac.New(sha256.New, []byte(secret))

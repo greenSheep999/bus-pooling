@@ -94,7 +94,7 @@ func TestHandoffFulfill_ReturnsKeys(t *testing.T) {
 	}
 }
 
-// ② **P0 锁**：真明文模式（BP_HANDOFF_TRUE_PLAINTEXT=1）当前 kiro.rs 明文 endpoint 未接·
+// ② **P0 锁**：真明文模式（BP_HANDOFF_TRUE_PLAINTEXT=1）当前 housepool 明文 endpoint 未接·
 // fulfill 必须返 501 · pending_handoff 状态不推 fulfilled · 号绝不会被删。
 // 上一轮审计发现的漏洞：真明文分支实际调 readHandoffPlaintext·但那函数返占位串·
 // confirm 又走 DELETE·拿到假 key 却删真号。修完后本测试锁死。
@@ -191,11 +191,11 @@ func TestHandoffFulfill_OtherPassenger(t *testing.T) {
 }
 
 // ③ 真明文路径下 confirm → 号 handed_off · pool DELETE ·
-// **skip**：当前 readHandoffPlaintext 一定返 error（kiro.rs 明文 endpoint 未接）·
+// **skip**：当前 readHandoffPlaintext 一定返 error（housepool 明文 endpoint 未接）·
 // 真明文路径根本走不到 confirm 分支。接了 endpoint 后·把 readHandoffPlaintext
 // 里的 return error 换成真调 pool·然后打开这个测试。
 func TestHandoffConfirm_MarksHandedOff_TrueTextPath(t *testing.T) {
-	t.Skip("真明文路径 fulfill 当前 501·接了 kiro.rs 明文 endpoint 后打开·" +
+	t.Skip("真明文路径 fulfill 当前 501·接了 housepool 明文 endpoint 后打开·" +
 		"届时改 readHandoffPlaintext 真调 pool 明文 API")
 }
 

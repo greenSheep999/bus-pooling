@@ -11,7 +11,7 @@ import (
 
 // POST /api/me/pull/estimate · 提取确认窗的费用预估（**不下单**）。
 //
-// 对外**只**返单价 / 总额 / 服务费（CLAUDE.md §0.1）· 加价链分层字段绝不出。
+// 对外**只**返单价 / 总额 / 服务费（CLAUDE.md §0.1）· 分项链分层字段绝不出。
 
 type estimateReq struct {
 	VendorID   string `json:"vendor_id"`
@@ -21,7 +21,7 @@ type estimateReq struct {
 }
 
 type estimateResp struct {
-	UnitPrice  int64 `json:"unit_price"`  // 加价链算完的单价
+	UnitPrice  int64 `json:"unit_price"`  // 分项算完的单价
 	ServiceFee int64 `json:"service_fee"` // 服务费一项
 	Total      int64 `json:"total"`       // = unit_price × count
 }
@@ -63,10 +63,10 @@ func (s *Server) handleEstimate(w http.ResponseWriter, r *http.Request) error {
 }
 
 // estimateUnitCost 从 vendor 库存快照拿单价（作为估价用；实扣以 purchase 为准）。
-// 1a 只支持 kiro91（DRY_RUN 或 live）· vendor_id 请求参数被服务端裁定。
-func (s *Server) estimateUnitCost(ctx context.Context, _ string, zone string) (int64, error) {
-	// 直接问 decider 用的那个 vendor · 别自己 registry 查一遍
-	stock, err := s.decider.VendorStock(ctx, providers.Zone(zone))
+// vendorID 空 = defaultVendor（1a 兼容 · 1b 支持多 vendor 显式传入）·
+// 未注册 vendor 走 ErrUnknownVendor · api 层挡在 400。
+func (s *Server) estimateUnitCost(ctx context.Context, vendorID string, zone string) (int64, error) {
+	stock, err := s.decider.VendorStock(ctx, providers.VendorID(vendorID), providers.Zone(zone))
 	if err != nil {
 		return 0, err
 	}

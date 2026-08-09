@@ -1,8 +1,8 @@
 package kirors
 
-// kiro.rs 的 wire 类型。**不外暴** —— 上层只见 housepool 的归一化类型。
+// housepool wire 类型。**不外暴** —— 上层只见 housepool 的归一化类型。
 //
-// 全部 camelCase：kiro.rs 的 admin 类型都带 #[serde(rename_all = "camelCase")]。
+// 全部 camelCase：housepool admin 类型都带 #[serde(rename_all = "camelCase")]。
 // 这个文件 + mapper.go 是两种命名的唯一交界处（docs/08-housepool-contract.md §10b ①）。
 
 type wireCredentialList struct {
@@ -84,7 +84,7 @@ type wireUpdateGroupRequest struct {
 	CompactThreshold *float32 `json:"compactThreshold,omitempty"`
 }
 
-// wireSetDisabledRequest 只有一个字段 —— kiro.rs 的 SetDisabledRequest 没有 reason，
+// wireSetDisabledRequest 只有一个字段 —— housepool 的 SetDisabledRequest 没有 reason，
 // 我方传不进自定义 disable 原因（§10b ④）
 type wireSetDisabledRequest struct {
 	Disabled bool `json:"disabled"`
@@ -155,7 +155,7 @@ type wireBatchImportSummary struct {
 	RolledBack int `json:"rolledBack"`
 }
 
-// wireError kiro.rs 的错误响应。字段名不确定的都收一下，取第一个非空的。
+// wireError housepool 的错误响应。字段名不确定的都收一下，取第一个非空的。
 type wireError struct {
 	Error   string `json:"error"`
 	Message string `json:"message"`

@@ -17,17 +17,13 @@ import (
 // 目标：**vendor 侧不再刷我方 404**。签名验证 + 记录事件 · 但**不真处理**
 // credential-death / credential-alive 事件（那是 1d）。
 //
-// 6 家 vendor 的路径统一：POST /api/webhooks/vendor/{vendor_id}
-// 其中 {vendor_id} 是 术语铁律 §1.1 的 vendor slug：
-//   - 91kiro   · X-KM-Signature: sha256=<hex>  · mac(secret, ts + "." + body)
-//   - kirodrop · X-Kiro-Signature: v1=<hex>    · mac(secret, ts + "." + body)（drop.kiro.ss）
-//   - 其余 4 家（kiroceo / kirooo / kiroappio / kiroappcc）· 文档明示或空缺 · 无 HMAC
-//     · 靠 URL 保密（1b/1d 再补）
+// 路径：POST /api/webhooks/vendor/{vendor_id}
+//   - {vendor_id} 是 术语铁律 §1.1 的 vendor slug
+//   - 白名单 knownVendorSlugs 校验（防随便打路径触发 log）
+//   - hmacSpecs 里注册的 slug 会做 HMAC 验签 · 未注册的靠 URL 保密（1b/1d 再补）
 //
-// 密钥从环境变量拿·同 vendor secrets 规范：
-//   BP_VENDOR_KIRO91_WEBHOOK_SECRET
-//   BP_VENDOR_KIRODROP_WEBHOOK_SECRET
-// 缺失 · 该 vendor 的 webhook 会**拒绝所有请求 401**（防未配置就上线）。
+// 密钥全从环境变量拿：`BP_VENDOR_<slug>_WEBHOOK_SECRET`（大写）·
+// 有 HMAC spec 但密钥缺失 = 该 vendor 拒收 401（防未配就上线）。
 
 // vendor slug 白名单·防随便打路径进来触发 log
 var knownVendorSlugs = map[string]bool{
@@ -118,10 +114,10 @@ func (s *Server) handleVendorWebhook(w http.ResponseWriter, r *http.Request) err
 	return nil
 }
 
-// verifyVendorHMAC · 91kiro + kirodrop 通用格式：
+// verifyVendorHMAC · 有 HMAC 的 vendor 通用格式：
 //
-//	mac = HMAC-SHA256(secret, timestamp + "." + body)  · 91kiro 用 sha256= 前缀
-//	mac = HMAC-SHA256(secret, timestamp + "." + body)  · kirodrop 用 v1= 前缀
+//	mac = HMAC-SHA256(secret, timestamp + "." + body)  · 部分 vendor 用 sha256= 前缀
+//	mac = HMAC-SHA256(secret, timestamp + "." + body)  · 另一些用 v1= 前缀
 //
 // timestamp 缺失（有些实现不带）· 直接 sign(body)
 func verifyVendorHMAC(secret, prefix, ts, sigHeader string, body []byte) error {

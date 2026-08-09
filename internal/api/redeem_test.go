@@ -14,6 +14,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/redeem"
 	"github.com/bus-pooling/bus-pooling/internal/strategy"
 	"github.com/bus-pooling/bus-pooling/internal/topup"
+	"github.com/bus-pooling/bus-pooling/internal/topupchannel"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
 
@@ -45,14 +46,15 @@ func newWalletEnv(t *testing.T) *walletEnv {
 
 	mux := http.NewServeMux()
 	srv := NewServer(ServerDeps{
-		DB:           d.DB,
-		Passengers:   passenger.NewStore(d.DB),
-		Wallets:      wallets,
-		Strategies:   strategy.NewStore(d.DB),
-		Buses:        bus.NewStore(d.DB),
-		Redeems:      redeems,
-		Topups:       topups,
-		SecureCookie: false,
+		DB:            d.DB,
+		Passengers:    passenger.NewStore(d.DB),
+		Wallets:       wallets,
+		Strategies:    strategy.NewStore(d.DB),
+		Buses:         bus.NewStore(d.DB),
+		Redeems:       redeems,
+		Topups:        topups,
+		TopupChannels: topupchannel.New(nil),
+		SecureCookie:  false,
 	})
 	// 只挂本模块的路由，别牵涉别人的 handler（其他模块还在装配中）
 	mux.Handle("POST /api/me/redeem",

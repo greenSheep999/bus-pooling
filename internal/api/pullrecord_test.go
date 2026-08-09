@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/bus"
 	"github.com/bus-pooling/bus-pooling/internal/db"
@@ -453,6 +454,112 @@ func TestAssign_IntoBus_MigratesHousepoolGroup(t *testing.T) {
 	}
 	if call.Patch.Groups == nil || len(*call.Patch.Groups) != 1 || (*call.Patch.Groups)[0] != "bus-"+b.ID {
 		t.Errorf("Groups = %v, want [bus-%s]", call.Patch.Groups, b.ID)
+	}
+}
+
+// **P0-1 复现 · assign 并发跨系统分叉**
+//
+// 场景：两个不同 idempotency key 同时对同一 credential 派往不同 bus。
+// 修前：R1 pool = bus-X · R2 pool = bus-Y · 只有一个台账成功 → 台账 / pool 分叉。
+// 修后：R2 在 tx1 落 initial 时 UNIQUE(credential_id) WHERE status='initial' 挡住 · 409。
+//       pool 只被调 1 次 · 台账跟 pool 都指向同一个 bus。
+func TestAssign_ConcurrentSameCredentialToDifferentBuses(t *testing.T) {
+	pool := &fullMockPool{}
+	e := newPREnvWithPool(t, pool)
+	base := e.toTestEnv()
+	key := seedWithAPIKey(t, base, "conc@e.com", "concurrent", "password123")
+	pid := passengerIDOf(t, base, "conc@e.com")
+
+	// 建两辆车 A / B
+	newBus := func(name string) string {
+		sc, cb := base.do(t, "POST", "/api/me/buses",
+			map[string]any{"name": name, "kind": "single"},
+			func(r *http.Request) { r.Header.Set("X-API-Key", key) })
+		if sc != http.StatusCreated {
+			t.Fatalf("建车 %s: %d %s", name, sc, cb)
+		}
+		var b struct {
+			ID string `json:"id"`
+		}
+		_ = json.Unmarshal(cb, &b)
+		return b.ID
+	}
+	busA := newBus("A")
+	busB := newBus("B")
+	e.insertRound(t, "round-conc")
+	e.insertRecordCred(t, "cconc", pid, "round-conc", "alive", 55555)
+
+	// 让 pool.UpdateCredential 阻塞·造并发窗口
+	release := make(chan struct{})
+	pool.BlockUpdates(release)
+
+	// 并发发两个 assign · 不同 idem key · 同 credential · 不同 bus
+	type resp struct {
+		status int
+		body   []byte
+	}
+	results := make(chan resp, 2)
+	send := func(idem, busID string) {
+		s, b := base.do(t, "POST", "/api/me/pull-records/assign",
+			map[string]any{
+				"credential_ids": []string{"cconc"},
+				"destination":    "into_bus",
+				"bus_id":         busID,
+			},
+			func(r *http.Request) { r.Header.Set("X-API-Key", key) },
+			func(r *http.Request) { r.Header.Set("X-Idempotency-Key", idem) })
+		results <- resp{s, b}
+	}
+	go send("00000000000000000000000000000a1a", busA)
+	go send("00000000000000000000000000000a1b", busB)
+
+	// 稍等 · 让两个请求都推到 pool 阶段（或被 UNIQUE 挡住）
+	// UNIQUE 挡住的会先返回·再放 pool
+	time.Sleep(200 * time.Millisecond)
+	close(release)
+
+	got := []resp{<-results, <-results}
+	success, conflict := 0, 0
+	for _, r := range got {
+		switch r.status {
+		case http.StatusOK:
+			success++
+		case http.StatusConflict:
+			conflict++
+		}
+	}
+	if success != 1 || conflict != 1 {
+		t.Fatalf("并发结果异常 · 成功 %d 冲突 %d · want 1/1 · results=%+v", success, conflict, got)
+	}
+
+	// 断言 1：pool.UpdateCredential 只被调 1 次（P0-1 关键：不能两个都调）
+	pool.mu.Lock()
+	calls := len(pool.updateCalls)
+	var poolBus string
+	if calls > 0 {
+		if g := pool.updateCalls[0].Patch.Groups; g != nil && len(*g) > 0 {
+			poolBus = (*g)[0]
+		}
+	}
+	pool.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("pool.UpdateCredential 调用 %d 次 · want 1 (P0-1：并发不该都调 pool)", calls)
+	}
+
+	// 断言 2：credential_ledger.owner_bus_id 跟 pool 一致（无分叉）
+	var ledgerBus string
+	_ = e.db.DB.QueryRow(
+		`SELECT COALESCE(owner_bus_id, '') FROM credential_ledger WHERE id='cconc'`,
+	).Scan(&ledgerBus)
+	wantBus := ""
+	if poolBus == "bus-"+busA {
+		wantBus = busA
+	} else if poolBus == "bus-"+busB {
+		wantBus = busB
+	}
+	if wantBus == "" || ledgerBus != wantBus {
+		t.Errorf("分叉 · pool=%q · ledger.owner_bus_id=%q · want ledger=%q",
+			poolBus, ledgerBus, wantBus)
 	}
 }
 

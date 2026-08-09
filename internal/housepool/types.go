@@ -4,12 +4,12 @@
 // 具体实现（kirors）。换号池实现只需加一个新子包。
 //
 // 这里的类型是**归一化**后的形状 —— 具体实现负责把各自的 wire 格式翻译过来
-// （kiro.rs 是 camelCase 且列表端点包了一层，见 docs/08-housepool-contract.md §10b）。
+// （housepool wire 是 camelCase 且列表端点包了一层，见 docs/08-housepool-contract.md §10b）。
 package housepool
 
 import "time"
 
-// CredentialID 是号池侧的 id。kiro.rs 用 u64。
+// CredentialID 是号池侧的 id。housepool 侧用 u64。
 //
 // **注意跟我方 `credential_ledger.id` 区分**：那个是 UUID v7 字符串，是对外 API 的
 // `credential_id`；这个只在跟号池对账时出现（05-api-contract §5 的 ID 口径）。
@@ -28,7 +28,7 @@ type Credential struct {
 	Provider          string
 	AuthMethod        string
 	Endpoint          string
-	SourceChannel     string // 我方用它标 vendor id（"kiro91" / …）
+	SourceChannel     string // 我方用它标 vendor id
 	Groups            []string
 	ExpiresAt         *time.Time
 	LastUsedAt        *time.Time
@@ -41,7 +41,7 @@ type Credential struct {
 	Balance           *Balance
 }
 
-// DisabledReason 的取值（kiro.rs src/kiro/token_manager.rs 的闭合枚举）。
+// DisabledReason 的取值（housepool 后端的闭合枚举）。
 const (
 	// ReasonManual 我方 Admin API disable 的都是这个 —— **不是死号**
 	//（拉号记录待派 / handoff 待确认 / 成员挂起都落这个）
@@ -97,7 +97,7 @@ type CredentialPatch struct {
 	ProxyURL      *string
 	ProxyUsername *string
 	ProxyPassword *string
-	// Groups nil = 不动 · 非 nil = **整体替换**（跟 kiro.rs 语义一致）
+	// Groups nil = 不动 · 非 nil = **整体替换**（跟 housepool 语义一致）
 	Groups           *[]string
 	SourceChannel    *string
 	ConcurrencyLimit *uint32 // 0 = 清除 override
@@ -309,7 +309,7 @@ type Concurrency struct {
 
 // PoolSnapshot 是列表端点顺带给的聚合值。
 //
-// kiro.rs 的 GET /credentials 响应里包了这些字段（§10b ②），拿列表时**免费**得到，
+// housepool 的 GET /credentials 响应里包了这些字段（§10b ②），拿列表时**免费**得到，
 // 不用单独打 stats 端点。
 type PoolSnapshot struct {
 	Total         int

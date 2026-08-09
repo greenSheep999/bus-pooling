@@ -18,6 +18,17 @@ func uuidNewString() string            { return uuid.NewString() }
 func nowRFC3339() string               { return time.Now().UTC().Format(time.RFC3339Nano) }
 func slogWarn(msg string, args ...any) { slog.Warn(msg, args...) }
 
+// isUniqueConstraintErr 判断 sqlite driver 返回的错误是否 UNIQUE 冲突（错误码 2067·
+// 但 sqlite3 driver 通过 message 暴露）。用 message 匹配比 errno 好带（多 driver 兼容）。
+func isUniqueConstraintErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "UNIQUE constraint failed") ||
+		strings.Contains(msg, "constraint failed: UNIQUE")
+}
+
 // pullRecord + assign 端点。对外只暴露前端 Credential 类型的字段（web/src/types/index.ts）·
 // housepool 侧的 kiro_rs_credential_id / current_group / death_source 等**绝不出响应体**
 // （CLAUDE.md §0.1）。
@@ -168,6 +179,21 @@ type assignRequest struct {
 type assignResponse struct {
 	Assigned int             `json:"assigned"`
 	Errors   []assignErrItem `json:"errors"`
+	// Settlement 派进多人车时的份额清算结果（decisions §8.23）· 单人车 / 无清算时省略
+	Settlement *assignSettlementDTO `json:"settlement,omitempty"`
+}
+
+// assignSettlementDTO 清算结果对外形状。
+//
+// **只给结果**（§8.23 "只给结果，不列明细"）：收到多少 / 少收多少 / 谁被跳过。
+// 不出内部字段：不返各人 share_pct、不返余额、不返内部 reason 枚举。
+type assignSettlementDTO struct {
+	// Income 车友分摊后你实际收到多少（microunit）
+	Income int64 `json:"income"`
+	// Lost 因为有人本次跳过·你少收多少（0 = 所有人都参与了）
+	Lost int64 `json:"lost"`
+	// SkippedUsernames 本次跳过的车友用户名（要让派入者知道是谁）
+	SkippedUsernames []string `json:"skipped_usernames"`
 }
 
 type assignErrItem struct {
@@ -207,19 +233,6 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		return newFail(http.StatusBadRequest, CodeBadIdempotencyKey,
 			"派去向必须带 X-Idempotency-Key（32 位十六进制）")
 	}
-	hit, err := ensureIdempotencyRecord(r.Context(), s.db, p.ID, r.Method, r.URL.Path, key, body)
-	if err != nil {
-		return err
-	}
-	switch hit.status {
-	case idemReplay:
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(hit.responseStatus)
-		_, _ = w.Write(hit.responseBody)
-		return nil
-	case idemConflict:
-		return ErrIdempotencyConflict()
-	}
 	if len(req.CredentialIDs) == 0 {
 		return ErrBadRequest("至少要选一个号")
 	}
@@ -234,31 +247,26 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 			"destination 只能是 into_bus 或 push_pool")
 	}
 
-	// 归属校验：所有传入的号都必须在此乘客的 record group 里且未派
-	ownership, err := s.pullRecords.GetOwnerships(r.Context(), req.CredentialIDs, p.ID)
-	if err != nil {
+	if dest == "into_bus" && req.BusID == "" {
+		return ErrBadRequest("into_bus 必须带 bus_id")
+	}
+
+	// 幂等预检 · tx1 之前先 SELECT 看是否已完成（response_status 非 NULL）·
+	// 命中 replay → 直接返回·**不做归属校验**（首次成功后号已派·再校验必失败·
+	// 幂等语义要求"同 key 同 body → 同响应"）。
+	// 只是 SELECT · 不拿写锁 · 不影响 tx1。
+	if replayBody, replayStatus, ok, err := checkIdempotencyReplay(r.Context(), s.db, p.ID, r.URL.Path, key, body); err != nil {
 		return err
-	}
-	// 收集不归此乘客的号 · 只要有一个不归就拒整批（handoff 那种的整批语义）
-	var bad []assignErrItem
-	for _, cid := range req.CredentialIDs {
-		if !ownership[cid] {
-			bad = append(bad, assignErrItem{
-				CredentialID: cid, Code: "not_owned",
-				Message: "这个号不属于你或已派出",
-			})
-		}
-	}
-	if len(bad) > 0 {
-		writeJSON(w, http.StatusConflict, assignResponse{Assigned: 0, Errors: bad})
+	} else if ok {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(replayStatus)
+		_, _ = w.Write(replayBody)
 		return nil
 	}
 
+	// 未命中 replay · 走 tx 外的 bus 归属预检（读快照·不上写锁·早失败）·
+	// **credential 归属检查**放到 tx1 内做（防两个并发请求都通过·见 P0-1 修复）。
 	if dest == "into_bus" {
-		if req.BusID == "" {
-			return ErrBadRequest("into_bus 必须带 bus_id")
-		}
-		// 校验车归此乘客（防越权派进别人的车）· tx 外校验·车归属只读快照
 		if _, err := s.buses.GetForPassenger(r.Context(), req.BusID, p.ID); err != nil {
 			return ErrNotFound("找不到这辆车")
 		}
@@ -291,26 +299,85 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		Assigned: len(req.CredentialIDs),
 		Errors:   []assignErrItem{},
 	}
-	respBody, _ := json.Marshal(resp)
+	// respBody 在清算跑完后才序列化（清算结果要进响应体 + 幂等快照）
 
-	// ── tx1 · 落 initial + commit（承诺 · janitor 可见的锚点）──
+	// ── tx1 · idempotency 记录 + pending_assignment initial · 同一原子提交 ──
+	//
+	// P1 修复（审计发现）：以前 ensureIdempotencyRecord 独立 commit·跟 pending_assignment
+	// initial 分两个 tx·中间崩溃留个 orphan idempotency_record（response_status IS NULL）·
+	// 同 key 重试永远 hit in-flight conflict。现在合到一个 tx · 崩溃时两条一起消失。
 	assignIDs := make([]string, 0, len(req.CredentialIDs))
+	var recordID string
 	{
 		tx1, err := s.db.BeginTx(r.Context(), nil)
 		if err != nil {
 			return err
 		}
+		hit, err := ensureIdempotencyRecordTx(r.Context(), tx1, p.ID, r.Method, r.URL.Path, key, body)
+		if err != nil {
+			_ = tx1.Rollback()
+			return err
+		}
+		switch hit.status {
+		case idemReplay:
+			// 已完成 · 直接重放原字节 · pending_assignment 不动
+			// 关键：**不做**归属校验 —— 首次成功后号已派·再校验必失败·
+			// 幂等语义要求"同 key 同 body → 同响应"。
+			_ = tx1.Rollback()
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(hit.responseStatus)
+			_, _ = w.Write(hit.responseBody)
+			return nil
+		case idemConflict:
+			_ = tx1.Rollback()
+			return ErrIdempotencyConflict()
+		}
+		// idemFresh · 关键 P0-1 修：归属校验搬进 tx1 · 落 initial 前一起做。
+		//
+		// 为什么要搬进 tx1：
+		//   Reader (R1) 校验 pass → BEGIN → INSERT initial → COMMIT
+		//   Reader (R2) 同一 cid 校验 pass → BEGIN → INSERT initial → COMMIT ← 两个都过
+		// 搬进 tx1 后：BEGIN IMMEDIATE 拿写锁 · 校验 + INSERT 原子 · **加 UNIQUE(cid) partial index**
+		// 让 R2 的 INSERT 直接被约束挡住·返 409 "credential 已被派单"。
+		recordID = hit.recordID
+		ownership, err := pullrecord.GetOwnershipsTx(r.Context(), tx1, req.CredentialIDs, p.ID)
+		if err != nil {
+			_ = tx1.Rollback()
+			return err
+		}
+		var bad []assignErrItem
+		for _, cid := range req.CredentialIDs {
+			if !ownership[cid] {
+				bad = append(bad, assignErrItem{
+					CredentialID: cid, Code: "not_owned",
+					Message: "这个号不属于你或已派出",
+				})
+			}
+		}
+		if len(bad) > 0 {
+			_ = tx1.Rollback()
+			writeJSON(w, http.StatusConflict, assignResponse{Assigned: 0, Errors: bad})
+			return nil
+		}
+
 		now := nowRFC3339()
 		for _, cid := range req.CredentialIDs {
 			aid := uuidNewString()
 			assignIDs = append(assignIDs, aid)
+			// P0-1 修：UNIQUE(credential_id) WHERE status='initial'（migration 012）
+			// 让并发 R2 在这里 fail · 早失败 · 不落 initial · 不走 pool。
 			if _, err := tx1.ExecContext(r.Context(), `
 				INSERT INTO pending_assignment
 				  (id, idempotency_record_id, passenger_id, credential_id, target, target_bus_id,
 				   status, created_at, updated_at)
 				VALUES (?, ?, ?, ?, ?, ?, 'initial', ?, ?)`,
-				aid, hit.recordID, p.ID, cid, target, targetBusID, now, now); err != nil {
+				aid, recordID, p.ID, cid, target, targetBusID, now, now); err != nil {
 				_ = tx1.Rollback()
+				if isUniqueConstraintErr(err) {
+					// 有另一并发 assign 正在跑 · R2 让位
+					return newFail(http.StatusConflict, "credential_assign_in_flight",
+						"这个号正在被另一个派单请求处理·请稍后再试")
+				}
 				return fmt.Errorf("assign tx1 · 落 initial 失败: %w", err)
 			}
 		}
@@ -350,6 +417,7 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 	defer func() { _ = tx.Rollback() }()
 
 	// credential_ledger 更新（into_bus 迁 owner_bus_id · push_pool 标 pushed_at）
+	var settlement pullrecord.Settlement
 	switch dest {
 	case "into_bus":
 		if err := pullrecord.AssignToBusTx(r.Context(), tx, req.CredentialIDs, p.ID, req.BusID); err != nil {
@@ -359,6 +427,18 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 			}
 			return err
 		}
+		// 自费号派进多人车 · 按份额即时清算（decisions §8.23）
+		// **必须跟 owner_bus_id 变更同事务** —— 否则会出现"号进车了但钱没结"
+		st, err := pullrecord.SettleAssignToBusTx(
+			r.Context(), tx, req.CredentialIDs, p.ID, req.BusID)
+		if err != nil {
+			if errors.Is(err, pullrecord.ErrNoPayableMember) {
+				return newFail(http.StatusConflict, "no_payable_member",
+					"没有车友能参与这次分摊 · 现在派进去等于你白送 · 等他们充值或先解挂")
+			}
+			return err
+		}
+		settlement = st
 	case "push_pool":
 		if err := pullrecord.MarkPushedTx(r.Context(), tx, req.CredentialIDs, p.ID); err != nil {
 			if errors.Is(err, pullrecord.ErrNotFound) {
@@ -387,7 +467,26 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	if err := saveIdempotentResponseTx(r.Context(), tx, hit.recordID, http.StatusOK, respBody); err != nil {
+	// 清算结果拼进响应（多人车才有 · 单人车 settlement.Solo=true 时省略）
+	if !settlement.Solo && (settlement.Income > 0 || len(settlement.Skipped) > 0) {
+		dto := &assignSettlementDTO{
+			Income:           settlement.Income,
+			Lost:             settlement.Lost,
+			SkippedUsernames: []string{},
+		}
+		for _, sk := range settlement.Skipped {
+			username, _, err := s.passengerBriefFor(r, sk.PassengerID)
+			if err != nil {
+				// 拿不到名字不该让整个 assign 失败 · 用占位
+				username = "车友"
+			}
+			dto.SkippedUsernames = append(dto.SkippedUsernames, username)
+		}
+		resp.Settlement = dto
+	}
+	respBody, _ := json.Marshal(resp)
+
+	if err := saveIdempotentResponseTx(r.Context(), tx, recordID, http.StatusOK, respBody); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {

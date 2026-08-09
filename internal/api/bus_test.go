@@ -39,21 +39,39 @@ func TestCreateBusSingle(t *testing.T) {
 	if len(full.Members) != 1 || full.Members[0].Role != "owner" || full.Members[0].SharePct != 100 {
 		t.Errorf("owner 成员不对: %+v", full.Members)
 	}
-	// single 车没有邀请码
-	if full.InviteCode != nil {
-		t.Errorf("single 车不该有邀请码，得到 %v", *full.InviteCode)
+	// 1c · 用户建的车一律带邀请码（1 人独享·车主随时可邀人变多人拼车）
+	if full.InviteCode == nil || *full.InviteCode == "" {
+		t.Error("用户建的车该带邀请码 · got=nil/空")
 	}
 }
 
-// 阶段 1a 只支持 single kind
-func TestCreateBusRejectsAnonAndTeam(t *testing.T) {
+// 1c · single / anon / team 都允许 · 只挡未知 kind
+func TestCreateBusAcceptsAllValidKinds(t *testing.T) {
 	e, _, withKey := pullEnv(t, 0)
-	for _, kind := range []string{"anon", "team"} {
-		status, body := e.do(t, "POST", "/api/me/buses",
-			map[string]any{"name": "x", "kind": kind}, withKey)
-		if status != http.StatusBadRequest {
-			t.Errorf("kind=%q status = %d, body = %s", kind, status, body)
-		}
+
+	// team 允许 · 建成的车应带 invite_code
+	status, body := e.do(t, "POST", "/api/me/buses",
+		map[string]any{"name": "friends", "kind": "team", "max_members": 3}, withKey)
+	if status != http.StatusCreated {
+		t.Fatalf("team 应 201 · got=%d body=%s", status, body)
+	}
+	teamBus := decode[busResponse](t, body)
+	if teamBus.InviteCode == nil || *teamBus.InviteCode == "" {
+		t.Errorf("team 车应返 invite_code · got=%v", teamBus.InviteCode)
+	}
+
+	// anon 允许
+	status, body = e.do(t, "POST", "/api/me/buses",
+		map[string]any{"name": "拼车", "kind": "anon", "max_members": 3}, withKey)
+	if status != http.StatusCreated {
+		t.Errorf("anon 应 201 · got=%d body=%s", status, body)
+	}
+
+	// garbage 拒绝
+	status, _ = e.do(t, "POST", "/api/me/buses",
+		map[string]any{"name": "x", "kind": "garbage"}, withKey)
+	if status != http.StatusBadRequest {
+		t.Errorf("未知 kind 应 400 · got=%d", status)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/bus"
+	"github.com/bus-pooling/bus-pooling/internal/config"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
 	"github.com/bus-pooling/bus-pooling/internal/delivery/handoff"
 	"github.com/bus-pooling/bus-pooling/internal/downstream"
@@ -24,6 +25,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/redeem"
 	"github.com/bus-pooling/bus-pooling/internal/strategy"
 	"github.com/bus-pooling/bus-pooling/internal/topup"
+	"github.com/bus-pooling/bus-pooling/internal/topupchannel"
 	"github.com/bus-pooling/bus-pooling/internal/vendorview"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
@@ -46,12 +48,18 @@ type Server struct {
 	vendorView  *vendorview.Service
 	insights    *insight.Store
 	downstreams *downstream.Store
+	// topupChannels · topup 渠道注册表（三维属性 · enabled 开关 · 见 topupchannel 包）
+	topupChannels *topupchannel.Registry
+	// pendingTopups · pending_topup 状态机 · webhook 主推进 · janitor 兜底（1b P1-C）
+	pendingTopups *topup.PendingStore
 	// paymentGW 接 404bus-payment-gateway·nil = 未装配（走 dev mock 端点）
 	paymentGW *paymentgw.Client
-	// paymentGWSuccessURL waffo checkout 完成后回跳的前端 URL·可选
+	// paymentGWSuccessURL hosted checkout 完成后回跳的前端 URL·可选
 	paymentGWSuccessURL string
 	// secureCookie 生产环境要 true（HTTPS）· 本地 http 调试设 false 否则 cookie 不生效
 	secureCookie bool
+	// promos 顶部跑马灯活动位（config.promo.items）· 空 = 不显示跑马灯
+	promos []config.PromoItem
 }
 
 // ServerDeps 装配 Server 需要的依赖。decider 允许为 nil（migrate 之类的
@@ -71,12 +79,21 @@ type ServerDeps struct {
 	VendorView          *vendorview.Service
 	Insights            *insight.Store
 	Downstreams         *downstream.Store
+	TopupChannels       *topupchannel.Registry
+	PendingTopups       *topup.PendingStore
 	PaymentGW           *paymentgw.Client
 	PaymentGWSuccessURL string
 	SecureCookie        bool
+	// Promos 跑马灯配置（config.promo.items）
+	Promos []config.PromoItem
 }
 
 func NewServer(d ServerDeps) *Server {
+	// **装配硬约束**（P0 修）：paymentGW 装了但 pendingTopups 没装 = 起单会写不了状态机 ·
+	// 走到 CreatePayment 后崩溃就丢单。启动阶段 panic · 让运维立刻发现。
+	if d.PaymentGW != nil && d.PendingTopups == nil {
+		panic("api: 装配了 PaymentGW 但缺 PendingTopups · gateway_creating 状态无法落库 · 会丢单")
+	}
 	return &Server{
 		db:           d.DB,
 		passengers:   d.Passengers,
@@ -92,9 +109,12 @@ func NewServer(d ServerDeps) *Server {
 		vendorView:          d.VendorView,
 		insights:            d.Insights,
 		downstreams:         d.Downstreams,
+		topupChannels:       d.TopupChannels,
+		pendingTopups:       d.PendingTopups,
 		paymentGW:           d.PaymentGW,
 		paymentGWSuccessURL: d.PaymentGWSuccessURL,
 		secureCookie:        d.SecureCookie,
+		promos:              d.Promos,
 	}
 }
 
@@ -116,6 +136,9 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/me/ledger", handler(s.RequireAuth(s.handleLedger)))
 	mux.Handle("GET /api/me/api-keys", handler(s.RequireAuth(s.handleListAPIKeys)))
 	mux.Handle("DELETE /api/me/api-keys/{id}", handler(s.RequireAuth(s.handleRevokeAPIKey)))
+	mux.Handle("GET /api/me/invite", handler(s.RequireAuth(s.handleGetMyInvite)))
+	// 补绑社群码 · 已注册用户拿社群身份（decisions §8.29）
+	mux.Handle("POST /api/me/community-code", handler(s.RequireAuth(s.handleBindSystemCode)))
 	mux.Handle("GET /api/me/strategy", handler(s.RequireAuth(s.handleGetStrategy)))
 	mux.Handle("PUT /api/me/strategy", handler(s.RequireAuth(s.handlePutStrategy)))
 	mux.Handle("POST /api/me/pull", handler(s.RequireAuth(s.handlePull)))
@@ -130,8 +153,19 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("PUT /api/me/buses/{bus_id}/strategy", handler(s.RequireAuth(s.handleUpdateBusStrategy)))
 	mux.Handle("DELETE /api/me/buses/{bus_id}", handler(s.RequireAuth(s.handleDissolveBus)))
 	mux.Handle("POST /api/me/buses/{bus_id}/pull", handler(s.RequireAuth(s.handleBusPull)))
+	// 1c-1 · 匿名撮合 · POST /api/me/buses/anon/match 找一辆现有 anon bus 或返 no_match
+	// POST /api/me/buses/{bus_id}/join 显式加入某辆 anon bus（撮合后前端调）
+	mux.Handle("POST /api/me/buses/anon/match", handler(s.RequireAuth(s.handleMatchAnonBus)))
+	mux.Handle("POST /api/me/buses/{bus_id}/join", handler(s.RequireAuth(s.handleJoinBus)))
+	// team 邀请码入口（1c · CLAUDE.md §7 阶段表 · 邀请码 + 搭车一起上）
+	mux.Handle("POST /api/me/buses/join-by-invite", handler(s.RequireAuth(s.handleJoinByInvite)))
+	mux.Handle("POST /api/me/buses/{bus_id}/invite-code", handler(s.RequireAuth(s.handleRegenInviteCode)))
+	// 移除成员 · 剩下的人 share_pct 重算（decisions §8.18）
+	mux.Handle("DELETE /api/me/buses/{bus_id}/members/{pid}", handler(s.RequireAuth(s.handleRemoveMember)))
 	mux.Handle("GET /api/me/buses/{bus_id}/credentials", handler(s.RequireAuth(s.handleBusCredentials)))
 	mux.Handle("GET /api/me/buses/{bus_id}/pulls", handler(s.RequireAuth(s.handleBusPulls)))
+	// 成员维度统计（decisions §8.19 · 1c 多人拼车落地后开放）
+	mux.Handle("GET /api/me/buses/{bus_id}/member-stats", handler(s.RequireAuth(s.handleBusMemberStats)))
 
 	// 拉号记录 · 派去向（进车 / 推池）· handoff 三段式（05-api-contract §5 / §5b）
 	mux.Handle("GET /api/me/pull-records", handler(s.RequireAuth(s.handleListPullRecords)))
@@ -146,11 +180,16 @@ func (s *Server) Routes(mux *http.ServeMux) {
 
 	// 兑换码 + 充值（05-api-contract §3）
 	mux.Handle("POST /api/me/redeem", handler(s.RequireAuth(s.handleRedeem)))
+	// 充值渠道注册表 · 前端确认窗按这个渲染（含 disabled 显示"即将开放"占位）
+	// 无鉴权：注册前也可看看有哪些渠道
+	mux.Handle("GET /api/topup/channels", handler(s.handleListTopupChannels))
+	// 跑马灯活动位 · **公开**（landing / 登录页也要显示）
+	mux.Handle("GET /api/promos", handler(s.handleListPromos))
 	mux.Handle("POST /api/me/topup", handler(s.RequireAuth(s.handleCreateTopup)))
 	mux.Handle("GET /api/me/topup/{order_id}", handler(s.RequireAuth(s.handleGetTopupOrder)))
 	mux.Handle("GET /api/me/topup-orders", handler(s.RequireAuth(s.handleListTopupOrders)))
 	// dev 内部端点 · **仅在 BP_ENABLE_DEV_TOPUP=1 时挂**（P0：任何用户能给自己充钱 · 生产禁用）。
-	// 接了真 waffo 后**删掉**，改成签名校验的 /api/webhooks/waffo。
+	// 接了真支付网关后**删掉**·改成签名校验的 settlement webhook。
 	if os.Getenv("BP_ENABLE_DEV_TOPUP") == "1" {
 		mux.Handle("POST /api/internal/topup/{order_id}/paid", handler(s.RequireAuth(s.handleDevMarkTopupPaid)))
 	}
