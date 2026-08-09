@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -252,34 +253,21 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	switch dest {
-	case "into_bus":
+	if dest == "into_bus" {
 		if req.BusID == "" {
 			return ErrBadRequest("into_bus 必须带 bus_id")
 		}
-		// 校验车归此乘客（防越权派进别人的车）
+		// 校验车归此乘客（防越权派进别人的车）· tx 外校验·车归属只读快照
 		if _, err := s.buses.GetForPassenger(r.Context(), req.BusID, p.ID); err != nil {
 			return ErrNotFound("找不到这辆车")
 		}
-		if err := s.pullRecords.AssignToBus(r.Context(), req.CredentialIDs, p.ID, req.BusID); err != nil {
-			if errors.Is(err, pullrecord.ErrNotFound) {
-				return newFail(http.StatusConflict, "bad_assignment_plan",
-					"这批号里有一个不属于你或已被派出，请刷新后重试")
-			}
-			return err
-		}
-	case "push_pool":
-		if err := s.pullRecords.MarkPushed(r.Context(), req.CredentialIDs, p.ID); err != nil {
-			if errors.Is(err, pullrecord.ErrNotFound) {
-				return newFail(http.StatusConflict, "bad_assignment_plan",
-					"这批号里有一个不属于你或已被派出，请刷新后重试")
-			}
-			return err
-		}
 	}
 
-	// 落 pending_assignment 一行 status=completed · 供 /me/assign/events 查
-	// 一次 assign 派了 N 个号 · 落 N 行（每号一条，pending_assignment 表就是 per-credential）
+	// 三步塞一个事务（09-transactions §5 · assign 状态机 · 业务写 + 事件表 + 幂等响应）：
+	//   1. AssignToBusTx / MarkPushedTx · 派去向
+	//   2. pending_assignment 落 N 行（供 /me/assign/events）
+	//   3. saveIdempotentResponseTx · 冻结这条 idempotency_record 的响应
+	// 任何一步失败 → tx 回滚 → 派没成 · 事件没落 · 幂等键仍是 in-flight（下次同 key 重试）
 	target := "to-bus"
 	var targetBusID any = nil
 	if dest == "push_pool" {
@@ -287,25 +275,55 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 	} else if req.BusID != "" {
 		targetBusID = req.BusID
 	}
-	for _, cid := range req.CredentialIDs {
-		if _, err := s.db.ExecContext(r.Context(), `
-			INSERT INTO pending_assignment
-			  (id, idempotency_record_id, passenger_id, credential_id, target, target_bus_id,
-			   status, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?)`,
-			uuidNewString(), hit.recordID, p.ID, cid, target, targetBusID,
-			nowRFC3339(), nowRFC3339()); err != nil {
-			// pending_assignment 落库失败不影响真实派发（派已经完成），只影响事件流
-			slogWarn("assign 事件落库失败", "err", err, "cred", cid)
-		}
-	}
 
 	resp := assignResponse{
 		Assigned: len(req.CredentialIDs),
 		Errors:   []assignErrItem{},
 	}
 	respBody, _ := json.Marshal(resp)
-	_ = saveIdempotentResponse(r.Context(), s.db, hit.recordID, http.StatusOK, respBody)
+
+	tx, err := s.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	switch dest {
+	case "into_bus":
+		if err := pullrecord.AssignToBusTx(r.Context(), tx, req.CredentialIDs, p.ID, req.BusID); err != nil {
+			if errors.Is(err, pullrecord.ErrNotFound) {
+				return newFail(http.StatusConflict, "bad_assignment_plan",
+					"这批号里有一个不属于你或已被派出，请刷新后重试")
+			}
+			return err
+		}
+	case "push_pool":
+		if err := pullrecord.MarkPushedTx(r.Context(), tx, req.CredentialIDs, p.ID); err != nil {
+			if errors.Is(err, pullrecord.ErrNotFound) {
+				return newFail(http.StatusConflict, "bad_assignment_plan",
+					"这批号里有一个不属于你或已被派出，请刷新后重试")
+			}
+			return err
+		}
+	}
+	for _, cid := range req.CredentialIDs {
+		if _, err := tx.ExecContext(r.Context(), `
+			INSERT INTO pending_assignment
+			  (id, idempotency_record_id, passenger_id, credential_id, target, target_bus_id,
+			   status, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?)`,
+			uuidNewString(), hit.recordID, p.ID, cid, target, targetBusID,
+			nowRFC3339(), nowRFC3339()); err != nil {
+			return fmt.Errorf("assign: 事件表落库失败: %w", err)
+		}
+	}
+	if err := saveIdempotentResponseTx(r.Context(), tx, hit.recordID, http.StatusOK, respBody); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(respBody)

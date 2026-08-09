@@ -192,17 +192,18 @@ func (s *Store) GetOwnerships(ctx context.Context, credentialIDs []string, passe
 //
 // 单事务保证多号一起迁 · 若某号不归此乘客则整批回滚 → ErrNotFound。
 func (s *Store) AssignToBus(ctx context.Context, credentialIDs []string, passengerID, busID string) error {
+	return withTx(ctx, s.db, func(tx *sql.Tx) error {
+		return AssignToBusTx(ctx, tx, credentialIDs, passengerID, busID)
+	})
+}
+
+// AssignToBusTx 是外部事务的版本 · 让 handler 把 assign + pending_assignment + 幂等响应
+// 合成一个事务·任何一步失败整批回滚（跟文档 09-transactions §5 定义的 assign 状态机一致）。
+func AssignToBusTx(ctx context.Context, tx *sql.Tx, credentialIDs []string, passengerID, busID string) error {
 	if len(credentialIDs) == 0 {
 		return nil
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	for _, cid := range credentialIDs {
-		// 条件 UPDATE：只当号归此乘客且未派时改 · rowsAffected == 0 视为归属错
 		res, err := tx.ExecContext(ctx, `
 			UPDATE credential_ledger
 			   SET owner_bus_id = ?,
@@ -220,7 +221,7 @@ func (s *Store) AssignToBus(ctx context.Context, credentialIDs []string, passeng
 			return ErrNotFound
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // MarkPushed 标一批号"已推 passengerpool"（派去向 · push_pool）。
@@ -228,15 +229,16 @@ func (s *Store) AssignToBus(ctx context.Context, credentialIDs []string, passeng
 // **阶段 1a 只做本地标记**（真的推送在 1c）· 号仍留在 record group · 不改归属。
 // 只写 `pushed_to_passengerpool_at`（decisions §8.24 双写台账）。
 func (s *Store) MarkPushed(ctx context.Context, credentialIDs []string, passengerID string) error {
+	return withTx(ctx, s.db, func(tx *sql.Tx) error {
+		return MarkPushedTx(ctx, tx, credentialIDs, passengerID)
+	})
+}
+
+// MarkPushedTx 外部事务版·跟 AssignToBusTx 一样让 handler 合并事务。
+func MarkPushedTx(ctx context.Context, tx *sql.Tx, credentialIDs []string, passengerID string) error {
 	if len(credentialIDs) == 0 {
 		return nil
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	now := time.Now().UTC().Format(timeLayout)
 	for _, cid := range credentialIDs {
 		res, err := tx.ExecContext(ctx, `
@@ -253,6 +255,19 @@ func (s *Store) MarkPushed(ctx context.Context, credentialIDs []string, passenge
 		if n, _ := res.RowsAffected(); n == 0 {
 			return ErrNotFound
 		}
+	}
+	return nil
+}
+
+// withTx 事务小工具·省得每个 method 都写 begin/rollback/commit。
+func withTx(ctx context.Context, db *sql.DB, fn func(*sql.Tx) error) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := fn(tx); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

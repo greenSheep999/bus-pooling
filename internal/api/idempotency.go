@@ -113,6 +113,20 @@ func saveIdempotentResponse(ctx context.Context, db *sql.DB, recordID string, st
 	return nil
 }
 
+// saveIdempotentResponseTx 事务版·让 handler 把幂等响应写跟业务写合成一个 tx。
+// 语义跟 saveIdempotentResponse 一致·只是走 *sql.Tx。
+func saveIdempotentResponseTx(ctx context.Context, tx *sql.Tx, recordID string, status int, body []byte) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE idempotency_record
+		   SET response_status = ?, response_body = ?, first_completed_at = ?
+		 WHERE id = ? AND first_completed_at IS NULL`,
+		status, body, time.Now().UTC().Format(time.RFC3339Nano), recordID)
+	if err != nil {
+		return fmt.Errorf("api: 保存幂等响应 (tx): %w", err)
+	}
+	return nil
+}
+
 // fingerprintOf 对请求体做规范化指纹：解出来重新按 key 排序序列化，避免
 // 客户端字段顺序不同或多余空格导致误判 conflict。
 func fingerprintOf(body []byte) string {

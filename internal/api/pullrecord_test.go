@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -307,6 +308,89 @@ func TestAssign_PushPool(t *testing.T) {
 	}](t, listBody)
 	if list.Total != 1 {
 		t.Errorf("push_pool 后号仍在 record，total 应 1，得到 %d", list.Total)
+	}
+}
+
+// assign · 事务原子性：成功后 credential_ledger + pending_assignment + idempotency_record.response_body
+// 三者必须一致。查库确认三张表都落到了。这是 09-transactions §5 的最小断言。
+func TestAssign_TxAtomicity(t *testing.T) {
+	e := newPREnv(t)
+	base := e.toTestEnv()
+	key := seedWithAPIKey(t, base, "tx@e.com", "txuser", "password123")
+	pid := passengerIDOf(t, base, "tx@e.com")
+
+	sc, cb := base.do(t, "POST", "/api/me/buses",
+		map[string]any{"name": "tx", "kind": "single"},
+		func(r *http.Request) { r.Header.Set("X-API-Key", key) })
+	if sc != http.StatusCreated {
+		t.Fatalf("建车: %d %s", sc, cb)
+	}
+	var b struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(cb, &b)
+	e.insertRound(t, "round-tx")
+	e.insertRecordCred(t, "cx1", pid, "round-tx", "alive", 1)
+	e.insertRecordCred(t, "cx2", pid, "round-tx", "alive", 2)
+
+	idem := "0000000000000000000000000000abcd"
+	status, _ := base.do(t, "POST", "/api/me/pull-records/assign",
+		map[string]any{
+			"credential_ids": []string{"cx1", "cx2"},
+			"destination":    "into_bus",
+			"bus_id":         b.ID,
+		},
+		func(r *http.Request) { r.Header.Set("X-API-Key", key) },
+		func(r *http.Request) { r.Header.Set("X-Idempotency-Key", idem) })
+	if status != http.StatusOK {
+		t.Fatalf("assign: %d", status)
+	}
+
+	// 断言 1: credential_ledger 两号都进车了
+	var ownerCount int
+	if err := e.db.QueryRow(
+		`SELECT count(1) FROM credential_ledger WHERE owner_bus_id = ? AND id IN ('cx1','cx2')`, b.ID,
+	).Scan(&ownerCount); err != nil {
+		t.Fatalf("查 credential_ledger: %v", err)
+	}
+	if ownerCount != 2 {
+		t.Errorf("credential_ledger owner_bus_id 匹配 %d, want 2", ownerCount)
+	}
+
+	// 断言 2: pending_assignment 落了 2 行 completed
+	var eventCount int
+	if err := e.db.QueryRow(
+		`SELECT count(1) FROM pending_assignment WHERE passenger_id = ? AND target_bus_id = ? AND status = 'completed'`,
+		pid, b.ID,
+	).Scan(&eventCount); err != nil {
+		t.Fatalf("查 pending_assignment: %v", err)
+	}
+	if eventCount != 2 {
+		t.Errorf("pending_assignment count = %d, want 2", eventCount)
+	}
+
+	// 断言 3: idempotency_record 已 finalize（response_body 非空）
+	var respBody []byte
+	if err := e.db.QueryRow(
+		`SELECT response_body FROM idempotency_record WHERE idempotency_key = ?`, idem,
+	).Scan(&respBody); err != nil {
+		t.Fatalf("查 idempotency_record: %v", err)
+	}
+	if len(respBody) == 0 {
+		t.Errorf("idempotency_record.response_body 空 · 事务未合并保存幂等响应")
+	}
+
+	// 断言 4: 幂等重放拿同 body
+	_, replay := base.do(t, "POST", "/api/me/pull-records/assign",
+		map[string]any{
+			"credential_ids": []string{"cx1", "cx2"},
+			"destination":    "into_bus",
+			"bus_id":         b.ID,
+		},
+		func(r *http.Request) { r.Header.Set("X-API-Key", key) },
+		func(r *http.Request) { r.Header.Set("X-Idempotency-Key", idem) })
+	if !bytes.Equal(respBody, replay) {
+		t.Errorf("重放 body 不一致\nfirst = %s\nreplay = %s", respBody, replay)
 	}
 }
 
