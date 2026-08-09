@@ -169,19 +169,22 @@ func runMigrate(ctx context.Context, cfg config.Config, args []string) error {
 // 运行期内存里是明文（要拿它发 HTTP 头）。所以别把 registry 或 cfg.Secrets 打进日志。
 func buildVendorRegistry(cfg config.Config) (*providers.Registry, error) {
 	r := providers.NewRegistry()
+	// 通用：所有 vendor 共用 httpx 超时/代理（CLAUDE.md §7.1 出向统一）
+	base := func(v config.Vendor, apiKey, webhookSecret string) kiro.VendorConfig {
+		return kiro.VendorConfig{
+			Enabled: v.Enabled, BaseURL: v.BaseURL,
+			APIKey: apiKey, WebhookSecret: webhookSecret,
+			Timeout: cfg.HTTPX.Timeout, MaxRetries: cfg.HTTPX.MaxRetries,
+			ProxyURL: cfg.HTTPX.Proxy, NoProxy: cfg.HTTPX.NoProxy,
+		}
+	}
 	err := kiro.Register(r, kiro.Config{
-		Kiro91: kiro.VendorConfig{
-			Enabled:       cfg.Vendors.Kiro91.Enabled,
-			BaseURL:       cfg.Vendors.Kiro91.BaseURL,
-			APIKey:        cfg.Secrets.Kiro91APIKey,
-			WebhookSecret: cfg.Secrets.Kiro91WebhookSecret,
-			// vendor 不单独配超时 / 代理 —— 共用 httpx 那套，
-			// 免得"某家慢"要在两个地方调参（CLAUDE.md §7.1 出向统一）
-			Timeout:    cfg.HTTPX.Timeout,
-			MaxRetries: cfg.HTTPX.MaxRetries,
-			ProxyURL:   cfg.HTTPX.Proxy,
-			NoProxy:    cfg.HTTPX.NoProxy,
-		},
+		Kiro91:    base(cfg.Vendors.Kiro91, cfg.Secrets.Kiro91APIKey, cfg.Secrets.Kiro91WebhookSecret),
+		KiroCEO:   base(cfg.Vendors.KiroCEO, cfg.Secrets.KiroCEOAPIKey, ""),
+		KiroOOO:   base(cfg.Vendors.KiroOOO, cfg.Secrets.KiroOOOAPIKey, ""),
+		KiroAppIO: base(cfg.Vendors.KiroAppIO, cfg.Secrets.KiroAppIOAPIKey, ""),
+		KiroAppCC: base(cfg.Vendors.KiroAppCC, cfg.Secrets.KiroAppCCAPIKey, ""),
+		KiroDrop:  base(cfg.Vendors.KiroDrop, cfg.Secrets.KiroDropAPIKey, cfg.Secrets.KiroDropWebhookSecret),
 	})
 	if err != nil {
 		return nil, err

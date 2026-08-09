@@ -69,10 +69,15 @@ type Housepool struct {
 
 // Vendors 各家 vendor 的**非敏感**配置。
 //
-// 阶段 1a 只有 kiro91（契约 §7 的接入优先级），其余 5 家 1b 再加 ——
-// 不预留空字段，加一家时同时加 config 和 adapter。
+// 6 家 kiro 系 vendor 全接入（1a: kiro91 · 1b: 加 5 家）。空 BaseURL = 不装配那家 ·
+// registry 层跳过（不参与比价 · 不注册）。
 type Vendors struct {
-	Kiro91 Vendor `yaml:"kiro91"`
+	Kiro91    Vendor `yaml:"kiro91"`
+	KiroCEO   Vendor `yaml:"kiroceo"`
+	KiroOOO   Vendor `yaml:"kirooo"`
+	KiroAppIO Vendor `yaml:"kiroappio"`
+	KiroAppCC Vendor `yaml:"kiroappcc"`
+	KiroDrop  Vendor `yaml:"kirodrop"`
 }
 
 type Vendor struct {
@@ -88,17 +93,32 @@ type Secrets struct {
 	MasterKey string
 	// HousepoolAdminKey 我方 kiro.rs 的 admin API key
 	HousepoolAdminKey string
-	// Kiro91APIKey 我方在 91kiro 的 API 令牌（`usr-` 前缀）
-	Kiro91APIKey string
-	// Kiro91WebhookSecret 校验 91kiro 回调签名用（X-KM-Signature）
-	Kiro91WebhookSecret string
+
+	// vendor API keys · 主动拉号用
+	Kiro91APIKey    string
+	KiroCEOAPIKey   string
+	KiroOOOAPIKey   string
+	KiroAppIOAPIKey string
+	KiroAppCCAPIKey string
+	KiroDropAPIKey  string
+
+	// vendor webhook secrets · 收 vendor 回调时验签用
+	// 只有 kiro91 和 kirodrop 走 HMAC（其他 4 家 vendor 侧无签名）
+	Kiro91WebhookSecret   string
+	KiroDropWebhookSecret string
 }
 
 const (
-	EnvMasterKey           = "BP_MASTER_KEY"
-	EnvHousepoolAdminKey   = "BP_HOUSEPOOL_ADMIN_KEY"
-	EnvKiro91APIKey        = "BP_VENDOR_KIRO91_API_KEY"
-	EnvKiro91WebhookSecret = "BP_VENDOR_KIRO91_WEBHOOK_SECRET"
+	EnvMasterKey             = "BP_MASTER_KEY"
+	EnvHousepoolAdminKey     = "BP_HOUSEPOOL_ADMIN_KEY"
+	EnvKiro91APIKey          = "BP_VENDOR_KIRO91_API_KEY"
+	EnvKiro91WebhookSecret   = "BP_VENDOR_KIRO91_WEBHOOK_SECRET"
+	EnvKiroCEOAPIKey         = "BP_VENDOR_KIROCEO_API_KEY"
+	EnvKiroOOOAPIKey         = "BP_VENDOR_KIROOOO_API_KEY"
+	EnvKiroAppIOAPIKey       = "BP_VENDOR_KIROAPPIO_API_KEY"
+	EnvKiroAppCCAPIKey       = "BP_VENDOR_KIROAPPCC_API_KEY"
+	EnvKiroDropAPIKey        = "BP_VENDOR_KIRODROP_API_KEY"
+	EnvKiroDropWebhookSecret = "BP_VENDOR_KIRODROP_WEBHOOK_SECRET"
 )
 
 // Default 是不读任何文件时的配置 —— 本地起服务应该零配置能跑。
@@ -118,7 +138,13 @@ func Default() Config {
 		},
 		Vendors: Vendors{
 			// 默认 Enabled=false —— 没显式开就不该悄悄开始花钱
-			Kiro91: Vendor{BaseURL: "https://api.91kiro.com"},
+			// BaseURL 从 docs/vendors/*.md §1 抄
+			Kiro91:    Vendor{BaseURL: "https://api.91kiro.com"},
+			KiroCEO:   Vendor{BaseURL: "https://kiro.ceo"},
+			KiroOOO:   Vendor{BaseURL: "https://kiro.ooo/api"},
+			KiroAppIO: Vendor{BaseURL: "http://kiroapp.io"},
+			KiroAppCC: Vendor{BaseURL: "https://kiroapp.cc"},
+			KiroDrop:  Vendor{BaseURL: "https://drop.kiro.ss"},
 		},
 		DryRun: true,
 	}
@@ -177,19 +203,36 @@ func applyEnv(cfg *Config) {
 		}
 	}
 
-	if v := os.Getenv("BP_VENDOR_KIRO91_URL"); v != "" {
-		cfg.Vendors.Kiro91.BaseURL = v
-	}
-	if v := os.Getenv("BP_VENDOR_KIRO91_ENABLED"); v != "" {
-		if b, err := strconv.ParseBool(v); err == nil {
-			cfg.Vendors.Kiro91.Enabled = b
-		}
-	}
+	// 6 家 vendor · 各自 URL / ENABLED 都从 env 走
+	applyVendorEnv(&cfg.Vendors.Kiro91, "BP_VENDOR_KIRO91_URL", "BP_VENDOR_KIRO91_ENABLED")
+	applyVendorEnv(&cfg.Vendors.KiroCEO, "BP_VENDOR_KIROCEO_URL", "BP_VENDOR_KIROCEO_ENABLED")
+	applyVendorEnv(&cfg.Vendors.KiroOOO, "BP_VENDOR_KIROOOO_URL", "BP_VENDOR_KIROOOO_ENABLED")
+	applyVendorEnv(&cfg.Vendors.KiroAppIO, "BP_VENDOR_KIROAPPIO_URL", "BP_VENDOR_KIROAPPIO_ENABLED")
+	applyVendorEnv(&cfg.Vendors.KiroAppCC, "BP_VENDOR_KIROAPPCC_URL", "BP_VENDOR_KIROAPPCC_ENABLED")
+	applyVendorEnv(&cfg.Vendors.KiroDrop, "BP_VENDOR_KIRODROP_URL", "BP_VENDOR_KIRODROP_ENABLED")
 
 	cfg.Secrets.MasterKey = os.Getenv(EnvMasterKey)
 	cfg.Secrets.HousepoolAdminKey = os.Getenv(EnvHousepoolAdminKey)
 	cfg.Secrets.Kiro91APIKey = os.Getenv(EnvKiro91APIKey)
 	cfg.Secrets.Kiro91WebhookSecret = os.Getenv(EnvKiro91WebhookSecret)
+	cfg.Secrets.KiroCEOAPIKey = os.Getenv(EnvKiroCEOAPIKey)
+	cfg.Secrets.KiroOOOAPIKey = os.Getenv(EnvKiroOOOAPIKey)
+	cfg.Secrets.KiroAppIOAPIKey = os.Getenv(EnvKiroAppIOAPIKey)
+	cfg.Secrets.KiroAppCCAPIKey = os.Getenv(EnvKiroAppCCAPIKey)
+	cfg.Secrets.KiroDropAPIKey = os.Getenv(EnvKiroDropAPIKey)
+	cfg.Secrets.KiroDropWebhookSecret = os.Getenv(EnvKiroDropWebhookSecret)
+}
+
+// applyVendorEnv 通用 · 从 env 覆盖 vendor 的 URL 和 Enabled
+func applyVendorEnv(v *Vendor, urlEnv, enabledEnv string) {
+	if s := os.Getenv(urlEnv); s != "" {
+		v.BaseURL = s
+	}
+	if s := os.Getenv(enabledEnv); s != "" {
+		if b, err := strconv.ParseBool(s); err == nil {
+			v.Enabled = b
+		}
+	}
 }
 
 func (c Config) Validate() error {
