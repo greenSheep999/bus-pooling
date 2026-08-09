@@ -8,23 +8,25 @@ export default {
     extend: {
       colors: {
         // 品牌 · Kiro 紫（导航高亮 / focal 卡 / 主 CTA）
+        // 前景类（DEFAULT/strong/light/solid）暗色下也用 · 深底上高饱和字体反而清晰
+        // 背景类（faint/subtle/bg）走 CSS 变量 · 深色下换成低透明覆盖 · 见 index.css
         brand: {
           DEFAULT: "#9147FF",
-          strong: "#6420C7",
+          strong: "hsl(var(--brand-strong))",
           light: "#A574FF",
           soft: "#C9A9FF",
-          faint: "#E3D5FF",
-          subtle: "#F5F0FF",
+          faint: "hsl(var(--brand-faint))",
+          subtle: "hsl(var(--brand-subtle))",
         },
         // 积分 / 余额 · 绿色系（decisions §8 · 不用紫）
         credit: {
-          bg: "#E8F7EF",
-          fg: "#1F7A47",
+          bg: "hsl(var(--credit-bg))",
+          fg: "hsl(var(--credit-fg))",
         },
-        // 语义
-        ok: { bg: "#E8F7EF", fg: "#1F7A47", solid: "#22C55E" },
-        warn: { bg: "#FFF8E1", fg: "#B8860B", solid: "#F59E0B" },
-        danger: { bg: "#FDECEE", fg: "#B91C1C", solid: "#EF4444" },
+        // 语义 · bg 变量化 · fg / solid 前景两个模式都用同一个（对比度足够）
+        ok:     { bg: "hsl(var(--ok-bg))",     fg: "hsl(var(--ok-fg))",     solid: "#22C55E" },
+        warn:   { bg: "hsl(var(--warn-bg))",   fg: "hsl(var(--warn-fg))",   solid: "#F59E0B" },
+        danger: { bg: "hsl(var(--danger-bg))", fg: "hsl(var(--danger-fg))", solid: "#EF4444" },
         // 号去向 tag
         dest: {
           bus: "#9147FF",
@@ -66,11 +68,12 @@ export default {
         focal: "24px",
       },
       boxShadow: {
-        card: "0 2px 8px 0 rgb(10 10 10 / 0.03)",
-        // hover 不带紫（避免跟 focal 强调色抢），中性黑阴影放大即可
-        hover: "0 12px 32px -4px rgb(10 10 10 / 0.14)",
-        pop: "0 12px 32px -4px rgb(10 10 10 / 0.08)",
-        modal: "0 24px 64px -8px rgb(10 10 10 / 0.20)",
+        // 阴影颜色走 CSS 变量 · 深色下换成不透明黑（浅色下 10% 淡黑）
+        // 变量定义在 index.css `:root` / `.dark`
+        card: "0 2px 8px 0 rgb(var(--shadow-card))",
+        hover: "0 12px 32px -4px rgb(var(--shadow-hover))",
+        pop: "0 12px 32px -4px rgb(var(--shadow-pop))",
+        modal: "0 24px 64px -8px rgb(var(--shadow-modal))",
       },
       spacing: {
         section: "56px",

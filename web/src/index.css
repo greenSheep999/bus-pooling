@@ -5,6 +5,8 @@
 @tailwind utilities;
 
 @layer base {
+  /* 浅色 · 未挂 .dark 时生效
+     纯灰阶 · 无色彩倾向（不做冷 / 暖偏移） */
   :root {
     --bg: 0 0% 100%;
     --bg-elevated: 0 0% 98%;
@@ -12,15 +14,68 @@
     --fg-secondary: 0 0% 32%;
     --fg-tertiary: 0 0% 64%;
     --hairline: 0 0% 93%;
+
+    /* focal 卡光晕透明度（浅色偏浓） */
+    --glow-brand: 0.14;
+    --glow-credit: 0.16;
+
+    /* 阴影颜色（深色下改成不透明黑 · 更深） */
+    --shadow-card: 10 10 10 / 0.03;
+    --shadow-hover: 10 10 10 / 0.14;
+    --shadow-pop: 10 10 10 / 0.08;
+    --shadow-modal: 10 10 10 / 0.20;
+    --card-hover-border: 0 0 0 / 0.10;
+
+    /* 品牌 · 语义色 hsl 三元组（无 hsl() 包裹 · 让 tailwind 自己包）
+       前景色两模式都用同一个（对比度已经足） · 只调背景 */
+    --brand-strong: 261 71% 46%;      /* #6420C7 */
+    --brand-faint: 265 100% 92%;      /* #E3D5FF */
+    --brand-subtle: 265 100% 97%;     /* #F5F0FF */
+    --credit-bg: 140 50% 94%;         /* #E8F7EF */
+    --credit-fg: 145 60% 30%;         /* #1F7A47 */
+    --ok-bg: 140 50% 94%;             /* #E8F7EF */
+    --ok-fg: 145 60% 30%;             /* #1F7A47 */
+    --warn-bg: 48 100% 94%;           /* #FFF8E1 */
+    --warn-fg: 42 90% 38%;            /* #B8860B */
+    --danger-bg: 355 82% 96%;         /* #FDECEE */
+    --danger-fg: 0 74% 42%;           /* #B91C1C */
   }
 
+  /* 深色 · 标准中性 · 参考 GitHub / Linear · 完全灰阶不带色调
+     ⚠️ 不要给 --bg 加 hue（曾试过 220 蓝调 · 车主要求"无色彩倾向" · 一律 0 度） */
   .dark {
-    --bg: 0 0% 4%;
-    --bg-elevated: 0 0% 8%;
-    --fg: 0 0% 98%;
-    --fg-secondary: 0 0% 64%;
-    --fg-tertiary: 0 0% 40%;
-    --hairline: 0 0% 12%;
+    --bg: 0 0% 7%;              /* #121212 · 谷歌 Material 深色标准底 */
+    --bg-elevated: 0 0% 11%;    /* #1c1c1c · 弹起面 4% 层差 */
+    --fg: 0 0% 95%;             /* #f2f2f2 · 主文本 · 不用纯白避免刺眼 */
+    --fg-secondary: 0 0% 70%;   /* #b3b3b3 · 次要 */
+    --fg-tertiary: 0 0% 45%;    /* #737373 · 说明 · 保对比度 4.5:1+ */
+    --hairline: 0 0% 18%;       /* #2e2e2e · 分割线 */
+
+    /* 深色下光晕降到几乎不见 · 避免深底上高饱和紫斑 */
+    --glow-brand: 0.08;
+    --glow-credit: 0.10;
+
+    /* 深底上 rgba 黑阴影几乎看不见 · 改用深黑更透（下沉感） */
+    --shadow-card: 0 0 0 / 0.30;
+    --shadow-hover: 0 0 0 / 0.60;
+    --shadow-pop: 0 0 0 / 0.40;
+    --shadow-modal: 0 0 0 / 0.70;
+    --card-hover-border: 255 255 255 / 0.10;
+
+    /* 品牌 · 语义色深色适配
+       前景 fg 亮度拉高（深底上要够亮）· 背景 bg 用深底 + 微彩色（不刺眼）
+       亮度基准：字放深底 4.5:1+ · 背景色跟 --bg 只差 3~5% 亮度 */
+    --brand-strong: 265 90% 72%;      /* 深色下 brand-strong 更亮才能读 */
+    --brand-faint: 265 30% 22%;       /* 深色 chip 底 · 深紫低饱和 */
+    --brand-subtle: 265 20% 15%;      /* 更弱一档 · 悬停面板底 */
+    --credit-bg: 145 30% 15%;         /* 深色 credit chip 底 · 深绿低饱和 */
+    --credit-fg: 145 60% 65%;         /* 深色 credit 前景 · 亮绿 */
+    --ok-bg: 145 30% 15%;
+    --ok-fg: 145 60% 65%;
+    --warn-bg: 42 40% 15%;
+    --warn-fg: 42 90% 65%;
+    --danger-bg: 0 35% 18%;
+    --danger-fg: 0 75% 68%;
   }
 
   * {
@@ -64,24 +119,35 @@
   }
 
   /* 白底 + 右上角光晕 · 图标已挪左，右上角空出来正好放渐变
-     （13-frontend-research §4.3 "每屏最多 1 个渐变元素"） */
+     （13-frontend-research §4.3 "每屏最多 1 个渐变元素"）
+     光晕强度和边框透明度用 CSS 变量 · 深色下降调（避免深底高饱和紫斑） */
   .card-focal {
-    @apply bg-bg bg-glow-tr rounded-focal shadow-card;
+    @apply bg-bg rounded-focal shadow-card;
+    background-image: radial-gradient(
+      70% 100% at 100% 0%,
+      rgb(145 71 255 / var(--glow-brand)) 0%,
+      transparent 100%
+    );
     border: 1px solid rgb(145 71 255 / 0.12);
   }
   /* 积分类 focal · 绿色渐变，跟 header credit pill 统一（decisions §8 · 积分 = 绿色系） */
   .card-focal-credit {
-    @apply bg-bg bg-glow-tr-credit rounded-focal shadow-card;
+    @apply bg-bg rounded-focal shadow-card;
+    background-image: radial-gradient(
+      70% 100% at 100% 0%,
+      rgb(34 197 94 / var(--glow-credit)) 0%,
+      transparent 100%
+    );
     border: 1px solid rgb(34 197 94 / 0.18);
   }
 
   .card-hover {
     @apply transition-all;
   }
-  /* hover 不改色，只放大阴影 + 上浮；描边转深灰（不用紫，避免跟 focal 强调色抢） */
+  /* hover 不改色，只放大阴影 + 上浮；描边深色下白半透 · 浅色下黑半透 */
   .card-hover:hover {
     @apply -translate-y-1 shadow-hover;
-    border-color: rgb(0 0 0 / 0.10);
+    border-color: rgb(var(--card-hover-border));
   }
 
 }

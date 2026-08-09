@@ -9,6 +9,7 @@ import { useMe, usePromos, useStock, useWallet } from "@/api/hooks";
 import { Muted } from "@/components/ui/primitives";
 import { SplitFlapCountdown } from "@/components/ui/split-flap";
 import { avatarColor, avatarLetter, cn, fmtCredits } from "@/lib/utils";
+import { useTheme, type ThemeMode } from "@/lib/theme";
 import LogoMark from "@/assets/logo/mark.svg";
 
 const TABS = [
@@ -80,7 +81,7 @@ function AvatarMenu() {
   const [open, setOpen] = useState(false);
   const [flyout, setFlyout] = useState<number | null>(null);
   const [lang, setLang] = useState("zh-CN");
-  const [theme, setTheme] = useState("system");
+  const [theme, setTheme] = useTheme();
   const nav = useNavigate();
   const { data: me } = useMe();
   const seed = me?.email ?? me?.username ?? "?";
@@ -109,7 +110,7 @@ function AvatarMenu() {
       label: "主题",
       submenu: THEMES,
       value: theme,
-      onPick: setTheme,
+      onPick: (c: string) => setTheme(c as ThemeMode),
       hint: THEMES.find((t) => t.code === theme)?.label,
     },
     { sep: true },
