@@ -47,6 +47,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/strategy"
 	"github.com/bus-pooling/bus-pooling/internal/topup"
 	"github.com/bus-pooling/bus-pooling/internal/topupchannel"
+	"github.com/bus-pooling/bus-pooling/internal/vendoraccount"
 	"github.com/bus-pooling/bus-pooling/internal/vendorview"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
@@ -99,8 +100,12 @@ func run(cmd, cfgPath string, args []string) error {
 		return runServe(ctx, cfg)
 	case "redeem":
 		return runRedeem(ctx, cfg, args)
+	case "seed-vendor":
+		return runSeedVendor(ctx, cfg, args)
+	case "list-vendors":
+		return runListVendors(ctx, cfg)
 	default:
-		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem）", cmd)
+		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem | seed-vendor | list-vendors）", cmd)
 	}
 }
 
@@ -171,9 +176,17 @@ func runMigrate(ctx context.Context, cfg config.Config, args []string) error {
 
 // buildVendorRegistry 把配置 + 密钥拼成 vendor registry。
 //
-// 密钥从 env 走到这里就是明文了 —— `internal/secrets` 管的是**落库**的加密，
-// 运行期内存里是明文（要拿它发 HTTP 头）。所以别把 registry 或 cfg.Secrets 打进日志。
-func buildVendorRegistry(cfg config.Config) (*providers.Registry, error) {
+// **凭证来源优先级**（decisions §11.6 · CLAUDE.md §7.1）：
+//  1. `vendor_account` 表（AES 加密 · admin CLI `seed-vendor` 写入）· **生产必用**
+//  2. env `BP_VENDOR_<slug>_API_KEY / _WEBHOOK_SECRET` · **仅本地 dev 兜底**
+//
+// 表里存在 (vendor_id, status=active) 就用表 · 否则回落 env。这样：
+//  - 生产：init 时跑 `seed-vendor` 一次 · env 里只留 `BP_MASTER_KEY`
+//  - dev：`.dev.env` 里塞明文继续能用 · 不必先 seed
+//
+// 密钥从 db/env 走到这里就是明文了 —— 落库前 secrets 加密 · 运行期内存是明文
+// （要拿它发 HTTP 头）。**别把 registry / cfg.Secrets 打进日志**。
+func buildVendorRegistry(ctx context.Context, cfg config.Config, vaStore *vendoraccount.Store) (*providers.Registry, error) {
 	r := providers.NewRegistry()
 	// 通用：所有 vendor 共用 httpx 超时/代理（CLAUDE.md §7.1 出向统一）
 	base := func(v config.Vendor, apiKey, webhookSecret string) kiro.VendorConfig {
@@ -184,13 +197,41 @@ func buildVendorRegistry(cfg config.Config) (*providers.Registry, error) {
 			ProxyURL: cfg.HTTPX.Proxy, NoProxy: cfg.HTTPX.NoProxy,
 		}
 	}
+	// resolveCred · 表优先 · 表空回落到 env 传入的 fallback
+	resolveCred := func(vendorID, envAPIKey, envWebhook string) (string, string) {
+		if vaStore == nil {
+			return envAPIKey, envWebhook
+		}
+		cred, err := vaStore.LoadActive(ctx, vendorID)
+		if err != nil {
+			slog.Warn("vendor_account 查表出错·回落 env", "vendor", vendorID, "err", err)
+			return envAPIKey, envWebhook
+		}
+		if cred == nil {
+			return envAPIKey, envWebhook
+		}
+		wh := cred.WebhookSecret
+		if wh == "" {
+			// vendor_account 里没存 webhook 但 env 里有 · 保留 env 值
+			wh = envWebhook
+		}
+		return cred.APIKey, wh
+	}
+
+	k91APIKey, k91Webhook := resolveCred("kiro91", cfg.Secrets.Kiro91APIKey, cfg.Secrets.Kiro91WebhookSecret)
+	kceoAPIKey, _ := resolveCred("kiroceo", cfg.Secrets.KiroCEOAPIKey, "")
+	koooAPIKey, _ := resolveCred("kirooo", cfg.Secrets.KiroOOOAPIKey, "")
+	kioAPIKey, _ := resolveCred("kiroappio", cfg.Secrets.KiroAppIOAPIKey, "")
+	kccAPIKey, _ := resolveCred("kiroappcc", cfg.Secrets.KiroAppCCAPIKey, "")
+	kdropAPIKey, kdropWebhook := resolveCred("kirodrop", cfg.Secrets.KiroDropAPIKey, cfg.Secrets.KiroDropWebhookSecret)
+
 	err := kiro.Register(r, kiro.Config{
-		Kiro91:    base(cfg.Vendors.Kiro91, cfg.Secrets.Kiro91APIKey, cfg.Secrets.Kiro91WebhookSecret),
-		KiroCEO:   base(cfg.Vendors.KiroCEO, cfg.Secrets.KiroCEOAPIKey, ""),
-		KiroOOO:   base(cfg.Vendors.KiroOOO, cfg.Secrets.KiroOOOAPIKey, ""),
-		KiroAppIO: base(cfg.Vendors.KiroAppIO, cfg.Secrets.KiroAppIOAPIKey, ""),
-		KiroAppCC: base(cfg.Vendors.KiroAppCC, cfg.Secrets.KiroAppCCAPIKey, ""),
-		KiroDrop:  base(cfg.Vendors.KiroDrop, cfg.Secrets.KiroDropAPIKey, cfg.Secrets.KiroDropWebhookSecret),
+		Kiro91:    base(cfg.Vendors.Kiro91, k91APIKey, k91Webhook),
+		KiroCEO:   base(cfg.Vendors.KiroCEO, kceoAPIKey, ""),
+		KiroOOO:   base(cfg.Vendors.KiroOOO, koooAPIKey, ""),
+		KiroAppIO: base(cfg.Vendors.KiroAppIO, kioAPIKey, ""),
+		KiroAppCC: base(cfg.Vendors.KiroAppCC, kccAPIKey, ""),
+		KiroDrop:  base(cfg.Vendors.KiroDrop, kdropAPIKey, kdropWebhook),
 	})
 	if err != nil {
 		return nil, err
@@ -425,20 +466,35 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 
+	database, err := db.Open(ctx, cfg.DB.Path)
+	if err != nil {
+		return err
+	}
+	defer database.Close()
+
+	// vendor_account 加密凭证存 · nil-safe（本地 dev 主密钥不装配时用 nil · registry 会回落 env）
+	var vaStore *vendoraccount.Store
+	if cfg.Secrets.MasterKey != "" {
+		cipher, err := secrets.New(cfg.Secrets.MasterKey)
+		if err != nil {
+			return fmt.Errorf("secrets cipher 装配: %w", err)
+		}
+		vaStore = vendoraccount.NewStore(database.DB, cipher)
+		if ids, err := vaStore.ListActiveVendorIDs(ctx); err == nil && len(ids) > 0 {
+			slog.Info("vendor_account 已 seed", "vendors", ids)
+		} else if err == nil {
+			slog.Info("vendor_account 表空 · vendor 凭证回落到 env (BP_VENDOR_*_API_KEY)")
+		}
+	}
+
 	// vendor registry —— 业务层只认 providers.Registry，装配是 main 的事（契约 §10）
-	vendorRegistry, err := buildVendorRegistry(cfg)
+	vendorRegistry, err := buildVendorRegistry(ctx, cfg, vaStore)
 	if err != nil {
 		return err
 	}
 	for _, e := range vendorRegistry.All() {
 		slog.Info("vendor 已注册", "vendor", e.VendorID, "enabled", e.Enabled)
 	}
-
-	database, err := db.Open(ctx, cfg.DB.Path)
-	if err != nil {
-		return err
-	}
-	defer database.Close()
 
 	// 起服务前确认 schema 是最新的 —— 少一张表就跑不起来，早失败好过运行时 500
 	all, applied, err := database.MigrateStatus(ctx, cfg.DB.MigrationsDir)

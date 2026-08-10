@@ -158,6 +158,12 @@ _ALLOWLIST = [
      r'cfg\.Vendors\.(Kiro91|KiroCEO|KiroOOO|KiroAppIO|KiroAppCC|KiroDrop)'),
     (r"/cmd/bus-pooling/main\.go$",
      r'cfg\.Secrets\.(Kiro91|KiroCEO|KiroOOO|KiroAppIO|KiroAppCC|KiroDrop)\w*'),
+    # main.go 里 resolveCred("kiro91", ...) 等·同上·是 vendor_id 字面量·identifier
+    (r"cmd/bus-pooling/main\.go$",
+     r'resolveCred\("(kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)"'),
+    # seed_vendor.go · knownVendorSlugs 白名单 map · 是 CLI 参数校验数据契约
+    (r"cmd/bus-pooling/seed_vendor\.go$",
+     r'^\s*"(kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)":\s+true,'),
     # ── SQL migration 里的枚举值 · CHECK IN (...) 白名单 ─
     (r"/migrations/\d+_.*\.sql$",
      r"CHECK\s*\([^)]*(waffo|epusdt|bybit|binance)"),
