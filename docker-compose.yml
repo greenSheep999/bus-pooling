@@ -1,39 +1,32 @@
-# bus-pooling · 生产 docker-compose
+# bus-pooling · 生产 docker-compose · vps22 部署用
 #
-# 假设 SSH 到 /opt/bus-pooling 后 · `docker compose up -d --build`
+# 使用方式（vps22 上）：
+#   1. clone: git clone git@github.com:greenSheep999/bus-pooling.git /opt/bus-pooling
+#   2. cd /opt/bus-pooling
+#   3. 准备 .env（BP_MASTER_KEY + 6 家 vendor API key 等 · 不进 git）
+#   4. 准备 config.yaml（default_vendor / promo / community · 不进 git）
+#   5. docker login ghcr.io -u greenSheep999 -p <PAT-with-read:packages>
+#   6. docker compose pull && docker compose up -d
 #
-# 前置：
-#   - .env 里放 BP_MASTER_KEY + 6 家 vendor API key + housepool admin key
-#   - config.yaml 覆盖 config.example.yaml 里的 default_vendor / promo / community
-#
-# 端口暴露：127.0.0.1:9917 · Caddy 反代 kirobus.com → 9917 已有配置
+# 镜像来源：GitHub Actions 的 ghcr-build.yml 构建 · 不在服务器本地 build。
+# Caddy 反代 kirobus.com → 127.0.0.1:9917 已配置（Caddyfile 已有）。
 
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        BUILD_SHA: ${BUILD_SHA:-dev}
-        BUILD_TIME: ${BUILD_TIME:-unknown}
-    image: kirobus:latest
+    image: ${KIROBUS_IMAGE:-ghcr.io/greensheep999/bus-pooling:kirobus}
     container_name: kirobus
     restart: unless-stopped
 
-    # 只绑本机 · Caddy 反代过来（vps22 上已有 kirobus.com → 127.0.0.1:9917 的配置）
     ports:
       - "127.0.0.1:9917:8080"
 
     volumes:
-      # SQLite 数据 · 容器重建不能丢
       - ./data:/app/data
-      # 生产 config.yaml · 不进镜像（有 vendor base_url / default_vendor 等业务参数）
       - ./config.yaml:/app/config.yaml:ro
 
     env_file:
       - .env
 
-    # 传给 config 装配的额外覆盖 · env_file 已经在了 · 这里放不敏感的运行时开关
     environment:
       TZ: ${TZ:-Asia/Shanghai}
 

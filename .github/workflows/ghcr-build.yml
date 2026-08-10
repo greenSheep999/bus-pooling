@@ -1,0 +1,157 @@
+name: Build Docker image to GHCR (kiro branch)
+
+# 照 kiro.rs 的 ghcr-build.yaml 模式 · build 多架构 → 推 GHCR。
+#
+# 镜像地址：ghcr.io/greensheep999/bus-pooling:kirobus (kiro 分支产物)
+# vps22 上 `docker pull ghcr.io/greensheep999/bus-pooling:kirobus` 直接拉。
+#
+# 触发：
+#   - CI 工作流成功后自动触发（保证代码是绿的）
+#   - v* tag 手动打版本
+#   - 手动 workflow_dispatch
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  # 本次分支产物 · kiro provider · 未来 cursor 分支产 :cursorbus 等
+  IMAGE_TAG: kirobus
+
+jobs:
+  build:
+    name: Build & push (${{ matrix.arch }})
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve lowercase image ref
+        id: img
+        run: |
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+          echo "ref=${REGISTRY}/$(echo "$OWNER/$REPO" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Determine version tag
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="$(date +'%Y%m%d')-$(git rev-parse --short HEAD)"
+          fi
+          echo "value=${VERSION}" >> $GITHUB_OUTPUT
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: Build and push (${{ matrix.platform }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          provenance: false
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+          build-args: |
+            BUILD_SHA=${{ github.event.workflow_run.head_sha || github.sha }}
+            BUILD_TIME=${{ steps.version.outputs.value }}
+          tags: |
+            ${{ steps.img.outputs.ref }}:${{ env.IMAGE_TAG }}-${{ matrix.arch }}
+            ${{ steps.img.outputs.ref }}:${{ env.IMAGE_TAG }}-${{ steps.version.outputs.value }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=bus-pooling · kiro provider image
+
+  manifest:
+    name: Create multi-arch manifest
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve lowercase image ref
+        id: img
+        run: |
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+          echo "ref=${REGISTRY}/$(echo "$OWNER/$REPO" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Determine version tag
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="$(date +'%Y%m%d')-$(git rev-parse --short HEAD)"
+          fi
+          echo "value=${VERSION}" >> $GITHUB_OUTPUT
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create & push multi-arch manifest (kirobus latest)
+        run: |
+          IMAGE="${{ steps.img.outputs.ref }}"
+          docker buildx imagetools create \
+            -t "${IMAGE}:${{ env.IMAGE_TAG }}" \
+            "${IMAGE}:${{ env.IMAGE_TAG }}-amd64" \
+            "${IMAGE}:${{ env.IMAGE_TAG }}-arm64"
+
+      - name: Create & push multi-arch manifest (versioned)
+        run: |
+          IMAGE="${{ steps.img.outputs.ref }}"
+          docker buildx imagetools create \
+            -t "${IMAGE}:${{ env.IMAGE_TAG }}-${VERSION}" \
+            "${IMAGE}:${{ env.IMAGE_TAG }}-${VERSION}-amd64" \
+            "${IMAGE}:${{ env.IMAGE_TAG }}-${VERSION}-arm64"
