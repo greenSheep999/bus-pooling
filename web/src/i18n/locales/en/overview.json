@@ -1,0 +1,133 @@
+{
+  "hero": {
+    "title": "Overview",
+    "buses_running_suffix": "buses running",
+    "pool_suffix": "keys in pool"
+  },
+  "pool_status": {
+    "loading": "Loading",
+    "ok": "Pool healthy",
+    "warn": "Pool low",
+    "down": "Pool down"
+  },
+  "range": {
+    "today": "Today",
+    "d7": "7d",
+    "d30": "30d",
+    "d90": "90d",
+    "all": "All"
+  },
+  "metric": {
+    "credits": "Spend",
+    "pulls": "Pulls",
+    "lifespan": "Lifespan"
+  },
+  "dest": {
+    "pending": "Pending",
+    "into_bus": "Into bus",
+    "push_pool": "Pushed to pool",
+    "handoff": "Handed off"
+  },
+  "scope": {
+    "trigger_all": "All · {{buses}} buses · {{vendors}} vendors",
+    "trigger_bus": "By bus · {{name}}",
+    "trigger_vendor": "By vendor · {{name}}",
+    "all_title": "All data",
+    "all_sub": "{{buses}} buses · {{vendors}} vendors combined",
+    "section_bus": "By bus",
+    "section_vendor": "By vendor"
+  },
+  "activity": {
+    "title": "Activity",
+    "sub": "{{total}} events · pulls / refills / expiries / funds",
+    "empty_title": "No activity in this range",
+    "empty_desc": "Pulls, refills, expiries and top-ups all appear here · try another range"
+  },
+  "kpi": {
+    "balance": {
+      "label": "Balance",
+      "unit": "credits",
+      "month_prefix": "This month"
+    },
+    "spend_today": {
+      "label": "Spent today",
+      "unit": "credits",
+      "yesterday_prefix": "Yesterday",
+      "delta_prefix": "vs. prev"
+    },
+    "pulls": {
+      "label": "Total pulls",
+      "unit": "pulls",
+      "month_prefix": "This month",
+      "month_suffix": ""
+    },
+    "alive": {
+      "label": "Alive keys",
+      "unit": "keys",
+      "dead_prefix": "Dead",
+      "pending_prefix": "Pending",
+      "avg_prefix": "Avg"
+    }
+  },
+  "card": {
+    "view": "View →",
+    "bus": {
+      "title": "Pooling",
+      "unit": "buses · {{total}} keys in pool",
+      "pool_dist_label": "Pool distribution",
+      "row_suffix": "keys",
+      "footer_stat": "Refill {{refill}} · Coalesce {{rate}}%",
+      "credits_unit": "credits"
+    },
+    "extract": {
+      "title": "Extract key",
+      "unit": "keys in pool · {{today}} pulls today",
+      "dest_dist_label": "Destination",
+      "row_suffix": "keys",
+      "footer_pending": "Pending {{pending}}",
+      "credits_unit": "credits"
+    },
+    "dispatch": {
+      "title": "My dispatch",
+      "phase_tag": "Phase 3",
+      "state_unavailable": "Not enabled",
+      "desc": "Bind your AWS · we forward to the upstream vendor · the pool stays yours",
+      "row_aws": "Linked AWS account",
+      "row_today": "Dispatches today",
+      "row_forward": "Forward success rate",
+      "row_total": "Total keys dispatched"
+    }
+  },
+  "trend": {
+    "title": "Usage trend",
+    "spend_prefix": "Spent",
+    "spend_suffix": "credits",
+    "pulls_prefix": "Pulls",
+    "pulls_suffix": "",
+    "refill_prefix": "Refills",
+    "refill_suffix": ""
+  },
+  "vendor_table": {
+    "title": "Vendor monitor",
+    "sub": "Per-vendor pool metrics · unit price / lifespan / durability / alive rate at a glance",
+    "col_vendor": "vendor",
+    "col_price": "Unit price",
+    "col_lifespan": "Lifespan",
+    "col_durability": "Durability",
+    "col_alive_rate": "Alive rate",
+    "col_pulls_today": "Pulls today",
+    "col_warranty": "Warranty",
+    "col_fallback": "Fallback",
+    "tag_best": "Best",
+    "tag_oos": "Out of stock",
+    "warranty_val": "{{n}}",
+    "fallback_val": "{{n}}",
+    "source_note": "Sources: unit price / lifespan / durability / alive rate blend vendor official APIs with our pool measurements (30-day rolling average) · Warranty and fallback come from actual pull records"
+  },
+  "vendor_share": {
+    "title": "Vendor share",
+    "sub": "Distribution by vendor",
+    "center_label": "pulls",
+    "row_val": "{{n}}"
+  }
+}

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Activity as ActivityIcon, Check, ChevronDown, KeyRound, Send,
   TrendingDown, Users, Wallet,
@@ -48,6 +49,7 @@ function Num({
 /* 号池状态 pill · 呼吸绿点 = 心跳（system live）· 告急/停运 用静态实心点
    阈值：0 = 停运 · <20 = 告急 · 其他 = 正常。跟 header 库存徽标共用 useStock */
 function PoolStatus() {
+  const { t } = useTranslation("overview");
   const { data } = useStock();
   const n = data?.total_available;
 
@@ -58,10 +60,10 @@ function PoolStatus() {
           : "ok";
 
   const cfg = {
-    loading: { dot: "bg-hairline", label: "加载中" },
-    ok: { dot: "bg-ok-solid animate-breath", label: "号池运行正常" },
-    warn: { dot: "bg-warn-solid", label: "号池告急" },
-    down: { dot: "bg-danger-solid", label: "号池已停运" },
+    loading: { dot: "bg-hairline", label: t("pool_status.loading") },
+    ok: { dot: "bg-ok-solid animate-breath", label: t("pool_status.ok") },
+    warn: { dot: "bg-warn-solid", label: t("pool_status.warn") },
+    down: { dot: "bg-danger-solid", label: t("pool_status.down") },
   }[state];
 
   return (
@@ -72,25 +74,25 @@ function PoolStatus() {
   );
 }
 
-const RANGES: { value: TimeRange; label: string }[] = [
-  { value: "today", label: "今日" },
-  { value: "7d", label: "7 天" },
-  { value: "30d", label: "30 天" },
-  { value: "90d", label: "90 天" },
-  { value: "all", label: "全部" },
+const RANGE_KEYS: { value: TimeRange; labelKey: string }[] = [
+  { value: "today", labelKey: "range.today" },
+  { value: "7d", labelKey: "range.d7" },
+  { value: "30d", labelKey: "range.d30" },
+  { value: "90d", labelKey: "range.d90" },
+  { value: "all", labelKey: "range.all" },
 ];
 
-const METRICS: { value: TrendMetric; label: string }[] = [
-  { value: "credits", label: "消耗" },
-  { value: "pulls", label: "拉号" },
-  { value: "lifespan", label: "寿命" },
+const METRIC_KEYS: { value: TrendMetric; labelKey: string }[] = [
+  { value: "credits", labelKey: "metric.credits" },
+  { value: "pulls", labelKey: "metric.pulls" },
+  { value: "lifespan", labelKey: "metric.lifespan" },
 ];
 
-const DEST_LABEL: Record<Destination, string> = {
-  pending: "待派去向",
-  into_bus: "已进车",
-  push_pool: "已推池",
-  handoff: "已拿走",
+const DEST_LABEL_KEY: Record<Destination, string> = {
+  pending: "dest.pending",
+  into_bus: "dest.into_bus",
+  push_pool: "dest.push_pool",
+  handoff: "dest.handoff",
 };
 
 const DEST_COLOR: Record<Destination, string> = {
@@ -119,14 +121,15 @@ function ScopePicker({
   buses: { id: string; name: string }[];
   vendors: { id: string; name: string }[];
 }) {
+  const { t } = useTranslation("overview");
   const [open, setOpen] = useState(false);
 
   /* 全部 trigger 显示"全部（N 车 · M vendor）"—— 光写"全部"用户不知道全部什么 */
   const label =
     value.kind === "all"
-      ? `全部 · ${buses.length} 车 · ${vendors.length} vendor`
-      : value.kind === "bus" ? `按车 · ${value.name}`
-        : `按 vendor · ${value.name}`;
+      ? t("scope.trigger_all", { buses: buses.length, vendors: vendors.length })
+      : value.kind === "bus" ? t("scope.trigger_bus", { name: value.name })
+        : t("scope.trigger_vendor", { name: value.name });
 
   const pick = (s: Scope) => { onChange(s); setOpen(false); };
 
@@ -147,15 +150,15 @@ function ScopePicker({
       <PopoverContent className="w-64">
         <ScopeOption picked={value.kind === "all"} onPick={() => pick({ kind: "all" })}>
           <div className="flex flex-col items-start">
-            <span>全部数据</span>
+            <span>{t("scope.all_title")}</span>
             <span className="text-[11px] font-normal text-fg-tertiary">
-              {buses.length} 车 · {vendors.length} vendor 合计
+              {t("scope.all_sub", { buses: buses.length, vendors: vendors.length })}
             </span>
           </div>
         </ScopeOption>
 
         <PopoverSeparator />
-        <PopoverSectionLabel>按车</PopoverSectionLabel>
+        <PopoverSectionLabel>{t("scope.section_bus")}</PopoverSectionLabel>
         {buses.map((b) => (
           <ScopeOption
             key={b.id}
@@ -167,7 +170,7 @@ function ScopePicker({
         ))}
 
         <PopoverSeparator />
-        <PopoverSectionLabel>按 vendor</PopoverSectionLabel>
+        <PopoverSectionLabel>{t("scope.section_vendor")}</PopoverSectionLabel>
         {vendors.map((v) => (
           <ScopeOption
             key={v.id}
@@ -204,6 +207,7 @@ function ActivityFeed({
   total: number;
   loading?: boolean;
 }) {
+  const { t } = useTranslation("overview");
   const [shown, setShown] = useState(ACT_STEP);
   const visible = items.slice(0, shown);
   const remain = Math.max(0, items.length - shown);
@@ -211,16 +215,16 @@ function ActivityFeed({
   return (
     <div className="space-y-5">
       <SectionHead
-        title="活动记录"
-        sub={`共 ${total} 条 · 拉号 / 补车 / 号失效 / 资金`}
+        title={t("activity.title")}
+        sub={t("activity.sub", { total })}
       />
       {loading && items.length === 0 ? (
         <SkeletonRows rows={4} />
       ) : items.length === 0 ? (
         <EmptyState
           icon={ActivityIcon}
-          title="这段时间没有活动"
-          desc="拉号、补车、号失效、充值都会记在这里 · 换个时间范围看看"
+          title={t("activity.empty_title")}
+          desc={t("activity.empty_desc")}
         />
       ) : (
         <>
@@ -255,6 +259,7 @@ function useNowSecond() {
 }
 
 export default function Overview() {
+  const { t, i18n } = useTranslation("overview");
   const { data: me } = useMe();
   const [range, setRange] = useState<TimeRange>("30d");
   const [metric, setMetric] = useState<TrendMetric>("credits");
@@ -282,22 +287,26 @@ export default function Overview() {
           窄屏（<md）左右两列换行堆叠 · 右列 Segmented 可能超出时给个横滚兜底 */}
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="min-w-0 space-y-2">
-          <h1 className="text-hero font-semibold">概览</h1>
+          <h1 className="text-hero font-semibold">{t("hero.title")}</h1>
           <p className="text-fg-tertiary">
             <span className="tnum">
-              {now.toLocaleDateString("zh-CN")}{" "}
-              {now.toLocaleTimeString("zh-CN", { hour12: false })}
+              {now.toLocaleDateString(i18n.language)}{" "}
+              {now.toLocaleTimeString(i18n.language, { hour12: false })}
             </span>
             {" · "}
-            <Num>{ov?.buses.bus_count ?? 0}</Num> 辆拼车正在运转
+            <Num>{ov?.buses.bus_count ?? 0}</Num> {t("hero.buses_running_suffix")}
             {" · "}
-            <Num>{kpi?.alive_count ?? 0}</Num> 个号在池
+            <Num>{kpi?.alive_count ?? 0}</Num> {t("hero.pool_suffix")}
           </p>
         </div>
         <div className="flex flex-col gap-2 md:items-end">
           <PoolStatus />
           <div className="-mx-1 overflow-x-auto px-1">
-            <Segmented options={RANGES} value={range} onChange={setRange} />
+            <Segmented
+              options={RANGE_KEYS.map((r) => ({ value: r.value, label: t(r.labelKey) }))}
+              value={range}
+              onChange={setRange}
+            />
           </div>
         </div>
       </div>
@@ -316,13 +325,13 @@ export default function Overview() {
           focal
           tone="credit"
           icon={Wallet}
-          label="剩余积分"
+          label={t("kpi.balance.label")}
           value={kpi ? fmtCredits(kpi.balance) : "-"}
-          unit="积分"
+          unit={t("kpi.balance.unit")}
           sub={
             kpi ? (
               <>
-                本月{" "}
+                {t("kpi.balance.month_prefix")}{" "}
                 <Num sign="+">+{fmtCredits(kpi.balance_delta_topup)}</Num>
                 {" · "}
                 <Num sign="-">-{fmtCredits(kpi.balance_delta_spend)}</Num>
@@ -332,12 +341,12 @@ export default function Overview() {
         />
         <KpiCard
           icon={TrendingDown}
-          label="今日消费"
+          label={t("kpi.spend_today.label")}
           value={kpi ? fmtCredits(kpi.spend_today) : "-"}
-          unit="积分"
+          unit={t("kpi.spend_today.unit")}
           sub={
             kpi ? (
-              <>昨日 <Num>{fmtCredits(kpi.spend_yesterday)}</Num></>
+              <>{t("kpi.spend_today.yesterday_prefix")} <Num>{fmtCredits(kpi.spend_yesterday)}</Num></>
             ) : undefined
           }
           subRight={
@@ -346,38 +355,38 @@ export default function Overview() {
               /* 消费涨了不是好事（红），跌了才是好（绿）· 跟到账/花掉的正负色对调 */
               const sign: "+" | "-" | "" =
                 s.startsWith("+") ? "-" : s.startsWith("-") ? "+" : "";
-              return <>环比 <Num sign={sign}>{s}</Num></>;
+              return <>{t("kpi.spend_today.delta_prefix")} <Num sign={sign}>{s}</Num></>;
             })() : undefined
           }
         />
         <KpiCard
           icon={KeyRound}
-          label="累计拉号"
+          label={t("kpi.pulls.label")}
           value={kpi ? String(kpi.pull_total) : "-"}
-          unit="次"
+          unit={t("kpi.pulls.unit")}
           sub={
             kpi ? (
-              <>本月 <Num>{kpi.pull_this_month}</Num> 次</>
+              <>{t("kpi.pulls.month_prefix")} <Num>{kpi.pull_this_month}</Num> {t("kpi.pulls.month_suffix")}</>
             ) : undefined
           }
         />
         <KpiCard
           icon={ActivityIcon}
-          label="正常号"
+          label={t("kpi.alive.label")}
           value={kpi ? String(kpi.alive_count) : "-"}
-          unit="个"
+          unit={t("kpi.alive.unit")}
           sub={
             kpi ? (
               <>
-                已失效 <Num>{kpi.dead_count}</Num>
+                {t("kpi.alive.dead_prefix")} <Num>{kpi.dead_count}</Num>
                 {" · "}
-                待补 <Num>{kpi.pending_refill}</Num>
+                {t("kpi.alive.pending_prefix")} <Num>{kpi.pending_refill}</Num>
               </>
             ) : undefined
           }
           subRight={
             kpi ? (
-              <>平均 <Num>{fmtLifespan(kpi.avg_lifespan_seconds)}</Num></>
+              <>{t("kpi.alive.avg_prefix")} <Num>{fmtLifespan(kpi.avg_lifespan_seconds)}</Num></>
             ) : undefined
           }
         />
@@ -393,21 +402,21 @@ export default function Overview() {
               <span className="grid size-7 place-items-center rounded-lg bg-brand-subtle">
                 <Users className="size-3.5 text-brand-strong" />
               </span>
-              <h3 className="text-body-lg font-semibold">拼车</h3>
+              <h3 className="text-body-lg font-semibold">{t("card.bus.title")}</h3>
             </div>
             <span className="text-label font-semibold text-brand-strong">
-              查看 →
+              {t("card.view")}
             </span>
           </div>
 
           <Stat
             value={String(ov?.buses.bus_count ?? 0)}
-            unit={`辆车 · ${totalBusCreds} 个号在池`}
+            unit={t("card.bus.unit", { total: totalBusCreds })}
             size="num"
           />
 
           <div className="space-y-2.5">
-            <Label>号池分布</Label>
+            <Label>{t("card.bus.pool_dist_label")}</Label>
             <div className="flex h-2.5 overflow-hidden rounded-full bg-hairline">
               {(ov?.buses.items ?? []).map((b, i) => (
                 <div
@@ -432,7 +441,7 @@ export default function Overview() {
                       <span className="ml-1.5"><OwnerBadge /></span>
                     )}
                   </span>
-                  <span className="font-semibold tnum">{b.alive} 个</span>
+                  <span className="font-semibold tnum">{b.alive} {t("card.bus.row_suffix")}</span>
                 </div>
               ))}
             </div>
@@ -440,12 +449,14 @@ export default function Overview() {
 
           <div className="mt-auto flex items-center justify-between border-t border-hairline pt-3.5">
             <Muted className="font-medium">
-              补车 {ov?.buses.refill_count ?? 0} 次 · 集单率{" "}
-              {Math.round((ov?.buses.coalesce_rate ?? 0) * 100)}%
+              {t("card.bus.footer_stat", {
+                refill: ov?.buses.refill_count ?? 0,
+                rate: Math.round((ov?.buses.coalesce_rate ?? 0) * 100),
+              })}
             </Muted>
             <span className="font-semibold tnum">
               {kpi ? fmtCredits(-kpi.spend_today, { sign: true }) : "-"}
-              <Muted className="ml-1 font-medium">积分</Muted>
+              <Muted className="ml-1 font-medium">{t("card.bus.credits_unit")}</Muted>
             </span>
           </div>
         </Card>
@@ -457,21 +468,21 @@ export default function Overview() {
               <span className="grid size-7 place-items-center rounded-lg bg-warn-bg">
                 <KeyRound className="size-3.5 text-warn-fg" />
               </span>
-              <h3 className="text-body-lg font-semibold">提取 key</h3>
+              <h3 className="text-body-lg font-semibold">{t("card.extract.title")}</h3>
             </div>
             <span className="text-label font-semibold text-brand-strong">
-              查看 →
+              {t("card.view")}
             </span>
           </div>
 
           <Stat
             value={String(extractTotal)}
-            unit={`个 key 在池 · 今日拉 ${ov?.extract.count_today ?? 0} 次`}
+            unit={t("card.extract.unit", { today: ov?.extract.count_today ?? 0 })}
             size="num"
           />
 
           <div className="space-y-2.5">
-            <Label>去向分布</Label>
+            <Label>{t("card.extract.dest_dist_label")}</Label>
             <div className="flex h-2.5 overflow-hidden rounded-full bg-hairline">
               {(ov?.extract.by_destination ?? []).map((d) => (
                 <div
@@ -491,19 +502,19 @@ export default function Overview() {
                     style={{ backgroundColor: DEST_COLOR[d.destination] }}
                   />
                   <span className="min-w-0 flex-1 truncate font-medium text-fg-secondary">
-                    {DEST_LABEL[d.destination]}
+                    {t(DEST_LABEL_KEY[d.destination])}
                   </span>
-                  <span className="font-semibold tnum">{d.count} 个</span>
+                  <span className="font-semibold tnum">{d.count} {t("card.extract.row_suffix")}</span>
                 </div>
               ))}
             </div>
           </div>
 
           <div className="mt-auto flex items-center justify-between border-t border-hairline pt-3.5">
-            <Muted className="font-medium">待派 {ov?.extract.pending ?? 0} 个</Muted>
+            <Muted className="font-medium">{t("card.extract.footer_pending", { pending: ov?.extract.pending ?? 0 })}</Muted>
             <span className="font-semibold tnum">
               {ov ? fmtCredits(-ov.extract.spend, { sign: true }) : "-"}
-              <Muted className="ml-1 font-medium">积分</Muted>
+              <Muted className="ml-1 font-medium">{t("card.extract.credits_unit")}</Muted>
             </span>
           </div>
         </Card>
@@ -515,22 +526,27 @@ export default function Overview() {
               <span className="grid size-7 place-items-center rounded-lg bg-hairline">
                 <Send className="size-3.5 text-fg-tertiary" />
               </span>
-              <h3 className="text-body-lg font-semibold text-fg-tertiary">我的发车</h3>
+              <h3 className="text-body-lg font-semibold text-fg-tertiary">{t("card.dispatch.title")}</h3>
             </div>
-            <Chip tone="brand">阶段 3</Chip>
+            <Chip tone="brand">{t("card.dispatch.phase_tag")}</Chip>
           </div>
 
-          <Stat value="-" unit="未启用" size="num" />
+          <Stat value="-" unit={t("card.dispatch.state_unavailable")} size="num" />
 
           <p className="text-fg-secondary">
-            绑定你的 AWS 账户 · 我方转发上游 vendor 开号 · 号池归你
+            {t("card.dispatch.desc")}
           </p>
 
           <div className="mt-auto space-y-2.5 border-t border-hairline pt-3.5">
-            {["绑定的 AWS 账户", "今日发车次数", "转发成功率", "累计发车号数"].map((t) => (
-              <div key={t} className="flex items-center gap-2">
+            {[
+              t("card.dispatch.row_aws"),
+              t("card.dispatch.row_today"),
+              t("card.dispatch.row_forward"),
+              t("card.dispatch.row_total"),
+            ].map((label) => (
+              <div key={label} className="flex items-center gap-2">
                 <span className="size-[7px] shrink-0 rounded-full bg-hairline" />
-                <span className="flex-1 font-medium text-fg-tertiary">{t}</span>
+                <span className="flex-1 font-medium text-fg-tertiary">{label}</span>
                 <span className="font-medium text-fg-tertiary">-</span>
               </div>
             ))}
@@ -541,15 +557,15 @@ export default function Overview() {
       {/* ── 使用趋势 ── 不用 focal：右上角有 Segmented，紫光会被 tab 吃掉 */}
       <Card className="p-7">
         <SectionHead
-          title="用量趋势"
+          title={t("trend.title")}
           sub={
             kpi ? (
               <>
-                消耗 <Num>{fmtCredits(kpi.balance_delta_spend)}</Num> 积分
+                {t("trend.spend_prefix")} <Num>{fmtCredits(kpi.balance_delta_spend)}</Num> {t("trend.spend_suffix")}
                 {" · "}
-                拉号 <Num>{kpi.pull_this_month}</Num> 次
+                {t("trend.pulls_prefix")} <Num>{kpi.pull_this_month}</Num> {t("trend.pulls_suffix")}
                 {" · "}
-                补车 <Num>{ov?.buses.refill_count ?? 0}</Num> 次
+                {t("trend.refill_prefix")} <Num>{ov?.buses.refill_count ?? 0}</Num> {t("trend.refill_suffix")}
               </>
             ) : undefined
           }
@@ -563,7 +579,11 @@ export default function Overview() {
                   .filter((v) => !v.out_of_stock)
                   .map((v) => ({ id: v.vendor_id, name: vendorLabel(v.vendor_id, !!me?.invited) }))}
               />
-              <Segmented options={METRICS} value={metric} onChange={setMetric} />
+              <Segmented
+                options={METRIC_KEYS.map((m) => ({ value: m.value, label: t(m.labelKey) }))}
+                value={metric}
+                onChange={setMetric}
+              />
             </div>
           }
         />
@@ -588,22 +608,22 @@ export default function Overview() {
       <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1fr)_400px]">
         <Card className="p-7">
           <SectionHead
-            title="Vendor 监测"
-            sub="按 vendor 汇总的号池表现 · 单价 / 寿命 / 耐用度 / 存活率 一览"
+            title={t("vendor_table.title")}
+            sub={t("vendor_table.sub")}
           />
           {/* 表容器：窄屏横滚 · 自然列宽（不压缩），避免 vendor 名 + badge 挤成一坨 */}
           <div className="-mx-7 mt-5 overflow-x-auto px-7">
             <div className="min-w-[640px]">
             <BareHead>
               <span className="w-7 shrink-0">#</span>
-              <span className="min-w-0 flex-1">vendor</span>
-              <span className="w-14 shrink-0 text-center">单价</span>
-              <span className="w-14 shrink-0 text-center">寿命</span>
-              <span className="w-28 shrink-0 text-center">耐用度</span>
-              <span className="w-24 shrink-0 text-center">存活率</span>
-              <span className="w-14 shrink-0 text-center">今日拉</span>
-              <span className="w-14 shrink-0 text-center">保修</span>
-              <span className="w-14 shrink-0 text-right">补拉</span>
+              <span className="min-w-0 flex-1">{t("vendor_table.col_vendor")}</span>
+              <span className="w-14 shrink-0 text-center">{t("vendor_table.col_price")}</span>
+              <span className="w-14 shrink-0 text-center">{t("vendor_table.col_lifespan")}</span>
+              <span className="w-28 shrink-0 text-center">{t("vendor_table.col_durability")}</span>
+              <span className="w-24 shrink-0 text-center">{t("vendor_table.col_alive_rate")}</span>
+              <span className="w-14 shrink-0 text-center">{t("vendor_table.col_pulls_today")}</span>
+              <span className="w-14 shrink-0 text-center">{t("vendor_table.col_warranty")}</span>
+              <span className="w-14 shrink-0 text-right">{t("vendor_table.col_fallback")}</span>
             </BareHead>
             <BareList>
               {vendorsLoading && !vendors && (
@@ -636,8 +656,8 @@ export default function Overview() {
                     >
                       {vendorLabel(v.vendor_id, !!me?.invited)}
                     </span>
-                    {v.rank === 1 && <MicroStat tone="ok">最优</MicroStat>}
-                    {v.out_of_stock && <MicroStat tone="danger">缺货</MicroStat>}
+                    {v.rank === 1 && <MicroStat tone="ok">{t("vendor_table.tag_best")}</MicroStat>}
+                    {v.out_of_stock && <MicroStat tone="danger">{t("vendor_table.tag_oos")}</MicroStat>}
                   </span>
 
                   <span
@@ -717,7 +737,7 @@ export default function Overview() {
                       v.warranty_count > 0 ? "text-warn-fg" : "text-fg-tertiary",
                     )}
                   >
-                    {v.out_of_stock ? "-" : `${v.warranty_count} 次`}
+                    {v.out_of_stock ? "-" : t("vendor_table.warranty_val", { n: v.warranty_count })}
                   </span>
 
                   <span
@@ -726,7 +746,7 @@ export default function Overview() {
                       v.fallback_count > 0 ? "text-warn-fg" : "text-fg-tertiary",
                     )}
                   >
-                    {v.out_of_stock ? "-" : `${v.fallback_count} 次`}
+                    {v.out_of_stock ? "-" : t("vendor_table.fallback_val", { n: v.fallback_count })}
                   </span>
                 </BareRow>
               ))}
@@ -736,14 +756,13 @@ export default function Overview() {
 
           {/* 数据来源脚注 · 灰色小字，跟"活动记录"底部同一层级 */}
           <p className="mt-5 text-[11px] leading-relaxed text-fg-tertiary">
-            数据来源：单价 / 寿命 / 耐用度 / 存活率 综合自 vendor 官方接口
-            与我方号池实测（近 30 天滚动平均）· 保修与补拉来自实际拉号记录
+            {t("vendor_table.source_note")}
           </p>
         </Card>
 
         {/* 占比环形 */}
         <Card className="flex flex-col p-7">
-          <SectionHead title="Vendor 占比" sub="按 vendor 分布" />
+          <SectionHead title={t("vendor_share.title")} sub={t("vendor_share.sub")} />
           <div className="relative mt-4 h-[180px]">
             <Suspense fallback={<div className="h-full" />}>
               <VendorSharePie data={vendors?.share ?? []} />
@@ -753,7 +772,7 @@ export default function Overview() {
                 <div className="text-num font-semibold tnum">
                   {(vendors?.share ?? []).reduce((s, v) => s + v.pulls, 0)}
                 </div>
-                <Muted>次拉号</Muted>
+                <Muted>{t("vendor_share.center_label")}</Muted>
               </div>
             </div>
           </div>
@@ -785,7 +804,7 @@ export default function Overview() {
                       noData && "text-fg-tertiary",
                     )}
                   >
-                    {noData ? "-" : `${s.pulls} 次`}
+                    {noData ? "-" : t("vendor_share.row_val", { n: s.pulls })}
                   </span>
                   <span className="w-9 text-right text-label tnum text-fg-tertiary">
                     {noData ? "-" : `${Math.round(s.ratio * 100)}%`}

@@ -1,0 +1,133 @@
+{
+  "hero": {
+    "title": "概览",
+    "buses_running_suffix": "辆拼车正在运转",
+    "pool_suffix": "个号在池"
+  },
+  "pool_status": {
+    "loading": "加载中",
+    "ok": "号池运行正常",
+    "warn": "号池告急",
+    "down": "号池已停运"
+  },
+  "range": {
+    "today": "今日",
+    "d7": "7 天",
+    "d30": "30 天",
+    "d90": "90 天",
+    "all": "全部"
+  },
+  "metric": {
+    "credits": "消耗",
+    "pulls": "拉号",
+    "lifespan": "寿命"
+  },
+  "dest": {
+    "pending": "待派去向",
+    "into_bus": "已进车",
+    "push_pool": "已推池",
+    "handoff": "已拿走"
+  },
+  "scope": {
+    "trigger_all": "全部 · {{buses}} 车 · {{vendors}} vendor",
+    "trigger_bus": "按车 · {{name}}",
+    "trigger_vendor": "按 vendor · {{name}}",
+    "all_title": "全部数据",
+    "all_sub": "{{buses}} 车 · {{vendors}} vendor 合计",
+    "section_bus": "按车",
+    "section_vendor": "按 vendor"
+  },
+  "activity": {
+    "title": "活动记录",
+    "sub": "共 {{total}} 条 · 拉号 / 补车 / 号失效 / 资金",
+    "empty_title": "这段时间没有活动",
+    "empty_desc": "拉号、补车、号失效、充值都会记在这里 · 换个时间范围看看"
+  },
+  "kpi": {
+    "balance": {
+      "label": "剩余积分",
+      "unit": "积分",
+      "month_prefix": "本月"
+    },
+    "spend_today": {
+      "label": "今日消费",
+      "unit": "积分",
+      "yesterday_prefix": "昨日",
+      "delta_prefix": "环比"
+    },
+    "pulls": {
+      "label": "累计拉号",
+      "unit": "次",
+      "month_prefix": "本月",
+      "month_suffix": "次"
+    },
+    "alive": {
+      "label": "正常号",
+      "unit": "个",
+      "dead_prefix": "已失效",
+      "pending_prefix": "待补",
+      "avg_prefix": "平均"
+    }
+  },
+  "card": {
+    "view": "查看 →",
+    "bus": {
+      "title": "拼车",
+      "unit": "辆车 · {{total}} 个号在池",
+      "pool_dist_label": "号池分布",
+      "row_suffix": "个",
+      "footer_stat": "补车 {{refill}} 次 · 集单率 {{rate}}%",
+      "credits_unit": "积分"
+    },
+    "extract": {
+      "title": "提取 key",
+      "unit": "个 key 在池 · 今日拉 {{today}} 次",
+      "dest_dist_label": "去向分布",
+      "row_suffix": "个",
+      "footer_pending": "待派 {{pending}} 个",
+      "credits_unit": "积分"
+    },
+    "dispatch": {
+      "title": "我的发车",
+      "phase_tag": "阶段 3",
+      "state_unavailable": "未启用",
+      "desc": "绑定你的 AWS 账户 · 我方转发上游 vendor 开号 · 号池归你",
+      "row_aws": "绑定的 AWS 账户",
+      "row_today": "今日发车次数",
+      "row_forward": "转发成功率",
+      "row_total": "累计发车号数"
+    }
+  },
+  "trend": {
+    "title": "用量趋势",
+    "spend_prefix": "消耗",
+    "spend_suffix": "积分",
+    "pulls_prefix": "拉号",
+    "pulls_suffix": "次",
+    "refill_prefix": "补车",
+    "refill_suffix": "次"
+  },
+  "vendor_table": {
+    "title": "Vendor 监测",
+    "sub": "按 vendor 汇总的号池表现 · 单价 / 寿命 / 耐用度 / 存活率 一览",
+    "col_vendor": "vendor",
+    "col_price": "单价",
+    "col_lifespan": "寿命",
+    "col_durability": "耐用度",
+    "col_alive_rate": "存活率",
+    "col_pulls_today": "今日拉",
+    "col_warranty": "保修",
+    "col_fallback": "补拉",
+    "tag_best": "最优",
+    "tag_oos": "缺货",
+    "warranty_val": "{{n}} 次",
+    "fallback_val": "{{n}} 次",
+    "source_note": "数据来源：单价 / 寿命 / 耐用度 / 存活率 综合自 vendor 官方接口 与我方号池实测（近 30 天滚动平均）· 保修与补拉来自实际拉号记录"
+  },
+  "vendor_share": {
+    "title": "Vendor 占比",
+    "sub": "按 vendor 分布",
+    "center_label": "次拉号",
+    "row_val": "{{n}} 次"
+  }
+}
