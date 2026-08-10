@@ -254,9 +254,10 @@ func TestVendorSecretsFromEnvOnly(t *testing.T) {
 	}
 }
 
-// 开了 vendor 又关了 DryRun 却没给令牌 —— 起服务时就该拦住，
-// 别等到第一次拉号才 401。
-func TestRequireSecretsChecksEnabledVendorKey(t *testing.T) {
+// vendor 令牌不由 RequireSecrets 校验（生产从 vendor_account 表读 · env 里不必放）·
+// 交给 buildVendorRegistry 的 resolveCred 在装配时判定。
+// 曾经在 RequireSecrets 里硬校验 env 会导致"env 空 → 服务起不来" · 阻塞 seed CLI 部署路径。
+func TestRequireSecretsOnlyChecksMasterKey(t *testing.T) {
 	base := func() Config {
 		c := Default()
 		c.Secrets.MasterKey = "mk"
@@ -265,38 +266,19 @@ func TestRequireSecretsChecksEnabledVendorKey(t *testing.T) {
 		return c
 	}
 
-	t.Run("真实拉号缺令牌应拦", func(t *testing.T) {
+	t.Run("有 master key 就放行 · 即使 vendor 令牌空", func(t *testing.T) {
 		c := base()
 		c.DryRun = false
+		if err := c.RequireSecrets(); err != nil {
+			t.Fatalf("只该拦 master key 空的场景: %v", err)
+		}
+	})
+
+	t.Run("master key 空必须拦", func(t *testing.T) {
+		c := base()
+		c.Secrets.MasterKey = ""
 		if err := c.RequireSecrets(); err == nil {
-			t.Fatal("enabled + 非 DryRun + 无令牌，应该报错")
-		}
-	})
-
-	t.Run("给了令牌就放行", func(t *testing.T) {
-		c := base()
-		c.DryRun = false
-		c.Secrets.Kiro91APIKey = "usr-x"
-		if err := c.RequireSecrets(); err != nil {
-			t.Fatalf("给了令牌不该报错: %v", err)
-		}
-	})
-
-	// DryRun 下不调真 vendor，不该因为没令牌就起不来（本地开发常态）
-	t.Run("DryRun 下不要求令牌", func(t *testing.T) {
-		c := base()
-		c.DryRun = true
-		if err := c.RequireSecrets(); err != nil {
-			t.Fatalf("DryRun 下不该要求 vendor 令牌: %v", err)
-		}
-	})
-
-	t.Run("没开的 vendor 不要求令牌", func(t *testing.T) {
-		c := base()
-		c.DryRun = false
-		c.Vendors.Kiro91.Enabled = false
-		if err := c.RequireSecrets(); err != nil {
-			t.Fatalf("没开的 vendor 不该要求令牌: %v", err)
+			t.Fatal("master key 空必须拦")
 		}
 	})
 }
