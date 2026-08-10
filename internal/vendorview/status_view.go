@@ -459,9 +459,20 @@ func (s *Service) DispatchEvents(ctx context.Context, anonID string, windowHours
 		Events:    []DispatchEvent{},
 	}
 
-	// ① vendor 自报的批次（vendor_dispatch 表 · 4 家有）
+	// ① vendor 自报的批次（vendor_dispatch 表）
+	//
+	// **自动扩窗**：请求窗口内没数据时 · 扩到 720h（30 天）再查一次。
+	// 理由：有的上游最近几天没开号（但历史有 18 批）· 死守 168h 会让卡片显示
+	// "无记录" · 用户以为我方没采到数据 —— 其实是上游本来就没动静。扩窗后
+	// 卡片能显示真实历史 · Window 字段会回报实际用的窗口。
 	if s.orderKeyStore != nil {
 		ds, err := s.orderKeyStore.DispatchesSince(ctx, vid, windowHours, limit)
+		if err == nil && len(ds) == 0 && windowHours < 720 {
+			if wider, e := s.orderKeyStore.DispatchesSince(ctx, vid, 720, limit); e == nil && len(wider) > 0 {
+				ds = wider
+				out.Window = "720h"
+			}
+		}
 		if err == nil && len(ds) > 0 {
 			out.Source = "vendor"
 			for _, d := range ds {

@@ -151,7 +151,7 @@ function VendorCard({ vendor }: { vendor: VendorStatusRow }) {
           {isLoading ? (
             <Skeleton className="h-[72px] w-full" />
           ) : (
-            <DispatchChart events={events} hours={24} height={72} compact />
+            <DispatchChart events={events} hours={parseWindowHours(data?.window, 168)} height={72} compact />
           )}
           {/* 数据来源说明 · 只在有数据时显示（空态图内部已经有提示 · 别重复） */}
           {events.length > 0 && (
@@ -256,29 +256,40 @@ function DispatchChart({
 }) {
   const { t } = useTranslation("status");
 
+  /** 桶宽自适应 · 窗口越长桶越粗 · 保证柱子数量在 24-90 根之间（太多糊成一片）
+   *  ≤48h → 1 小时 · ≤336h(14d) → 6 小时 · 更长 → 1 天 */
+  const bucketMs =
+    hours <= 48  ? 3600_000 :
+    hours <= 336 ? 6 * 3600_000 :
+                   24 * 3600_000;
+
   const buckets = useMemo(() => {
     const now = Date.now();
     const from = now - hours * 3600_000;
-    // 建连续空桶 · 让"这段时间没开号"也能看出来（不连续的柱图会误导）
+    // 建连续空桶 · 让"这段时间没开号"也能看出来（跳着画的柱图会误导节奏）
     const map = new Map<number, number>();
-    const startHour = Math.floor(from / 3600_000) * 3600_000;
-    for (let ts = startHour; ts <= now; ts += 3600_000) map.set(ts, 0);
+    const start = Math.floor(from / bucketMs) * bucketMs;
+    for (let ts = start; ts <= now; ts += bucketMs) map.set(ts, 0);
     for (const e of events) {
       const ts = new Date(e.at).getTime();
-      if (ts < startHour) continue;
-      const key = Math.floor(ts / 3600_000) * 3600_000;
+      if (ts < start) continue;
+      const key = Math.floor(ts / bucketMs) * bucketMs;
       map.set(key, (map.get(key) ?? 0) + e.count);
     }
     return Array.from(map.entries())
       .sort((a, b) => a[0] - b[0])
       .map(([ts, keys]) => ({ ts, keys }));
-  }, [events, hours]);
+  }, [events, hours, bucketMs]);
 
   const hasAny = buckets.some(b => b.keys > 0);
   if (!hasAny) {
+    // 窗口 > 48h 时说"天"更好读（"近 30 天无开号记录" 比 "近 720 小时" 清楚）
+    const label = hours >= 48
+      ? t("chart.no-data-days", { days: Math.round(hours / 24) })
+      : t("chart.no-data-window", { hours });
     return (
       <div className="grid place-items-center text-label text-fg-tertiary" style={{ height }}>
-        {t("chart.no-data-window", { hours })}
+        {label}
       </div>
     );
   }
@@ -299,9 +310,11 @@ function DispatchChart({
           tick={{ fontSize: 11, fill: "hsl(var(--fg-tertiary))" }}
           tickFormatter={(ts: number) => {
             const d = new Date(ts);
-            return hours > 48
+            return bucketMs >= 24 * 3600_000
               ? `${d.getMonth() + 1}/${d.getDate()}`
-              : `${String(d.getHours()).padStart(2, "0")}:00`;
+              : bucketMs > 3600_000
+                ? `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}h`
+                : `${String(d.getHours()).padStart(2, "0")}:00`;
           }}
         />
         <YAxis
@@ -319,11 +332,13 @@ function DispatchChart({
             const p = payload[0].payload as { ts: number; keys: number };
             const d = new Date(p.ts);
             const pad = (n: number) => String(n).padStart(2, "0");
+            // 日桶不显示小时（那个小时数没意义 · 是桶起点不是事件时刻）
+            const stamp = bucketMs >= 24 * 3600_000
+              ? `${d.getMonth() + 1}/${d.getDate()}`
+              : `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:00`;
             return (
               <div className="rounded-xl border border-hairline bg-bg px-3 py-2 shadow-pop">
-                <div className="text-label text-fg-tertiary">
-                  {`${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:00`}
-                </div>
+                <div className="text-label text-fg-tertiary">{stamp}</div>
                 <div className="mt-0.5 font-semibold tnum">
                   {p.keys} {t("unit.keys")}
                 </div>
@@ -415,7 +430,7 @@ function VendorDetail({ anonID }: { anonID: string }) {
                     <Skeleton className="h-56 w-full" />
                   ) : (
                     <div className="rounded-2xl border border-hairline bg-surface p-5">
-                      <DispatchChart events={events} hours={168} height={220} />
+                      <DispatchChart events={events} hours={parseWindowHours(data?.window, 168)} height={220} />
                     </div>
                   )}
                 </div>
@@ -525,6 +540,14 @@ function EventLog({
 // ═══════════════════════════════════════════════════════════
 // 格式化
 // ═══════════════════════════════════════════════════════════
+
+/** 解析后端回报的 window 字段（"168h" / "720h"）· 后端会因为自动扩窗改这个值 ·
+ *  图必须按**实际**窗口画 · 不能按请求的窗口画（否则老数据落在图外看不见） */
+function parseWindowHours(window: string | undefined, fallback: number): number {
+  if (!window) return fallback;
+  const n = parseInt(window.replace(/h$/, ""), 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
 
 function fmtCompact(n: number): string {
   if (!n) return "0";
