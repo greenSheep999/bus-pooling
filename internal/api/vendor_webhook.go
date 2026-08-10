@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -38,19 +39,35 @@ var knownVendorSlugs = map[string]bool{
 // hmacSpec 描述有 HMAC 那几家的签名协议
 type hmacSpec struct {
 	Header    string // 请求 header 名·不区分大小写
-	Prefix    string // 值前缀 · sha256= 或 v1=
+	Prefix    string // 值前缀 · sha256= / v1= / 空（纯 hex）
 	TimeHdr   string // 时间戳 header 名·空 = 不带 timestamp
-	SecretEnv string // 环境变量名
+	VendorID  string // vendor_account 表里的 internal vendor_id（生产从表读 secret）
+	SecretEnv string // 环境变量名（dev 兜底 · 或表未 seed 时降级）
 }
 
+// hmacSpecs · vendor webhook 签名协议 · 一家一条。
+//
+// **VendorID** = vendor_account 表里的 internal vendor_id（跟白名单 slug 不完全一样：
+// 白名单 slug 是 vendor 品牌用的（91kiro）· vendor_account 里是内部 id（kiro91））。
+// 装两个 key 才能在 receiver（用白名单 slug）里查表（用 vendor_account 里的 id）。
 var hmacSpecs = map[string]*hmacSpec{
 	"91kiro": {
 		Header: "X-KM-Signature", Prefix: "sha256=", TimeHdr: "X-KM-Timestamp",
+		VendorID:  "kiro91",
 		SecretEnv: "BP_VENDOR_KIRO91_WEBHOOK_SECRET",
 	},
 	"kirodrop": {
 		Header: "X-Kiro-Signature", Prefix: "v1=", TimeHdr: "X-Kiro-Timestamp",
+		VendorID:  "kirodrop",
 		SecretEnv: "BP_VENDOR_KIRODROP_WEBHOOK_SECRET",
+	},
+	// kiroappcc · X-Kiro-Signature 头 · **纯 hex** · 无 v1= 前缀 · 无 timestamp ·
+	// 签名原文 = 请求体（不含时间戳前缀）· vendor 后台文案：
+	//   "每次推送带 X-Kiro-Signature 头 · 值为 HMAC-SHA256(密钥, 请求体)"
+	"kiroappcc": {
+		Header: "X-Kiro-Signature", Prefix: "", TimeHdr: "",
+		VendorID:  "kiroappcc",
+		SecretEnv: "BP_VENDOR_KIROAPPCC_WEBHOOK_SECRET",
 	},
 }
 
@@ -73,10 +90,11 @@ func (s *Server) handleVendorWebhook(w http.ResponseWriter, r *http.Request) err
 
 	spec, wantsHMAC := hmacSpecs[slug]
 	if wantsHMAC {
-		secret := os.Getenv(spec.SecretEnv)
+		secret := s.resolveWebhookSecret(r.Context(), spec)
 		if secret == "" {
 			// 密钥没配·**拒**（返 401 让 vendor 知道要重发或联系我方）
-			slog.Warn("vendor webhook 密钥未配 · 拒收", "vendor", slug, "env", spec.SecretEnv)
+			slog.Warn("vendor webhook 密钥未配 · 拒收",
+				"vendor", slug, "vendor_id", spec.VendorID, "env", spec.SecretEnv)
 			return &Fail{Status: http.StatusUnauthorized,
 				Err: &Error{Code: "webhook_not_configured", Message: "webhook 未配置密钥"}}
 		}
@@ -112,6 +130,21 @@ func (s *Server) handleVendorWebhook(w http.ResponseWriter, r *http.Request) err
 		"note":      "阶段 1a 仅接收 · 事件在 1d 处理",
 	})
 	return nil
+}
+
+// resolveWebhookSecret · 从 vendor_account 表读 webhook_secret 明文（AES 解密后）·
+// 表空 fallback env·两个都空返 ""。
+//
+// **决策**（decisions §11.6）：生产环境走表 · env 只是 dev 兼容通道。
+// 表查错误不 log 到高位（会有 401 后续告警 · 别重复噪音）。
+func (s *Server) resolveWebhookSecret(ctx context.Context, spec *hmacSpec) string {
+	if s.vaStore != nil && spec.VendorID != "" {
+		cred, err := s.vaStore.LoadActive(ctx, spec.VendorID)
+		if err == nil && cred != nil && cred.WebhookSecret != "" {
+			return cred.WebhookSecret
+		}
+	}
+	return os.Getenv(spec.SecretEnv)
 }
 
 // verifyVendorHMAC · 有 HMAC 的 vendor 通用格式：

@@ -597,6 +597,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		SecureCookie:        secureCookie,
 		Promos:              cfg.Promo.Items,
 		CommunityChannels:   cfg.Community.Channels,
+		VendorAccounts:      vaStore, // vendor_account 表 · webhook 验签走这里读 secret
 	})
 	apiSrv.Routes(mux)
 

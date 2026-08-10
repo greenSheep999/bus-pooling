@@ -26,6 +26,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/strategy"
 	"github.com/bus-pooling/bus-pooling/internal/topup"
 	"github.com/bus-pooling/bus-pooling/internal/topupchannel"
+	"github.com/bus-pooling/bus-pooling/internal/vendoraccount"
 	"github.com/bus-pooling/bus-pooling/internal/vendorview"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
@@ -62,6 +63,9 @@ type Server struct {
 	promos []config.PromoItem
 	// communityChannels 社群渠道链接（config.community.channels）· 空 = 前端展示占位
 	communityChannels []config.CommunityChannel
+	// vaStore · vendor_account 表 · webhook receiver 从这里读 webhook_secret 明文
+	// （AES 解密后的·内存里·永不落 log）· nil 时 fallback 到 env
+	vaStore *vendoraccount.Store
 }
 
 // ServerDeps 装配 Server 需要的依赖。decider 允许为 nil（migrate 之类的
@@ -90,6 +94,9 @@ type ServerDeps struct {
 	Promos []config.PromoItem
 	// CommunityChannels 社群渠道配置（config.community.channels）
 	CommunityChannels []config.CommunityChannel
+	// VendorAccounts vendor_account 表 · webhook receiver 验签时 · 从表读 vendor
+	// 的 webhook_secret（AES 解密后的明文）· 允许 nil（旧集成走 env fallback）
+	VendorAccounts *vendoraccount.Store
 }
 
 func NewServer(d ServerDeps) *Server {
@@ -120,6 +127,7 @@ func NewServer(d ServerDeps) *Server {
 		secureCookie:        d.SecureCookie,
 		promos:              d.Promos,
 		communityChannels:   d.CommunityChannels,
+		vaStore:             d.VendorAccounts,
 	}
 }
 

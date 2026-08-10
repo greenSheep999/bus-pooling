@@ -23,7 +23,9 @@ func TestVendorWebhook_UnknownSlug404(t *testing.T) {
 // TestVendorWebhook_NoHMACVendorAccepts · 无 HMAC 的 4 家不看签名·直接 200
 func TestVendorWebhook_NoHMACVendorAccepts(t *testing.T) {
 	env := newEnv(t)
-	for _, slug := range []string{"kiroceo", "kirooo", "kiroappio", "kiroappcc"} {
+	// kiroappcc 曾经无签名 · 2026-08-11 起 vendor 后台加了 X-Kiro-Signature HMAC 校验 ·
+	// 从这组移到 HMAC 家的测试用例（见 vendor_webhook.go hmacSpecs）
+	for _, slug := range []string{"kiroceo", "kirooo", "kiroappio"} {
 		status, _ := env.do(t, "POST", "/api/webhooks/vendor/"+slug,
 			map[string]any{"event": "credential.dead", "credential_id": "abc"})
 		if status != http.StatusOK {
