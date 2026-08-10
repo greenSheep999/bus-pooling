@@ -279,6 +279,63 @@ func (s *OrderKeyStore) DispatchSummary(ctx context.Context, vendorID string, re
 	return out, rows.Err()
 }
 
+// DispatchesSince 拿窗口内的开号批次 · 倒序（最新在前）· 给统一事件流端点用。
+//
+// 跟 DispatchSummary 的区别：这个返**逐条**（前端画图 + log 列表都要每条）·
+// DispatchSummary 只返最近 N 条 + 汇总数字。
+func (s *OrderKeyStore) DispatchesSince(
+	ctx context.Context, vendorID string, windowHours, limit int,
+) ([]providers.VendorDispatch, error) {
+	if s.db == nil {
+		return nil, nil
+	}
+	if windowHours <= 0 {
+		windowHours = 168
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	cutoff := time.Now().UTC().Add(-time.Duration(windowHours) * time.Hour).Format(time.RFC3339)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT dispatch_key, COALESCE(region, ''), dispatched_at, count,
+		       COALESCE(alive, 0), COALESCE(dead, 0), COALESCE(dead_at, ''),
+		       COALESCE(status, '')
+		  FROM vendor_dispatch
+		 WHERE vendor_id = ? AND dispatched_at >= ?
+		 ORDER BY dispatched_at DESC
+		 LIMIT ?
+	`, vendorID, cutoff, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []providers.VendorDispatch
+	for rows.Next() {
+		var (
+			d                      providers.VendorDispatch
+			dispatchedAt, deadAt   string
+		)
+		if err := rows.Scan(
+			&d.DispatchKey, &d.Region, &dispatchedAt, &d.Count,
+			&d.Alive, &d.Dead, &deadAt, &d.Status,
+		); err != nil {
+			return nil, err
+		}
+		if t, e := time.Parse(time.RFC3339, dispatchedAt); e == nil {
+			d.DispatchedAt = t
+		}
+		if deadAt != "" {
+			if t, e := time.Parse(time.RFC3339, deadAt); e == nil {
+				d.DeadAt = t
+			}
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // KeyLifecycleBucket 一小时（或 windowMinutes）时间桶的聚合 · 用于 /status 页画图。
 type KeyLifecycleBucket struct {
 	BucketStart   string // RFC3339 UTC · 桶起点

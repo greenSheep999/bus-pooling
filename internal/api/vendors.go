@@ -72,6 +72,34 @@ func (s *Server) handleVendorStatusTrend(w http.ResponseWriter, r *http.Request)
 	return nil
 }
 
+// GET /api/vendors/status/{anon_id}/events?window=168h&limit=200 · **公开端点**
+//
+// 统一的开号事件流 —— 6 家**同一形状**（有 fleet 端点的读 vendor 自报批次 ·
+// 没有的从探针增量推同形状事件 · 标 derived=true）。前端只画一种图 + 一个 log 列表。
+//
+// 取代老的 /trend（那个按 source 返两种 schema · 前端得 if/else 画柱或线）。
+func (s *Server) handleVendorDispatchEvents(w http.ResponseWriter, r *http.Request) error {
+	if s.vendorView == nil {
+		return ErrNotFound("vendor status 未装配")
+	}
+	anonID := r.PathValue("anon_id")
+	if anonID == "" {
+		return ErrBadRequest("缺少 anon_id")
+	}
+	windowHours := atoiDefault(strings.TrimSuffix(r.URL.Query().Get("window"), "h"), 168)
+	limit := atoiDefault(r.URL.Query().Get("limit"), 200)
+
+	out, err := s.vendorView.DispatchEvents(r.Context(), anonID, windowHours, limit)
+	if err != nil {
+		return err
+	}
+	if out == nil {
+		return ErrNotFound("找不到这家 vendor")
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
 // GET /api/vendors/stock
 func (s *Server) handleVendorsStock(w http.ResponseWriter, r *http.Request) error {
 	if s.vendorView == nil {

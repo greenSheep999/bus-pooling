@@ -1,197 +1,74 @@
 {
   "meta": {
-    "title": "Vendor status · Kiro.bus",
-    "description": "Live status of 6 upstream vendors · stock, uptime, incident history · open to everyone"
+    "title": "Upstream status · Kiro.bus",
+    "description": "Dispatch records from 6 upstream platforms · keys per batch · survival · open to everyone"
   },
   "hero": {
     "eyebrow": "All systems running",
-    "title": "Multiple vendors, one transparent ledger",
-    "subtitle": "The system probes every vendor continuously — every real dispatch event lands here.",
-    "probed-at": "Last probe {{time}}",
-    "no-data": "Data still warming up · metrics may be incomplete in the first 24 hours after launch"
+    "title": "Upstream dispatch log",
+    "subtitle": "We continuously record every batch of API keys each upstream platform releases — when, how many, and how many are still alive. All public.",
+    "no-data": "Collecting data"
   },
-  "overview": {
-    "total-keys": "Total dispatched",
-    "stocked": "Stocked vendors",
-    "avg-interval": "Avg interval",
-    "latest-batch": "Latest batch"
+  "unit": {
+    "keys": "keys",
+    "batches": "batches",
+    "minutes": "min"
   },
-  "fleet": {
-    "title": "Upstream vendors",
-    "subtitle": "Tap to see full history"
+  "card": {
+    "detail": "View log",
+    "keys-7d": "Keys · 7d",
+    "batches-7d": "Batches · 7d",
+    "last-open": "Last batch"
   },
-  "row": {
-    "uptime": "{{pct}}% uptime",
-    "warming": "Warming up",
-    "stock-many": "In stock",
-    "stock-low": "Low stock",
-    "stock-out": "Out",
-    "stock-unknown": "Unknown",
-    "keys-unit": "keys"
+  "chart": {
+    "no-data": "No dispatch records yet",
+    "no-data-window": "No dispatches in the last {{hours}}h",
+    "source-vendor": "Batch records reported by upstream",
+    "source-observed": "Inferred from our per-minute probing (upstream exposes no batch API)"
   },
   "tags": {
-    "lifespan-long": "Long-lived · > 1h",
-    "lifespan-mid": "Mid · 10min–1h",
-    "lifespan-short": "Short · < 10min",
-    "warranty": "Warranty",
+    "stock-many": "In stock",
+    "stock-low": "Low stock",
+    "stock-out": "Out of stock",
+    "lifespan-long": "Lifespan > 1h",
+    "lifespan-mid": "Lifespan 10–60min",
+    "lifespan-short": "Lifespan < 10min",
     "warranty-min": "{{minutes}}min warranty",
-    "incidents": "{{count}} incident days"
+    "uptime": "{{pct}}% uptime",
+    "incidents": "{{count}} incident days · 7d"
   },
   "detail": {
     "back": "Back to list",
-    "not-found": "Vendor not found",
-    "total-keys": "Total dispatched",
-    "total-batches": "Total batches",
+    "not-found": "Upstream not found",
+    "keys-7d": "Keys · 7d",
+    "batches-7d": "Batches · 7d",
     "avg-interval": "Avg interval",
-    "uptime-24h": "24h uptime",
     "warranty": "Warranty",
-    "warranty-value": "{{minutes}} min",
-    "max-per-order": "Max per order",
-    "timeline-title": "7-day rhythm",
-    "timeline-subtitle": "Each dot is a batch · size = count · green = new · gray = dead",
-    "recent-events": "Recent activity"
+    "chart-title": "Keys dispatched · 7 days"
   },
-  "col": {
-    "vendor": "Vendor",
-    "status": "Status",
-    "stock": "Stock",
-    "region": "Regions",
-    "warranty": "Warranty",
-    "uptime": "24h uptime",
-    "stockout": "24h stockout",
-    "lifespan": "Avg lifespan",
-    "incidents": "7d incidents"
-  },
-  "status": {
-    "alive": "Running",
-    "dead": "Down",
-    "unknown": "Unknown"
-  },
-  "error-kind": {
-    "timeout": "Timeout",
-    "auth": "Auth failed",
-    "http_5xx": "Upstream 5xx",
-    "http_4xx": "Upstream 4xx",
-    "canceled": "Canceled",
-    "empty_response": "Empty response",
-    "other": "Other error"
-  },
-  "stock-bucket": {
-    "many": "Plenty",
-    "low": "Low",
-    "out": "Out of stock",
-    "unknown": "-"
-  },
-  "region": {
-    "count": "{{count}} regions",
-    "unknown": "-"
-  },
-  "warranty": {
-    "yes": "{{minutes}} min warranty",
-    "no-warranty": "No warranty",
-    "no-data": "-"
-  },
-  "max-per-order": {
-    "value": "Max {{count}} per order",
-    "no-data": ""
-  },
-  "uptime": {
-    "value": "{{pct}}%",
-    "unknown": "Not enough samples"
-  },
-  "stockout": {
-    "none": "0 min",
-    "value": "{{minutes}} min"
-  },
-  "lifespan": {
-    "long": "Long (>1h)",
-    "mid": "Mid (10min–1h)",
-    "short": "Short (<10min)",
-    "unknown": "-"
-  },
-  "incidents": {
-    "none": "No incidents in 7 days",
-    "count": "{{count}} days with incidents"
-  },
-  "sparkline": {
-    "label": "24h uptime",
-    "probe-label": "24h uptime",
-    "backfill-label": "Key lifecycle",
-    "aria": "Vendor activity sparkline",
-    "warming-up": "Warming up · no data yet",
-    "born": "+{{count}} new",
-    "died": "-{{count}} died"
-  },
-  "public-status": {
-    "strip-label": "Vendor-reported",
-    "active": "Active",
-    "dead": "Dead",
-    "stock": "Stock",
-    "total": "Lifetime",
-    "uptime": "Uptime",
-    "generating": "Generating"
-  },
-  "history-strip": {
-    "label": "Our history",
-    "orders": "Orders",
-    "keys": "Keys",
-    "active": "Live",
-    "dead": "Dead",
-    "avg-life": "Avg lifespan"
+  "log": {
+    "title": "Dispatch log",
+    "count": "{{count}} records",
+    "col-time": "Time",
+    "col-region": "Region",
+    "col-count": "Released",
+    "col-alive": "Alive now",
+    "col-status": "Status",
+    "status-running": "Live",
+    "status-done": "Sold out",
+    "status-dead": "All dead",
+    "derived-note": "This upstream exposes no batch query API. Records above are inferred from our per-minute stock probing: timestamps are when we observed the change (0–60s after the actual release), counts are the net increase. Survival data is not provided by upstream."
   },
   "cta": {
     "prices": {
-      "title": "Want unit prices?",
-      "body": "Log in and open /prices for per-vendor price trends and the boxplot matrix",
+      "title": "Want prices?",
+      "body": "Sign in to see per-upstream price trends",
       "action": "See prices"
     },
     "join": {
       "title": "Want to try pooling?",
-      "body": "Sign up free, start a bus or join someone else's, split the cost per head — the fuller the bus, the lower the price",
+      "body": "Sign up free, start a bus or join one — cost splits per head",
       "action": "Get on free"
     }
-  },
-  "three-things": {
-    "avail": {
-      "label": "Can you use it",
-      "yes": "Online",
-      "no": "Offline",
-      "stock-many": "Plenty in stock",
-      "stock-low": "Running low",
-      "stock-out": "Out of stock",
-      "stock-unknown": "Stock unknown",
-      "region-count": "{{count}} region(s) available",
-      "no-region": "All regions",
-      "warranty-yes": "{{minutes}} min warranty",
-      "warranty-no": "No warranty"
-    },
-    "stable": {
-      "label": "How stable",
-      "uptime-value": "{{pct}}% up",
-      "uptime-unknown": "-",
-      "stockout-none": "No stockouts in 24h",
-      "stockout-value": "{{minutes}} min stockout in 24h",
-      "incidents-none": "No incidents in 7 days",
-      "incidents-value": "Incidents on {{count}} day(s)",
-      "sparkline-caption": "24h uptime · one point per 15 minutes"
-    },
-    "reliable": {
-      "label": "How reliable",
-      "batches-value": "{{count}} batches so far",
-      "keys-value": "{{count}} keys dispatched",
-      "interval-value": "One batch every {{minutes}} min on average",
-      "interval-fast": "One batch every {{minutes}} min on average",
-      "no-dispatch": "Warming up",
-      "last-value": "Latest batch · {{when}}",
-      "lifespan-long": "Keys last > 1 hour on average",
-      "lifespan-mid": "Keys last 10–60 min on average",
-      "lifespan-short": "Keys last < 10 min on average",
-      "lifespan-unknown": "Lifespan data warming up",
-      "sparkline-caption": "Recent dispatch cadence · one bar per hour"
-    },
-    "just-now": "just now",
-    "mins-ago": "{{count}} min ago",
-    "hours-ago": "{{count}} h ago",
-    "days-ago": "{{count}} d ago"
   }
 }

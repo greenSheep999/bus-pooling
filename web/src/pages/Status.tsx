@@ -1,7 +1,10 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
-import { ArrowRight, ChevronRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import {
+  Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from "recharts";
 import { AppFooter } from "@/components/AppFooter";
 import { PromoBar } from "@/components/PromoBar";
 import { PublicHeader } from "@/components/PublicHeader";
@@ -10,19 +13,21 @@ import { Button } from "@/components/ui/button";
 import { Card, Chip } from "@/components/ui/primitives";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  useVendorStatus, useVendorStatusTrend,
-  type VendorStatusRow, type VendorStatusTrendPoint,
+  useVendorStatus, useVendorDispatchEvents,
+  type VendorStatusRow, type VendorDispatchEvent,
 } from "@/api/hooks";
 import { cn } from "@/lib/utils";
 
-/** 上游状态页 · /status 公开可查
+/** 上游状态页 · /status 公开
  *
- *  信息层级：
- *   顶部 · 4 个总览数字（累计发号 / vendor 上架 / 平均间隔 / 最新一批）· 字号克制
- *   中部 · 每家一行 · 状态点 + 库存 + 稳定度 + 24h timeline + 累计 + 详情箭头
- *   详情 · 点行进 /status/:anon_id · 单家完整历史（另一个组件）
+ *  **一种数据形状 · 一种图**：后端 /events 端点对 6 家返同一形状的开号事件流
+ *  （有 fleet 端点的用上游自报 · 没有的从探针增量推 · 标 derived）。所以这里
+ *  只有一种图（每小时聚合柱状）+ 一个事件 log 列表 · 没有 if/else 换图形。
  *
- *  匿名 label（AWS-Q Kiro Vendor 01..06）永远脱敏 · 真名只 wholesale 档看 */
+ *  术语（对外一律用"API key"不用内部说法 · CLAUDE.md §12.6）：
+ *   - 一次「开号」= 上游放出一批 API key
+ *   - count = 这批几个 key
+ *   - 批 = 一次开号动作 */
 export default function StatusPage() {
   const params = useParams();
   if (params.anonId) return <VendorDetail anonID={params.anonId} />;
@@ -30,31 +35,13 @@ export default function StatusPage() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// Overview · /status 主页
+// 主页
 // ═══════════════════════════════════════════════════════════
 
 function StatusOverview() {
   const { t } = useTranslation("status");
   const { data, isLoading } = useVendorStatus();
   const vendors = data?.vendors ?? [];
-
-  const overview = useMemo(() => {
-    const totalKeys = vendors.reduce((s, v) => s + (v.dispatch?.total_keys_dispatched ?? 0), 0);
-    const aliveCount = vendors.filter(v => v.alive).length;
-    const stockedCount = vendors.filter(v => v.stock_bucket === "many" || v.stock_bucket === "low").length;
-    const intervals = vendors
-      .map(v => v.dispatch?.avg_interval_min)
-      .filter((x): x is number => typeof x === "number" && x > 0);
-    const avgInterval = intervals.length
-      ? intervals.reduce((s, x) => s + x, 0) / intervals.length
-      : 0;
-    const latestTs = vendors
-      .map(v => v.dispatch?.last_dispatch_at)
-      .filter((x): x is string => !!x)
-      .sort()
-      .pop();
-    return { totalKeys, aliveCount, stockedCount, avgInterval, latestTs };
-  }, [vendors]);
 
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
@@ -63,13 +50,12 @@ function StatusOverview() {
       <PublicHeader />
 
       <main className="flex-1">
-        <section className="page-container py-12 lg:py-14">
+        <section className="page-container py-10 lg:py-12">
           <div className="mx-auto max-w-5xl space-y-8">
 
-            {/* Hero · 简洁 · 不占太多屏幕 */}
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <PingDot tone={overview.aliveCount === vendors.length && vendors.length > 0 ? "ok" : "warn"} />
+                <PingDot tone="ok" />
                 <span className="font-mono text-label font-medium uppercase tracking-wider text-fg-tertiary">
                   {t("hero.eyebrow")}
                 </span>
@@ -82,68 +68,27 @@ function StatusOverview() {
               </p>
             </div>
 
-            {/* 总览数字 · 4 项 · 数字克制 (text-2xl) · label 灰色小字 */}
             {isLoading ? (
-              <Skeleton className="h-16 w-full" />
+              <div className="space-y-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-[132px] w-full" />
+                ))}
+              </div>
+            ) : vendors.length === 0 ? (
+              <Card className="p-8 text-center">
+                <p className="text-fg-secondary">{t("hero.no-data")}</p>
+              </Card>
             ) : (
-              <div className="grid grid-cols-2 gap-4 rounded-2xl border border-hairline bg-surface p-5 md:grid-cols-4 md:gap-6">
-                <Stat
-                  value={fmtCompact(overview.totalKeys)}
-                  label={t("overview.total-keys")} />
-                <Stat
-                  value={`${overview.stockedCount}/${vendors.length || 6}`}
-                  label={t("overview.stocked")}
-                  tone={overview.stockedCount === 0 ? "warn" : "ok"} />
-                <Stat
-                  value={overview.avgInterval > 0 ? fmtInterval(overview.avgInterval) : "-"}
-                  label={t("overview.avg-interval")} />
-                <Stat
-                  value={overview.latestTs ? fmtRelative(overview.latestTs) : "-"}
-                  label={t("overview.latest-batch")} />
+              <div className="space-y-3">
+                {vendors.map((v) => <VendorCard key={v.anon_id} vendor={v} />)}
               </div>
             )}
 
-            {/* 6 家列表 · 一行一家 · 点击进详情 */}
-            <div className="space-y-2">
-              <div className="flex items-baseline justify-between">
-                <h2 className="text-body-lg font-semibold">
-                  {t("fleet.title")}
-                </h2>
-                <p className="text-[11px] text-fg-tertiary">
-                  {t("fleet.subtitle")}
-                </p>
-              </div>
-
-              {isLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton key={i} className="h-14 w-full" />
-                  ))}
-                </div>
-              ) : vendors.length === 0 ? (
-                <Card className="p-8 text-center">
-                  <p className="text-fg-secondary">{t("hero.no-data")}</p>
-                </Card>
-              ) : (
-                <div className="overflow-hidden rounded-2xl border border-hairline bg-surface">
-                  {vendors.map((v, i) => (
-                    <VendorRow
-                      key={v.anon_id}
-                      vendor={v}
-                      isLast={i === vendors.length - 1} />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* CTA · 保留 */}
             <div className="grid gap-4 md:grid-cols-2">
               <Card className="flex flex-col justify-between gap-3 p-5">
                 <div className="space-y-1">
                   <h3 className="font-semibold">{t("cta.prices.title")}</h3>
-                  <p className="text-label leading-relaxed text-fg-secondary">
-                    {t("cta.prices.body")}
-                  </p>
+                  <p className="text-label leading-relaxed text-fg-secondary">{t("cta.prices.body")}</p>
                 </div>
                 <Button asChild variant="ghost" className="self-start">
                   <Link to="/prices">{t("cta.prices.action")}<ArrowRight /></Link>
@@ -152,9 +97,7 @@ function StatusOverview() {
               <Card className="flex flex-col justify-between gap-3 p-5 border-brand-hairline bg-brand-subtle/30">
                 <div className="space-y-1">
                   <h3 className="font-semibold">{t("cta.join.title")}</h3>
-                  <p className="text-label leading-relaxed text-fg-secondary">
-                    {t("cta.join.body")}
-                  </p>
+                  <p className="text-label leading-relaxed text-fg-secondary">{t("cta.join.body")}</p>
                 </div>
                 <Button asChild variant="brand" className="self-start">
                   <Link to="/register">{t("cta.join.action")}<ArrowRight /></Link>
@@ -170,36 +113,95 @@ function StatusOverview() {
   );
 }
 
-/** 顶部 4 数字 · 克制字号 */
-function Stat({
-  value, label, tone,
+/** 单家 vendor 卡 · 主页一行一家
+ *
+ *  布局：左（名字 + 标签）· 中（24h 柱图）· 右（3 个数字）
+ *  所有 6 家同一种图 —— 数据来源不同只在图下角标一句说明。 */
+function VendorCard({ vendor }: { vendor: VendorStatusRow }) {
+  const { t } = useTranslation("status");
+  const { data, isLoading } = useVendorDispatchEvents(vendor.anon_id, "168h");
+  const events = data?.events ?? [];
+  const summary = data?.summary;
+  const derived = data?.source === "observed";
+
+  const last = events[0];
+
+  return (
+    <Link
+      to={`/status/${vendor.anon_id}`}
+      className="group block rounded-2xl border border-hairline bg-surface p-5 transition-all hover:border-fg-tertiary hover:shadow-md"
+    >
+      {/* 头行 · 名字 + 标签 + 详情箭头 */}
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-2">
+          <div className="flex items-center gap-2">
+            <PingDot tone={vendor.alive ? "ok" : "danger"} />
+            <span className="font-semibold">{vendor.anon_label}</span>
+          </div>
+          <QualityTags vendor={vendor} />
+        </div>
+        <span className="shrink-0 text-label text-fg-tertiary transition-colors group-hover:text-fg">
+          {t("card.detail")} →
+        </span>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-[1fr_auto] md:gap-6">
+        {/* 图 · 24h 每小时聚合 · 6 家同一种 */}
+        <div className="min-w-0">
+          {isLoading ? (
+            <Skeleton className="h-[72px] w-full" />
+          ) : (
+            <DispatchChart events={events} hours={24} height={72} compact />
+          )}
+          <p className="mt-1 text-[10px] text-fg-tertiary">
+            {events.length === 0
+              ? t("chart.no-data")
+              : derived
+                ? t("chart.source-observed")
+                : t("chart.source-vendor")}
+          </p>
+        </div>
+
+        {/* 数字 · 3 项 · 单位写清楚 */}
+        <div className="grid grid-cols-3 gap-4 md:w-[280px]">
+          <Metric
+            value={fmtCompact(summary?.keys ?? 0)}
+            unit={t("unit.keys")}
+            label={t("card.keys-7d")} />
+          <Metric
+            value={String(summary?.batches ?? 0)}
+            unit={t("unit.batches")}
+            label={t("card.batches-7d")} />
+          <Metric
+            value={last ? fmtRelative(last.at) : "—"}
+            label={t("card.last-open")} />
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+/** 数字 + 单位 + 说明 · 单位独立小字 · 避免"号"这种没头没尾的字 */
+function Metric({
+  value, unit, label,
 }: {
   value: string;
+  unit?: string;
   label: string;
-  tone?: "ok" | "warn";
 }) {
-  const toneClass =
-    tone === "ok" ? "text-ok-fg" :
-    tone === "warn" ? "text-warn-fg" :
-    "text-fg";
   return (
-    <div className="space-y-0.5">
-      <div className={cn("font-mono text-xl font-semibold tabular-nums md:text-2xl", toneClass)}>
+    <div>
+      <div className="font-mono text-lg font-semibold tabular-nums leading-tight">
         {value}
+        {unit && <span className="ml-0.5 text-[11px] font-normal text-fg-tertiary">{unit}</span>}
       </div>
-      <div className="text-[11px] uppercase tracking-wider text-fg-tertiary">
-        {label}
-      </div>
+      <div className="mt-0.5 text-[10px] leading-tight text-fg-tertiary">{label}</div>
     </div>
   );
 }
 
-/** 状态点 · ping 动画 · 表示"实时活着" */
-function PingDot({ tone = "ok" }: { tone?: "ok" | "warn" | "danger" }) {
-  const bg =
-    tone === "ok" ? "bg-ok-solid" :
-    tone === "warn" ? "bg-warn-solid" :
-    "bg-danger-solid";
+function PingDot({ tone }: { tone: "ok" | "warn" | "danger" }) {
+  const bg = tone === "ok" ? "bg-ok-solid" : tone === "warn" ? "bg-warn-solid" : "bg-danger-solid";
   return (
     <span className="relative flex size-2">
       <span className={cn("absolute inline-flex size-full animate-ping rounded-full opacity-60", bg)} />
@@ -208,154 +210,148 @@ function PingDot({ tone = "ok" }: { tone?: "ok" | "warn" | "danger" }) {
   );
 }
 
-/** 单行 vendor · 主页只显示 · 点击进详情
- *  语义拆分：
- *   - 服务状态（alive/dead 网络通不通）
- *   - 库存（有货/缺货 stock_bucket）
- *   - 最近一批 · 相对时间
- *   - 24h timeline · 事件点风格 · 6 家统一 */
-function VendorRow({ vendor, isLast }: { vendor: VendorStatusRow; isLast: boolean }) {
+function QualityTags({ vendor }: { vendor: VendorStatusRow }) {
   const { t } = useTranslation("status");
-  const disp = vendor.dispatch;
-  const batches = disp?.total_batches ?? 0;
-  const keys = disp?.total_keys_dispatched ?? 0;
+  const tags: { label: string; tone: "ok" | "warn" | "danger" | "neutral" | "brand" }[] = [];
 
-  const stockLabel =
-    vendor.stock_bucket === "many" ? t("row.stock-many") :
-    vendor.stock_bucket === "low"  ? t("row.stock-low") :
-    vendor.stock_bucket === "out"  ? t("row.stock-out") :
-                                     t("row.stock-unknown");
-  const stockTone: "ok" | "warn" | "danger" | "neutral" =
-    vendor.stock_bucket === "many" ? "ok" :
-    vendor.stock_bucket === "low"  ? "warn" :
-    vendor.stock_bucket === "out"  ? "danger" :
-                                     "neutral";
+  if (vendor.stock_bucket === "many") tags.push({ label: t("tags.stock-many"), tone: "ok" });
+  else if (vendor.stock_bucket === "low") tags.push({ label: t("tags.stock-low"), tone: "warn" });
+  else if (vendor.stock_bucket === "out") tags.push({ label: t("tags.stock-out"), tone: "danger" });
 
-  // "服务状态"（不同于库存）
-  const serviceOk = vendor.alive;
-  const uptime = vendor.uptime_24h_pct;
+  if (vendor.lifespan_bucket === "long") tags.push({ label: t("tags.lifespan-long"), tone: "ok" });
+  else if (vendor.lifespan_bucket === "mid") tags.push({ label: t("tags.lifespan-mid"), tone: "neutral" });
+  else if (vendor.lifespan_bucket === "short") tags.push({ label: t("tags.lifespan-short"), tone: "warn" });
 
+  if (vendor.has_warranty && vendor.warranty_minutes) {
+    tags.push({ label: t("tags.warranty-min", { minutes: vendor.warranty_minutes }), tone: "brand" });
+  }
+  if (vendor.uptime_24h_pct !== undefined) {
+    tags.push({
+      label: t("tags.uptime", { pct: vendor.uptime_24h_pct }),
+      tone: vendor.uptime_24h_pct >= 99 ? "ok" : vendor.uptime_24h_pct >= 95 ? "neutral" : "warn",
+    });
+  }
+  if (vendor.incidents_7d && vendor.incidents_7d.length > 0) {
+    tags.push({ label: t("tags.incidents", { count: vendor.incidents_7d.length }), tone: "warn" });
+  }
+
+  if (tags.length === 0) return null;
   return (
-    <Link
-      to={`/status/${vendor.anon_id}`}
-      className={cn(
-        "group flex items-center gap-3 p-4 transition-colors hover:bg-fg/[0.02] md:gap-5 md:p-5",
-        !isLast && "border-b border-hairline",
-      )}
-    >
-      {/* 左 · 状态点 + label + 服务/uptime 小字 */}
-      <div className="flex min-w-0 items-center gap-3 md:w-[190px]">
-        <PingDot tone={serviceOk ? "ok" : "danger"} />
-        <div className="min-w-0">
-          <div className="truncate text-body-sm font-medium">
-            {vendor.anon_label}
-          </div>
-          <div className="text-[10px] uppercase tracking-wider text-fg-tertiary">
-            {uptime !== undefined
-              ? t("row.uptime", { pct: uptime })
-              : t("row.warming")}
-          </div>
-        </div>
-      </div>
-
-      {/* 中 · 库存 chip */}
-      <div className="hidden md:block md:w-[90px]">
-        <Chip tone={stockTone}>{stockLabel}</Chip>
-      </div>
-
-      {/* Timeline · 一致的事件点风格 */}
-      <div className="hidden min-w-0 flex-1 md:block">
-        <TimelineDots anonID={vendor.anon_id} />
-      </div>
-
-      {/* 右 · 累计数字 + 相对时间 */}
-      <div className="ml-auto text-right md:min-w-[130px]">
-        {batches > 0 ? (
-          <>
-            <div className="font-mono text-body-sm font-semibold tabular-nums">
-              {fmtCompact(keys)}
-              <span className="ml-1 text-[11px] text-fg-tertiary">
-                {t("row.keys-unit")}
-              </span>
-            </div>
-            <div className="text-[10px] text-fg-tertiary">
-              {disp?.last_dispatch_at ? fmtRelative(disp.last_dispatch_at) : t("row.warming")}
-            </div>
-          </>
-        ) : (
-          <div className="text-[11px] text-fg-tertiary">{t("row.warming")}</div>
-        )}
-      </div>
-
-      {/* 详情箭头 */}
-      <ChevronRight className="size-4 shrink-0 text-fg-tertiary transition-transform group-hover:translate-x-0.5 group-hover:text-fg" />
-    </Link>
+    <div className="flex flex-wrap gap-1.5">
+      {tags.map((tag, i) => <Chip key={i} tone={tag.tone}>{tag.label}</Chip>)}
+    </div>
   );
 }
 
-/** 24h timeline · 事件点风格（一堆小圆点分布在时间轴上）· 6 家统一
- *  优先 backfill · fallback probe · 都无就静默 */
-function TimelineDots({ anonID }: { anonID: string }) {
-  const { data, isLoading } = useVendorStatusTrend(anonID, "24h");
-  if (isLoading) return <div className="h-8" />;
-  const points = data?.points ?? [];
-  if (points.length < 2) return <div className="h-8" />;
+/** 唯一的图 · 把事件流按小时聚合成柱状
+ *
+ *  6 家共用 —— 事件来源（vendor 自报 / 探针推算）不改变图形，只改图下那句说明。
+ *  y = 该小时发出的 API key 数 · x = 时间。 */
+function DispatchChart({
+  events, hours, height = 220, compact = false,
+}: {
+  events: VendorDispatchEvent[];
+  hours: number;
+  height?: number;
+  compact?: boolean;
+}) {
+  const { t } = useTranslation("status");
 
-  // 每个 point 变成 0-N 个"事件点" · 数据越多点越多
-  const events: { t: number; alive: boolean; weight: number }[] = [];
-  const source = data?.source;
-  for (const p of points) {
-    const ts = new Date(p.t).getTime();
-    if (source === "backfill") {
-      const born = p.keys_born ?? 0;
-      const died = p.keys_died ?? 0;
-      if (born > 0) events.push({ t: ts, alive: true, weight: Math.min(born, 20) });
-      if (died > 0) events.push({ t: ts, alive: false, weight: Math.min(died, 20) });
-    } else if (p.uptime_pct !== undefined) {
-      // probe · 每桶画一个点 · alive 用 uptime
-      events.push({ t: ts, alive: p.uptime_pct >= 95, weight: 3 });
+  const buckets = useMemo(() => {
+    const now = Date.now();
+    const from = now - hours * 3600_000;
+    // 建连续空桶 · 让"这段时间没开号"也能看出来（不连续的柱图会误导）
+    const map = new Map<number, number>();
+    const startHour = Math.floor(from / 3600_000) * 3600_000;
+    for (let ts = startHour; ts <= now; ts += 3600_000) map.set(ts, 0);
+    for (const e of events) {
+      const ts = new Date(e.at).getTime();
+      if (ts < startHour) continue;
+      const key = Math.floor(ts / 3600_000) * 3600_000;
+      map.set(key, (map.get(key) ?? 0) + e.count);
     }
+    return Array.from(map.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([ts, keys]) => ({ ts, keys }));
+  }, [events, hours]);
+
+  const hasAny = buckets.some(b => b.keys > 0);
+  if (!hasAny) {
+    return (
+      <div className="grid place-items-center text-label text-fg-tertiary" style={{ height }}>
+        {t("chart.no-data-window", { hours })}
+      </div>
+    );
   }
-  if (events.length === 0) return <div className="h-8" />;
 
-  const first = new Date(points[0].t).getTime();
-  const last = new Date(points[points.length - 1].t).getTime();
-  const span = Math.max(1, last - first);
-
-  const W = 720, H = 32;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="none" style={{ height: 32 }}>
-      {/* 底轴 · 淡色线 */}
-      <line x1={0} y1={H / 2} x2={W} y2={H / 2} className="stroke-hairline" strokeWidth={0.5} />
-      {events.map((e, i) => {
-        const cx = ((e.t - first) / span) * W;
-        const r = 1.5 + Math.min(4, e.weight / 4);
-        return (
-          <circle
-            key={i}
-            cx={cx}
-            cy={H / 2}
-            r={r}
-            className={e.alive ? "fill-ok-solid" : "fill-fg-tertiary"}
-            opacity={e.alive ? 0.75 : 0.4}
-          />
-        );
-      })}
-    </svg>
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={buckets} margin={{ top: 4, right: 4, bottom: 0, left: compact ? 0 : -20 }}>
+        {!compact && (
+          <CartesianGrid strokeDasharray="0" vertical={false} stroke="hsl(var(--hairline))" />
+        )}
+        <XAxis
+          dataKey="ts"
+          hide={compact}
+          tickLine={false}
+          axisLine={false}
+          interval="preserveStartEnd"
+          minTickGap={48}
+          tick={{ fontSize: 11, fill: "hsl(var(--fg-tertiary))" }}
+          tickFormatter={(ts: number) => {
+            const d = new Date(ts);
+            return hours > 48
+              ? `${d.getMonth() + 1}/${d.getDate()}`
+              : `${String(d.getHours()).padStart(2, "0")}:00`;
+          }}
+        />
+        <YAxis
+          hide={compact}
+          tickLine={false}
+          axisLine={false}
+          width={40}
+          allowDecimals={false}
+          tick={{ fontSize: 11, fill: "hsl(var(--fg-tertiary))" }}
+        />
+        <Tooltip
+          cursor={{ fill: "hsl(var(--fg) / 0.04)" }}
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null;
+            const p = payload[0].payload as { ts: number; keys: number };
+            const d = new Date(p.ts);
+            const pad = (n: number) => String(n).padStart(2, "0");
+            return (
+              <div className="rounded-xl border border-hairline bg-bg px-3 py-2 shadow-pop">
+                <div className="text-label text-fg-tertiary">
+                  {`${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:00`}
+                </div>
+                <div className="mt-0.5 font-semibold tnum">
+                  {p.keys} {t("unit.keys")}
+                </div>
+              </div>
+            );
+          }}
+        />
+        <Bar dataKey="keys" fill="hsl(var(--brand-solid))" radius={[2, 2, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
   );
 }
 
 // ═══════════════════════════════════════════════════════════
-// Detail · /status/:anon_id
+// 详情页 · /status/:anon_id
 // ═══════════════════════════════════════════════════════════
 
 function VendorDetail({ anonID }: { anonID: string }) {
   const { t } = useTranslation("status");
   const { data: overview } = useVendorStatus();
-  const { data: trend, isLoading } = useVendorStatusTrend(anonID, "168h"); // 7 天
+  const { data, isLoading } = useVendorDispatchEvents(anonID, "168h");
 
   const vendor = overview?.vendors.find(v => v.anon_id === anonID);
   const notFound = !!overview && !vendor;
+  const events = data?.events ?? [];
+  const summary = data?.summary;
+  const derived = data?.source === "observed";
 
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
@@ -364,7 +360,7 @@ function VendorDetail({ anonID }: { anonID: string }) {
       <PublicHeader />
 
       <main className="flex-1">
-        <section className="page-container py-12">
+        <section className="page-container py-10">
           <div className="mx-auto max-w-5xl space-y-6">
             <Link to="/status" className="inline-flex items-center gap-1 text-label text-fg-tertiary hover:text-fg">
               ← {t("detail.back")}
@@ -377,11 +373,10 @@ function VendorDetail({ anonID }: { anonID: string }) {
             ) : !vendor ? (
               <div className="space-y-4">
                 <Skeleton className="h-24 w-full" />
-                <Skeleton className="h-40 w-full" />
+                <Skeleton className="h-72 w-full" />
               </div>
             ) : (
               <>
-                {/* 头部 · label + 服务状态 + 概览指标 */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
                     <PingDot tone={vendor.alive ? "ok" : "danger"} />
@@ -390,46 +385,44 @@ function VendorDetail({ anonID }: { anonID: string }) {
                   <QualityTags vendor={vendor} />
                 </div>
 
-                {/* 关键指标 grid · 6 项 · 详情页信息比主页多 */}
-                <div className="grid grid-cols-2 gap-4 rounded-2xl border border-hairline bg-surface p-5 md:grid-cols-3">
-                  <Stat
-                    value={fmtCompact(vendor.dispatch?.total_keys_dispatched ?? 0)}
-                    label={t("detail.total-keys")} />
-                  <Stat
-                    value={String(vendor.dispatch?.total_batches ?? 0)}
-                    label={t("detail.total-batches")} />
-                  <Stat
-                    value={vendor.dispatch?.avg_interval_min ? fmtInterval(vendor.dispatch.avg_interval_min) : "-"}
+                {/* 指标 · 单位写清楚 */}
+                <div className="grid grid-cols-2 gap-5 rounded-2xl border border-hairline bg-surface p-5 md:grid-cols-4">
+                  <Metric
+                    value={fmtCompact(summary?.keys ?? 0)}
+                    unit={t("unit.keys")}
+                    label={t("detail.keys-7d")} />
+                  <Metric
+                    value={String(summary?.batches ?? 0)}
+                    unit={t("unit.batches")}
+                    label={t("detail.batches-7d")} />
+                  <Metric
+                    value={summary?.avg_interval_min ? fmtInterval(summary.avg_interval_min) : "—"}
                     label={t("detail.avg-interval")} />
-                  <Stat
-                    value={vendor.uptime_24h_pct !== undefined ? `${vendor.uptime_24h_pct}%` : "-"}
-                    label={t("detail.uptime-24h")}
-                    tone={vendor.uptime_24h_pct !== undefined && vendor.uptime_24h_pct >= 99 ? "ok" : undefined} />
-                  <Stat
-                    value={vendor.warranty_minutes ? t("detail.warranty-value", { minutes: vendor.warranty_minutes }) : "-"}
+                  <Metric
+                    value={vendor.warranty_minutes ? String(vendor.warranty_minutes) : "—"}
+                    unit={vendor.warranty_minutes ? t("unit.minutes") : undefined}
                     label={t("detail.warranty")} />
-                  <Stat
-                    value={vendor.max_per_order ? String(vendor.max_per_order) : "-"}
-                    label={t("detail.max-per-order")} />
                 </div>
 
-                {/* 7 天 timeline · 详情页放大版 */}
+                {/* 图 · 跟主页同一个组件 · 只是放大 + 显示坐标轴 */}
                 <div className="space-y-2">
-                  <h2 className="text-body-lg font-semibold">{t("detail.timeline-title")}</h2>
-                  <p className="text-[11px] text-fg-tertiary">{t("detail.timeline-subtitle")}</p>
+                  <div className="flex items-baseline justify-between">
+                    <h2 className="text-body-lg font-semibold">{t("detail.chart-title")}</h2>
+                    <p className="text-[11px] text-fg-tertiary">
+                      {derived ? t("chart.source-observed") : t("chart.source-vendor")}
+                    </p>
+                  </div>
                   {isLoading ? (
-                    <Skeleton className="h-24 w-full" />
+                    <Skeleton className="h-56 w-full" />
                   ) : (
                     <div className="rounded-2xl border border-hairline bg-surface p-5">
-                      <TimelineDots7d points={trend?.points ?? []} source={trend?.source} />
+                      <DispatchChart events={events} hours={168} height={220} />
                     </div>
                   )}
                 </div>
 
-                {/* 事件列表 · 最近开号（如果 backfill 有数据） */}
-                {trend?.source === "backfill" && (trend.points?.length ?? 0) > 0 && (
-                  <RecentEvents points={trend.points} />
-                )}
+                {/* Log 列表 · 每次开号一行 · 6 家都有（有数据就有） */}
+                <EventLog events={events} derived={derived} loading={isLoading} />
               </>
             )}
           </div>
@@ -441,149 +434,97 @@ function VendorDetail({ anonID }: { anonID: string }) {
   );
 }
 
-/** 质量标签 · 跟 Overview 页 vendor 卡对齐 */
-function QualityTags({ vendor }: { vendor: VendorStatusRow }) {
-  const { t } = useTranslation("status");
-  const tags: { label: string; tone: "ok" | "warn" | "danger" | "neutral" | "brand" }[] = [];
-
-  // 库存
-  if (vendor.stock_bucket === "many") tags.push({ label: t("row.stock-many"), tone: "ok" });
-  else if (vendor.stock_bucket === "low") tags.push({ label: t("row.stock-low"), tone: "warn" });
-  else if (vendor.stock_bucket === "out") tags.push({ label: t("row.stock-out"), tone: "danger" });
-
-  // 寿命
-  if (vendor.lifespan_bucket === "long") tags.push({ label: t("tags.lifespan-long"), tone: "ok" });
-  else if (vendor.lifespan_bucket === "mid") tags.push({ label: t("tags.lifespan-mid"), tone: "neutral" });
-  else if (vendor.lifespan_bucket === "short") tags.push({ label: t("tags.lifespan-short"), tone: "warn" });
-
-  // 质保
-  if (vendor.has_warranty) {
-    tags.push({
-      label: vendor.warranty_minutes ? t("tags.warranty-min", { minutes: vendor.warranty_minutes }) : t("tags.warranty"),
-      tone: "brand",
-    });
-  }
-
-  // 24h 事件
-  if (vendor.incidents_7d && vendor.incidents_7d.length > 0) {
-    tags.push({ label: t("tags.incidents", { count: vendor.incidents_7d.length }), tone: "warn" });
-  }
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      {tags.map((tag, i) => <Chip key={i} tone={tag.tone}>{tag.label}</Chip>)}
-    </div>
-  );
-}
-
-/** 7 天详细 timeline · 大图 · x 轴显示日期 */
-function TimelineDots7d({
-  points, source,
+/** 开号 log · 一次开号一行 · 时间 / 区域 / 数量 / 状态 / 存活 */
+function EventLog({
+  events, derived, loading,
 }: {
-  points: VendorStatusTrendPoint[];
-  source?: string;
+  events: VendorDispatchEvent[];
+  derived: boolean;
+  loading: boolean;
 }) {
-  if (points.length < 2) {
-    return <p className="text-label text-fg-tertiary">数据积累中</p>;
-  }
-  const first = new Date(points[0].t).getTime();
-  const last = new Date(points[points.length - 1].t).getTime();
-  const span = Math.max(1, last - first);
-  const W = 900, H = 80;
-
-  const events: { t: number; alive: boolean; weight: number }[] = [];
-  for (const p of points) {
-    const ts = new Date(p.t).getTime();
-    if (source === "backfill") {
-      const born = p.keys_born ?? 0;
-      const died = p.keys_died ?? 0;
-      if (born > 0) events.push({ t: ts, alive: true, weight: born });
-      if (died > 0) events.push({ t: ts, alive: false, weight: died });
-    } else if (p.uptime_pct !== undefined) {
-      events.push({ t: ts, alive: p.uptime_pct >= 95, weight: 3 });
-    }
-  }
-
-  const maxWeight = Math.max(1, ...events.map(e => e.weight));
-
-  return (
-    <div className="space-y-2">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="none" style={{ height: 80 }}>
-        <line x1={0} y1={H / 2} x2={W} y2={H / 2} className="stroke-hairline" strokeWidth={0.5} />
-        {events.map((e, i) => {
-          const cx = ((e.t - first) / span) * W;
-          const r = 2 + (e.weight / maxWeight) * 10;
-          return (
-            <circle
-              key={i}
-              cx={cx}
-              cy={H / 2}
-              r={r}
-              className={e.alive ? "fill-ok-solid" : "fill-fg-tertiary"}
-              opacity={e.alive ? 0.7 : 0.35}
-            />
-          );
-        })}
-      </svg>
-      <div className="flex justify-between text-[10px] uppercase tracking-wider text-fg-tertiary">
-        <span>{fmtDate(points[0].t)}</span>
-        <span>{fmtDate(points[points.length - 1].t)}</span>
-      </div>
-    </div>
-  );
-}
-
-/** 最近开号事件表格 */
-function RecentEvents({ points }: { points: VendorStatusTrendPoint[] }) {
   const { t } = useTranslation("status");
-  // 过滤有事件的桶 · 倒序 · 最多 15
-  const rows = points
-    .filter(p => (p.keys_born ?? 0) > 0 || (p.keys_died ?? 0) > 0)
-    .slice()
-    .reverse()
-    .slice(0, 15);
 
-  if (rows.length === 0) return null;
+  if (loading) return <Skeleton className="h-64 w-full" />;
+  if (events.length === 0) return null;
 
   return (
     <div className="space-y-2">
-      <h2 className="text-body-lg font-semibold">{t("detail.recent-events")}</h2>
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-body-lg font-semibold">{t("log.title")}</h2>
+        <p className="text-[11px] text-fg-tertiary">{t("log.count", { count: events.length })}</p>
+      </div>
+
       <div className="overflow-hidden rounded-2xl border border-hairline bg-surface">
-        {rows.map((p, i) => (
+        {/* 表头 */}
+        <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 border-b border-hairline px-4 py-2.5 text-[10px] uppercase tracking-wider text-fg-tertiary md:grid-cols-[160px_60px_1fr_auto_auto] md:gap-4 md:px-5">
+          <span>{t("log.col-time")}</span>
+          <span className="hidden md:block">{t("log.col-region")}</span>
+          <span className="md:text-left">{t("log.col-count")}</span>
+          <span className="text-right">{t("log.col-alive")}</span>
+          <span className="text-right">{t("log.col-status")}</span>
+        </div>
+
+        {events.map((e, i) => (
           <div
-            key={p.t}
+            key={`${e.at}-${i}`}
             className={cn(
-              "grid grid-cols-[auto_1fr_auto] items-center gap-4 p-3 md:p-4",
-              i < rows.length - 1 && "border-b border-hairline",
+              "grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 px-4 py-2.5 text-label md:grid-cols-[160px_60px_1fr_auto_auto] md:gap-4 md:px-5",
+              i < events.length - 1 && "border-b border-hairline",
             )}
           >
-            <div className="font-mono text-[11px] text-fg-tertiary">
-              {fmtDateTime(p.t)}
+            {/* 时间 · 绝对 + 相对 */}
+            <div className="min-w-0">
+              <div className="font-mono text-[11px] tabular-nums">{fmtDateTime(e.at)}</div>
+              <div className="text-[10px] text-fg-tertiary">{fmtRelative(e.at)}</div>
             </div>
-            <div className="flex items-center gap-4 text-label">
-              {(p.keys_born ?? 0) > 0 && (
-                <span className="text-ok-fg">
-                  +{p.keys_born}
-                </span>
-              )}
-              {(p.keys_died ?? 0) > 0 && (
-                <span className="text-fg-tertiary">
-                  −{p.keys_died}
-                </span>
-              )}
+
+            {/* 区域 */}
+            <div className="hidden text-[11px] text-fg-secondary md:block">
+              {e.region || "—"}
             </div>
-            <div className="text-[10px] text-fg-tertiary">
-              {fmtRelative(p.t)}
+
+            {/* 数量 */}
+            <div className="font-mono font-semibold tabular-nums text-brand-fg">
+              +{e.count}
+              <span className="ml-0.5 text-[10px] font-normal text-fg-tertiary">
+                {t("unit.keys")}
+              </span>
+            </div>
+
+            {/* 存活 · derived 源没有这个数据 */}
+            <div className="text-right font-mono text-[11px] tabular-nums">
+              {derived
+                ? <span className="text-fg-tertiary">—</span>
+                : e.alive
+                  ? <span className="text-ok-fg">{e.alive}</span>
+                  : <span className="text-fg-tertiary">0</span>}
+            </div>
+
+            {/* 状态 · 三态 */}
+            <div className="text-right">
+              {e.status === "running" ? (
+                <Chip tone="ok">{t("log.status-running")}</Chip>
+              ) : e.status === "dead" ? (
+                <Chip tone="neutral">{t("log.status-dead")}</Chip>
+              ) : (
+                <Chip tone="neutral">{t("log.status-done")}</Chip>
+              )}
             </div>
           </div>
         ))}
       </div>
+
+      {derived && (
+        <p className="text-[10px] leading-relaxed text-fg-tertiary">
+          {t("log.derived-note")}
+        </p>
+      )}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════
-// Format helpers
+// 格式化
 // ═══════════════════════════════════════════════════════════
 
 function fmtCompact(n: number): string {
@@ -595,7 +536,7 @@ function fmtCompact(n: number): string {
 }
 
 function fmtInterval(min: number): string {
-  if (min < 60) return `${Math.round(min)}m`;
+  if (min < 60) return `${Math.round(min)}min`;
   if (min < 60 * 24) return `${(min / 60).toFixed(1)}h`;
   return `${Math.round(min / 60 / 24)}d`;
 }
@@ -604,15 +545,10 @@ function fmtRelative(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const min = Math.floor(diff / 60000);
   if (min < 1) return "刚刚";
-  if (min < 60) return `${min}m 前`;
+  if (min < 60) return `${min} 分钟前`;
   const h = Math.floor(min / 60);
-  if (h < 24) return `${h}h 前`;
-  return `${Math.floor(h / 24)}d 前`;
-}
-
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+  if (h < 24) return `${h} 小时前`;
+  return `${Math.floor(h / 24)} 天前`;
 }
 
 function fmtDateTime(iso: string): string {

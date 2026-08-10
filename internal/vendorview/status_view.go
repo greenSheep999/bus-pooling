@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/providers"
@@ -362,6 +363,203 @@ type StatusTrendPoint struct {
 	KeysDied int `json:"keys_died,omitempty"`
 	// AvgLifespanSec 桶内挂掉的 key 平均寿命秒数
 	AvgLifespanSec int64 `json:"avg_lifespan_sec,omitempty"`
+}
+
+// ── 统一开号事件流（6 家同一形状 · 前端只画一种图）─────────────
+//
+// **为什么加这个**：老的 StatusTrend 按 source 返两种 schema（backfill 给
+// keys_born/keys_died · probe 给 uptime_pct）· 前端只能 if/else 画两种图 ·
+// 用户看到"有的柱有的线"根本没法横向比。契约层就该统一。
+//
+// 统一口径：**一条事件 = 上游一次开号**。
+//   - 有 fleet 端点的 vendor → 读 vendor_dispatch 表（vendor 自报 · Derived=false）
+//   - 没有的 vendor         → 探针增量推同形状事件（Derived=true · 前端注明"观测推算"）
+//
+// 脱敏：不出真 vendor 名 · 不出价格 · region 只出"美区/欧区/全区"这种人话。
+
+// DispatchEventsOut 是 GET /api/vendors/status/{anon_id}/events 的响应。
+type DispatchEventsOut struct {
+	AnonID    string `json:"anon_id"`
+	AnonLabel string `json:"anon_label"`
+	Window    string `json:"window"` // "168h"
+	// Source · vendor = 上游自报的批次（准）· observed = 我方探针增量推算 · empty = 无数据
+	// **前端不按 source 换图形** —— 只用来显示一句数据来源说明。
+	Source string `json:"source"`
+	// Events 按时间倒序（最新在前）· 前端画图时自己反转
+	Events []DispatchEvent `json:"events"`
+	// Summary 窗口内的汇总（前端不用自己 reduce）
+	Summary DispatchEventsSummary `json:"summary"`
+}
+
+// DispatchEventsSummary 窗口内汇总。
+type DispatchEventsSummary struct {
+	Batches        int     `json:"batches"`
+	Keys           int     `json:"keys"`
+	AvgIntervalMin float64 `json:"avg_interval_min,omitempty"`
+	// AliveNow 窗口内还活着的号（vendor 自报 alive 字段的和 · observed 源没有）
+	AliveNow int `json:"alive_now,omitempty"`
+	DeadTotal int `json:"dead_total,omitempty"`
+}
+
+// DispatchEvent 一次开号 · 6 家同一形状。
+type DispatchEvent struct {
+	// At 发出时刻 · RFC3339 UTC
+	At string `json:"at"`
+	// Count 这批发了几个号
+	Count int `json:"count"`
+	// Region 人话区域名（"美区" / "欧区" / "" = 不分区）· **不出 us-east-1 这种内部 id**
+	Region string `json:"region,omitempty"`
+	// Alive / Dead vendor 自报的存活情况（observed 源没有 · 为 0）
+	Alive int `json:"alive,omitempty"`
+	Dead  int `json:"dead,omitempty"`
+	// Status 收敛后的三态：running（在架）/ done（已发完）/ dead（全挂）
+	// **内部 vendor 状态字符串不出去**（CLAUDE.md §12.5）
+	Status string `json:"status,omitempty"`
+	// DeadAt 全批挂完的时刻（有则填）
+	DeadAt string `json:"dead_at,omitempty"`
+	// Derived true = 我方探针增量推算 · false = vendor 自报
+	Derived bool `json:"derived,omitempty"`
+}
+
+// DispatchEvents 返统一形状的开号事件流。
+//
+// windowHours <= 0 默认 168（7 天）· 上限 720（30 天）。
+// limit <= 0 默认 200 条。
+func (s *Service) DispatchEvents(ctx context.Context, anonID string, windowHours, limit int) (*DispatchEventsOut, error) {
+	if s.registry == nil {
+		return nil, nil
+	}
+	if windowHours <= 0 {
+		windowHours = 168
+	}
+	if windowHours > 720 {
+		windowHours = 720
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+
+	var found providers.Vendor
+	for _, e := range s.registry.Enabled() {
+		if anonIDOf(e.Vendor.ID()) == anonID {
+			found = e.Vendor
+			break
+		}
+	}
+	if found == nil {
+		return nil, nil
+	}
+	vid := string(found.ID())
+
+	out := &DispatchEventsOut{
+		AnonID:    anonID,
+		AnonLabel: anonLabelOf(found.ID()),
+		Window:    fmt.Sprintf("%dh", windowHours),
+		Source:    "empty",
+		Events:    []DispatchEvent{},
+	}
+
+	// ① vendor 自报的批次（vendor_dispatch 表 · 4 家有）
+	if s.orderKeyStore != nil {
+		ds, err := s.orderKeyStore.DispatchesSince(ctx, vid, windowHours, limit)
+		if err == nil && len(ds) > 0 {
+			out.Source = "vendor"
+			for _, d := range ds {
+				ev := DispatchEvent{
+					At:     d.DispatchedAt.UTC().Format(time.RFC3339),
+					Count:  d.Count,
+					Region: regionLabel(d.Region),
+					Alive:  d.Alive,
+					Dead:   d.Dead,
+					Status: dispatchStatus(d.Status, d.Dead, d.Count),
+				}
+				if !d.DeadAt.IsZero() {
+					ev.DeadAt = d.DeadAt.UTC().Format(time.RFC3339)
+				}
+				out.Events = append(out.Events, ev)
+			}
+			out.Summary = summarizeEvents(out.Events)
+			return out, nil
+		}
+	}
+
+	// ② 探针增量推算（没 fleet 端点的 vendor · 形状跟 ① 完全一致）
+	if s.probeStore != nil {
+		derived, err := s.probeStore.DeriveDispatchEvents(ctx, vid, windowHours, limit)
+		if err == nil && len(derived) > 0 {
+			out.Source = "observed"
+			for _, d := range derived {
+				out.Events = append(out.Events, DispatchEvent{
+					At:      d.At.UTC().Format(time.RFC3339),
+					Count:   d.Count,
+					Derived: true,
+				})
+			}
+			out.Summary = summarizeEvents(out.Events)
+			return out, nil
+		}
+	}
+
+	return out, nil
+}
+
+// summarizeEvents 从倒序事件列表算汇总（相邻间隔用倒序差）。
+func summarizeEvents(events []DispatchEvent) DispatchEventsSummary {
+	sum := DispatchEventsSummary{Batches: len(events)}
+	for _, e := range events {
+		sum.Keys += e.Count
+		sum.AliveNow += e.Alive
+		sum.DeadTotal += e.Dead
+	}
+	if len(events) >= 2 {
+		var totalSec float64
+		var pairs int
+		for i := 0; i < len(events)-1; i++ {
+			newer, err1 := time.Parse(time.RFC3339, events[i].At)
+			older, err2 := time.Parse(time.RFC3339, events[i+1].At)
+			if err1 != nil || err2 != nil {
+				continue
+			}
+			if gap := newer.Sub(older).Seconds(); gap > 0 {
+				totalSec += gap
+				pairs++
+			}
+		}
+		if pairs > 0 {
+			sum.AvgIntervalMin = totalSec / float64(pairs) / 60
+		}
+	}
+	return sum
+}
+
+// regionLabel 内部 region id → 对外人话（CLAUDE.md §12.6 · 不出 us-east-1）。
+func regionLabel(region string) string {
+	switch {
+	case region == "":
+		return ""
+	case strings.HasPrefix(region, "us"):
+		return "美区"
+	case strings.HasPrefix(region, "eu"):
+		return "欧区"
+	}
+	return "其他区"
+}
+
+// dispatchStatus 收敛 vendor 自报状态到三态（CLAUDE.md §12.5）。
+//
+// vendor 侧字符串五花八门（running / done / error / dead / ...）·
+// 对外只留：running（在架）/ done（已发完）/ dead（全挂）。
+func dispatchStatus(raw string, dead, count int) string {
+	if dead > 0 && count > 0 && dead >= count {
+		return "dead"
+	}
+	switch raw {
+	case "running":
+		return "running"
+	case "dead":
+		return "dead"
+	}
+	return "done"
 }
 
 // StatusTrend 找到匿名 id 对应的 vendor，返窗口内的桶数据。

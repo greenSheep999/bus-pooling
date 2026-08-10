@@ -168,6 +168,59 @@ export const useVendorStatus = () =>
     retry: false,           // 公开端点 · 401 不重试
   });
 
+/** 统一的开号事件流（GET /api/vendors/status/{anon_id}/events）· **公开端点**
+ *
+ *  跟老的 /trend 的区别：**6 家同一形状**。有 fleet 端点的 vendor 用它自报的批次·
+ *  没有的从我方探针增量推出同形状事件（derived=true）。前端只画一种图。 */
+export interface VendorDispatchEvent {
+  /** 发出时刻 · RFC3339 */
+  at: string;
+  /** 这批发了几个号 */
+  count: number;
+  /** 人话区域名："美区" / "欧区" / "" = 不分区（内部 region id 不下发） */
+  region?: string;
+  alive?: number;
+  dead?: number;
+  /** 收敛三态：running 在架 · done 已发完 · dead 全挂 */
+  status?: "running" | "done" | "dead";
+  dead_at?: string;
+  /** true = 我方探针推算（精度较低）· false/缺省 = vendor 自报 */
+  derived?: boolean;
+}
+
+export interface VendorDispatchEventsSummary {
+  batches: number;
+  keys: number;
+  avg_interval_min?: number;
+  alive_now?: number;
+  dead_total?: number;
+}
+
+export interface VendorDispatchEvents {
+  anon_id: string;
+  anon_label: string;
+  window: string;
+  /** vendor = 上游自报 · observed = 我方探针推算 · empty = 无数据 */
+  source: "vendor" | "observed" | "empty";
+  /** 时间倒序（最新在前） */
+  events: VendorDispatchEvent[];
+  summary: VendorDispatchEventsSummary;
+}
+
+export const useVendorDispatchEvents = (
+  anonID: string | undefined,
+  window: string = "168h",
+) =>
+  useQuery({
+    queryKey: ["vendor-dispatch-events", anonID, window],
+    queryFn: () =>
+      api<VendorDispatchEvents>(`/vendors/status/${anonID}/events`, { params: { window } }),
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+    retry: false,
+    enabled: !!anonID,
+  });
+
 export const useVendorStatusTrend = (anonID: string | undefined, window: string = "24h") =>
   useQuery({
     queryKey: ["vendor-status-trend", anonID, window],

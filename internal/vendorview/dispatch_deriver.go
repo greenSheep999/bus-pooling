@@ -138,5 +138,92 @@ func (d *DerivedDispatchSummary) IsEmpty() bool {
 	return d == nil || d.TotalBatches == 0
 }
 
+// DeriveDispatchEvents 跟 DeriveDispatchSummary 同一套增量算法 · 但返**逐条事件**
+// 而不是汇总 —— 让没有 fleet 端点的 vendor 也能提供跟 vendor_dispatch 表**同形状**
+// 的事件流（对外契约统一 · 前端只画一种图 · 见 status_view.DispatchEvent）。
+//
+// 每条事件 = 一次观测到的正向增量：
+//   - At    = 后一次探针的时刻（±probe interval 采样误差）
+//   - Count = 增量值（这段时间新出现的号数）
+//
+// 精度说明：探针间隔内"发出又挂完"的批次会被漏掉 · 增量也可能把两批合成一批。
+// 所以这条路径产出的事件标 Derived=true · 前端会注明"观测推算"。
+func (s *ProbeStore) DeriveDispatchEvents(
+	ctx context.Context, vendorID string, windowHours, limit int,
+) ([]DerivedEvent, error) {
+	if s.db == nil {
+		return nil, nil
+	}
+	if windowHours <= 0 {
+		windowHours = 24 * 7
+	}
+	cutoff := time.Now().UTC().Add(-time.Duration(windowHours) * time.Hour).Format(time.RFC3339Nano)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT probed_at,
+		       COALESCE(ps_keys_active, 0) + COALESCE(ps_keys_dead, 0) AS ps_sum,
+		       COALESCE(stock_total, 0)                                AS stock,
+		       CASE WHEN ps_keys_active IS NOT NULL OR ps_keys_dead IS NOT NULL
+		            THEN 1 ELSE 0 END                                  AS has_ps
+		  FROM vendor_probe
+		 WHERE vendor_id = ? AND probed_at >= ? AND alive = 1
+		 ORDER BY probed_at ASC
+	`, vendorID, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var (
+		hasPrev    bool
+		prevSignal int
+		out        []DerivedEvent
+	)
+	for rows.Next() {
+		var (
+			probedAt string
+			psSum    int
+			stock    int
+			hasPS    int
+		)
+		if err := rows.Scan(&probedAt, &psSum, &stock, &hasPS); err != nil {
+			return nil, err
+		}
+		signal := stock
+		if hasPS == 1 {
+			signal = psSum
+		}
+		if !hasPrev {
+			prevSignal = signal
+			hasPrev = true
+			continue
+		}
+		if delta := signal - prevSignal; delta > 0 {
+			t, _ := time.Parse(time.RFC3339Nano, probedAt)
+			out = append(out, DerivedEvent{At: t, Count: delta})
+		}
+		prevSignal = signal
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// 倒序（最新在前）· 跟 vendor_dispatch 查询顺序一致
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// DerivedEvent 探针推出来的一次开号观测 · 只有时间和数量
+// （alive/dead/region 探针拿不到 · status_view 转换时留空）。
+type DerivedEvent struct {
+	At    time.Time
+	Count int
+}
+
 // 类型断言防止 database/sql 未使用告警
 var _ = sql.ErrNoRows

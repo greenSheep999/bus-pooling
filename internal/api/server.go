@@ -232,7 +232,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 
 	// vendors 只读（05-api-contract §9）· 全部要鉴权
 	mux.Handle("GET /api/vendors/status", handler(s.handleVendorsStatus)) // 公开
-	mux.Handle("GET /api/vendors/status/{anon_id}/trend", handler(s.handleVendorStatusTrend)) // 公开
+	mux.Handle("GET /api/vendors/status/{anon_id}/trend", handler(s.handleVendorStatusTrend))   // 公开 · 老契约（按 source 两种 schema）
+	mux.Handle("GET /api/vendors/status/{anon_id}/events", handler(s.handleVendorDispatchEvents)) // 公开 · 统一事件流 · /status 页用这个
 	mux.Handle("GET /api/vendors/stock", handler(s.RequireAuth(s.handleVendorsStock)))
 	mux.Handle("GET /api/vendors/prices", handler(s.RequireAuth(s.handleVendorsPrices)))
 	mux.Handle("GET /api/vendors/stats", handler(s.RequireAuth(s.handleVendorsStats)))

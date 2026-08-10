@@ -1,197 +1,74 @@
 {
   "meta": {
     "title": "上游状态 · Kiro.bus",
-    "description": "6 家上游 vendor 的实时状态 · 库存 · 稳定度 · 事件历史 · 公开可查"
+    "description": "6 家上游平台的开号记录 · 每批多少 API key · 存活情况 · 公开可查"
   },
   "hero": {
     "eyebrow": "全线运行中",
-    "title": "多家上游 · 一份透明账",
-    "subtitle": "系统持续探测每家上游的存活、库存、稳定度 · 每次真开号事件都进这里",
-    "probed-at": "最后探测 {{time}}",
-    "no-data": "数据采集中 · 首次上线的 24 小时内指标可能不完整"
+    "title": "上游开号记录",
+    "subtitle": "系统持续记录每家上游平台每次放出的 API key —— 什么时候放的、放了几个、还活着几个。全部公开。",
+    "no-data": "数据采集中"
   },
-  "overview": {
-    "total-keys": "累计发出",
-    "stocked": "有货 vendor",
-    "avg-interval": "平均间隔",
-    "latest-batch": "最新一批"
+  "unit": {
+    "keys": "个 key",
+    "batches": "批",
+    "minutes": "分钟"
   },
-  "fleet": {
-    "title": "上游列表",
-    "subtitle": "点击进详情看完整历史"
+  "card": {
+    "detail": "查看明细",
+    "keys-7d": "7 天内放出",
+    "batches-7d": "7 天内开号",
+    "last-open": "最近一次"
   },
-  "row": {
-    "uptime": "{{pct}}% 存活",
-    "warming": "数据积累中",
-    "stock-many": "有货",
-    "stock-low": "库存低",
-    "stock-out": "缺货",
-    "stock-unknown": "未知",
-    "keys-unit": "号"
+  "chart": {
+    "no-data": "暂无开号记录",
+    "no-data-window": "近 {{hours}} 小时无开号记录",
+    "source-vendor": "上游自报的批次记录",
+    "source-observed": "我方每分钟观测推算（上游未提供批次接口）"
   },
   "tags": {
-    "lifespan-long": "长寿命 · > 1h",
-    "lifespan-mid": "中寿命 · 10min–1h",
-    "lifespan-short": "短寿命 · < 10min",
-    "warranty": "含质保",
+    "stock-many": "现货充足",
+    "stock-low": "库存偏低",
+    "stock-out": "暂时缺货",
+    "lifespan-long": "寿命 > 1 小时",
+    "lifespan-mid": "寿命 10–60 分钟",
+    "lifespan-short": "寿命 < 10 分钟",
     "warranty-min": "{{minutes}} 分钟质保",
-    "incidents": "{{count}} 天有事件"
+    "uptime": "稳定度 {{pct}}%",
+    "incidents": "近 7 天 {{count}} 天有异常"
   },
   "detail": {
-    "back": "返回列表",
-    "not-found": "找不到这家 vendor",
-    "total-keys": "累计发出",
-    "total-batches": "累计批次",
+    "back": "返回上游列表",
+    "not-found": "找不到这家上游",
+    "keys-7d": "7 天内放出",
+    "batches-7d": "7 天内开号",
     "avg-interval": "平均间隔",
-    "uptime-24h": "24h 存活",
-    "warranty": "质保时长",
-    "warranty-value": "{{minutes}} 分钟",
-    "max-per-order": "单次上限",
-    "timeline-title": "7 天开号节奏",
-    "timeline-subtitle": "每个点是一批 · 大小对应数量 · 绿 = 新发 · 灰 = 挂",
-    "recent-events": "最近上新记录"
+    "warranty": "失效质保",
+    "chart-title": "7 天开号量"
   },
-  "col": {
-    "vendor": "Vendor",
-    "status": "状态",
-    "stock": "库存",
-    "region": "覆盖区域",
-    "warranty": "质保",
-    "uptime": "24h 稳定度",
-    "stockout": "24h 断供",
-    "lifespan": "平均寿命",
-    "incidents": "7 天事件"
-  },
-  "status": {
-    "alive": "运行中",
-    "dead": "异常",
-    "unknown": "未知"
-  },
-  "error-kind": {
-    "timeout": "超时",
-    "auth": "凭据失效",
-    "http_5xx": "上游 5xx",
-    "http_4xx": "上游 4xx",
-    "canceled": "已取消",
-    "empty_response": "空响应",
-    "other": "其他错误"
-  },
-  "stock-bucket": {
-    "many": "充足",
-    "low": "偏少",
-    "out": "缺货",
-    "unknown": "-"
-  },
-  "region": {
-    "count": "{{count}} 区可用",
-    "unknown": "-"
-  },
-  "warranty": {
-    "yes": "质保 {{minutes}} 分钟",
-    "no-warranty": "无质保",
-    "no-data": "-"
-  },
-  "max-per-order": {
-    "value": "单次最多 {{count}}",
-    "no-data": ""
-  },
-  "uptime": {
-    "value": "{{pct}}%",
-    "unknown": "样本不足"
-  },
-  "stockout": {
-    "none": "0 分钟",
-    "value": "{{minutes}} 分钟"
-  },
-  "lifespan": {
-    "long": "长（>1h）",
-    "mid": "中（10min–1h）",
-    "short": "短（<10min）",
-    "unknown": "-"
-  },
-  "incidents": {
-    "none": "过去 7 天无事件",
-    "count": "{{count}} 天有事件"
-  },
-  "sparkline": {
-    "label": "24h 稳定度",
-    "probe-label": "24h 稳定度",
-    "backfill-label": "Key 生命周期",
-    "aria": "Vendor 活跃度趋势图",
-    "warming-up": "数据采集中",
-    "born": "+{{count}} 新发",
-    "died": "-{{count}} 已挂"
-  },
-  "public-status": {
-    "strip-label": "Vendor 自报",
-    "active": "活跃",
-    "dead": "失效",
-    "stock": "库存",
-    "total": "累计",
-    "uptime": "运行",
-    "generating": "生成中"
-  },
-  "history-strip": {
-    "label": "我方历史",
-    "orders": "订单",
-    "keys": "Key",
-    "active": "活",
-    "dead": "挂",
-    "avg-life": "平均寿命"
+  "log": {
+    "title": "开号明细",
+    "count": "共 {{count}} 条",
+    "col-time": "时间",
+    "col-region": "区域",
+    "col-count": "放出",
+    "col-alive": "现存活",
+    "col-status": "状态",
+    "status-running": "在架",
+    "status-done": "已发完",
+    "status-dead": "已全挂",
+    "derived-note": "本家上游没有开放批次查询接口，以上记录由我方每分钟观测库存变化推算得出：时间为观测到的时刻（比实际放出晚 0~60 秒），数量为该时段净增量。存活情况上游未提供。"
   },
   "cta": {
     "prices": {
-      "title": "想看单价?",
-      "body": "登录后到 /prices 查看每家 vendor 的详细价格趋势与箱线矩阵",
+      "title": "想看单价？",
+      "body": "登录后可查看每家上游的价格走势",
       "action": "去看价格"
     },
     "join": {
-      "title": "想试试拼车?",
-      "body": "免费注册,发起自己的车或加入他人拼车,单价按人头分摊,车友越多越省",
+      "title": "想试试拼车？",
+      "body": "免费注册，发起自己的车或加入他人拼车，费用按人头分摊",
       "action": "免费上车"
     }
-  },
-  "three-things": {
-    "avail": {
-      "label": "能不能用",
-      "yes": "在线",
-      "no": "掉线",
-      "stock-many": "库存充足",
-      "stock-low": "库存偏少",
-      "stock-out": "缺货",
-      "stock-unknown": "库存未知",
-      "region-count": "{{count}} 区可用",
-      "no-region": "全区",
-      "warranty-yes": "质保 {{minutes}} 分钟",
-      "warranty-no": "不质保"
-    },
-    "stable": {
-      "label": "有多稳",
-      "uptime-value": "{{pct}}% 存活",
-      "uptime-unknown": "-",
-      "stockout-none": "24h 无断供",
-      "stockout-value": "24h 断供 {{minutes}} 分钟",
-      "incidents-none": "近 7 天无事件",
-      "incidents-value": "{{count}} 天有事件",
-      "sparkline-caption": "24h 存活曲线 · 每 15 分钟一个点"
-    },
-    "reliable": {
-      "label": "多可靠",
-      "batches-value": "累计 {{count}} 批",
-      "keys-value": "共发出 {{count}} 号",
-      "interval-value": "平均 {{minutes}} 分钟一批",
-      "interval-fast": "平均 {{minutes}} 分钟一批",
-      "no-dispatch": "数据采集中",
-      "last-value": "最新一批 · {{when}}",
-      "lifespan-long": "号平均寿命 > 1 小时",
-      "lifespan-mid": "号平均寿命 10–60 分钟",
-      "lifespan-short": "号平均寿命 < 10 分钟",
-      "lifespan-unknown": "寿命数据采集中",
-      "sparkline-caption": "近期开号节奏 · 每小时一根柱"
-    },
-    "just-now": "刚刚",
-    "mins-ago": "{{count}} 分钟前",
-    "hours-ago": "{{count}} 小时前",
-    "days-ago": "{{count}} 天前"
   }
 }
