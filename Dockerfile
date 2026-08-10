@@ -10,7 +10,8 @@
 # ────────────────────────── web-build ──────────────────────────
 FROM node:20-alpine AS web-build
 WORKDIR /w
-COPY web/package.json web/package-lock.json ./
+# .npmrc 得先来 · 里面 legacy-peer-deps=true 让 npm ci 宽容处理 typescript 6 + i18next peer 冲突
+COPY web/package.json web/package-lock.json web/.npmrc ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
