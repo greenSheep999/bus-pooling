@@ -4,7 +4,6 @@ import {
   ArrowUpRight, BadgeCheck, Bus, ChevronRight, Copy, Settings,
   Ticket, Wallet,
 } from "lucide-react";
-import { Link } from "react-router-dom";
 import {
   useBuses, useMe, useMyInvite, useOverview, useWallet,
 } from "@/api/hooks";

@@ -108,7 +108,9 @@ export function Em({
   plain,
   className,
 }: {
-  children: ReactNode;
+  // 老代码经常在 <Trans/> 的 components 里传空 <Em />，让 react-i18next 塞子节点 ·
+  // 所以 children 走 optional
+  children?: ReactNode;
   tone?: "spend" | "ok" | "warn";
   /** 强调的是名字 / 文字（不是数字）· 关掉 tabular-nums */
   plain?: boolean;
@@ -190,7 +192,8 @@ export function Chip({
   tone?: ChipTone;
   dot?: boolean;
   icon?: ReactNode;
-  children: ReactNode;
+  // 允许空 Chip 只显示 dot / icon（无 label 场景）· 老代码大量在用
+  children?: ReactNode;
   className?: string;
 }) {
   return (

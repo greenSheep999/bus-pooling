@@ -29,7 +29,9 @@ import privacyPng from "@/assets/marketing/privacy.png";
  *    hero (白) → features (灰) → value (白) → who (灰) → uses (白) → pricing (灰) → faq (白) → cta (品牌淡紫)
  *  Hero 右侧 3 张透视卡（rotate + 阴影 + 拖影 · hover 时轻回正 + 提升） */
 export default function Landing() {
-  const { t } = useTranslation("landing");
+  // 顶层不直接用 t · 各 Section 子组件自己 useTranslation · 保留调用是为了
+  // 确保 landing namespace 已经初始化再渲染子树（i18next 是懒加载）
+  useTranslation("landing");
 
   // 锚点 label 走 landing namespace · 显式加前缀，PublicHeader 用 common
   // namespace 也能取到（i18next 支持 `<ns>:<key>` 语法）

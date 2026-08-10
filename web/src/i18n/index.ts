@@ -60,7 +60,8 @@ i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
-    resources,
+    // Vite 的 import.meta.glob 返 Record<unknown>，跟 i18next 的 Resource 类型对不上但结构一致 · 断言
+    resources: resources as never,
     // 默认英语 · 浏览器识别不到 / 识别到不支持的语言就是英文（车主要求）
     // ⚠️ 别用 { default: [...] } 的 object 形式 —— i18next 24 里那种语法会把
     //    supportedLngs 里的 zh-CN 也判定为"不支持"，resolvedLanguage 变 en。
@@ -76,7 +77,7 @@ i18n
       lookupLocalStorage: "bp:lang",
       caches: ["localStorage"],
       // 把 detector 拿到的 en-US 之类先规整成 en / zh-CN 再存，避免 supportedLngs 判"不支持"
-      convertDetectedLanguage: (lng) => {
+      convertDetectedLanguage: (lng: string) => {
         if (lng.startsWith("zh")) return "zh-CN";
         return "en";
       },

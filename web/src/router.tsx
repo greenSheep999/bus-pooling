@@ -5,7 +5,7 @@ import AuthLayout from "./layouts/AuthLayout";
 import RootGate from "./pages/RootGate";
 
 // 每页独立 chunk · 首屏只加载路由匹配到的页
-const Landing = lazy(() => import("./pages/Landing"));
+// 注：Landing 在 RootGate 内 lazy 加载 · 这里不再重复 import
 const Overview = lazy(() => import("./pages/Overview"));
 const Buses = lazy(() => import("./pages/Buses"));
 const BusDetail = lazy(() => import("./pages/BusDetail"));

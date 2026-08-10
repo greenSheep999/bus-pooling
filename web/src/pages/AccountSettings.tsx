@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import {
   BadgeCheck, CheckCircle2, KeyRound, Loader2,
 } from "lucide-react";
@@ -189,7 +189,7 @@ function SocialBindingsCard() {
 
 function SocialRow({
   provider, icon: Icon,
-}: { provider: string; icon: (props: { className?: string }) => JSX.Element }) {
+}: { provider: string; icon: (props: { className?: string }) => ReactElement }) {
   const { t } = useTranslation("settings");
   return (
     <div className="flex items-center justify-between gap-4 py-4">
