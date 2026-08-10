@@ -63,4 +63,13 @@ i18n
     },
   });
 
+/** 同步 <html lang="..."> · 无障碍 + CJK 字体切换靠这个 · onChanged 一次性绑 */
+if (typeof document !== "undefined") {
+  const applyLang = (l: string) => {
+    document.documentElement.lang = l;
+  };
+  applyLang(i18n.language);
+  i18n.on("languageChanged", applyLang);
+}
+
 export default i18n;
