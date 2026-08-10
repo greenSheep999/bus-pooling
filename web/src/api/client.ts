@@ -24,6 +24,7 @@ function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;
   if (pathname.startsWith("/join/")) return true;
   if (pathname.startsWith("/legal/")) return true;
+  if (pathname.startsWith("/status/")) return true;
   return false;
 }
 

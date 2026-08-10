@@ -12,19 +12,44 @@
   },
   "overview": {
     "total-keys": "累计发出",
-    "vendors-live": "vendor 在线",
+    "stocked": "有货 vendor",
     "avg-interval": "平均间隔",
     "latest-batch": "最新一批"
   },
-  "fleet-timeline": {
-    "title": "24 小时开号节奏",
-    "subtitle": "每家一条 · 绿色 = 新号 · 灰色 = 挂号"
+  "fleet": {
+    "title": "上游列表",
+    "subtitle": "点击进详情看完整历史"
   },
   "row": {
     "uptime": "{{pct}}% 存活",
-    "uptime-unknown": "-",
-    "batches": "{{count}} 批",
-    "warming-up": "数据采集中"
+    "warming": "数据积累中",
+    "stock-many": "有货",
+    "stock-low": "库存低",
+    "stock-out": "缺货",
+    "stock-unknown": "未知",
+    "keys-unit": "号"
+  },
+  "tags": {
+    "lifespan-long": "长寿命 · > 1h",
+    "lifespan-mid": "中寿命 · 10min–1h",
+    "lifespan-short": "短寿命 · < 10min",
+    "warranty": "含质保",
+    "warranty-min": "{{minutes}} 分钟质保",
+    "incidents": "{{count}} 天有事件"
+  },
+  "detail": {
+    "back": "返回列表",
+    "not-found": "找不到这家 vendor",
+    "total-keys": "累计发出",
+    "total-batches": "累计批次",
+    "avg-interval": "平均间隔",
+    "uptime-24h": "24h 存活",
+    "warranty": "质保时长",
+    "warranty-value": "{{minutes}} 分钟",
+    "max-per-order": "单次上限",
+    "timeline-title": "7 天开号节奏",
+    "timeline-subtitle": "每个点是一批 · 大小对应数量 · 绿 = 新发 · 灰 = 挂",
+    "recent-events": "最近上新记录"
   },
   "col": {
     "vendor": "Vendor",

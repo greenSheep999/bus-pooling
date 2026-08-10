@@ -89,4 +89,5 @@ export const router = createBrowserRouter([
   { path: "/legal/:slug", element: withSuspense(<Legal />) },
   /* 上游状态页 · 公开 · 自带 layout */
   { path: "/status", element: withSuspense(<StatusPage />) },
+  { path: "/status/:anonId", element: withSuspense(<StatusPage />) },
 ]);

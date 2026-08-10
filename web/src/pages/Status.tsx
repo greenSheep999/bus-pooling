@@ -1,13 +1,13 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
-import { ArrowRight, Activity, Zap, Clock, Shield } from "lucide-react";
+import { Link, useParams } from "react-router-dom";
+import { ArrowRight, ChevronRight } from "lucide-react";
 import { AppFooter } from "@/components/AppFooter";
 import { PromoBar } from "@/components/PromoBar";
 import { PublicHeader } from "@/components/PublicHeader";
 import { DocumentMeta } from "@/components/DocumentMeta";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/primitives";
+import { Card, Chip } from "@/components/ui/primitives";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useVendorStatus, useVendorStatusTrend,
@@ -15,42 +15,45 @@ import {
 } from "@/api/hooks";
 import { cn } from "@/lib/utils";
 
-/** 上游状态页 · /status · 公开可查
+/** 上游状态页 · /status 公开可查
  *
- *  设计目标（震撼 + 直观）：
- *   1. 顶部 · 4 个大数字总览（累计发出的 keys / vendor 数 / 平均寿命 / 最新开号）
- *   2. 6 家 vendor · 每家一条 24h 节奏条（横向 timeline · 一眼看得到"这家忙不忙"）
- *   3. 全网时间线 · 跨 vendor 最近开号事件（"这个平台每分钟都在响应"）
+ *  信息层级：
+ *   顶部 · 4 个总览数字（累计发号 / vendor 上架 / 平均间隔 / 最新一批）· 字号克制
+ *   中部 · 每家一行 · 状态点 + 库存 + 稳定度 + 24h timeline + 累计 + 详情箭头
+ *   详情 · 点行进 /status/:anon_id · 单家完整历史（另一个组件）
  *
- *  数据来源（严格脱敏）：
- *   - vendor_probe · 我方每 60s 探针
- *   - vendor_dispatch · vendor 侧真开号历史 + webhookin 实时事件
- *   - 匿名规则：AWS-Q Kiro Vendor 01..06 · 真名只登录 wholesale 档才见 */
+ *  匿名 label（AWS-Q Kiro Vendor 01..06）永远脱敏 · 真名只 wholesale 档看 */
 export default function StatusPage() {
+  const params = useParams();
+  if (params.anonId) return <VendorDetail anonID={params.anonId} />;
+  return <StatusOverview />;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Overview · /status 主页
+// ═══════════════════════════════════════════════════════════
+
+function StatusOverview() {
   const { t } = useTranslation("status");
   const { data, isLoading } = useVendorStatus();
   const vendors = data?.vendors ?? [];
-  const noData = !isLoading && vendors.length === 0;
 
-  // 总览数字 · 前端聚合 · 后端不用再改
   const overview = useMemo(() => {
     const totalKeys = vendors.reduce((s, v) => s + (v.dispatch?.total_keys_dispatched ?? 0), 0);
-    const totalBatches = vendors.reduce((s, v) => s + (v.dispatch?.total_batches ?? 0), 0);
     const aliveCount = vendors.filter(v => v.alive).length;
-    // avg interval · 只算有 dispatch 数据的 vendor
+    const stockedCount = vendors.filter(v => v.stock_bucket === "many" || v.stock_bucket === "low").length;
     const intervals = vendors
       .map(v => v.dispatch?.avg_interval_min)
       .filter((x): x is number => typeof x === "number" && x > 0);
     const avgInterval = intervals.length
       ? intervals.reduce((s, x) => s + x, 0) / intervals.length
       : 0;
-    // 最新一批时间 · 6 家最新的
     const latestTs = vendors
       .map(v => v.dispatch?.last_dispatch_at)
       .filter((x): x is string => !!x)
       .sort()
       .pop();
-    return { totalKeys, totalBatches, aliveCount, avgInterval, latestTs };
+    return { totalKeys, aliveCount, stockedCount, avgInterval, latestTs };
   }, [vendors]);
 
   return (
@@ -60,136 +63,104 @@ export default function StatusPage() {
       <PublicHeader />
 
       <main className="flex-1">
-        {/* Hero + 大数字总览 · 撑满宽 */}
-        <section className="border-b border-hairline bg-gradient-to-b from-brand-subtle/20 to-transparent">
-          <div className="page-container py-14 lg:py-16">
-            <div className="mx-auto max-w-6xl space-y-8">
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="relative flex size-2">
-                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-ok-solid opacity-75" />
-                    <span className="relative inline-flex size-2 rounded-full bg-ok-solid" />
-                  </span>
-                  <span className="font-mono text-label font-semibold uppercase tracking-widest text-ok-fg">
-                    {t("hero.eyebrow")}
-                  </span>
-                </div>
-                <h1 className="text-hero font-semibold tracking-tight md:text-5xl">
-                  {t("hero.title")}
-                </h1>
-                <p className="max-w-[65ch] leading-relaxed text-fg-secondary">
-                  {t("hero.subtitle")}
-                </p>
+        <section className="page-container py-12 lg:py-14">
+          <div className="mx-auto max-w-5xl space-y-8">
+
+            {/* Hero · 简洁 · 不占太多屏幕 */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <PingDot tone={overview.aliveCount === vendors.length && vendors.length > 0 ? "ok" : "warn"} />
+                <span className="font-mono text-label font-medium uppercase tracking-wider text-fg-tertiary">
+                  {t("hero.eyebrow")}
+                </span>
               </div>
-
-              {/* 4 大数字 · 撑满 · 数字要大 */}
-              {isLoading ? (
-                <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <Skeleton key={i} className="h-24 w-full" />
-                  ))}
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
-                  <BigStat
-                    icon={Zap}
-                    value={fmtCompact(overview.totalKeys)}
-                    label={t("overview.total-keys")}
-                    tone="brand"
-                  />
-                  <BigStat
-                    icon={Activity}
-                    value={`${overview.aliveCount} / ${vendors.length || 6}`}
-                    label={t("overview.vendors-live")}
-                    tone={overview.aliveCount === vendors.length ? "ok" : "warn"}
-                  />
-                  <BigStat
-                    icon={Clock}
-                    value={overview.avgInterval > 0 ? fmtInterval(overview.avgInterval) : "-"}
-                    label={t("overview.avg-interval")}
-                  />
-                  <BigStat
-                    icon={Shield}
-                    value={overview.latestTs ? fmtRelative(overview.latestTs) : "-"}
-                    label={t("overview.latest-batch")}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-
-        {/* 6 家 vendor · 24h 节奏条 */}
-        <section className="page-container py-14">
-          <div className="mx-auto max-w-6xl space-y-6">
-            <div className="flex items-baseline justify-between">
-              <h2 className="text-2xl font-semibold tracking-tight">
-                {t("fleet-timeline.title")}
-              </h2>
-              <p className="text-label text-fg-tertiary">
-                {t("fleet-timeline.subtitle")}
+              <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+                {t("hero.title")}
+              </h1>
+              <p className="max-w-[65ch] text-label leading-relaxed text-fg-secondary">
+                {t("hero.subtitle")}
               </p>
             </div>
 
+            {/* 总览数字 · 4 项 · 数字克制 (text-2xl) · label 灰色小字 */}
             {isLoading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-16 w-full" />
-                ))}
-              </div>
-            ) : noData ? (
-              <Card className="p-8 text-center">
-                <p className="text-fg-secondary">{t("hero.no-data")}</p>
-              </Card>
+              <Skeleton className="h-16 w-full" />
             ) : (
-              <div className="rounded-2xl border border-hairline bg-surface">
-                {vendors.map((v, i) => (
-                  <VendorTimelineRow
-                    key={v.anon_id}
-                    vendor={v}
-                    isLast={i === vendors.length - 1}
-                  />
-                ))}
+              <div className="grid grid-cols-2 gap-4 rounded-2xl border border-hairline bg-surface p-5 md:grid-cols-4 md:gap-6">
+                <Stat
+                  value={fmtCompact(overview.totalKeys)}
+                  label={t("overview.total-keys")} />
+                <Stat
+                  value={`${overview.stockedCount}/${vendors.length || 6}`}
+                  label={t("overview.stocked")}
+                  tone={overview.stockedCount === 0 ? "warn" : "ok"} />
+                <Stat
+                  value={overview.avgInterval > 0 ? fmtInterval(overview.avgInterval) : "-"}
+                  label={t("overview.avg-interval")} />
+                <Stat
+                  value={overview.latestTs ? fmtRelative(overview.latestTs) : "-"}
+                  label={t("overview.latest-batch")} />
               </div>
             )}
-          </div>
-        </section>
 
-        {/* CTA · 分两块 */}
-        <section className="page-container pb-16">
-          <div className="mx-auto grid max-w-6xl gap-4 md:grid-cols-2">
-            <Card className="flex flex-col justify-between gap-4 p-6">
-              <div className="space-y-2">
-                <h3 className="text-body-lg font-semibold">
-                  {t("cta.prices.title")}
-                </h3>
-                <p className="text-label leading-relaxed text-fg-secondary">
-                  {t("cta.prices.body")}
+            {/* 6 家列表 · 一行一家 · 点击进详情 */}
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between">
+                <h2 className="text-body-lg font-semibold">
+                  {t("fleet.title")}
+                </h2>
+                <p className="text-[11px] text-fg-tertiary">
+                  {t("fleet.subtitle")}
                 </p>
               </div>
-              <Button asChild variant="ghost" className="self-start">
-                <Link to="/prices">
-                  {t("cta.prices.action")}
-                  <ArrowRight />
-                </Link>
-              </Button>
-            </Card>
-            <Card className="flex flex-col justify-between gap-4 p-6 border-brand-hairline bg-brand-subtle/30">
-              <div className="space-y-2">
-                <h3 className="text-body-lg font-semibold">
-                  {t("cta.join.title")}
-                </h3>
-                <p className="text-label leading-relaxed text-fg-secondary">
-                  {t("cta.join.body")}
-                </p>
-              </div>
-              <Button asChild variant="brand" className="self-start">
-                <Link to="/register">
-                  {t("cta.join.action")}
-                  <ArrowRight />
-                </Link>
-              </Button>
-            </Card>
+
+              {isLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="h-14 w-full" />
+                  ))}
+                </div>
+              ) : vendors.length === 0 ? (
+                <Card className="p-8 text-center">
+                  <p className="text-fg-secondary">{t("hero.no-data")}</p>
+                </Card>
+              ) : (
+                <div className="overflow-hidden rounded-2xl border border-hairline bg-surface">
+                  {vendors.map((v, i) => (
+                    <VendorRow
+                      key={v.anon_id}
+                      vendor={v}
+                      isLast={i === vendors.length - 1} />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* CTA · 保留 */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card className="flex flex-col justify-between gap-3 p-5">
+                <div className="space-y-1">
+                  <h3 className="font-semibold">{t("cta.prices.title")}</h3>
+                  <p className="text-label leading-relaxed text-fg-secondary">
+                    {t("cta.prices.body")}
+                  </p>
+                </div>
+                <Button asChild variant="ghost" className="self-start">
+                  <Link to="/prices">{t("cta.prices.action")}<ArrowRight /></Link>
+                </Button>
+              </Card>
+              <Card className="flex flex-col justify-between gap-3 p-5 border-brand-hairline bg-brand-subtle/30">
+                <div className="space-y-1">
+                  <h3 className="font-semibold">{t("cta.join.title")}</h3>
+                  <p className="text-label leading-relaxed text-fg-secondary">
+                    {t("cta.join.body")}
+                  </p>
+                </div>
+                <Button asChild variant="brand" className="self-start">
+                  <Link to="/register">{t("cta.join.action")}<ArrowRight /></Link>
+                </Button>
+              </Card>
+            </div>
           </div>
         </section>
       </main>
@@ -199,196 +170,422 @@ export default function StatusPage() {
   );
 }
 
-/** 顶部大数字 · icon + 大字 + 小 label */
-function BigStat({
-  icon: Icon, value, label, tone = "neutral",
+/** 顶部 4 数字 · 克制字号 */
+function Stat({
+  value, label, tone,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
   value: string;
   label: string;
-  tone?: "neutral" | "ok" | "warn" | "brand";
+  tone?: "ok" | "warn";
 }) {
   const toneClass =
-    tone === "ok"    ? "text-ok-fg"     :
-    tone === "warn"  ? "text-warn-fg"   :
-    tone === "brand" ? "text-brand-fg"  :
-                       "text-fg";
-  const iconTone =
-    tone === "ok"    ? "text-ok-solid"    :
-    tone === "warn"  ? "text-warn-solid"  :
-    tone === "brand" ? "text-brand-solid" :
-                       "text-fg-tertiary";
+    tone === "ok" ? "text-ok-fg" :
+    tone === "warn" ? "text-warn-fg" :
+    "text-fg";
   return (
-    <div className="space-y-1.5">
-      <Icon className={cn("size-5", iconTone)} />
-      <div className={cn("font-mono text-4xl font-semibold tracking-tight tnum md:text-5xl", toneClass)}>
+    <div className="space-y-0.5">
+      <div className={cn("font-mono text-xl font-semibold tabular-nums md:text-2xl", toneClass)}>
         {value}
       </div>
-      <div className="text-label text-fg-tertiary">{label}</div>
+      <div className="text-[11px] uppercase tracking-wider text-fg-tertiary">
+        {label}
+      </div>
     </div>
   );
 }
 
-/** 单家 vendor 一行 · label + 24h 节奏条（backfill 双色柱 or probe 折线）+ 累计 chip */
-function VendorTimelineRow({
-  vendor, isLast,
-}: {
-  vendor: VendorStatusRow;
-  isLast: boolean;
-}) {
+/** 状态点 · ping 动画 · 表示"实时活着" */
+function PingDot({ tone = "ok" }: { tone?: "ok" | "warn" | "danger" }) {
+  const bg =
+    tone === "ok" ? "bg-ok-solid" :
+    tone === "warn" ? "bg-warn-solid" :
+    "bg-danger-solid";
+  return (
+    <span className="relative flex size-2">
+      <span className={cn("absolute inline-flex size-full animate-ping rounded-full opacity-60", bg)} />
+      <span className={cn("relative inline-flex size-2 rounded-full", bg)} />
+    </span>
+  );
+}
+
+/** 单行 vendor · 主页只显示 · 点击进详情
+ *  语义拆分：
+ *   - 服务状态（alive/dead 网络通不通）
+ *   - 库存（有货/缺货 stock_bucket）
+ *   - 最近一批 · 相对时间
+ *   - 24h timeline · 事件点风格 · 6 家统一 */
+function VendorRow({ vendor, isLast }: { vendor: VendorStatusRow; isLast: boolean }) {
   const { t } = useTranslation("status");
   const disp = vendor.dispatch;
   const batches = disp?.total_batches ?? 0;
   const keys = disp?.total_keys_dispatched ?? 0;
-  const avgInterval = disp?.avg_interval_min ?? 0;
+
+  const stockLabel =
+    vendor.stock_bucket === "many" ? t("row.stock-many") :
+    vendor.stock_bucket === "low"  ? t("row.stock-low") :
+    vendor.stock_bucket === "out"  ? t("row.stock-out") :
+                                     t("row.stock-unknown");
+  const stockTone: "ok" | "warn" | "danger" | "neutral" =
+    vendor.stock_bucket === "many" ? "ok" :
+    vendor.stock_bucket === "low"  ? "warn" :
+    vendor.stock_bucket === "out"  ? "danger" :
+                                     "neutral";
+
+  // "服务状态"（不同于库存）
+  const serviceOk = vendor.alive;
+  const uptime = vendor.uptime_24h_pct;
 
   return (
-    <div
+    <Link
+      to={`/status/${vendor.anon_id}`}
       className={cn(
-        "grid grid-cols-[auto_1fr_auto] items-center gap-4 p-4 md:gap-6 md:p-5",
+        "group flex items-center gap-3 p-4 transition-colors hover:bg-fg/[0.02] md:gap-5 md:p-5",
         !isLast && "border-b border-hairline",
       )}
     >
-      {/* 左 · label + 状态点 */}
-      <div className="flex items-center gap-2.5 md:min-w-[180px]">
-        <span className={cn(
-          "size-2 rounded-full",
-          vendor.alive ? "bg-ok-solid" : "bg-danger-solid",
-        )} />
-        <div>
-          <div className="font-medium">{vendor.anon_label}</div>
-          <div className="text-[11px] text-fg-tertiary">
-            {vendor.uptime_24h_pct !== undefined
-              ? t("row.uptime", { pct: vendor.uptime_24h_pct })
-              : t("row.uptime-unknown")}
+      {/* 左 · 状态点 + label + 服务/uptime 小字 */}
+      <div className="flex min-w-0 items-center gap-3 md:w-[190px]">
+        <PingDot tone={serviceOk ? "ok" : "danger"} />
+        <div className="min-w-0">
+          <div className="truncate text-body-sm font-medium">
+            {vendor.anon_label}
+          </div>
+          <div className="text-[10px] uppercase tracking-wider text-fg-tertiary">
+            {uptime !== undefined
+              ? t("row.uptime", { pct: uptime })
+              : t("row.warming")}
           </div>
         </div>
       </div>
 
-      {/* 中 · 24h 节奏条 */}
-      <div className="min-w-0">
-        <TimelineBar anonID={vendor.anon_id} />
+      {/* 中 · 库存 chip */}
+      <div className="hidden md:block md:w-[90px]">
+        <Chip tone={stockTone}>{stockLabel}</Chip>
       </div>
 
-      {/* 右 · 累计数字 */}
-      <div className="text-right md:min-w-[140px]">
+      {/* Timeline · 一致的事件点风格 */}
+      <div className="hidden min-w-0 flex-1 md:block">
+        <TimelineDots anonID={vendor.anon_id} />
+      </div>
+
+      {/* 右 · 累计数字 + 相对时间 */}
+      <div className="ml-auto text-right md:min-w-[130px]">
         {batches > 0 ? (
           <>
-            <div className="font-mono text-xl font-semibold tabular-nums">
+            <div className="font-mono text-body-sm font-semibold tabular-nums">
               {fmtCompact(keys)}
+              <span className="ml-1 text-[11px] text-fg-tertiary">
+                {t("row.keys-unit")}
+              </span>
             </div>
-            <div className="text-[11px] text-fg-tertiary">
-              {t("row.batches", { count: batches })}
-              {avgInterval > 0 && ` · ${fmtInterval(avgInterval)}`}
+            <div className="text-[10px] text-fg-tertiary">
+              {disp?.last_dispatch_at ? fmtRelative(disp.last_dispatch_at) : t("row.warming")}
             </div>
           </>
         ) : (
-          <div className="text-[11px] text-fg-tertiary">
-            {t("row.warming-up")}
-          </div>
+          <div className="text-[11px] text-fg-tertiary">{t("row.warming")}</div>
         )}
       </div>
-    </div>
+
+      {/* 详情箭头 */}
+      <ChevronRight className="size-4 shrink-0 text-fg-tertiary transition-transform group-hover:translate-x-0.5 group-hover:text-fg" />
+    </Link>
   );
 }
 
-/** 节奏条 · 24h · 优先 backfill 双色柱 · fallback probe uptime · 都无就静默 */
-function TimelineBar({ anonID }: { anonID: string }) {
+/** 24h timeline · 事件点风格（一堆小圆点分布在时间轴上）· 6 家统一
+ *  优先 backfill · fallback probe · 都无就静默 */
+function TimelineDots({ anonID }: { anonID: string }) {
   const { data, isLoading } = useVendorStatusTrend(anonID, "24h");
-  if (isLoading) return <Skeleton className="h-10 w-full" />;
-
+  if (isLoading) return <div className="h-8" />;
   const points = data?.points ?? [];
+  if (points.length < 2) return <div className="h-8" />;
+
+  // 每个 point 变成 0-N 个"事件点" · 数据越多点越多
+  const events: { t: number; alive: boolean; weight: number }[] = [];
   const source = data?.source;
-  if (points.length < 2 || source === "empty") {
-    return <div className="h-10" />; // 占位·不显示"数据不足"·避免打扰
+  for (const p of points) {
+    const ts = new Date(p.t).getTime();
+    if (source === "backfill") {
+      const born = p.keys_born ?? 0;
+      const died = p.keys_died ?? 0;
+      if (born > 0) events.push({ t: ts, alive: true, weight: Math.min(born, 20) });
+      if (died > 0) events.push({ t: ts, alive: false, weight: Math.min(died, 20) });
+    } else if (p.uptime_pct !== undefined) {
+      // probe · 每桶画一个点 · alive 用 uptime
+      events.push({ t: ts, alive: p.uptime_pct >= 95, weight: 3 });
+    }
   }
+  if (events.length === 0) return <div className="h-8" />;
 
-  if (source === "backfill") {
-    return <BackfillBars points={points} />;
-  }
-  return <ProbeLine points={points} />;
-}
+  const first = new Date(points[0].t).getTime();
+  const last = new Date(points[points.length - 1].t).getTime();
+  const span = Math.max(1, last - first);
 
-/** Backfill 双色柱 · born 绿 · died 灰 · 每小时一根 */
-function BackfillBars({ points }: { points: VendorStatusTrendPoint[] }) {
-  const born = points.map(p => p.keys_born ?? 0);
-  const died = points.map(p => p.keys_died ?? 0);
-  const maxVal = Math.max(1, ...born, ...died);
-  const W = 720, H = 40, PAD = 2;
-  const availW = W - 2 * PAD;
-  const availH = H - 2 * PAD;
-  const barW = Math.max(1, availW / points.length / 2 - 0.4);
-
+  const W = 720, H = 32;
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      className="w-full"
-      preserveAspectRatio="none"
-      style={{ height: 40 }}
-    >
-      <line x1={PAD} y1={H - PAD} x2={W - PAD} y2={H - PAD}
-        className="stroke-hairline" strokeWidth={0.5} />
-      {points.map((p, i) => {
-        const cx = PAD + (availW * (i + 0.5)) / points.length;
-        const bornH = (p.keys_born ?? 0) / maxVal * availH;
-        const diedH = (p.keys_died ?? 0) / maxVal * availH;
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="none" style={{ height: 32 }}>
+      {/* 底轴 · 淡色线 */}
+      <line x1={0} y1={H / 2} x2={W} y2={H / 2} className="stroke-hairline" strokeWidth={0.5} />
+      {events.map((e, i) => {
+        const cx = ((e.t - first) / span) * W;
+        const r = 1.5 + Math.min(4, e.weight / 4);
         return (
-          <g key={p.t}>
-            {bornH > 0 && (
-              <rect x={cx - barW - 0.2} y={H - PAD - bornH}
-                width={barW} height={bornH}
-                className="fill-ok-solid" />
-            )}
-            {diedH > 0 && (
-              <rect x={cx + 0.2} y={H - PAD - diedH}
-                width={barW} height={diedH}
-                className="fill-fg-tertiary" opacity={0.5} />
-            )}
-          </g>
+          <circle
+            key={i}
+            cx={cx}
+            cy={H / 2}
+            r={r}
+            className={e.alive ? "fill-ok-solid" : "fill-fg-tertiary"}
+            opacity={e.alive ? 0.75 : 0.4}
+          />
         );
       })}
     </svg>
   );
 }
 
-/** Probe uptime 折线 · vendor 没 backfill 数据时用 */
-function ProbeLine({ points }: { points: VendorStatusTrendPoint[] }) {
-  const valid = points.filter(p => p.uptime_pct !== undefined);
-  if (valid.length < 2) return <div className="h-10" />;
+// ═══════════════════════════════════════════════════════════
+// Detail · /status/:anon_id
+// ═══════════════════════════════════════════════════════════
 
-  const W = 720, H = 40, PAD = 2;
-  const first = new Date(valid[0].t).getTime();
-  const last = new Date(valid[valid.length - 1].t).getTime();
-  const span = Math.max(1, last - first);
-  const xFor = (tt: string) =>
-    PAD + ((new Date(tt).getTime() - first) / span) * (W - 2 * PAD);
-  const yFor = (pct: number) => H - PAD - (pct / 100) * (H - 2 * PAD);
+function VendorDetail({ anonID }: { anonID: string }) {
+  const { t } = useTranslation("status");
+  const { data: overview } = useVendorStatus();
+  const { data: trend, isLoading } = useVendorStatusTrend(anonID, "168h"); // 7 天
 
-  const d = valid.map((p, i) =>
-    `${i === 0 ? "M" : "L"}${xFor(p.t).toFixed(1)},${yFor(p.uptime_pct!).toFixed(1)}`
-  ).join(" ");
-  const avg = valid.reduce((s, p) => s + (p.uptime_pct ?? 0), 0) / valid.length;
-  const toneClass =
-    avg >= 99 ? "text-ok-solid" : avg >= 95 ? "text-warn-solid" : "text-danger-solid";
+  const vendor = overview?.vendors.find(v => v.anon_id === anonID);
+  const notFound = !!overview && !vendor;
 
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      className={cn("w-full", toneClass)}
-      preserveAspectRatio="none"
-      style={{ height: 40 }}
-    >
-      <line x1={PAD} y1={yFor(100)} x2={W - PAD} y2={yFor(100)}
-        className="stroke-hairline" strokeWidth={0.5} strokeDasharray="2 2" />
-      <path d={d} fill="none" stroke="currentColor" strokeWidth={1.75}
-        strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
+    <div className="flex min-h-dvh flex-col bg-bg">
+      <DocumentMeta titleKey="status:meta.title" descriptionKey="status:meta.description" />
+      <PromoBar />
+      <PublicHeader />
+
+      <main className="flex-1">
+        <section className="page-container py-12">
+          <div className="mx-auto max-w-5xl space-y-6">
+            <Link to="/status" className="inline-flex items-center gap-1 text-label text-fg-tertiary hover:text-fg">
+              ← {t("detail.back")}
+            </Link>
+
+            {notFound ? (
+              <Card className="p-8 text-center">
+                <p className="text-fg-secondary">{t("detail.not-found")}</p>
+              </Card>
+            ) : !vendor ? (
+              <div className="space-y-4">
+                <Skeleton className="h-24 w-full" />
+                <Skeleton className="h-40 w-full" />
+              </div>
+            ) : (
+              <>
+                {/* 头部 · label + 服务状态 + 概览指标 */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <PingDot tone={vendor.alive ? "ok" : "danger"} />
+                    <h1 className="text-2xl font-semibold">{vendor.anon_label}</h1>
+                  </div>
+                  <QualityTags vendor={vendor} />
+                </div>
+
+                {/* 关键指标 grid · 6 项 · 详情页信息比主页多 */}
+                <div className="grid grid-cols-2 gap-4 rounded-2xl border border-hairline bg-surface p-5 md:grid-cols-3">
+                  <Stat
+                    value={fmtCompact(vendor.dispatch?.total_keys_dispatched ?? 0)}
+                    label={t("detail.total-keys")} />
+                  <Stat
+                    value={String(vendor.dispatch?.total_batches ?? 0)}
+                    label={t("detail.total-batches")} />
+                  <Stat
+                    value={vendor.dispatch?.avg_interval_min ? fmtInterval(vendor.dispatch.avg_interval_min) : "-"}
+                    label={t("detail.avg-interval")} />
+                  <Stat
+                    value={vendor.uptime_24h_pct !== undefined ? `${vendor.uptime_24h_pct}%` : "-"}
+                    label={t("detail.uptime-24h")}
+                    tone={vendor.uptime_24h_pct !== undefined && vendor.uptime_24h_pct >= 99 ? "ok" : undefined} />
+                  <Stat
+                    value={vendor.warranty_minutes ? t("detail.warranty-value", { minutes: vendor.warranty_minutes }) : "-"}
+                    label={t("detail.warranty")} />
+                  <Stat
+                    value={vendor.max_per_order ? String(vendor.max_per_order) : "-"}
+                    label={t("detail.max-per-order")} />
+                </div>
+
+                {/* 7 天 timeline · 详情页放大版 */}
+                <div className="space-y-2">
+                  <h2 className="text-body-lg font-semibold">{t("detail.timeline-title")}</h2>
+                  <p className="text-[11px] text-fg-tertiary">{t("detail.timeline-subtitle")}</p>
+                  {isLoading ? (
+                    <Skeleton className="h-24 w-full" />
+                  ) : (
+                    <div className="rounded-2xl border border-hairline bg-surface p-5">
+                      <TimelineDots7d points={trend?.points ?? []} source={trend?.source} />
+                    </div>
+                  )}
+                </div>
+
+                {/* 事件列表 · 最近开号（如果 backfill 有数据） */}
+                {trend?.source === "backfill" && (trend.points?.length ?? 0) > 0 && (
+                  <RecentEvents points={trend.points} />
+                )}
+              </>
+            )}
+          </div>
+        </section>
+      </main>
+
+      <AppFooter />
+    </div>
   );
 }
 
-// —— 格式化工具 ——
+/** 质量标签 · 跟 Overview 页 vendor 卡对齐 */
+function QualityTags({ vendor }: { vendor: VendorStatusRow }) {
+  const { t } = useTranslation("status");
+  const tags: { label: string; tone: "ok" | "warn" | "danger" | "neutral" | "brand" }[] = [];
 
-/** 数字紧凑显示 · 1234 → 1.2K · 15600 → 15.6K · 1234567 → 1.2M */
+  // 库存
+  if (vendor.stock_bucket === "many") tags.push({ label: t("row.stock-many"), tone: "ok" });
+  else if (vendor.stock_bucket === "low") tags.push({ label: t("row.stock-low"), tone: "warn" });
+  else if (vendor.stock_bucket === "out") tags.push({ label: t("row.stock-out"), tone: "danger" });
+
+  // 寿命
+  if (vendor.lifespan_bucket === "long") tags.push({ label: t("tags.lifespan-long"), tone: "ok" });
+  else if (vendor.lifespan_bucket === "mid") tags.push({ label: t("tags.lifespan-mid"), tone: "neutral" });
+  else if (vendor.lifespan_bucket === "short") tags.push({ label: t("tags.lifespan-short"), tone: "warn" });
+
+  // 质保
+  if (vendor.has_warranty) {
+    tags.push({
+      label: vendor.warranty_minutes ? t("tags.warranty-min", { minutes: vendor.warranty_minutes }) : t("tags.warranty"),
+      tone: "brand",
+    });
+  }
+
+  // 24h 事件
+  if (vendor.incidents_7d && vendor.incidents_7d.length > 0) {
+    tags.push({ label: t("tags.incidents", { count: vendor.incidents_7d.length }), tone: "warn" });
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {tags.map((tag, i) => <Chip key={i} tone={tag.tone}>{tag.label}</Chip>)}
+    </div>
+  );
+}
+
+/** 7 天详细 timeline · 大图 · x 轴显示日期 */
+function TimelineDots7d({
+  points, source,
+}: {
+  points: VendorStatusTrendPoint[];
+  source?: string;
+}) {
+  if (points.length < 2) {
+    return <p className="text-label text-fg-tertiary">数据积累中</p>;
+  }
+  const first = new Date(points[0].t).getTime();
+  const last = new Date(points[points.length - 1].t).getTime();
+  const span = Math.max(1, last - first);
+  const W = 900, H = 80;
+
+  const events: { t: number; alive: boolean; weight: number }[] = [];
+  for (const p of points) {
+    const ts = new Date(p.t).getTime();
+    if (source === "backfill") {
+      const born = p.keys_born ?? 0;
+      const died = p.keys_died ?? 0;
+      if (born > 0) events.push({ t: ts, alive: true, weight: born });
+      if (died > 0) events.push({ t: ts, alive: false, weight: died });
+    } else if (p.uptime_pct !== undefined) {
+      events.push({ t: ts, alive: p.uptime_pct >= 95, weight: 3 });
+    }
+  }
+
+  const maxWeight = Math.max(1, ...events.map(e => e.weight));
+
+  return (
+    <div className="space-y-2">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="none" style={{ height: 80 }}>
+        <line x1={0} y1={H / 2} x2={W} y2={H / 2} className="stroke-hairline" strokeWidth={0.5} />
+        {events.map((e, i) => {
+          const cx = ((e.t - first) / span) * W;
+          const r = 2 + (e.weight / maxWeight) * 10;
+          return (
+            <circle
+              key={i}
+              cx={cx}
+              cy={H / 2}
+              r={r}
+              className={e.alive ? "fill-ok-solid" : "fill-fg-tertiary"}
+              opacity={e.alive ? 0.7 : 0.35}
+            />
+          );
+        })}
+      </svg>
+      <div className="flex justify-between text-[10px] uppercase tracking-wider text-fg-tertiary">
+        <span>{fmtDate(points[0].t)}</span>
+        <span>{fmtDate(points[points.length - 1].t)}</span>
+      </div>
+    </div>
+  );
+}
+
+/** 最近开号事件表格 */
+function RecentEvents({ points }: { points: VendorStatusTrendPoint[] }) {
+  const { t } = useTranslation("status");
+  // 过滤有事件的桶 · 倒序 · 最多 15
+  const rows = points
+    .filter(p => (p.keys_born ?? 0) > 0 || (p.keys_died ?? 0) > 0)
+    .slice()
+    .reverse()
+    .slice(0, 15);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <h2 className="text-body-lg font-semibold">{t("detail.recent-events")}</h2>
+      <div className="overflow-hidden rounded-2xl border border-hairline bg-surface">
+        {rows.map((p, i) => (
+          <div
+            key={p.t}
+            className={cn(
+              "grid grid-cols-[auto_1fr_auto] items-center gap-4 p-3 md:p-4",
+              i < rows.length - 1 && "border-b border-hairline",
+            )}
+          >
+            <div className="font-mono text-[11px] text-fg-tertiary">
+              {fmtDateTime(p.t)}
+            </div>
+            <div className="flex items-center gap-4 text-label">
+              {(p.keys_born ?? 0) > 0 && (
+                <span className="text-ok-fg">
+                  +{p.keys_born}
+                </span>
+              )}
+              {(p.keys_died ?? 0) > 0 && (
+                <span className="text-fg-tertiary">
+                  −{p.keys_died}
+                </span>
+              )}
+            </div>
+            <div className="text-[10px] text-fg-tertiary">
+              {fmtRelative(p.t)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Format helpers
+// ═══════════════════════════════════════════════════════════
+
 function fmtCompact(n: number): string {
   if (!n) return "0";
   if (n < 1000) return String(n);
@@ -397,20 +594,29 @@ function fmtCompact(n: number): string {
   return (n / 1_000_000).toFixed(1) + "M";
 }
 
-/** 间隔分钟数 → "23min" / "1.5h" / "2d" */
 function fmtInterval(min: number): string {
-  if (min < 60) return `${Math.round(min)}min`;
+  if (min < 60) return `${Math.round(min)}m`;
   if (min < 60 * 24) return `${(min / 60).toFixed(1)}h`;
   return `${Math.round(min / 60 / 24)}d`;
 }
 
-/** ISO 时间 → 相对时间 "刚刚" / "5min 前" / "2h 前" · i18n 只处理单位·数字前端算 */
 function fmtRelative(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const min = Math.floor(diff / 60000);
   if (min < 1) return "刚刚";
-  if (min < 60) return `${min}min 前`;
+  if (min < 60) return `${min}m 前`;
   const h = Math.floor(min / 60);
   if (h < 24) return `${h}h 前`;
   return `${Math.floor(h / 24)}d 前`;
+}
+
+function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function fmtDateTime(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

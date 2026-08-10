@@ -11,20 +11,45 @@
     "no-data": "Data still warming up · metrics may be incomplete in the first 24 hours after launch"
   },
   "overview": {
-    "total-keys": "Total keys dispatched",
-    "vendors-live": "Vendors live",
-    "avg-interval": "Avg. interval",
+    "total-keys": "Total dispatched",
+    "stocked": "Stocked vendors",
+    "avg-interval": "Avg interval",
     "latest-batch": "Latest batch"
   },
-  "fleet-timeline": {
-    "title": "24-hour dispatch rhythm",
-    "subtitle": "One row per vendor · green = new keys · gray = dead"
+  "fleet": {
+    "title": "Upstream vendors",
+    "subtitle": "Tap to see full history"
   },
   "row": {
-    "uptime": "{{pct}}% up",
-    "uptime-unknown": "-",
-    "batches": "{{count}} batches",
-    "warming-up": "Warming up"
+    "uptime": "{{pct}}% uptime",
+    "warming": "Warming up",
+    "stock-many": "In stock",
+    "stock-low": "Low stock",
+    "stock-out": "Out",
+    "stock-unknown": "Unknown",
+    "keys-unit": "keys"
+  },
+  "tags": {
+    "lifespan-long": "Long-lived · > 1h",
+    "lifespan-mid": "Mid · 10min–1h",
+    "lifespan-short": "Short · < 10min",
+    "warranty": "Warranty",
+    "warranty-min": "{{minutes}}min warranty",
+    "incidents": "{{count}} incident days"
+  },
+  "detail": {
+    "back": "Back to list",
+    "not-found": "Vendor not found",
+    "total-keys": "Total dispatched",
+    "total-batches": "Total batches",
+    "avg-interval": "Avg interval",
+    "uptime-24h": "24h uptime",
+    "warranty": "Warranty",
+    "warranty-value": "{{minutes}} min",
+    "max-per-order": "Max per order",
+    "timeline-title": "7-day rhythm",
+    "timeline-subtitle": "Each dot is a batch · size = count · green = new · gray = dead",
+    "recent-events": "Recent activity"
   },
   "col": {
     "vendor": "Vendor",
