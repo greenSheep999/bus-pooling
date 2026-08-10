@@ -1,0 +1,147 @@
+{
+  "action": {
+    "handoff": "下载拿走",
+    "into-bus": "加入拼车",
+    "push-pool": "推我的号池"
+  },
+  "action.push-pool.disabled-hint": "先在设置里配我的号池",
+  "assign-history": {
+    "chip": {
+      "downloaded": "已下载"
+    },
+    "col": {
+      "count": "数量",
+      "dest": "去向",
+      "target": "目标",
+      "time": "时间",
+      "vendor": "vendor"
+    },
+    "detail": {
+      "just-pulled": "刚拉",
+      "key": "key",
+      "lifespan": "派发时存活",
+      "region": "区域",
+      "used": "已耗额度"
+    },
+    "empty": {
+      "desc": "把待派的 key 派进车 / 推自己号池 / 拿走 · 记录会出现在这里",
+      "title": "还没有派发历史"
+    },
+    "handoff-warn": {
+      "prefix": "明文已交给你并从我方删除 · ",
+      "strong": "无法重新下载",
+      "suffix": " · 下面只保留打码记录"
+    },
+    "section": {
+      "sub": {
+        "prefix": "每次派动作 · 共 ",
+        "suffix": " 次 · 点行展开看每个号"
+      },
+      "title": "派发历史"
+    }
+  },
+  "dest": {
+    "handoff": "下载拿走",
+    "into-bus": "进车",
+    "push-pool": "推我的号池"
+  },
+  "downstream": {
+    "warn": {
+      "link": "设置 · 我的号池",
+      "prefix": "\"推我的号池\" 需要先在 ",
+      "suffix": " 里配 URL 和 token",
+      "title": "还没配置我的号池"
+    }
+  },
+  "extract-history": {
+    "col": {
+      "cost": "花费",
+      "count": "数量",
+      "progress": "派发进度",
+      "result": "结果",
+      "time": "时间",
+      "vendor-zone": "vendor · 区域"
+    },
+    "empty": {
+      "desc": "点右上「提取 key」拉一批 · 每次操作都会记在这里",
+      "title": "还没有提取历史"
+    },
+    "progress": {
+      "all-assigned": "已全派",
+      "pending-prefix": "待派 "
+    },
+    "section": {
+      "sub": {
+        "prefix": "每次拉号操作 · 共 ",
+        "suffix": " 次"
+      },
+      "title": "提取历史"
+    },
+    "zone": {
+      "all": "全区"
+    }
+  },
+  "extract-result": {
+    "failed": "失败",
+    "partial": "部分",
+    "refunded": "退款",
+    "success": "成功"
+  },
+  "form": {
+    "card": {
+      "sub": "选 vendor 看上游 · 定数量和区域 · 拉一批",
+      "title": "提取新 key"
+    }
+  },
+  "hero": {
+    "desc": "拉出来的 key 进\"待派\"列表 · 派 3 种去向：",
+    "tag": {
+      "handoff": "下载 txt · 拿走",
+      "into-bus": "进车",
+      "push-pool": "推我的号池"
+    },
+    "title": "提取 key"
+  },
+  "pending": {
+    "col": {
+      "key": "key · vendor · 状态",
+      "lifespan": "寿命",
+      "pulled-at": "拉入",
+      "region": "区域",
+      "used": "已消耗"
+    },
+    "empty": {
+      "desc": "点右上「提取 key」拉一批 · 拉到的号在这里选去向",
+      "title": "还没有待派 key"
+    },
+    "section": {
+      "sub": {
+        "credits-tip": " 积分 · 勾选后底部出操作栏",
+        "dead-sep": " · ",
+        "dead-suffix": " 个已失效（不能派）",
+        "empty": "拉一批 key 后在这里派去向",
+        "from": " · 来自 ",
+        "usable-prefix": "可用 ",
+        "usable-suffix": " 个",
+        "vendor-mid": " 家 vendor · 累计冻结 "
+      },
+      "title": "待派 key"
+    }
+  },
+  "row": {
+    "chip": {
+      "alive": "正常",
+      "dead": "已失效",
+      "warranty-refund": "质保内失效 · 可退"
+    }
+  },
+  "tabs": {
+    "assign-history": "派发历史",
+    "extract-history": "提取历史",
+    "pending": "待派"
+  },
+  "unit": {
+    "count": "个",
+    "credits": "积分"
+  }
+}

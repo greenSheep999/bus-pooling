@@ -1,0 +1,105 @@
+{
+  "balance": {
+    "available": "Available balance",
+    "reserved": {
+      "hint": "Held by pulls in progress",
+      "label": "Reserved"
+    },
+    "spend-total": "Total spend",
+    "topup-total": "Total top-ups",
+    "unit": "credits"
+  },
+  "hero": {
+    "subtitle": "Top up to earn credits. Pulls and handoffs deduct from here. Keys that die within 30 minutes are auto-refunded.",
+    "title": "Wallet"
+  },
+  "ledger": {
+    "empty-filtered": {
+      "desc": "Try a different filter",
+      "title": "No entries match this filter"
+    },
+    "empty": {
+      "desc": "Top-ups, pull charges, and refunds all show up here",
+      "title": "No entries yet"
+    },
+    "filter": {
+      "all": "All",
+      "in": "In",
+      "out": "Out"
+    },
+    "header": {
+      "balance": "Balance",
+      "change": "Change",
+      "memo": "Note",
+      "time": "Time",
+      "type": "Type"
+    },
+    "sub": "<0>{{count}}</0> entries",
+    "title": "Ledger",
+    "type": {
+      "redeem": "Redeem",
+      "refund": "Refund",
+      "share": "Bus split",
+      "spend": "Spend",
+      "topup": "Top-up",
+      "warranty-refund": "Warranty refund"
+    }
+  },
+  "redeem": {
+    "error": {
+      "title": "Redeem failed"
+    },
+    "field": {
+      "label": "Redeem code",
+      "placeholder": "KIRO-XXXX"
+    },
+    "sub": "Codes from the community · redeemed straight to balance",
+    "submit": {
+      "default": "Redeem",
+      "pending": "Redeeming…"
+    },
+    "success": {
+      "message": "Received {{credits}} credits",
+      "title": "Redeemed"
+    },
+    "title": "Redeem code"
+  },
+  "topup": {
+    "field": {
+      "want-credits": {
+        "hint": "credits",
+        "label": "Credits to receive",
+        "placeholder": "Enter credit amount"
+      }
+    },
+    "hint": {
+      "default": "The fee goes to the payment channel — we don't collect or absorb it. Pulls and handoffs after this are credit-only, no more fees.",
+      "waived": "Fee waived this time (from your invite balance · <0>{{count}}</0> left). Pulls and handoffs after this are credit-only."
+    },
+    "modal": {
+      "close": "Close",
+      "copy-aria": "Copy payment link",
+      "fallback": "Tap the button below to open the payment page",
+      "notice": "Credits arrive automatically after payment · valid for 15 minutes · unpaid orders expire",
+      "open-checkout": "Open payment page",
+      "qr-alt": "Payment QR code",
+      "summary": "Pay <0>{{paid}}</0> CNY · receive <1>{{credits}}</1> credits",
+      "title": "Pay now"
+    },
+    "preset": "{{value}} credits",
+    "preview": {
+      "fee-label": "Fee <0>5%</0>",
+      "fee-waived-mark": "Waived",
+      "paid-label": "You pay",
+      "paid-value": "<0>{{paid}}</0> CNY",
+      "want": "You receive",
+      "want-value": "<0>{{credits}}</0> credits"
+    },
+    "sub": "1 credit = 1 CNY · 5% channel fee added on top",
+    "submit": {
+      "default": "Create top-up order",
+      "pending": "Creating…"
+    },
+    "title": "Top up"
+  }
+}

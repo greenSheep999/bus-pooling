@@ -1,0 +1,84 @@
+{
+  "filter": {
+    "days": {
+      "30": "30 days",
+      "7": "7 days"
+    },
+    "zone": {
+      "eu": "EU",
+      "us": "US"
+    }
+  },
+  "footnote": "Data shown is demo mock · real data will aggregate from upstream round records",
+  "hero": {
+    "desc": {
+      "cheapest-label": "Cheapest now: ",
+      "cheapest-suffix": "credits",
+      "empty": "No data yet",
+      "prefix": "Upstream runs multiple rounds a day · each round differs in output and unit price · bars = that day's price range · "
+    },
+    "title": "Price trends"
+  },
+  "legend": {
+    "density": "Darker = more rounds that day",
+    "no-service": "No rounds",
+    "range": "Day's price range (multi-round)",
+    "single": "Only 1 round"
+  },
+  "matrix": {
+    "empty": "No data yet",
+    "header": {
+      "change": "{{days}}-day change",
+      "distribution": "{{days}}-day price distribution · bar height = day's min–max round price",
+      "vendor": "vendor · {{days}}-day summary"
+    },
+    "loading": "Loading…"
+  },
+  "nav": {
+    "back-to-extract": "Back to key extraction"
+  },
+  "rounds": {
+    "clear-filter": "Clear filter",
+    "empty": "No rounds yet",
+    "header": {
+      "output": "Output",
+      "position": "Day rank",
+      "price": "Unit price",
+      "time": "Time",
+      "vendor": "vendor",
+      "zone": "Zone"
+    },
+    "keys-count": "{{count}} keys",
+    "position": {
+      "max": "Day high",
+      "min": "Day low",
+      "of": "of {{count}}",
+      "only": "Only round"
+    },
+    "price-unit": "credits",
+    "remain-unit": "rounds",
+    "sub": {
+      "all": "{{zone}} · all vendors · <em>{{count}}</em> rounds · newest first · click a day above to filter",
+      "filtered": "{{label}} · {{date}} · <em>{{count}}</em> rounds"
+    },
+    "title": "Round history",
+    "zone": {
+      "all": "All"
+    }
+  },
+  "stat": {
+    "avg": "Avg",
+    "credits-unit": "credits",
+    "no-service": "Downtime",
+    "range": "Range",
+    "rounds-per-day": "Rounds/day"
+  },
+  "stat.no-service.days": "{{days}} days",
+  "stat.no-service.none": "none",
+  "stat.rounds-per-day.unit": "rounds",
+  "tag": {
+    "cheapest": "Cheapest",
+    "most-rounds": "Most rounds",
+    "most-stable": "Most stable"
+  }
+}

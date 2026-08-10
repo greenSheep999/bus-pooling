@@ -1,0 +1,105 @@
+{
+  "balance": {
+    "available": "可用余额",
+    "reserved": {
+      "hint": "拉号进行中占用",
+      "label": "冻结中"
+    },
+    "spend-total": "累计消费",
+    "topup-total": "累计充值",
+    "unit": "积分"
+  },
+  "hero": {
+    "subtitle": "充值得积分 · 拉号和提取从这里扣 · 号 30 分钟内失效自动退",
+    "title": "钱包"
+  },
+  "ledger": {
+    "empty-filtered": {
+      "desc": "换个筛选条件看看",
+      "title": "这个筛选下没有记录"
+    },
+    "empty": {
+      "desc": "充值、拉号扣款、退款都会记在这里",
+      "title": "还没有流水"
+    },
+    "filter": {
+      "all": "全部",
+      "in": "入账",
+      "out": "出账"
+    },
+    "header": {
+      "balance": "余额",
+      "change": "变动",
+      "memo": "说明",
+      "time": "时间",
+      "type": "类型"
+    },
+    "sub": "共 <0>{{count}}</0> 条",
+    "title": "流水",
+    "type": {
+      "redeem": "兑换",
+      "refund": "退款",
+      "share": "车友分摊",
+      "spend": "消费",
+      "topup": "充值",
+      "warranty-refund": "质保退款"
+    }
+  },
+  "redeem": {
+    "error": {
+      "title": "兑换失败"
+    },
+    "field": {
+      "label": "兑换码",
+      "placeholder": "KIRO-XXXX"
+    },
+    "sub": "社群发的码 · 兑换直接进余额",
+    "submit": {
+      "default": "兑换",
+      "pending": "兑换中…"
+    },
+    "success": {
+      "message": "到账 {{credits}} 积分",
+      "title": "兑换成功"
+    },
+    "title": "兑换码"
+  },
+  "topup": {
+    "field": {
+      "want-credits": {
+        "hint": "积分",
+        "label": "想充多少积分",
+        "placeholder": "输入积分数"
+      }
+    },
+    "hint": {
+      "default": "手续费由支付通道收取，我方不加收也不承担 · 之后拉号、提取都是积分抵扣，不再收手续费",
+      "waived": "这次免手续费（邀请好友攒的额度 · 还剩 <0>{{count}}</0> 次）· 之后拉号、提取都是积分抵扣"
+    },
+    "modal": {
+      "close": "关闭",
+      "copy-aria": "复制支付链接",
+      "fallback": "点下面按钮跳去支付页",
+      "notice": "支付完成后积分自动到账 · 15 分钟内有效 · 未付款自动作废",
+      "open-checkout": "打开支付页",
+      "qr-alt": "收款二维码",
+      "summary": "付 <0>{{paid}}</0> 元 · 到账 <1>{{credits}}</1> 积分",
+      "title": "去支付"
+    },
+    "preset": "{{value}} 积分",
+    "preview": {
+      "fee-label": "手续费 <0>5%</0>",
+      "fee-waived-mark": "免",
+      "paid-label": "你需支付",
+      "paid-value": "<0>{{paid}}</0> 元",
+      "want": "想到账",
+      "want-value": "<0>{{credits}}</0> 积分"
+    },
+    "sub": "1 积分 = 1 元 · 通道费 5% 加在本金上",
+    "submit": {
+      "default": "生成充值单",
+      "pending": "生成中…"
+    },
+    "title": "充值"
+  }
+}

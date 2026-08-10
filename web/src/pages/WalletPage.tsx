@@ -25,6 +25,7 @@ import type { LedgerEntry, LedgerType, TopupOrder } from "@/types";
 const PRESETS = [50, 100, 200, 500];
 
 export default function WalletPage() {
+  const { t } = useTranslation("wallet");
   const { data: wallet } = useWallet();
   const { data: ledger, isLoading: ledgerLoading } = useLedger();
   const entries = ledger?.items ?? [];
@@ -46,9 +47,9 @@ export default function WalletPage() {
       {/* Hero · 余额 giant 48px · 全站唯一一处用这档（decisions §8.16 例外条款） */}
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="min-w-0 space-y-2">
-          <h1 className="text-hero font-semibold">钱包</h1>
+          <h1 className="text-hero font-semibold">{t("hero.title")}</h1>
           <p className="text-fg-tertiary">
-            充值得积分 · 拉号和提取从这里扣 · 号 30 分钟内失效自动退
+            {t("hero.subtitle")}
           </p>
         </div>
       </div>
@@ -63,32 +64,32 @@ export default function WalletPage() {
               <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-credit-bg">
                 <WalletIcon className="size-3.5 text-credit-fg" />
               </span>
-              <span className="text-label font-semibold text-fg-secondary">可用余额</span>
+              <span className="text-label font-semibold text-fg-secondary">{t("balance.available")}</span>
             </div>
 
             <div className="mt-3 flex items-baseline gap-2">
               <span className="text-giant font-semibold tnum">
                 {fmtCredits(wallet?.balance ?? 0)}
               </span>
-              <span className="text-body-lg font-medium text-fg-tertiary">积分</span>
+              <span className="text-body-lg font-medium text-fg-tertiary">{t("balance.unit")}</span>
             </div>
 
             <div className="mt-5 grid grid-cols-3 gap-4 border-t border-hairline pt-4">
               <MiniTotal
                 icon={Lock}
-                label="冻结中"
+                label={t("balance.reserved.label")}
                 value={fmtCredits(wallet?.reserved ?? 0)}
-                hint="拉号进行中占用"
+                hint={t("balance.reserved.hint")}
               />
               <MiniTotal
                 icon={TrendingUp}
-                label="累计充值"
+                label={t("balance.topup-total")}
                 value={fmtCredits(totals.topup)}
                 tone="ok"
               />
               <MiniTotal
                 icon={TrendingDown}
-                label="累计消费"
+                label={t("balance.spend-total")}
                 value={fmtCredits(totals.spend)}
                 tone="spend"
               />
@@ -139,6 +140,7 @@ function MiniTotal({
 /* ─────────────── 充值 ─────────────── */
 
 function TopupCard() {
+  const { t } = useTranslation("wallet");
   /* 输入的是**想到账的积分数**（CLAUDE.md §1.4）· 通道费 5% 加在上面 · 支付 = 积分 × 1.05 */
   const [wantCredits, setWantCredits] = useState<string>("100");
   const create = useCreateTopup();
@@ -163,18 +165,18 @@ function TopupCard() {
     <>
       <Card className="p-7">
         <SectionHead
-          title="充值"
-          sub={<>1 积分 = 1 元 · 通道费 5% 加在本金上</>}
+          title={t("topup.title")}
+          sub={t("topup.sub")}
         />
 
         <div className="mt-4 space-y-4">
-          <Field label="想充多少积分" hint="积分">
+          <Field label={t("topup.field.want-credits.label")} hint={t("topup.field.want-credits.hint")}>
             <Input
               type="number"
               min={1}
               value={wantCredits}
               onChange={(e) => setWantCredits(e.target.value)}
-              placeholder="输入积分数"
+              placeholder={t("topup.field.want-credits.placeholder")}
             />
           </Field>
 
@@ -186,7 +188,7 @@ function TopupCard() {
                 size="sm"
                 onClick={() => setWantCredits(String(p))}
               >
-                {p} 积分
+                {t("topup.preset", { value: p })}
               </Button>
             ))}
           </div>
@@ -194,29 +196,58 @@ function TopupCard() {
           {/* 通道费只在充值这一步展示（decisions §8.21）
               拉号 / 提取 / 派号都是积分抵扣，跟通道费无关，那些地方不显示 */}
           <div className="space-y-2 rounded-xl border border-hairline bg-bg-elevated/50 p-3.5">
-            <Row label="想到账" value={<><Em tone="ok">{toCredits(credits)}</Em> 积分</>} />
+            <Row
+              label={t("topup.preview.want")}
+              value={
+                <Trans
+                  i18nKey="topup.preview.want-value"
+                  ns="wallet"
+                  values={{ credits: toCredits(credits) }}
+                  components={[<Em tone="ok" />]}
+                />
+              }
+            />
             {willWaive ? (
               <Row
-                label={<>手续费 <span className="text-fg-tertiary">5%</span></>}
+                label={
+                  <Trans
+                    i18nKey="topup.preview.fee-label"
+                    ns="wallet"
+                    components={[<span className="text-fg-tertiary" />]}
+                  />
+                }
                 value={
                   <span className="flex items-center gap-1.5">
                     <span className="text-fg-tertiary line-through">
                       +{toCredits(Math.round(credits * 0.05))}
                     </span>
-                    <Em tone="ok">免</Em>
+                    <Em tone="ok">{t("topup.preview.fee-waived-mark")}</Em>
                   </span>
                 }
               />
             ) : (
               <Row
-                label={<>手续费 <span className="text-fg-tertiary">5%</span></>}
+                label={
+                  <Trans
+                    i18nKey="topup.preview.fee-label"
+                    ns="wallet"
+                    components={[<span className="text-fg-tertiary" />]}
+                  />
+                }
                 value={<Em tone="spend">+{toCredits(fee)}</Em>}
               />
             )}
             <div className="border-t border-hairline pt-2">
               <Row
-                label="你需支付"
-                value={<><Em>{toCredits(paid)}</Em> 元</>}
+                label={t("topup.preview.paid-label")}
+                value={
+                  <Trans
+                    i18nKey="topup.preview.paid-value"
+                    ns="wallet"
+                    values={{ paid: toCredits(paid) }}
+                    components={[<Em />]}
+                  />
+                }
                 strong
               />
             </div>
@@ -224,13 +255,14 @@ function TopupCard() {
 
           <p className="text-label text-fg-tertiary">
             {willWaive ? (
-              <>
-                这次免手续费（邀请好友攒的额度 · 还剩{" "}
-                <Em plain>{myInvite?.waiver_remaining ?? 0}</Em> 次）·
-                之后拉号、提取都是积分抵扣
-              </>
+              <Trans
+                i18nKey="topup.hint.waived"
+                ns="wallet"
+                values={{ count: myInvite?.waiver_remaining ?? 0 }}
+                components={[<Em plain />]}
+              />
             ) : (
-              <>手续费由支付通道收取，我方不加收也不承担 · 之后拉号、提取都是积分抵扣，不再收手续费</>
+              t("topup.hint.default")
             )}
           </p>
 
@@ -241,7 +273,7 @@ function TopupCard() {
             disabled={!valid || create.isPending}
           >
             {create.isPending ? <Loader2 className="animate-spin" /> : <WalletIcon />}
-            {create.isPending ? "生成中…" : "生成充值单"}
+            {create.isPending ? t("topup.submit.pending") : t("topup.submit.default")}
           </Button>
         </div>
       </Card>
@@ -266,6 +298,7 @@ function Row({
 function TopupOrderModal({
   order, onClose,
 }: { order: TopupOrder | null; onClose: () => void }) {
+  const { t } = useTranslation("wallet");
   const [copied, setCopied] = useState(false);
 
   /* 有 checkout_url：跳支付通道收款页 · 有 qr_content：渲染二维码
@@ -277,10 +310,17 @@ function TopupOrderModal({
     <Dialog open={!!order} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-[420px]">
         <DialogHeader>
-          <DialogTitle>去支付</DialogTitle>
+          <DialogTitle>{t("topup.modal.title")}</DialogTitle>
           <p className="text-label text-fg-tertiary">
-            付 <Em>{order ? toCredits(order.paid) : 0}</Em> 元 ·
-            到账 <Em tone="ok">{order ? toCredits(order.credits) : 0}</Em> 积分
+            <Trans
+              i18nKey="topup.modal.summary"
+              ns="wallet"
+              values={{
+                paid: order ? toCredits(order.paid) : 0,
+                credits: order ? toCredits(order.credits) : 0,
+              }}
+              components={[<Em />, <Em tone="ok" />]}
+            />
           </p>
         </DialogHeader>
         <DialogBody>
@@ -288,14 +328,14 @@ function TopupOrderModal({
           {qrContent ? (
             <div className="grid place-items-center rounded-xl border border-hairline bg-bg-elevated p-6">
               <img
-                alt="收款二维码"
+                alt={t("topup.modal.qr-alt")}
                 className="size-40 rounded-lg border border-hairline bg-white"
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrContent)}`}
               />
             </div>
           ) : (
             <div className="grid place-items-center rounded-xl border border-hairline bg-bg-elevated p-6">
-              <p className="text-label text-fg-tertiary">点下面按钮跳去支付页</p>
+              <p className="text-label text-fg-tertiary">{t("topup.modal.fallback")}</p>
             </div>
           )}
 
@@ -306,7 +346,7 @@ function TopupOrderModal({
             <Button
               variant="ghost"
               size="icon"
-              aria-label="复制支付链接"
+              aria-label={t("topup.modal.copy-aria")}
               onClick={() => {
                 const s = checkoutURL || qrContent;
                 if (!s) return;
@@ -325,16 +365,16 @@ function TopupOrderModal({
               variant="brand"
               onClick={() => window.open(checkoutURL, "_blank", "noopener,noreferrer")}
             >
-              打开支付页
+              {t("topup.modal.open-checkout")}
             </Button>
           )}
 
           <Alert tone="neutral" icon={ShieldCheck} className="mt-3">
-            支付完成后积分自动到账 · 15 分钟内有效 · 未付款自动作废
+            {t("topup.modal.notice")}
           </Alert>
         </DialogBody>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>关闭</Button>
+          <Button variant="ghost" onClick={onClose}>{t("topup.modal.close")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -344,6 +384,7 @@ function TopupOrderModal({
 /* ─────────────── 兑换码 ─────────────── */
 
 function RedeemCard() {
+  const { t } = useTranslation("wallet");
   const [code, setCode] = useState("");
   const redeem = useRedeem();
   const [okMsg, setOkMsg] = useState<string | null>(null);
@@ -353,7 +394,7 @@ function RedeemCard() {
     setOkMsg(null);
     try {
       const r = await redeem.mutateAsync(code.trim());
-      setOkMsg(`到账 ${fmtCredits(r.credits)} 积分`);
+      setOkMsg(t("redeem.success.message", { credits: fmtCredits(r.credits) }));
       setCode("");
     } catch {
       /* 错误走下面 redeem.error 渲染 */
@@ -362,15 +403,15 @@ function RedeemCard() {
 
   return (
     <Card className="p-7">
-      <SectionHead title="兑换码" sub="社群发的码 · 兑换直接进余额" />
+      <SectionHead title={t("redeem.title")} sub={t("redeem.sub")} />
 
       <div className="mt-4 space-y-3">
-        <Field label="兑换码">
+        <Field label={t("redeem.field.label")}>
           <Input
             value={code}
             onChange={(e) => { setCode(e.target.value); setOkMsg(null); }}
             onKeyDown={(e) => e.key === "Enter" && onRedeem()}
-            placeholder="KIRO-XXXX"
+            placeholder={t("redeem.field.placeholder")}
             className="font-mono uppercase"
           />
         </Field>
@@ -381,12 +422,12 @@ function RedeemCard() {
           disabled={!code.trim() || redeem.isPending}
         >
           {redeem.isPending ? <Loader2 className="animate-spin" /> : <Ticket />}
-          {redeem.isPending ? "兑换中…" : "兑换"}
+          {redeem.isPending ? t("redeem.submit.pending") : t("redeem.submit.default")}
         </Button>
 
-        {okMsg && <Alert tone="ok" icon={Gift} title="兑换成功">{okMsg}</Alert>}
+        {okMsg && <Alert tone="ok" icon={Gift} title={t("redeem.success.title")}>{okMsg}</Alert>}
         {redeem.isError && (
-          <Alert tone="danger" icon={Ticket} title="兑换失败">
+          <Alert tone="danger" icon={Ticket} title={t("redeem.error.title")}>
             {(redeem.error as Error).message}
           </Alert>
         )}
@@ -398,22 +439,22 @@ function RedeemCard() {
 /* ─────────────── 流水 ─────────────── */
 
 /** 流水类型 → 用户能看懂的话（内部枚举不出现在 UI · CLAUDE.md §12.6） */
-const LEDGER_LABEL: Record<LedgerType, string> = {
-  topup: "充值",
-  spend: "消费",
-  redeem: "兑换",
-  refund: "退款",
-  warranty_refund: "质保退款",
+const LEDGER_LABEL_KEY: Record<LedgerType, string> = {
+  topup: "ledger.type.topup",
+  spend: "ledger.type.spend",
+  redeem: "ledger.type.redeem",
+  refund: "ledger.type.refund",
+  warranty_refund: "ledger.type.warranty-refund",
   // 正负都用这一个词 —— 金额符号已经说明方向（收 / 付）
-  share: "车友分摊",
+  share: "ledger.type.share",
 };
 
 type FilterKey = "all" | "in" | "out";
 
-const FILTERS: { value: FilterKey; label: string }[] = [
-  { value: "all", label: "全部" },
-  { value: "in", label: "入账" },
-  { value: "out", label: "出账" },
+const FILTER_KEYS: { value: FilterKey; labelKey: string }[] = [
+  { value: "all", labelKey: "ledger.filter.all" },
+  { value: "in", labelKey: "ledger.filter.in" },
+  { value: "out", labelKey: "ledger.filter.out" },
 ];
 
 function LedgerCard({
@@ -422,7 +463,9 @@ function LedgerCard({
   entries: LedgerEntry[];
   loading?: boolean;
 }) {
+  const { t } = useTranslation("wallet");
   const [filter, setFilter] = useState<FilterKey>("all");
+  const filters = FILTER_KEYS.map((f) => ({ value: f.value, label: t(f.labelKey) }));
 
   /* 筛选按"钱进来还是出去"分，不按内部 type 枚举 —— 用户只关心这个 */
   const shown = entries.filter((e) =>
@@ -432,9 +475,16 @@ function LedgerCard({
   return (
     <Card className="p-7">
       <SectionHead
-        title="流水"
-        sub={<>共 <Em>{entries.length}</Em> 条</>}
-        right={<Segmented options={FILTERS} value={filter} onChange={setFilter} />}
+        title={t("ledger.title")}
+        sub={
+          <Trans
+            i18nKey="ledger.sub"
+            ns="wallet"
+            values={{ count: entries.length }}
+            components={[<Em />]}
+          />
+        }
+        right={<Segmented options={filters} value={filter} onChange={setFilter} />}
       />
 
       {loading ? (
@@ -443,26 +493,26 @@ function LedgerCard({
         entries.length === 0 ? (
           <EmptyState
             icon={WalletIcon}
-            title="还没有流水"
-            desc="充值、拉号扣款、退款都会记在这里"
+            title={t("ledger.empty.title")}
+            desc={t("ledger.empty.desc")}
           />
         ) : (
           /* 有数据但筛选后为空 —— 引导改筛选·不要引导他去充值 */
           <EmptyState
             icon={WalletIcon}
-            title="这个筛选下没有记录"
-            desc="换个筛选条件看看"
+            title={t("ledger.empty-filtered.title")}
+            desc={t("ledger.empty-filtered.desc")}
           />
         )
       ) : (
         <div className="mt-4 overflow-x-auto">
           <div className="min-w-[560px]">
             <BareHead>
-              <span className="w-[92px] shrink-0">时间</span>
-              <span className="w-20 shrink-0">类型</span>
-              <span className="min-w-0 flex-1">说明</span>
-              <span className="w-24 shrink-0 text-right">变动</span>
-              <span className="w-24 shrink-0 text-right">余额</span>
+              <span className="w-[92px] shrink-0">{t("ledger.header.time")}</span>
+              <span className="w-20 shrink-0">{t("ledger.header.type")}</span>
+              <span className="min-w-0 flex-1">{t("ledger.header.memo")}</span>
+              <span className="w-24 shrink-0 text-right">{t("ledger.header.change")}</span>
+              <span className="w-24 shrink-0 text-right">{t("ledger.header.balance")}</span>
             </BareHead>
             <BareList>
               {shown.map((e) => (
@@ -477,6 +527,7 @@ function LedgerCard({
 }
 
 function LedgerRow({ e }: { e: LedgerEntry }) {
+  const { t } = useTranslation("wallet");
   const income = e.amount > 0;
   return (
     <BareRow>
@@ -484,7 +535,7 @@ function LedgerRow({ e }: { e: LedgerEntry }) {
         {fmtTime(e.created_at)}
       </span>
       <span className="w-20 shrink-0">
-        <Chip tone={income ? "ok" : "neutral"}>{LEDGER_LABEL[e.type]}</Chip>
+        <Chip tone={income ? "ok" : "neutral"}>{t(LEDGER_LABEL_KEY[e.type])}</Chip>
       </span>
       <span className="min-w-0 flex-1 truncate text-label text-fg-secondary">{e.memo}</span>
       <span className="flex w-24 shrink-0 items-center justify-end gap-1">

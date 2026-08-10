@@ -1,0 +1,154 @@
+{
+  "assign": {
+    "dest": {
+      "handoff": {
+        "desc": "Grab the plaintext and the key leaves our system · No further monitoring, no way to get plaintext back",
+        "title": "Take out"
+      },
+      "into-bus": {
+        "desc": "Bus manages the key · Shared among members · We keep monitoring liveness",
+        "title": "Into bus"
+      },
+      "push-pool": {
+        "desc": "Double-write to your configured pool · We keep a copy to monitor",
+        "title": "Push to my pool"
+      }
+    },
+    "handoff": {
+      "alert": {
+        "body": "Without a confirm the key isn't deleted — so retrying step 2 after a drop is fine · Once confirmed, the plaintext is gone for good",
+        "title": "The key stays until step 3"
+      },
+      "code": "# 1. Start order → get token\nPOST /api/me/pull-records/<id>/handoff-init\n\n# 2. Use the token to fetch plaintext (retriable within TTL)\nGET /api/me/handoff/<token>\n\n# 3. Confirm receipt → we actually delete the key\nPOST /api/me/handoff/<token>/confirm",
+      "sub": "Guards against \"we deleted the key but you never got the plaintext\"",
+      "title": "Take out is two-phase"
+    },
+    "request-code": "// Request\n{\n  \"credential_ids\": [\"01H8...\", \"01H9...\"],\n  \"destination\": \"into_bus\",\n  \"bus_id\": \"01HA...\"          // Required when destination=into_bus\n}",
+    "section": {
+      "sub-suffix": " · 3 destinations",
+      "title": "Assign destination"
+    }
+  },
+  "errors": {
+    "alert": {
+      "part-1": " and ",
+      "part-2": " are worth auto-retrying · ",
+      "part-3": " and ",
+      "part-4": " parameter errors won't be helped by a retry"
+    },
+    "header": {
+      "code": "code",
+      "http": "HTTP",
+      "meaning": "Meaning"
+    },
+    "item": {
+      "bad-bus-id": "Bus doesn't exist, or isn't yours",
+      "bad-count": "count is out of range",
+      "bad-json": "Body isn't valid JSON, or contains unknown fields",
+      "bad-vendor": "vendor_id isn't recognized",
+      "housepool-unavailable": "Housepool temporarily unavailable",
+      "idempotency-conflict": "Same idempotency key but a different request body",
+      "insufficient-balance": "Not enough balance, top up first",
+      "internal": "Our problem — feel free to report it",
+      "invalid-api-key": "Key is invalid or revoked",
+      "no-stock": "Upstream out of stock, try again later",
+      "not-found": "Resource not found",
+      "rate-limited": "Rate-limited — see retry_after seconds",
+      "session-required": "This action requires browser login (change password / create key)",
+      "vendor-error": "Upstream is down or unreachable"
+    },
+    "sub-prefix": "Dispatch logic on ",
+    "sub-suffix": " · message is human-readable and may change",
+    "title": "Error codes"
+  },
+  "hero": {
+    "desc": "Script your pulls, assignments, and webhooks with an API key",
+    "manage-key": "Manage API keys",
+    "title": "API docs"
+  },
+  "nav": {
+    "assign": "Assign",
+    "errors": "Errors",
+    "pull": "Pull",
+    "start": "Start",
+    "webhook": "Webhook"
+  },
+  "pull": {
+    "bus": {
+      "alert": "Unit price is higher when pulling 1 · Batches are cheaper · Amounts in the response are final, book them as-is · Pulls have no channel fee — that's only on recharge",
+      "request-code": "// Request\n{\n  \"count\": 5,\n  \"vendor_id\": \"<vendor_id>\",   // Omit to let the system pick by price (see /api/vendors/stock)\n  \"constraints\": {\n    \"max_unit_price\": 30000000  // 30 credits\n  }\n}",
+      "response-code": "// Response\n{\n  \"pull_round_id\": \"01H8...\",\n  \"vendor_id\": \"<vendor_id>\",\n  \"purchased\": 5,\n  \"key_cost\": 100000000,        // Key cost · Passed through to upstream\n  \"single_pull_fee\": 0,          // Only when pulling 1\n  \"service_fee_total\": 5000000,  // Per key\n  \"total_debit\": 105000000,\n  \"balance_remaining\": 895000000\n}",
+      "title": "Pull for a bus"
+    },
+    "solo": {
+      "code": "curl -X POST https://<base-url>/api/me/pull \\\n  -H \"X-API-Key: usr-<your key>\" \\\n  -H \"X-Idempotency-Key: $(openssl rand -hex 16)\" \\\n  -d '{\"count\": 2, \"zone\": \"us\"}'",
+      "sub-suffix": " · Keys land as \"pending\" until you assign them",
+      "title": "Pull outside a bus"
+    }
+  },
+  "start": {
+    "auth": {
+      "alert": {
+        "body-1": "Only calls under ",
+        "body-2": " are allowed · Can't change login password or create new API keys, so a leaked key can't lock you out",
+        "title": "API keys have scoped permissions"
+      },
+      "code": "curl https://<base-url>/api/me/profile \\\n  -H \"X-API-Key: usr-<your key>\"\n\n# Or use Bearer\ncurl https://<base-url>/api/me/profile \\\n  -H \"Authorization: Bearer usr-<your key>\"",
+      "sub": "API key for scripts · Browser login carries the cookie automatically",
+      "title": "Auth"
+    },
+    "convention": {
+      "error": {
+        "label": "Errors",
+        "value-prefix": "Dispatch on ",
+        "value-suffix": ", not message (message may change)"
+      },
+      "idempotency": {
+        "label": "Idempotency",
+        "value-1": "Pull / assign / recharge requests ",
+        "value-2": " include",
+        "value-3": " (32 hex)",
+        "value-em": "must"
+      },
+      "money": {
+        "label": "Amounts",
+        "value": "Integer microunits · 1 credit ="
+      },
+      "page": {
+        "label": "Pagination"
+      },
+      "sub": "Rules every endpoint follows",
+      "time": {
+        "label": "Time",
+        "value": "ISO-8601 UTC string"
+      },
+      "title": "Common conventions"
+    },
+    "idempotency": {
+      "code": "KEY=$(openssl rand -hex 16)\n\ncurl -X POST https://<base-url>/api/me/buses/<bus_id>/pull \\\n  -H \"X-API-Key: usr-<your key>\" \\\n  -H \"X-Idempotency-Key: $KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"count\": 3}'\n\n# Network dropped? Resend with the same $KEY — won't pull a second batch",
+      "note": "Idempotency window: 30 days · After that the same key is treated as a new request",
+      "sub": "Replays with the same key return the byte-identical original response — no double charge",
+      "title": "Using idempotency keys"
+    }
+  },
+  "webhook": {
+    "event": {
+      "code": "// What we send you\n{\n  \"event\": \"round.completed\",\n  \"created_at\": \"2026-08-08T12:34:56.789Z\",\n  \"data\": {\n    \"pull_round_id\": \"01H8...\",\n    \"bus_id\": \"01HA...\",\n    \"purchased\": 3,\n    \"total_debit\": 63000000\n  }\n}",
+      "link": "Bot notifications",
+      "link-prefix": "Head to ",
+      "link-suffix": " to set the endpoint and pick which events to subscribe",
+      "sub": "We POST to your endpoint · Requests carry an HMAC signature",
+      "title": "Receive events"
+    },
+    "verify": {
+      "alert": {
+        "body-1": "String short-circuit compare leaks info · Use ",
+        "body-2": " · And don't compute against a parsed-then-stringified body — the byte order changes",
+        "title": "Don't use == on signatures"
+      },
+      "code": "import crypto from \"node:crypto\";\n\n// Compute on the **raw body bytes** — don't JSON.parse then re-stringify\nfunction verify(rawBody, signature, secret) {\n  const mac = crypto.createHmac(\"sha256\", secret).update(rawBody).digest(\"hex\");\n  // Constant-time compare avoids timing side-channels\n  return crypto.timingSafeEqual(\n    Buffer.from(mac),\n    Buffer.from(signature),\n  );\n}",
+      "sub": "Compute HMAC-SHA256 with your secret and compare against the header",
+      "title": "Verify the signature"
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, KeyRound, Plus, Ticket, UserPlus, Users, X } from "lucide-react";
 import {
   useBusPulls, useBuses, useMe,
@@ -23,6 +24,7 @@ import {
 import type { Bus, PullResult, PullRound, PushState } from "@/types";
 
 export default function Buses() {
+  const { t } = useTranslation("buses");
   const { data: buses, isLoading: busesLoading } = useBuses();
   const items = buses?.items ?? [];
   // 首屏骨架 · 只在完全没数据时铺（刷新时保留旧列表不闪）
@@ -68,16 +70,16 @@ export default function Buses() {
       {/* Hero + 立即拼车 CTA */}
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="min-w-0 space-y-2">
-          <h1 className="text-hero font-semibold">拼车</h1>
+          <h1 className="text-hero font-semibold">{t("hero.title")}</h1>
           <p className="text-fg-tertiary">
-            <Em>{items.length}</Em> 辆车正在运转{" "}
-            · <Em>{totalAlive}</Em> 个号在池{" "}
-            · 失效 <Em>{totalDead}</Em>{" "}
-            · 今日消费{" "}
+            <Em>{items.length}</Em> {t("hero.buses-active-suffix")}{" "}
+            · <Em>{totalAlive}</Em> {t("hero.keys-in-pool-suffix")}{" "}
+            · {t("hero.dead-prefix")} <Em>{totalDead}</Em>{" "}
+            · {t("hero.spend-today-prefix")}{" "}
             <Em tone="spend">
               {totalSpendToday > 0 ? `-${fmtCredits(totalSpendToday)}` : "0"}
             </Em>{" "}
-            积分
+            {t("hero.credits-suffix")}
           </p>
         </div>
 
@@ -104,10 +106,10 @@ export default function Buses() {
             <Users className="size-6 text-brand-strong" />
           </span>
           <div className="space-y-1">
-            <div className="text-body-lg font-semibold">还没有拼车</div>
-            <p className="text-fg-tertiary">建一辆自己的车 · 或加入他人的拼车</p>
+            <div className="text-body-lg font-semibold">{t("empty.title")}</div>
+            <p className="text-fg-tertiary">{t("empty.desc")}</p>
           </div>
-          <Button variant="brand" onClick={() => setModalKind("single")}>立即拼车</Button>
+          <Button variant="brand" onClick={() => setModalKind("single")}>{t("empty.cta")}</Button>
         </Card>
       ) : (
         /* 车列表整块 · focal 显示条件（方案 A · 决定见对话）：
@@ -168,7 +170,7 @@ export default function Buses() {
           <LoadMoreButton
             expanded={expanded}
             onToggle={() => setExpanded((v) => !v)}
-            labelExpand={<>查看全部 · <span className="tnum font-semibold">{items.length}</span> 辆车</>}
+            labelExpand={<>{t("list.load-more-prefix")} <span className="tnum font-semibold">{items.length}</span> {t("list.load-more-suffix")}</>}
           />
         </div>
       )}
@@ -189,12 +191,13 @@ function StartCarpoolCTA({
   onToggle: (v: boolean) => void;
   onPick: (kind: "single" | "anon" | "invite") => void;
 }) {
+  const { t } = useTranslation("buses");
   return (
     <Popover open={open} onOpenChange={onToggle}>
       <PopoverTrigger asChild>
         <Button variant="brand" className={cn("shrink-0", open && "opacity-90")}>
           <Plus />
-          立即拼车
+          {t("cta.trigger")}
           <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
         </Button>
       </PopoverTrigger>
@@ -204,8 +207,8 @@ function StartCarpoolCTA({
             <Users className="size-4 text-brand-strong" />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="font-semibold">发起拼车</div>
-            <div className="text-label text-fg-tertiary">建一辆自己的车 · 独享号池</div>
+            <div className="font-semibold">{t("cta.single.title")}</div>
+            <div className="text-label text-fg-tertiary">{t("cta.single.desc")}</div>
           </div>
         </PopoverItem>
 
@@ -214,8 +217,8 @@ function StartCarpoolCTA({
             <UserPlus className="size-4 text-brand-strong" />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="font-semibold">搭车</div>
-            <div className="text-label text-fg-tertiary">系统撮合他人拼车 · 共享号池摊单价</div>
+            <div className="font-semibold">{t("cta.anon.title")}</div>
+            <div className="text-label text-fg-tertiary">{t("cta.anon.desc")}</div>
           </div>
         </PopoverItem>
 
@@ -224,8 +227,8 @@ function StartCarpoolCTA({
             <Ticket className="size-4 text-brand-strong" />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="font-semibold">输拼车码加入</div>
-            <div className="text-label text-fg-tertiary">用朋友给的拼车码加入他的车</div>
+            <div className="font-semibold">{t("cta.invite.title")}</div>
+            <div className="text-label text-fg-tertiary">{t("cta.invite.desc")}</div>
           </div>
         </PopoverItem>
       </PopoverContent>
@@ -233,21 +236,23 @@ function StartCarpoolCTA({
   );
 }
 /* 底部拼车拉号记录 · decisions §8.13 · 只列拼车相关 */
-const RESULT: Record<PullResult, { label: string; tone: "ok" | "warn" | "danger" | "brand" }> = {
-  success: { label: "成功", tone: "ok" },
-  partial: { label: "部分", tone: "warn" },
-  failed: { label: "失败", tone: "danger" },
-  refunded: { label: "退款", tone: "brand" },
+const RESULT_TONE: Record<PullResult, "ok" | "warn" | "danger" | "brand"> = {
+  success: "ok",
+  partial: "warn",
+  failed: "danger",
+  refunded: "brand",
 };
 
 function PushCell({ state, ratio }: { state: PushState; ratio: string | null }) {
-  if (state === "pushed") return <Chip tone="ok" icon={<Check className="size-3" />}>已推</Chip>;
-  if (state === "partial") return <Chip tone="warn" icon={<Check className="size-3" />}>部分推 {ratio}</Chip>;
-  if (state === "failed") return <Chip tone="danger" icon={<X className="size-3" />}>推失败</Chip>;
-  return <Chip tone="neutral">未推</Chip>;
+  const { t } = useTranslation("buses");
+  if (state === "pushed") return <Chip tone="ok" icon={<Check className="size-3" />}>{t("push.pushed")}</Chip>;
+  if (state === "partial") return <Chip tone="warn" icon={<Check className="size-3" />}>{t("push.partial", { ratio: ratio ?? "" })}</Chip>;
+  if (state === "failed") return <Chip tone="danger" icon={<X className="size-3" />}>{t("push.failed")}</Chip>;
+  return <Chip tone="neutral">{t("push.none")}</Chip>;
 }
 
 function PoolingPullHistory({ buses }: { buses: string[] }) {
+  const { t } = useTranslation("buses");
   const q0 = useBusPulls(buses[0]);
   const q1 = useBusPulls(buses[1]);
   const q2 = useBusPulls(buses[2]);
@@ -264,26 +269,26 @@ function PoolingPullHistory({ buses }: { buses: string[] }) {
   return (
     <div className="space-y-5">
       <SectionHead
-        title="拼车拉号记录"
-        sub={`共 ${allRounds.length} 轮 · 只列拼车相关（跟概览混流分开）`}
+        title={t("history.title")}
+        sub={t("history.subtitle", { count: allRounds.length })}
       />
       {allRounds.length === 0 ? (
         <EmptyState
           icon={KeyRound}
-          title="这些车还没拉过号"
-          desc="给车拉一轮号 · 记录会出现在这里"
+          title={t("history.empty.title")}
+          desc={t("history.empty.desc")}
         />
       ) : (
         <>
           <div className="overflow-x-auto">
             <div className="min-w-[820px]">
               <BareHead>
-                <span className="w-[86px] shrink-0">时间</span>
-                <span className="w-14 shrink-0">结果</span>
-                <span className="min-w-0 flex-1">流向</span>
-                <span className="w-20 shrink-0 text-center">号状态</span>
-                <span className="w-24 shrink-0 text-center">推池</span>
-                <span className="w-24 shrink-0 text-right">花费</span>
+                <span className="w-[86px] shrink-0">{t("history.table.time")}</span>
+                <span className="w-14 shrink-0">{t("history.table.result")}</span>
+                <span className="min-w-0 flex-1">{t("history.table.flow")}</span>
+                <span className="w-20 shrink-0 text-center">{t("history.table.key-status")}</span>
+                <span className="w-24 shrink-0 text-center">{t("history.table.push")}</span>
+                <span className="w-24 shrink-0 text-right">{t("history.table.cost")}</span>
               </BareHead>
               <BareList>
                 {visible.map((r) => <PullHistRow key={r.id} r={r} />)}
@@ -293,7 +298,7 @@ function PoolingPullHistory({ buses }: { buses: string[] }) {
           <LoadMoreButton
             onLoadMore={() => setShown((s) => s + 10)}
             remain={remain}
-            remainUnit="轮"
+            remainUnit={t("history.remain-unit")}
           />
         </>
       )}
@@ -301,8 +306,10 @@ function PoolingPullHistory({ buses }: { buses: string[] }) {
   );
 }
 function PullHistRow({ r }: { r: PullRound }) {
+  const { t } = useTranslation("buses");
   const { data: me } = useMe();
-  const res = RESULT[r.result];
+  const tone = RESULT_TONE[r.result];
+  const label = t(`result.${r.result}`);
   const failed = r.result === "failed";
   return (
     <BareRow>
@@ -310,20 +317,20 @@ function PullHistRow({ r }: { r: PullRound }) {
         {fmtTime(r.created_at)}
       </span>
       <span className="w-14 shrink-0">
-        <Chip tone={res.tone} dot className="w-full justify-center">{res.label}</Chip>
+        <Chip tone={tone} dot className="w-full justify-center">{label}</Chip>
       </span>
 
       <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
         {failed ? (
           <span className="truncate text-fg-tertiary">
-            未拉到号 · 尝试 <span className="font-medium">{vendorLabel(r.vendor_id, !!me?.invited)}</span>{" "}
-            · {r.fail_reason ?? "缺货"}
+            {t("row.failed-prefix")} <span className="font-medium">{vendorLabel(r.vendor_id, !!me?.invited)}</span>{" "}
+            · {r.fail_reason ?? t("row.fail-reason-default")}
           </span>
         ) : (
           <>
-            <span className="shrink-0 text-fg-secondary">共拉取</span>
+            <span className="shrink-0 text-fg-secondary">{t("row.pulled-prefix")}</span>
             <span className="shrink-0 font-semibold tnum text-fg">{r.count_purchased}</span>
-            <span className="shrink-0 text-fg-secondary">个号，从</span>
+            <span className="shrink-0 text-fg-secondary">{t("row.pulled-mid")}</span>
             <VendorTag name={vendorLabel(r.vendor_id, !!me?.invited)} size="sm" />
             <span className="shrink-0 text-fg-tertiary">→</span>
             <TokenTag size="sm">{r.bus_name}</TokenTag>
@@ -360,7 +367,7 @@ function PullHistRow({ r }: { r: PullRound }) {
         )}
       >
         {r.total_cost === 0 ? "0" : fmtCredits(r.total_cost, { sign: true })}{" "}
-        <span className="font-medium text-fg-tertiary">积分</span>
+        <span className="font-medium text-fg-tertiary">{t("history.credits-suffix")}</span>
       </span>
     </BareRow>
   );

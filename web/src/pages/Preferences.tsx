@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Info, Loader2, Save, ShieldAlert } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useGlobalStrategy, useMe, useSaveGlobalStrategy } from "@/api/hooks";
 import { SettingsHead } from "@/components/SettingsHead";
 import { Alert } from "@/components/ui/alert";
@@ -22,6 +23,7 @@ const numOrNull = (s: string): number | null => {
 };
 
 export default function Preferences() {
+  const { t } = useTranslation("settings");
   const { data: me } = useMe();
   const { data: gs } = useGlobalStrategy();
   const save = useSaveGlobalStrategy();
@@ -60,13 +62,13 @@ export default function Preferences() {
   return (
     <div className="space-y-section">
       <SettingsHead
-        crumb="拉号偏好"
-        title="拉号偏好"
-        desc="每天的总上限，和建新车时的默认值"
+        crumb={t("head.crumb")}
+        title={t("head.title")}
+        desc={t("head.desc")}
         right={
           <Button variant="brand" onClick={onSave} disabled={!gs || save.isPending}>
             {save.isPending ? <Loader2 className="animate-spin" /> : <Save />}
-            {save.isPending ? "保存中…" : "保存"}
+            {save.isPending ? t("action.saving") : t("action.save")}
           </Button>
         }
       />
@@ -74,71 +76,70 @@ export default function Preferences() {
       {/* ── 硬上限 · 真的会拦下操作，放在最前面 ── */}
       <Card className="p-7">
         <SectionHead
-          title="拉号上限"
-          sub="超了就不拉 · 跨所有车累加 · 单独提取 key 也算在里面"
+          title={t("limit.title")}
+          sub={t("limit.sub")}
         />
 
         {/* 单价上限单独一行 —— 它是"每次都判"，跟下面两个"每天累加"的判法不一样 */}
         <div className="mt-4">
           <Field
-            label="单价超过多少就不拉"
-            hint="积分 / 个 · 留空 = 不限"
+            label={t("limit.max-price.label")}
+            hint={t("limit.max-price.hint")}
           >
             <Input
               type="number"
               min={1}
               value={maxPrice}
               onChange={(e) => setMaxPrice(e.target.value)}
-              placeholder="不限"
+              placeholder={t("limit.placeholder.unlimited")}
               className="sm:max-w-[220px]"
             />
           </Field>
           <p className="mt-1.5 text-label text-fg-tertiary">
-            上游涨价超过这个数就拉不动 —— 手动拉也拦（确认窗里会说明超了多少）·
-            车里也能各自设更严的
+            {t("limit.max-price.note")}
           </p>
         </div>
 
         <div className="mt-5 grid grid-cols-1 gap-5 border-t border-hairline pt-5 sm:grid-cols-2">
           <div className="space-y-2">
-            <Field label="每天最多拉几轮" hint="留空 = 不限">
+            <Field label={t("limit.rounds.label")} hint={t("limit.rounds.hint")}>
               <Input
                 type="number"
                 min={1}
                 value={roundLimit}
                 onChange={(e) => setRoundLimit(e.target.value)}
-                placeholder="不限"
+                placeholder={t("limit.placeholder.unlimited")}
               />
             </Field>
             <UsageBar
               used={gs?.used_today.rounds ?? 0}
               limit={numOrNull(roundLimit)}
-              unit="轮"
+              unit={t("usage.unit.round")}
             />
           </div>
 
           <div className="space-y-2">
-            <Field label="每天最多花多少" hint="积分 · 留空 = 不限">
+            <Field label={t("limit.spend.label")} hint={t("limit.spend.hint")}>
               <Input
                 type="number"
                 min={1}
                 value={spendLimit}
                 onChange={(e) => setSpendLimit(e.target.value)}
-                placeholder="不限"
+                placeholder={t("limit.placeholder.unlimited")}
               />
             </Field>
             <UsageBar
               used={toCredits(gs?.used_today.spend ?? 0)}
               limit={numOrNull(spendLimit)}
-              unit="积分"
+              unit={t("usage.unit.credits")}
             />
           </div>
         </div>
 
         <Alert tone="neutral" icon={ShieldAlert} className="mt-4">
-          车里也能各自设限额 · 两个都不超才让拉（取更严的那个）·
+          {t("limit.alert")}
           <Link to="/buses" className="ml-1 font-semibold text-brand-strong hover:underline">
-            去车详情看每辆车的
+            {t("limit.alert.link")}
           </Link>
         </Alert>
       </Card>
@@ -146,12 +147,12 @@ export default function Preferences() {
       {/* ── 新车默认值 · 只影响以后建的车 ── */}
       <Card className="p-7">
         <SectionHead
-          title="新车默认值"
-          sub="建新车时预填这些 · 改它不动已有的车"
+          title={t("defaults.title")}
+          sub={t("defaults.sub")}
         />
 
         <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <Field label="每次拉几个">
+          <Field label={t("defaults.count.label")}>
             <Input
               type="number"
               min={1}
@@ -161,11 +162,11 @@ export default function Preferences() {
             />
           </Field>
 
-          <Field label="默认来源">
+          <Field label={t("defaults.vendor.label")}>
             <Select value={vendor} onValueChange={setVendor}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">让系统比价</SelectItem>
+                <SelectItem value="auto">{t("defaults.vendor.auto")}</SelectItem>
                 {Object.keys(VENDOR_NAME).map((id) => (
                   <SelectItem key={id} value={id}>
                     {vendorLabel(id, !!me?.invited)}
@@ -175,20 +176,20 @@ export default function Preferences() {
             </Select>
           </Field>
 
-          <Field label="默认区域">
+          <Field label={t("defaults.zone.label")}>
             <Select value={zone} onValueChange={setZone}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">自动</SelectItem>
-                <SelectItem value="us">美国区</SelectItem>
-                <SelectItem value="eu">欧洲区</SelectItem>
+                <SelectItem value="auto">{t("defaults.zone.auto")}</SelectItem>
+                <SelectItem value="us">{t("defaults.zone.us")}</SelectItem>
+                <SelectItem value="eu">{t("defaults.zone.eu")}</SelectItem>
               </SelectContent>
             </Select>
           </Field>
         </div>
 
         <Alert tone="neutral" icon={Info} className="mt-4">
-          这些只是<Em plain>新车的初值</Em> —— 已经建好的车按各自「补车策略」跑，改这里不影响它们
+          {t("defaults.alert.pre")}<Em plain>{t("defaults.alert.em")}</Em>{t("defaults.alert.post")}
         </Alert>
       </Card>
     </div>
@@ -199,10 +200,12 @@ export default function Preferences() {
 function UsageBar({
   used, limit, unit,
 }: { used: number; limit: number | null; unit: string }) {
+  const { t } = useTranslation("settings");
+  const isCredits = unit === t("usage.unit.credits");
   if (limit == null) {
     return (
       <p className="text-label text-fg-tertiary">
-        今日已用 <Em>{unit === "积分" ? fmtCredits(used * MICRO) : used}</Em> {unit} · 不限
+        {t("usage.today")} <Em>{isCredits ? fmtCredits(used * MICRO) : used}</Em> {unit} {t("usage.unlimited-suffix")}
       </p>
     );
   }
@@ -214,12 +217,12 @@ function UsageBar({
     <div className="space-y-1">
       <Meter value={used} max={limit} color={color} />
       <p className="text-label text-fg-tertiary">
-        今日已用{" "}
+        {t("usage.today")}{" "}
         <Em tone={pct >= 1 ? "spend" : pct >= 0.8 ? "warn" : undefined}>
-          {unit === "积分" ? fmtCredits(used * MICRO) : used}
+          {isCredits ? fmtCredits(used * MICRO) : used}
         </Em>
-        {" / "}{unit === "积分" ? fmtCredits(limit * MICRO) : limit} {unit}
-        {pct >= 1 && <span className="ml-1 font-semibold text-danger-fg">已拉满</span>}
+        {" / "}{isCredits ? fmtCredits(limit * MICRO) : limit} {unit}
+        {pct >= 1 && <span className="ml-1 font-semibold text-danger-fg">{t("usage.filled")}</span>}
       </p>
     </div>
   );

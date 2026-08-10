@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import {
   BadgeCheck, CheckCircle2, KeyRound, Loader2,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useChangePassword, useMe } from "@/api/hooks";
 import { SettingsHead } from "@/components/SettingsHead";
 import { Alert } from "@/components/ui/alert";
@@ -17,12 +18,13 @@ import { cn } from "@/lib/utils";
  *  邮箱和用户名当前只读（阶段 1 后端没提供修改 API · 见 decisions §233）
  *  改邮箱 / 忘记密码 / 社交登录（Google / GitHub）阶段 3+ 引入邮箱验证时一起做 */
 export default function AccountSettings() {
+  const { t } = useTranslation("settings");
   return (
     <div className="space-y-section">
       <SettingsHead
-        crumb="账号设置"
-        title="账号设置"
-        desc="邮箱、用户名、登录密码和社交登录"
+        crumb={t("page.crumb")}
+        title={t("page.title")}
+        desc={t("page.desc")}
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -38,29 +40,30 @@ export default function AccountSettings() {
 /* ─── 账号信息 · 只读展示（邮箱 + 用户名） ─────────────── */
 
 function AccountInfoCard() {
+  const { t } = useTranslation("settings");
   const { data: me } = useMe();
 
   return (
     <Card className="p-7">
-      <SectionHead title="账号信息" sub="改邮箱或用户名要联系管理员 · 阶段 3+ 会加自助修改" />
+      <SectionHead title={t("account.title")} sub={t("account.sub")} />
 
       <div className="mt-5 divide-y divide-hairline border-t border-hairline">
         <InfoRow
-          label="邮箱"
+          label={t("account.email")}
           value={
             me ? (
               <span className="flex items-center gap-2">
                 <span className="truncate">{me.email}</span>
                 {me.email_verified
-                  ? <Chip tone="ok" icon={<BadgeCheck className="size-3" />}>已验证</Chip>
-                  : <Chip tone="warn">未验证</Chip>}
+                  ? <Chip tone="ok" icon={<BadgeCheck className="size-3" />}>{t("account.email.verified")}</Chip>
+                  : <Chip tone="warn">{t("account.email.unverified")}</Chip>}
               </span>
             ) : <SkeletonLine w={220} />
           }
         />
-        <InfoRow label="用户名" value={me ? me.username : <SkeletonLine w={120} />} />
+        <InfoRow label={t("account.username")} value={me ? me.username : <SkeletonLine w={120} />} />
         <InfoRow
-          label="注册时间"
+          label={t("account.created-at")}
           value={
             me
               ? new Date(me.created_at).toLocaleDateString("zh-CN", {
@@ -86,6 +89,7 @@ function InfoRow({ label, value }: { label: string; value: ReactNode }) {
 /* ─── 改密码 ─────────────────────────────────────────────── */
 
 function ChangePasswordCard() {
+  const { t } = useTranslation("settings");
   const change = useChangePassword();
   const [oldPw, setOldPw] = useState("");
   const [newPw, setNewPw] = useState("");
@@ -109,60 +113,60 @@ function ChangePasswordCard() {
 
   return (
     <Card className="p-7">
-      <SectionHead title="修改密码" sub="改完当前登录不会掉 · 其他设备需要重新登录" />
+      <SectionHead title={t("password.title")} sub={t("password.sub")} />
 
       <form onSubmit={onSubmit} className="mt-4 space-y-4">
-        <Field label="当前密码">
+        <Field label={t("password.current")}>
           <Input
             type="password"
             value={oldPw}
             onChange={(e) => { setOldPw(e.target.value); setDone(false); }}
-            placeholder="••••••••"
+            placeholder={t("password.placeholder.dots")}
             autoComplete="current-password"
           />
         </Field>
 
-        <Field label="新密码" hint="至少 8 位" error={tooShort ? "至少 8 位" : undefined}>
+        <Field label={t("password.new")} hint={t("password.new.hint")} error={tooShort ? t("password.new.too-short") : undefined}>
           <Input
             type="password"
             value={newPw}
             onChange={(e) => { setNewPw(e.target.value); setDone(false); }}
-            placeholder="••••••••"
+            placeholder={t("password.placeholder.dots")}
             autoComplete="new-password"
             className={cn(tooShort && "border-danger-fg/50")}
           />
         </Field>
 
-        <Field label="确认新密码" error={mismatch ? "两次输入不一致" : undefined}>
+        <Field label={t("password.confirm")} error={mismatch ? t("password.confirm.mismatch") : undefined}>
           <Input
             type="password"
             value={confirm}
             onChange={(e) => { setConfirm(e.target.value); setDone(false); }}
-            placeholder="再输一次"
+            placeholder={t("password.placeholder.confirm")}
             autoComplete="new-password"
             className={cn(mismatch && "border-danger-fg/50")}
           />
         </Field>
 
         {done && (
-          <Alert tone="ok" icon={CheckCircle2} title="密码已更新">
-            下次登录用新密码
+          <Alert tone="ok" icon={CheckCircle2} title={t("password.success.title")}>
+            {t("password.success.desc")}
           </Alert>
         )}
         {change.isError && (
-          <Alert tone="danger" icon={KeyRound} title="改不了">
+          <Alert tone="danger" icon={KeyRound} title={t("password.error.title")}>
             {(change.error as Error).message}
           </Alert>
         )}
 
         <Button type="submit" className="w-full" disabled={!valid || change.isPending}>
           {change.isPending ? <Loader2 className="animate-spin" /> : <KeyRound />}
-          {change.isPending ? "更新中…" : "更新密码"}
+          {change.isPending ? t("password.submit.pending") : t("password.submit.idle")}
         </Button>
       </form>
 
       <p className="mt-4 text-label text-fg-tertiary">
-        忘记密码的找回流程阶段 3+ 才上 · 现在忘了得联系管理员重置
+        {t("password.forgot-hint")}
       </p>
     </Card>
   );
@@ -171,9 +175,10 @@ function ChangePasswordCard() {
 /* ─── 社交登录绑定 · 阶段 3+ 才做 · 现在占位（灰态按钮·"即将上线"） ── */
 
 function SocialBindingsCard() {
+  const { t } = useTranslation("settings");
   return (
     <Card className="p-7">
-      <SectionHead title="第三方登录" sub="用 Google / GitHub 直接登录 · 阶段 3+ 上线" />
+      <SectionHead title={t("social.title")} sub={t("social.sub")} />
       <div className="mt-4 divide-y divide-hairline border-t border-hairline">
         <SocialRow provider="Google" icon={GoogleG} />
         <SocialRow provider="GitHub" icon={GithubMark} />
@@ -185,6 +190,7 @@ function SocialBindingsCard() {
 function SocialRow({
   provider, icon: Icon,
 }: { provider: string; icon: (props: { className?: string }) => JSX.Element }) {
+  const { t } = useTranslation("settings");
   return (
     <div className="flex items-center justify-between gap-4 py-4">
       <div className="flex items-center gap-3">
@@ -193,10 +199,10 @@ function SocialRow({
         </span>
         <div>
           <div className="font-semibold">{provider}</div>
-          <div className="text-label text-fg-tertiary">未绑定</div>
+          <div className="text-label text-fg-tertiary">{t("social.unbound")}</div>
         </div>
       </div>
-      <Button variant="ghost" disabled>即将上线</Button>
+      <Button variant="ghost" disabled>{t("social.coming-soon")}</Button>
     </div>
   );
 }

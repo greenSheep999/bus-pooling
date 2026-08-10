@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { KeyRound, ShieldCheck, Terminal, Webhook } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { CodeBlock } from "@/components/ui/code-block";
@@ -15,30 +16,30 @@ import { cn } from "@/lib/utils";
 
 type Section = "start" | "pull" | "assign" | "webhook" | "errors";
 
-const NAV: { id: Section; label: string }[] = [
-  { id: "start", label: "开始" },
-  { id: "pull", label: "拉号" },
-  { id: "assign", label: "派去向" },
-  { id: "webhook", label: "Webhook" },
-  { id: "errors", label: "错误码" },
-];
-
 export default function Docs() {
+  const { t } = useTranslation("docs");
   const [sec, setSec] = useState<Section>("start");
+  const NAV: { id: Section; label: string }[] = [
+    { id: "start", label: t("nav.start") },
+    { id: "pull", label: t("nav.pull") },
+    { id: "assign", label: t("nav.assign") },
+    { id: "webhook", label: t("nav.webhook") },
+    { id: "errors", label: t("nav.errors") },
+  ];
 
   return (
     <div className="space-y-section">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="min-w-0 space-y-2">
-          <h1 className="text-hero font-semibold">对接文档</h1>
+          <h1 className="text-hero font-semibold">{t("hero.title")}</h1>
           <p className="text-fg-tertiary">
-            用 API key 调我方接口 · 拉号、派去向、收 webhook 都能脚本化
+            {t("hero.desc")}
           </p>
         </div>
         <Button variant="ghost" asChild>
           <Link to="/settings/api-keys">
             <KeyRound />
-            管理 API key
+            {t("hero.manage-key")}
           </Link>
         </Button>
       </div>
@@ -78,46 +79,41 @@ export default function Docs() {
 /* ─────────────── 开始 ─────────────── */
 
 function StartSection() {
+  const { t } = useTranslation("docs");
   return (
     <>
       <Card className="p-7">
-        <SectionHead title="鉴权" sub="脚本用 API key · 浏览器登录后自动带 cookie" />
+        <SectionHead title={t("start.auth.title")} sub={t("start.auth.sub")} />
         <div className="mt-4 space-y-3">
           <CodeBlock
             lang="bash"
-            code={`curl https://<base-url>/api/me/profile \\
-  -H "X-API-Key: usr-<你的 key>"
-
-# 或者用 Bearer
-curl https://<base-url>/api/me/profile \\
-  -H "Authorization: Bearer usr-<你的 key>"`}
+            code={t("start.auth.code")}
           />
-          <Alert tone="warn" icon={ShieldCheck} title="API key 的权限是收窄的">
-            只能调 <code className="font-mono">/api/me/*</code> ·
-            不能改登录密码，也不能创建新的 API key —— 免得 key 泄露后被人反锁你自己
+          <Alert tone="warn" icon={ShieldCheck} title={t("start.auth.alert.title")}>
+            {t("start.auth.alert.body-1")}<code className="font-mono">/api/me/*</code>{t("start.auth.alert.body-2")}
           </Alert>
         </div>
       </Card>
 
       <Card className="p-7">
-        <SectionHead title="通用约定" sub="所有接口都遵守这几条" />
+        <SectionHead title={t("start.convention.title")} sub={t("start.convention.sub")} />
         <div className="mt-4 space-y-3">
-          <ConventionRow label="金额单位" value={<>整数 microunit · 1 积分 = <Em>1_000_000</Em></>} />
-          <ConventionRow label="时间" value="ISO-8601 UTC 字符串" />
+          <ConventionRow label={t("start.convention.money.label")} value={<>{t("start.convention.money.value")} <Em>1_000_000</Em></>} />
+          <ConventionRow label={t("start.convention.time.label")} value={t("start.convention.time.value")} />
           <ConventionRow
-            label="分页"
+            label={t("start.convention.page.label")}
             value={<code className="font-mono text-label">?page=1&page_size=50</code>}
           />
           <ConventionRow
-            label="错误"
-            value={<>按 <code className="font-mono">code</code> 分派，别按 message（message 会改）</>}
+            label={t("start.convention.error.label")}
+            value={<>{t("start.convention.error.value-prefix")}<code className="font-mono">code</code>{t("start.convention.error.value-suffix")}</>}
           />
           <ConventionRow
-            label="幂等"
+            label={t("start.convention.idempotency.label")}
             value={
               <>
-                拉号 / 派去向 / 充值起单<Em plain>必须</Em>带{" "}
-                <code className="font-mono text-label">X-Idempotency-Key</code>（32 hex）
+                {t("start.convention.idempotency.value-1")}<Em plain>{t("start.convention.idempotency.value-em")}</Em>{t("start.convention.idempotency.value-2")}{" "}
+                <code className="font-mono text-label">X-Idempotency-Key</code>{t("start.convention.idempotency.value-3")}
               </>
             }
           />
@@ -125,22 +121,14 @@ curl https://<base-url>/api/me/profile \\
       </Card>
 
       <Card className="p-7">
-        <SectionHead title="幂等键怎么用" sub="同一个 key 重放，拿到字节一致的原响应，不会重复扣钱" />
+        <SectionHead title={t("start.idempotency.title")} sub={t("start.idempotency.sub")} />
         <div className="mt-4">
           <CodeBlock
             lang="bash"
-            code={`KEY=$(openssl rand -hex 16)
-
-curl -X POST https://<base-url>/api/me/buses/<bus_id>/pull \\
-  -H "X-API-Key: usr-<你的 key>" \\
-  -H "X-Idempotency-Key: $KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"count": 3}'
-
-# 网络断了？拿同一个 $KEY 重发，不会拉第二批`}
+            code={t("start.idempotency.code")}
           />
         </div>
-        <p className="mt-3 text-label text-fg-tertiary">幂等窗口 30 天 · 之后同 key 视为新请求</p>
+        <p className="mt-3 text-label text-fg-tertiary">{t("start.idempotency.note")}</p>
       </Card>
     </>
   );
@@ -158,57 +146,36 @@ function ConventionRow({ label, value }: { label: string; value: ReactNode }) {
 /* ─────────────── 拉号 ─────────────── */
 
 function PullSection() {
+  const { t } = useTranslation("docs");
   return (
     <>
       <Card className="p-7">
         <SectionHead
-          title="给车拉号"
+          title={t("pull.bus.title")}
           sub={<><code className="font-mono">POST /api/me/buses/{"{bus_id}"}/pull</code></>}
         />
         <div className="mt-4 space-y-3">
           <CodeBlock
             lang="json"
-            code={`// 请求
-{
-  "count": 5,
-  "vendor_id": "<vendor_id>",   // 不传 = 让系统比价选（可选值见 /api/vendors/stock）
-  "constraints": {
-    "max_unit_price": 30000000  // 30 积分
-  }
-}`}
+            code={t("pull.bus.request-code")}
           />
           <CodeBlock
             lang="json"
-            code={`// 响应
-{
-  "pull_round_id": "01H8...",
-  "vendor_id": "<vendor_id>",
-  "purchased": 5,
-  "key_cost": 100000000,        // 号价 · 原样转给上游
-  "single_pull_fee": 0,          // 只拉 1 个时才有
-  "service_fee_total": 5000000,  // 按号数
-  "total_debit": 105000000,
-  "balance_remaining": 895000000
-}`}
+            code={t("pull.bus.response-code")}
           />
           <Alert tone="neutral" icon={Terminal}>
-            拉 1 个的单价比批量高 · 多拉几个更划算 ·
-            返回体里的金额都是最终值，直接记账即可 ·
-            拉号不涉及通道费，那个只在充值时收
+            {t("pull.bus.alert")}
           </Alert>
         </div>
       </Card>
 
       <Card className="p-7">
         <SectionHead
-          title="不进车 · 单独拉"
-          sub={<><code className="font-mono">POST /api/me/pull</code> · 号进「待派」等你决定去向</>}
+          title={t("pull.solo.title")}
+          sub={<><code className="font-mono">POST /api/me/pull</code>{t("pull.solo.sub-suffix")}</>}
         />
         <div className="mt-4">
-          <CodeBlock lang="bash" code={`curl -X POST https://<base-url>/api/me/pull \\
-  -H "X-API-Key: usr-<你的 key>" \\
-  -H "X-Idempotency-Key: $(openssl rand -hex 16)" \\
-  -d '{"count": 2, "zone": "us"}'`} />
+          <CodeBlock lang="bash" code={t("pull.solo.code")} />
         </div>
       </Card>
     </>
@@ -218,60 +185,48 @@ function PullSection() {
 /* ─────────────── 派去向 ─────────────── */
 
 function AssignSection() {
+  const { t } = useTranslation("docs");
   return (
     <>
       <Card className="p-7">
         <SectionHead
-          title="派去向"
-          sub={<><code className="font-mono">POST /api/me/pull-records/assign</code> · 3 种去向</>}
+          title={t("assign.section.title")}
+          sub={<><code className="font-mono">POST /api/me/pull-records/assign</code>{t("assign.section.sub-suffix")}</>}
         />
         <div className="mt-4 space-y-3">
           <div className="divide-y divide-hairline">
             <DestRow
               code="into_bus"
-              title="进车"
-              desc="号归车管理 · 车内成员共享 · 我方持续监控存活"
+              title={t("assign.dest.into-bus.title")}
+              desc={t("assign.dest.into-bus.desc")}
             />
             <DestRow
               code="push_pool"
-              title="推我的号池"
-              desc="双写到你配的号池 · 我方保留副本继续监控"
+              title={t("assign.dest.push-pool.title")}
+              desc={t("assign.dest.push-pool.desc")}
             />
             <DestRow
               code="handoff"
-              title="拿走"
-              desc="拿明文后号离开系统 · 我方不再监控，也给不回明文"
+              title={t("assign.dest.handoff.title")}
+              desc={t("assign.dest.handoff.desc")}
             />
           </div>
           <CodeBlock
             lang="json"
-            code={`// 请求
-{
-  "credential_ids": ["01H8...", "01H9..."],
-  "destination": "into_bus",
-  "bus_id": "01HA..."          // destination=into_bus 时必填
-}`}
+            code={t("assign.request-code")}
           />
         </div>
       </Card>
 
       <Card className="p-7">
-        <SectionHead title="拿走是两阶段的" sub="防止「我方已删号、你却没收到明文」" />
+        <SectionHead title={t("assign.handoff.title")} sub={t("assign.handoff.sub")} />
         <div className="mt-4 space-y-3">
           <CodeBlock
             lang="bash"
-            code={`# 1. 起单 → 拿 token
-POST /api/me/pull-records/<id>/handoff-init
-
-# 2. 用 token 取明文（TTL 内可以重试）
-GET /api/me/handoff/<token>
-
-# 3. 确认收到 → 我方才真正删号
-POST /api/me/handoff/<token>/confirm`}
+            code={t("assign.handoff.code")}
           />
-          <Alert tone="warn" icon={ShieldCheck} title="第 3 步之前号还在">
-            没 confirm 的话号不会被删 —— 所以第 2 步断线了可以重来 ·
-            confirm 之后明文就再也拿不到了
+          <Alert tone="warn" icon={ShieldCheck} title={t("assign.handoff.alert.title")}>
+            {t("assign.handoff.alert.body")}
           </Alert>
         </div>
       </Card>
@@ -296,51 +251,31 @@ function DestRow({ code, title, desc }: { code: string; title: string; desc: str
 /* ─────────────── Webhook ─────────────── */
 
 function WebhookSection() {
+  const { t } = useTranslation("docs");
   return (
     <>
       <Card className="p-7">
-        <SectionHead title="收事件" sub="我方 POST 到你配的地址 · 请求带 HMAC 签名" />
+        <SectionHead title={t("webhook.event.title")} sub={t("webhook.event.sub")} />
         <div className="mt-4 space-y-3">
           <CodeBlock
             lang="json"
-            code={`// 我方发给你的
-{
-  "event": "round.completed",
-  "created_at": "2026-08-08T12:34:56.789Z",
-  "data": {
-    "pull_round_id": "01H8...",
-    "bus_id": "01HA...",
-    "purchased": 3,
-    "total_debit": 63000000
-  }
-}`}
+            code={t("webhook.event.code")}
           />
           <p className="text-label text-fg-tertiary">
-            去 <Link to="/settings/webhook" className="font-semibold text-brand-strong hover:underline">机器人通知</Link> 配地址和订阅哪些事件
+            {t("webhook.event.link-prefix")}<Link to="/settings/webhook" className="font-semibold text-brand-strong hover:underline">{t("webhook.event.link")}</Link>{t("webhook.event.link-suffix")}
           </p>
         </div>
       </Card>
 
       <Card className="p-7">
-        <SectionHead title="验签" sub="用你那边的 secret 算 HMAC-SHA256，跟 header 比" />
+        <SectionHead title={t("webhook.verify.title")} sub={t("webhook.verify.sub")} />
         <div className="mt-4 space-y-3">
           <CodeBlock
             lang="js"
-            code={`import crypto from "node:crypto";
-
-// 用**原始 body 字节**算，不要先 JSON.parse 再 stringify
-function verify(rawBody, signature, secret) {
-  const mac = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
-  // 定长比较，避免时序侧信道
-  return crypto.timingSafeEqual(
-    Buffer.from(mac),
-    Buffer.from(signature),
-  );
-}`}
+            code={t("webhook.verify.code")}
           />
-          <Alert tone="danger" icon={Webhook} title="别用 == 比签名">
-            字符串短路比较会泄露信息 · 用 <code className="font-mono">timingSafeEqual</code> ·
-            也别拿 parse 过又 stringify 的 body 算，字节序会变
+          <Alert tone="danger" icon={Webhook} title={t("webhook.verify.alert.title")}>
+            {t("webhook.verify.alert.body-1")}<code className="font-mono">timingSafeEqual</code>{t("webhook.verify.alert.body-2")}
           </Alert>
         </div>
       </Card>
@@ -350,37 +285,37 @@ function verify(rawBody, signature, secret) {
 
 /* ─────────────── 错误码 ─────────────── */
 
-const ERRORS: { http: number; code: string; meaning: string }[] = [
-  { http: 400, code: "bad_json", meaning: "请求体不是合法 JSON，或带了未知字段" },
-  { http: 400, code: "bad_count", meaning: "count 超范围" },
-  { http: 400, code: "bad_vendor", meaning: "vendor_id 不认识" },
-  { http: 400, code: "bad_bus_id", meaning: "车不存在，或不是你的车" },
-  { http: 401, code: "invalid_api_key", meaning: "key 无效或已吊销" },
-  { http: 402, code: "insufficient_balance", meaning: "余额不够，先充值" },
-  { http: 403, code: "session_required", meaning: "这个操作只能浏览器登录做（改密码 / 建 key）" },
-  { http: 404, code: "not_found", meaning: "资源不存在" },
-  { http: 409, code: "no_stock", meaning: "上游缺货，过会儿再试" },
-  { http: 409, code: "idempotency_conflict", meaning: "同一个幂等键，但请求体不一样" },
-  { http: 429, code: "rate_limited", meaning: "限流了，看 retry_after 秒数" },
-  { http: 502, code: "vendor_error", meaning: "上游挂了或网络不通" },
-  { http: 503, code: "housepool_unavailable", meaning: "号池暂时不可用" },
-  { http: 500, code: "internal", meaning: "我方的问题，可以报给我们" },
-];
-
 function ErrorsSection() {
+  const { t } = useTranslation("docs");
+  const ERRORS: { http: number; code: string; meaning: string }[] = [
+    { http: 400, code: "bad_json", meaning: t("errors.item.bad-json") },
+    { http: 400, code: "bad_count", meaning: t("errors.item.bad-count") },
+    { http: 400, code: "bad_vendor", meaning: t("errors.item.bad-vendor") },
+    { http: 400, code: "bad_bus_id", meaning: t("errors.item.bad-bus-id") },
+    { http: 401, code: "invalid_api_key", meaning: t("errors.item.invalid-api-key") },
+    { http: 402, code: "insufficient_balance", meaning: t("errors.item.insufficient-balance") },
+    { http: 403, code: "session_required", meaning: t("errors.item.session-required") },
+    { http: 404, code: "not_found", meaning: t("errors.item.not-found") },
+    { http: 409, code: "no_stock", meaning: t("errors.item.no-stock") },
+    { http: 409, code: "idempotency_conflict", meaning: t("errors.item.idempotency-conflict") },
+    { http: 429, code: "rate_limited", meaning: t("errors.item.rate-limited") },
+    { http: 502, code: "vendor_error", meaning: t("errors.item.vendor-error") },
+    { http: 503, code: "housepool_unavailable", meaning: t("errors.item.housepool-unavailable") },
+    { http: 500, code: "internal", meaning: t("errors.item.internal") },
+  ];
   return (
     <Card className="p-7">
       <SectionHead
-        title="错误码"
-        sub={<>按 <code className="font-mono">code</code> 分派逻辑 · message 是给人看的，会改</>}
+        title={t("errors.title")}
+        sub={<>{t("errors.sub-prefix")}<code className="font-mono">code</code>{t("errors.sub-suffix")}</>}
       />
 
       <div className="mt-4 overflow-x-auto">
         <div className="min-w-[520px]">
           <BareHead>
-            <span className="w-14 shrink-0">HTTP</span>
-            <span className="w-[200px] shrink-0">code</span>
-            <span className="min-w-0 flex-1">含义</span>
+            <span className="w-14 shrink-0">{t("errors.header.http")}</span>
+            <span className="w-[200px] shrink-0">{t("errors.header.code")}</span>
+            <span className="min-w-0 flex-1">{t("errors.header.meaning")}</span>
           </BareHead>
           <BareList>
             {ERRORS.map((e) => (
@@ -401,8 +336,7 @@ function ErrorsSection() {
       </div>
 
       <Alert tone="neutral" icon={Terminal} className="mt-4">
-        <code className="font-mono">429</code> 和 <code className="font-mono">502/503</code> 都值得自动重试 ·
-        <code className="font-mono">402</code> 和 <code className="font-mono">4xx</code> 参数类的重试也没用
+        <code className="font-mono">429</code>{t("errors.alert.part-1")}<code className="font-mono">502/503</code>{t("errors.alert.part-2")}<code className="font-mono">402</code>{t("errors.alert.part-3")}<code className="font-mono">4xx</code>{t("errors.alert.part-4")}
       </Alert>
     </Card>
   );

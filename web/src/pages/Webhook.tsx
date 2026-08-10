@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   AlertTriangle, Bot, Check, CheckCircle2, Loader2, RefreshCw, Save, Send, X, Zap,
 } from "lucide-react";
@@ -21,15 +22,24 @@ import type { WebhookDelivery } from "@/types";
 /** 可订阅事件 · 5 个（spec §10b）
  *  event id 是对外契约的一部分（用户要在自己代码里 switch），所以这里**故意露出原名**
  *  —— 技术页例外，跟对接文档同性质（CLAUDE.md §12.6） */
-const EVENTS: { id: string; title: string; desc: string }[] = [
-  { id: "round.completed", title: "拉号完成", desc: "一轮拉号跑完 · 带拿到几个号、花了多少" },
-  { id: "round.failed", title: "拉号失败", desc: "整轮没拿到号 · 带失败原因" },
-  { id: "credential.dead", title: "号失效了", desc: "我方探到某个号死了 · 补车前的信号" },
-  { id: "bus.refilled", title: "自动补车触发", desc: "水位跌破阈值、系统自己补了一轮" },
-  { id: "wallet.low", title: "余额不足预警", desc: "余额低到快拉不动号了" },
-];
+const EVENT_IDS = [
+  "round.completed",
+  "round.failed",
+  "credential.dead",
+  "bus.refilled",
+  "wallet.low",
+] as const;
+
+const EVENT_KEY: Record<(typeof EVENT_IDS)[number], string> = {
+  "round.completed": "round-completed",
+  "round.failed": "round-failed",
+  "credential.dead": "credential-dead",
+  "bus.refilled": "bus-refilled",
+  "wallet.low": "wallet-low",
+};
 
 export default function Webhook() {
+  const { t } = useTranslation("settings");
   const { data: cfg } = useWebhook();
   const { data: deliveries } = useWebhookDeliveries();
   const save = useSaveWebhook();
@@ -46,6 +56,12 @@ export default function Webhook() {
 
   const dirty = !!cfg && url !== cfg.url;
   const subscribed = new Set(cfg?.events ?? []);
+
+  const events = EVENT_IDS.map((id) => ({
+    id,
+    title: t(`webhook.event.${EVENT_KEY[id]}.title`),
+    desc: t(`webhook.event.${EVENT_KEY[id]}.desc`),
+  }));
 
   const toggleEvent = (id: string, on: boolean) => {
     if (!cfg) return;
@@ -64,17 +80,17 @@ export default function Webhook() {
   return (
     <div className="space-y-section">
       <SettingsHead
-        crumb="机器人通知"
-        title="机器人通知"
-        desc="事件推到你的 webhook · 拉号完成、号失效、余额不足都能收"
+        crumb={t("webhook.head.crumb")}
+        title={t("webhook.head.title")}
+        desc={t("webhook.head.desc")}
         right={
           <div className="flex items-center gap-2">
-            {cfg?.enabled ? <Chip tone="ok" dot>启用中</Chip> : <Chip tone="neutral" dot>已停用</Chip>}
+            {cfg?.enabled ? <Chip tone="ok" dot>{t("webhook.state.enabled")}</Chip> : <Chip tone="neutral" dot>{t("webhook.state.disabled")}</Chip>}
             <Switch
               checked={cfg?.enabled ?? false}
               disabled={!cfg || save.isPending}
               onCheckedChange={(v) => save.mutate({ enabled: v })}
-              aria-label="启用 webhook"
+              aria-label={t("webhook.switch.aria")}
             />
           </div>
         }
@@ -117,9 +133,9 @@ export default function Webhook() {
             <Alert
               tone={testResult.ok ? "ok" : "danger"}
               icon={testResult.ok ? CheckCircle2 : X}
-              title={testResult.ok ? "测试事件已送达" : "送不到"}
+              title={testResult.ok ? t("webhook.endpoint.test-ok") : t("webhook.endpoint.test-fail")}
             >
-              HTTP <Em>{testResult.code}</Em> · 耗时 <Em>{testResult.ms}</Em> ms
+              {t("webhook.endpoint.test-detail-prefix")}<Em>{testResult.code}</Em>{t("webhook.endpoint.test-detail-middle")}<Em>{testResult.ms}</Em>{t("webhook.endpoint.test-detail-suffix")}
             </Alert>
           )}
 
@@ -130,11 +146,11 @@ export default function Webhook() {
               disabled={!dirty || save.isPending}
             >
               {save.isPending ? <Loader2 className="animate-spin" /> : <Save />}
-              {save.isPending ? "保存中…" : "保存"}
+              {save.isPending ? t("webhook.action.saving") : t("webhook.action.save")}
             </Button>
             <Button variant="ghost" onClick={onTest} disabled={!url.trim() || test.isPending}>
               {test.isPending ? <Loader2 className="animate-spin" /> : <Zap />}
-              {test.isPending ? "发送中…" : "发测试事件"}
+              {test.isPending ? t("webhook.action.sending") : t("webhook.action.send-test")}
             </Button>
             <Button
               variant="ghost"
@@ -143,12 +159,12 @@ export default function Webhook() {
                 setNewSecret(r.secret);
               }}
               disabled={regen.isPending}
-              title="旧密钥立即失效"
+              title={t("webhook.action.regen-title")}
             >
               {regen.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-              重新生成密钥
+              {t("webhook.action.regen")}
             </Button>
-            {dirty && <span className="text-label text-fg-tertiary">有未保存的修改</span>}
+            {dirty && <span className="text-label text-fg-tertiary">{t("webhook.unsaved")}</span>}
           </div>
         </div>
       </Card>
@@ -156,12 +172,12 @@ export default function Webhook() {
       {/* 订阅事件 */}
       <Card className="p-7">
         <SectionHead
-          title="订阅事件"
-          sub={<>已订阅 <Em>{subscribed.size}</Em> / {EVENTS.length} 个</>}
+          title={t("webhook.subs.title")}
+          sub={<>{t("webhook.subs.subscribed-prefix")}<Em>{subscribed.size}</Em>{t("webhook.subs.sub-separator")}{events.length}{t("webhook.subs.sub-suffix")}</>}
         />
 
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {EVENTS.map((ev) => {
+          {events.map((ev) => {
             const on = subscribed.has(ev.id);
             return (
               <div
@@ -200,14 +216,15 @@ export default function Webhook() {
 
 type DFilter = "all" | "ok" | "failed";
 
-const DFILTERS: { value: DFilter; label: string }[] = [
-  { value: "all", label: "全部" },
-  { value: "ok", label: "成功" },
-  { value: "failed", label: "失败" },
-];
+const DFILTER_VALUES: DFilter[] = ["all", "ok", "failed"];
 
 function DeliveriesCard({ items }: { items: WebhookDelivery[] }) {
+  const { t } = useTranslation("settings");
   const [filter, setFilter] = useState<DFilter>("all");
+  const dfilters = DFILTER_VALUES.map((value) => ({
+    value,
+    label: t(`webhook.deliveries.filter.${value}`),
+  }));
 
   const shown = items.filter((d) =>
     filter === "all" ? true : filter === "ok" ? d.ok : !d.ok,
@@ -217,15 +234,13 @@ function DeliveriesCard({ items }: { items: WebhookDelivery[] }) {
   return (
     <Card className="p-7">
       <SectionHead
-        title="投递记录"
+        title={t("webhook.deliveries.title")}
         sub={
           <>
-            共 <Em>{items.length}</Em> 条 ·
-            成功 <Em tone="ok">{items.length - failed}</Em> ·
-            失败 <Em tone="spend">{failed}</Em>
+            {t("webhook.deliveries.sub-total-prefix")}<Em>{items.length}</Em>{t("webhook.deliveries.sub-total-middle")}<Em tone="ok">{items.length - failed}</Em>{t("webhook.deliveries.sub-total-fail")}<Em tone="spend">{failed}</Em>
           </>
         }
-        right={<Segmented options={DFILTERS} value={filter} onChange={setFilter} />}
+        right={<Segmented options={dfilters} value={filter} onChange={setFilter} />}
       />
 
       {shown.length === 0 ? (
@@ -234,19 +249,19 @@ function DeliveriesCard({ items }: { items: WebhookDelivery[] }) {
             <Send className="size-4 text-fg-tertiary" />
           </span>
           <p className="text-label text-fg-tertiary">
-            {items.length === 0 ? "还没有投递记录 · 发个测试事件试试" : "这个筛选下没有记录"}
+            {items.length === 0 ? t("webhook.deliveries.empty-none") : t("webhook.deliveries.empty-filter")}
           </p>
         </div>
       ) : (
         <div className="mt-4 overflow-x-auto">
           <div className="min-w-[620px]">
             <BareHead>
-              <span className="w-[92px] shrink-0">时间</span>
-              <span className="w-20 shrink-0">结果</span>
-              <span className="min-w-0 flex-1">事件</span>
-              <span className="w-16 shrink-0 text-right">HTTP</span>
-              <span className="w-16 shrink-0 text-right">重试</span>
-              <span className="w-20 shrink-0 text-right">耗时</span>
+              <span className="w-[92px] shrink-0">{t("webhook.deliveries.col.time")}</span>
+              <span className="w-20 shrink-0">{t("webhook.deliveries.col.result")}</span>
+              <span className="min-w-0 flex-1">{t("webhook.deliveries.col.event")}</span>
+              <span className="w-16 shrink-0 text-right">{t("webhook.deliveries.col.http")}</span>
+              <span className="w-16 shrink-0 text-right">{t("webhook.deliveries.col.retry")}</span>
+              <span className="w-20 shrink-0 text-right">{t("webhook.deliveries.col.latency")}</span>
             </BareHead>
             <BareList>
               {shown.map((d) => (
@@ -256,8 +271,8 @@ function DeliveriesCard({ items }: { items: WebhookDelivery[] }) {
                   </span>
                   <span className="w-20 shrink-0">
                     {d.ok
-                      ? <Chip tone="ok" icon={<Check className="size-3" />}>成功</Chip>
-                      : <Chip tone="danger" icon={<X className="size-3" />}>失败</Chip>}
+                      ? <Chip tone="ok" icon={<Check className="size-3" />}>{t("webhook.deliveries.chip.ok")}</Chip>
+                      : <Chip tone="danger" icon={<X className="size-3" />}>{t("webhook.deliveries.chip.failed")}</Chip>}
                   </span>
                   <span className="min-w-0 flex-1 truncate font-mono text-label text-fg-secondary">
                     {d.event}
@@ -268,7 +283,7 @@ function DeliveriesCard({ items }: { items: WebhookDelivery[] }) {
                       : <span className="text-label text-fg-tertiary">-</span>}
                   </span>
                   <span className="w-16 shrink-0 text-right text-label font-medium tnum text-fg-tertiary">
-                    {d.attempt > 1 ? `${d.attempt} 次` : "-"}
+                    {d.attempt > 1 ? t("webhook.deliveries.retry-count", { count: d.attempt }) : "-"}
                   </span>
                   <span className="w-20 shrink-0 text-right text-label font-medium tnum text-fg-tertiary">
                     {d.latency_ms} ms

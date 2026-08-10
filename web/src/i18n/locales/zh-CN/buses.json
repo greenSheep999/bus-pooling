@@ -1,0 +1,280 @@
+{
+  "cta": {
+    "anon": {
+      "desc": "系统撮合他人拼车 · 共享号池摊单价",
+      "title": "搭车"
+    },
+    "invite": {
+      "desc": "用朋友给的拼车码加入他的车",
+      "title": "输拼车码加入"
+    },
+    "single": {
+      "desc": "建一辆自己的车 · 独享号池",
+      "title": "发起拼车"
+    },
+    "trigger": "立即拼车"
+  },
+  "empty": {
+    "cta": "立即拼车",
+    "desc": "建一辆自己的车 · 或加入他人的拼车",
+    "title": "还没有拼车"
+  },
+  "hero": {
+    "buses-active-suffix": "辆车正在运转",
+    "credits-suffix": "积分",
+    "dead-prefix": "失效",
+    "keys-in-pool-suffix": "个号在池",
+    "spend-today-prefix": "今日消费",
+    "title": "拼车"
+  },
+  "history": {
+    "credits-suffix": "积分",
+    "empty": {
+      "desc": "给车拉一轮号 · 记录会出现在这里",
+      "title": "这些车还没拉过号"
+    },
+    "remain-unit": "轮",
+    "subtitle": "共 {{count}} 轮 · 只列拼车相关（跟概览混流分开）",
+    "table": {
+      "cost": "花费",
+      "flow": "流向",
+      "key-status": "号状态",
+      "push": "推池",
+      "result": "结果",
+      "time": "时间"
+    },
+    "title": "拼车拉号记录"
+  },
+  "list": {
+    "load-more-prefix": "查看全部 ·",
+    "load-more-suffix": "辆车"
+  },
+  "push": {
+    "failed": "推失败",
+    "none": "未推",
+    "partial": "部分推 {{ratio}}",
+    "pushed": "已推"
+  },
+  "result": {
+    "failed": "失败",
+    "partial": "部分",
+    "refunded": "退款",
+    "success": "成功"
+  },
+  "row": {
+    "fail-reason-default": "缺货",
+    "failed-prefix": "未拉到号 · 尝试",
+    "pulled-mid": "个号，从",
+    "pulled-prefix": "共拉取"
+  },
+  "action": {
+    "pull-now": "立即拉号",
+    "settings": "车设置"
+  },
+  "back": "返回拼车",
+  "created-at": "创建于 {{date}}",
+  "credentials": {
+    "empty": {
+      "desc": "点右上「立即拉号」拉一批 · 号会直接进这辆车的池子",
+      "title": "这辆车还没有号"
+    },
+    "header": {
+      "key-vendor": "号 · vendor",
+      "lifespan": "寿命",
+      "pulled": "拉入",
+      "push": "推池",
+      "status": "状态",
+      "usage": "消耗"
+    },
+    "push": {
+      "failed": "推失败",
+      "none": "未推",
+      "pushed": "已推"
+    },
+    "status": {
+      "alive": "正常",
+      "dead": "已失效"
+    },
+    "sub": "共 <1>{{count}}</1> 个 · 正常 <3>{{alive}}</3> · 失效 <5>{{dead}}</5>",
+    "title": "号列表",
+    "unit": {
+      "credits": "积分"
+    }
+  },
+  "invite": {
+    "code-label": "拼车码",
+    "copy-link": "复制拼车链接",
+    "copy-link-title": "复制拼车链接 · 发给朋友点开就能上车",
+    "link-copied": "链接已复制"
+  },
+  "kind": {
+    "anon": "搭车池",
+    "multi": "{{count}} 人拼车",
+    "solo": "独享"
+  },
+  "kpi": {
+    "alive": {
+      "label": "正常号",
+      "sub": "已失效 {{count}}",
+      "unit": "个"
+    },
+    "lifespan": {
+      "label": "平均寿命",
+      "sub": "按已挂号 / 号池全体计"
+    },
+    "refill": {
+      "auto": "自动",
+      "label": "补车模式",
+      "manual": "手动",
+      "manual-sub": "号少时提醒不自动拉",
+      "watermark": "保活 {{count}}"
+    },
+    "spend-today": {
+      "label": "今日消费",
+      "sub-empty": "今日无消费",
+      "sub-spent": "今日已扣",
+      "unit": "积分"
+    }
+  },
+  "loading": "加载中…",
+  "members": {
+    "action": {
+      "remove-aria": "移除 {{name}}",
+      "remove-title": "移除出车",
+      "suspend": "挂起",
+      "unsuspend": "解挂"
+    },
+    "header": {
+      "actions": "操作",
+      "balance": "余额",
+      "member": "成员",
+      "share": "分摊",
+      "status": "状态"
+    },
+    "invite": {
+      "code-dash": "—",
+      "copied": "已复制",
+      "copy": "复制链接",
+      "leaked-question": "链接泄漏了？",
+      "link-placeholder": "—",
+      "regen": "换一条",
+      "regen-note": "· 旧码和旧链接立即失效，已进车的人不受影响",
+      "sub": "把链接发给朋友 · 他点开就能上车",
+      "title": "拉人进车"
+    },
+    "list": {
+      "sub": "共 <1>{{count}}</1> 人 · 分摊比例加起来 100% · 拉号和派号时按这个比例从各人钱包扣",
+      "title": "成员"
+    },
+    "role": {
+      "owner": "车主"
+    },
+    "row": {
+      "joined-at": "{{time}} 进车"
+    },
+    "solo": {
+      "me-avatar": "我",
+      "me-chip": "我发起",
+      "me-fallback": "我",
+      "role-line": "发起人 · 独享 · 无分摊",
+      "sub": "只有你 · 独享号池 · 分享拼车码拉朋友加入",
+      "title": "成员"
+    },
+    "status": {
+      "normal": "正常",
+      "skipped": "已跳过 {{count}}/{{limit}}",
+      "skipped-desc": "再 {{remain}} 次自动挂起",
+      "suspended": "已挂起",
+      "suspended-desc": "取不到号 · 不参与分摊"
+    },
+    "suspend-note": "余额不够时该成员<1>本次跳过</1>（不扣他积分，也不给他取这批号）· 连续被跳过 <3>{{limit}}</3> 次自动挂起 · 他充值后自己就恢复，不用你批"
+  },
+  "pulls": {
+    "empty": {
+      "desc": "点右上「立即拉号」· 每一轮的结果和花费都会记在这里",
+      "title": "这辆车还没拉过号"
+    },
+    "header": {
+      "cost": "花费",
+      "flow": "流向",
+      "key-status": "号状态",
+      "push": "推池",
+      "result": "结果",
+      "time": "时间"
+    },
+    "push": {
+      "failed": "推失败",
+      "none": "未推",
+      "partial": "部分推 {{ratio}}",
+      "pushed": "已推"
+    },
+    "result": {
+      "failed": "失败",
+      "partial": "部分",
+      "refunded": "退款",
+      "success": "成功"
+    },
+    "row": {
+      "credits": "积分",
+      "fail-reason-default": "缺货",
+      "failed": "未拉到号 · 尝试 {{vendor}} · {{reason}}",
+      "flow-prefix": "共入车",
+      "flow-suffix": "个号，从",
+      "zero-cost": "0"
+    },
+    "sub": "共 <1>{{count}}</1> 轮 · 只列这辆车的",
+    "title": "拉号历史"
+  },
+  "pushes": {
+    "action": {
+      "check": "去检查",
+      "retry": "重试",
+      "retry-title": "已试 {{count}} 次"
+    },
+    "empty": {
+      "desc": "配置了「推我的号池」的号才会有推送记录 · 在 设置 · 我的号池 里配 URL",
+      "title": "还没有推送记录"
+    },
+    "header": {
+      "key-vendor": "号 · vendor",
+      "status": "状态",
+      "target-or-reason": "去向 / 失败原因",
+      "time": "时间"
+    },
+    "status": {
+      "failed": "推失败",
+      "success": "已推"
+    },
+    "sub": "号从我方推给你号池的事件 · 共 <1>{{count}}</1> 条 · 成功 <3>{{success}}</3> · 失败 <5>{{failed}}</5>",
+    "target": {
+      "default": "我的号池"
+    },
+    "title": "推送记录"
+  },
+  "remove": {
+    "action": {
+      "confirm": "确认移除",
+      "confirming": "移除中…"
+    },
+    "alert-body": "他那 <1>{{share}}%</1> 会摊给其他人 · 剩下的人平均分 · 立即生效且不可逆",
+    "alert-title": "剩下的人分摊比例会重算",
+    "hint": "只是他暂时没钱的话，用「挂起」更合适 —— 挂起不动分摊比例，他充值后自己就回来了",
+    "subtitle": "他立刻取不到这辆车的号",
+    "title": "移除 {{name}}？"
+  },
+  "stats": {
+    "loading": "加载图表…"
+  },
+  "status": {
+    "active": "活跃",
+    "dissolved": "已解散"
+  },
+  "tabs": {
+    "credentials": "号列表",
+    "members": "成员",
+    "pulls": "拉号历史",
+    "pushes": "推送记录",
+    "stats": "数据",
+    "strategy": "补车策略"
+  }
+}

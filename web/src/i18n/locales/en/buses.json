@@ -1,0 +1,280 @@
+{
+  "cta": {
+    "anon": {
+      "desc": "Auto-match with others · share the tab",
+      "title": "Hop on"
+    },
+    "invite": {
+      "desc": "Enter a friend's invite code to join their bus",
+      "title": "Join by code"
+    },
+    "single": {
+      "desc": "Your own bus · solo pool",
+      "title": "Start a bus"
+    },
+    "trigger": "Start pooling"
+  },
+  "empty": {
+    "cta": "Start pooling",
+    "desc": "Start your own bus · or join someone else's",
+    "title": "No buses yet"
+  },
+  "hero": {
+    "buses-active-suffix": "buses running",
+    "credits-suffix": "credits",
+    "dead-prefix": "dead",
+    "keys-in-pool-suffix": "keys in pool",
+    "spend-today-prefix": "spent today",
+    "title": "Buses"
+  },
+  "history": {
+    "credits-suffix": "credits",
+    "empty": {
+      "desc": "Pull a round · records will show up here",
+      "title": "No pulls on these buses yet"
+    },
+    "remain-unit": "rounds",
+    "subtitle": "{{count}} rounds · pool pulls only (separate from overview)",
+    "table": {
+      "cost": "Cost",
+      "flow": "Flow",
+      "key-status": "Keys",
+      "push": "Push",
+      "result": "Result",
+      "time": "Time"
+    },
+    "title": "Pool pull history"
+  },
+  "list": {
+    "load-more-prefix": "See all ·",
+    "load-more-suffix": "buses"
+  },
+  "push": {
+    "failed": "Push failed",
+    "none": "Not pushed",
+    "partial": "Partial push {{ratio}}",
+    "pushed": "Pushed"
+  },
+  "result": {
+    "failed": "Failed",
+    "partial": "Partial",
+    "refunded": "Refunded",
+    "success": "OK"
+  },
+  "row": {
+    "fail-reason-default": "out of stock",
+    "failed-prefix": "No keys pulled · tried",
+    "pulled-mid": "keys from",
+    "pulled-prefix": "Pulled"
+  },
+  "action": {
+    "pull-now": "Pull now",
+    "settings": "Bus settings"
+  },
+  "back": "Back to buses",
+  "created-at": "Created {{date}}",
+  "credentials": {
+    "empty": {
+      "desc": "Tap Pull now to grab a batch — the keys drop straight into this bus's pool",
+      "title": "No keys on this bus yet"
+    },
+    "header": {
+      "key-vendor": "Key · vendor",
+      "lifespan": "Lifespan",
+      "pulled": "Pulled",
+      "push": "Push",
+      "status": "Status",
+      "usage": "Used"
+    },
+    "push": {
+      "failed": "Push failed",
+      "none": "Not pushed",
+      "pushed": "Pushed"
+    },
+    "status": {
+      "alive": "Alive",
+      "dead": "Dead"
+    },
+    "sub": "<1>{{count}}</1> total · alive <3>{{alive}}</3> · dead <5>{{dead}}</5>",
+    "title": "Keys",
+    "unit": {
+      "credits": "credits"
+    }
+  },
+  "invite": {
+    "code-label": "Invite code",
+    "copy-link": "Copy invite link",
+    "copy-link-title": "Copy invite link · friends can hop on by opening it",
+    "link-copied": "Link copied"
+  },
+  "kind": {
+    "anon": "Ride pool",
+    "multi": "{{count}}-person bus",
+    "solo": "Solo"
+  },
+  "kpi": {
+    "alive": {
+      "label": "Live keys",
+      "sub": "Dead {{count}}",
+      "unit": "keys"
+    },
+    "lifespan": {
+      "label": "Avg lifespan",
+      "sub": "Across all registered keys"
+    },
+    "refill": {
+      "auto": "Auto",
+      "label": "Refill mode",
+      "manual": "Manual",
+      "manual-sub": "Notify only, no auto pull",
+      "watermark": "Keep {{count}} alive"
+    },
+    "spend-today": {
+      "label": "Spent today",
+      "sub-empty": "No spend today",
+      "sub-spent": "Charged today",
+      "unit": "credits"
+    }
+  },
+  "loading": "Loading…",
+  "members": {
+    "action": {
+      "remove-aria": "Remove {{name}}",
+      "remove-title": "Remove from bus",
+      "suspend": "Suspend",
+      "unsuspend": "Unsuspend"
+    },
+    "header": {
+      "actions": "Actions",
+      "balance": "Balance",
+      "member": "Member",
+      "share": "Share",
+      "status": "Status"
+    },
+    "invite": {
+      "code-dash": "—",
+      "copied": "Copied",
+      "copy": "Copy link",
+      "leaked-question": "Link leaked?",
+      "link-placeholder": "—",
+      "regen": "Rotate it",
+      "regen-note": " · Old code and link expire immediately; riders already on board are unaffected",
+      "sub": "Send the link to a friend — they hop on by opening it",
+      "title": "Invite riders"
+    },
+    "list": {
+      "sub": "<1>{{count}}</1> riders · shares add up to 100% · every pull and handoff deducts from each wallet by this ratio",
+      "title": "Members"
+    },
+    "role": {
+      "owner": "Owner"
+    },
+    "row": {
+      "joined-at": "Joined {{time}}"
+    },
+    "solo": {
+      "me-avatar": "me",
+      "me-chip": "You started this",
+      "me-fallback": "Me",
+      "role-line": "Owner · solo · no split",
+      "sub": "Just you · solo pool · share the invite code to bring friends in",
+      "title": "Members"
+    },
+    "status": {
+      "normal": "Normal",
+      "skipped": "Skipped {{count}}/{{limit}}",
+      "skipped-desc": "{{remain}} more skip(s) until auto-suspend",
+      "suspended": "Suspended",
+      "suspended-desc": "No keys, not in split"
+    },
+    "suspend-note": "When a rider can't afford their share, they <1>skip this round</1> (no credits deducted, no keys handed to them). After <3>{{limit}}</3> consecutive skips they're auto-suspended. Topping up brings them back automatically — no approval needed."
+  },
+  "pulls": {
+    "empty": {
+      "desc": "Tap Pull now — every round's outcome and cost lands here",
+      "title": "This bus hasn't pulled yet"
+    },
+    "header": {
+      "cost": "Cost",
+      "flow": "Flow",
+      "key-status": "Keys",
+      "push": "Push",
+      "result": "Result",
+      "time": "Time"
+    },
+    "push": {
+      "failed": "Push failed",
+      "none": "Not pushed",
+      "partial": "Partial {{ratio}}",
+      "pushed": "Pushed"
+    },
+    "result": {
+      "failed": "Failed",
+      "partial": "Partial",
+      "refunded": "Refunded",
+      "success": "Success"
+    },
+    "row": {
+      "credits": "credits",
+      "fail-reason-default": "Out of stock",
+      "failed": "No keys pulled · tried {{vendor}} · {{reason}}",
+      "flow-prefix": "Boarded",
+      "flow-suffix": "key(s) from",
+      "zero-cost": "0"
+    },
+    "sub": "<1>{{count}}</1> rounds · scoped to this bus",
+    "title": "Pull history"
+  },
+  "pushes": {
+    "action": {
+      "check": "Investigate",
+      "retry": "Retry",
+      "retry-title": "Tried {{count}} times"
+    },
+    "empty": {
+      "desc": "Only keys set to Push to my pool land here — configure the URL in Settings · My pool",
+      "title": "No push events yet"
+    },
+    "header": {
+      "key-vendor": "Key · vendor",
+      "status": "Status",
+      "target-or-reason": "Target / failure reason",
+      "time": "Time"
+    },
+    "status": {
+      "failed": "Push failed",
+      "success": "Pushed"
+    },
+    "sub": "Keys handed from us to your pool · <1>{{count}}</1> events · success <3>{{success}}</3> · failed <5>{{failed}}</5>",
+    "target": {
+      "default": "my pool"
+    },
+    "title": "Push log"
+  },
+  "remove": {
+    "action": {
+      "confirm": "Confirm remove",
+      "confirming": "Removing…"
+    },
+    "alert-body": "Their <1>{{share}}%</1> gets redistributed · split evenly across the rest · takes effect immediately and can't be undone",
+    "alert-title": "The remaining shares will be recalculated",
+    "hint": "If they're just temporarily short on credits, Suspend fits better — suspending keeps their share unchanged and they auto-return after topping up",
+    "subtitle": "They lose access to this bus immediately",
+    "title": "Remove {{name}}?"
+  },
+  "stats": {
+    "loading": "Loading charts…"
+  },
+  "status": {
+    "active": "Active",
+    "dissolved": "Dissolved"
+  },
+  "tabs": {
+    "credentials": "Keys",
+    "members": "Members",
+    "pulls": "Pull history",
+    "pushes": "Push log",
+    "stats": "Stats",
+    "strategy": "Refill strategy"
+  }
+}

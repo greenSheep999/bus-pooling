@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { ArrowDown, ArrowLeft, ArrowUp, Minus, X } from "lucide-react";
 import { useVendorPrices } from "@/api/hooks";
@@ -15,11 +16,11 @@ import type { Money, VendorPriceTrend, VendorRound } from "@/types";
  *  之前给 6 家配 6 个色相是为了区分重叠折线 —— 现在每家独占一行，不需要了 */
 const ROW_COLOR = "#9147FF";
 
-/** 标记 → Chip tone */
+/** 标记 key → Chip tone · key 用固定串（i18n 前的中文残留仅作为映射键） */
 const TAG_TONE: Record<string, "ok" | "brand" | "neutral"> = {
-  车最稳: "ok",
-  最便宜: "brand",
-  车最多: "neutral",
+  "most-stable": "ok",
+  "cheapest": "brand",
+  "most-rounds": "neutral",
 };
 
 /** 每行箱线图高度 */
@@ -33,6 +34,7 @@ const ROW_H = 44;
 const PAGE = 20;
 
 export default function Prices() {
+  const { t } = useTranslation("prices");
   const [days, setDays] = useState<number>(30);
   const [zone, setZone] = useState<string>("us");
   const [hoveredVendor, setHoveredVendor] = useState<string | null>(null);
@@ -72,12 +74,12 @@ export default function Prices() {
     const minAvg = Math.min(...trends.map((t) => t.price_avg));
     const maxRounds = Math.max(...trends.map((t) => t.avg_rounds_per_day));
     const out: Record<string, string[]> = {};
-    for (const t of trends) {
+    for (const tr of trends) {
       const list: string[] = [];
-      if (t.price_avg === minAvg) list.push("最便宜");
-      if (t.no_service_days === 0) list.push("车最稳");
-      if (t.avg_rounds_per_day === maxRounds) list.push("车最多");
-      out[t.vendor_id] = list;
+      if (tr.price_avg === minAvg) list.push("cheapest");
+      if (tr.no_service_days === 0) list.push("most-stable");
+      if (tr.avg_rounds_per_day === maxRounds) list.push("most-rounds");
+      out[tr.vendor_id] = list;
     }
     return out;
   }, [trends]);
@@ -172,35 +174,35 @@ export default function Prices() {
           className="inline-flex items-center gap-1 text-label font-medium text-fg-tertiary transition-colors hover:text-fg-secondary"
         >
           <ArrowLeft className="size-3.5" />
-          返回提取 key
+          {t("nav.back-to-extract")}
         </Link>
 
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0 space-y-2">
-            <h1 className="text-hero font-semibold">价格走势</h1>
+            <h1 className="text-hero font-semibold">{t("hero.title")}</h1>
             <p className="text-fg-tertiary">
-              上游一天发多轮车 · 每轮产量不同、单价不同 · 竖条 = 那天的价格范围 ·{" "}
+              {t("hero.desc.prefix")}
               {cheapest ? (
                 <>
-                  当前最便宜：
+                  {t("hero.desc.cheapest-label")}
                   <Em plain>{cheapest.vendor_label}</Em>
-                  {" · "}<Em>{toCredits(cheapest.current_price)}</Em> 积分
+                  {" · "}<Em>{toCredits(cheapest.current_price)}</Em> {t("hero.desc.cheapest-suffix")}
                 </>
               ) : (
-                "暂无数据"
+                t("hero.desc.empty")
               )}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <Segmented
-              options={[{ value: "us", label: "美国区" }, { value: "eu", label: "欧洲区" }]}
+              options={[{ value: "us", label: t("filter.zone.us") }, { value: "eu", label: t("filter.zone.eu") }]}
               value={zone}
               onChange={setZone}
             />
             {/* Segmented 的 value 是 string（拿来当 React key）· days 在边界转 */}
             <Segmented
-              options={[{ value: "7", label: "7 天" }, { value: "30", label: "30 天" }]}
+              options={[{ value: "7", label: t("filter.days.7") }, { value: "30", label: t("filter.days.30") }]}
               value={String(days)}
               onChange={(v) => setDays(Number(v))}
             />
@@ -213,18 +215,18 @@ export default function Prices() {
       <Card className="relative p-7">
         <div className="-mx-7 overflow-x-auto px-7">
         {isLoading ? (
-          <div className="grid h-96 place-items-center text-label text-fg-tertiary">加载中…</div>
+          <div className="grid h-96 place-items-center text-label text-fg-tertiary">{t("matrix.loading")}</div>
         ) : sorted.length === 0 ? (
-          <div className="grid h-96 place-items-center text-label text-fg-tertiary">暂无数据</div>
+          <div className="grid h-96 place-items-center text-label text-fg-tertiary">{t("matrix.empty")}</div>
         ) : (
           <>
             {/* 表头 */}
             <div className="flex items-end gap-4 border-b border-hairline pb-2.5 text-label font-semibold text-fg-tertiary">
-              <span className="w-[300px] shrink-0">vendor · {days} 天概况</span>
+              <span className="w-[300px] shrink-0">{t("matrix.header.vendor", { days })}</span>
               <span className="min-w-0 flex-1">
-                {days} 天价格分布 · 竖条高度 = 当天最低~最高轮价
+                {t("matrix.header.distribution", { days })}
               </span>
-              <span className="w-24 shrink-0 text-right">{days} 天涨跌</span>
+              <span className="w-24 shrink-0 text-right">{t("matrix.header.change", { days })}</span>
             </div>
 
             {/* 6 行 · 每行一家
@@ -317,25 +319,25 @@ export default function Prices() {
                   className="inline-block w-[6px] rounded-full"
                   style={{ height: 16, backgroundColor: ROW_COLOR }}
                 />
-                <span>当天价格范围（多轮）</span>
+                <span>{t("legend.range")}</span>
               </span>
               <span className="flex items-center gap-1.5">
                 <span
                   className="inline-block h-[2px] w-3 rounded-full"
                   style={{ backgroundColor: ROW_COLOR }}
                 />
-                <span>只发 1 轮</span>
+                <span>{t("legend.single")}</span>
               </span>
               <span className="flex items-center gap-1.5">
                 <span
                   className="inline-block w-[6px] rounded-full opacity-40"
                   style={{ height: 16, backgroundColor: ROW_COLOR }}
                 />
-                <span>颜色越深 = 那天车越多</span>
+                <span>{t("legend.density")}</span>
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="inline-block size-1.5 rounded-full bg-fg-tertiary/40" />
-                <span>没发车</span>
+                <span>{t("legend.no-service")}</span>
               </span>
             </div>
           </>
@@ -358,45 +360,54 @@ export default function Prices() {
       {/* 发车记录 · 每条 = 一轮车 · 图上点某天可筛到那天 */}
       <div className="space-y-5">
         <SectionHead
-          title="发车记录"
+          title={t("rounds.title")}
           sub={
             filter ? (
-              <>
-                {trends.find((t) => t.vendor_id === filter.vendorId)?.vendor_label} ·{" "}
-                {filter.date.slice(5).replace("-", "/")} ·{" "}
-                <span className="font-semibold tnum">{rows.length}</span> 轮
-              </>
+              <Trans
+                t={t}
+                i18nKey="rounds.sub.filtered"
+                values={{
+                  label: trends.find((tr) => tr.vendor_id === filter.vendorId)?.vendor_label ?? "",
+                  date: filter.date.slice(5).replace("-", "/"),
+                  count: rows.length,
+                }}
+                components={{ em: <span className="font-semibold tnum" /> }}
+              />
             ) : (
-              <>
-                {zone === "us" ? "美国区" : "欧洲区"} 全部 vendor ·{" "}
-                <span className="font-semibold tnum">{rows.length}</span> 轮 · 按时间倒序 ·
-                点上图某天可筛
-              </>
+              <Trans
+                t={t}
+                i18nKey="rounds.sub.all"
+                values={{
+                  zone: zone === "us" ? t("filter.zone.us") : t("filter.zone.eu"),
+                  count: rows.length,
+                }}
+                components={{ em: <span className="font-semibold tnum" /> }}
+              />
             )
           }
           right={
             filter && (
               <Button variant="ghost" size="sm" onClick={() => { setFilter(null); setShown(PAGE); }}>
                 <X />
-                清除筛选
+                {t("rounds.clear-filter")}
               </Button>
             )
           }
         />
 
         {rows.length === 0 ? (
-          <div className="py-12 text-center text-label text-fg-tertiary">暂无发车记录</div>
+          <div className="py-12 text-center text-label text-fg-tertiary">{t("rounds.empty")}</div>
         ) : (
           <>
             <div className="overflow-x-auto">
               <div className="min-w-[680px]">
                 <BareHead>
-                  <span className="w-[92px] shrink-0">时间</span>
-                  <span className="min-w-0 flex-1">vendor</span>
-                  <span className="w-14 shrink-0 text-center">区域</span>
-                  <span className="w-24 shrink-0 text-right">单价</span>
-                  <span className="w-20 shrink-0 text-right">产出</span>
-                  <span className="w-24 shrink-0 text-right">当天位置</span>
+                  <span className="w-[92px] shrink-0">{t("rounds.header.time")}</span>
+                  <span className="min-w-0 flex-1">{t("rounds.header.vendor")}</span>
+                  <span className="w-14 shrink-0 text-center">{t("rounds.header.zone")}</span>
+                  <span className="w-24 shrink-0 text-right">{t("rounds.header.price")}</span>
+                  <span className="w-20 shrink-0 text-right">{t("rounds.header.output")}</span>
+                  <span className="w-24 shrink-0 text-right">{t("rounds.header.position")}</span>
                 </BareHead>
                 <BareList>
                   {visible.map((r) => (
@@ -412,14 +423,14 @@ export default function Prices() {
             <LoadMoreButton
               onLoadMore={() => setShown((s) => s + PAGE)}
               remain={remain}
-              remainUnit="轮"
+              remainUnit={t("rounds.remain-unit")}
             />
           </>
         )}
       </div>
 
       <p className="text-center text-label text-fg-tertiary">
-        当前数据为演示用 mock · 真实数据将从上游轮次记录聚合
+        {t("footnote")}
       </p>
     </div>
   );
@@ -440,6 +451,7 @@ function RoundRow({
   };
   onPick: () => void;
 }) {
+  const { t } = useTranslation("prices");
   const isMin = r.dayRounds > 1 && r.round.unit_price === r.dayMin;
   const isMax = r.dayRounds > 1 && r.round.unit_price === r.dayMax;
   return (
@@ -449,7 +461,7 @@ function RoundRow({
       </span>
       <span className="min-w-0 flex-1 truncate text-label font-medium">{r.label}</span>
       <span className="w-14 shrink-0 text-center text-label font-medium text-fg-secondary">
-        {r.round.zone ?? "全区"}
+        {r.round.zone ?? t("rounds.zone.all")}
       </span>
       <span
         className={cn(
@@ -459,21 +471,21 @@ function RoundRow({
         )}
       >
         {toCredits(r.round.unit_price)}
-        <span className="ml-0.5 font-medium text-fg-tertiary">积分</span>
+        <span className="ml-0.5 font-medium text-fg-tertiary">{t("rounds.price-unit")}</span>
       </span>
       <span className="w-20 shrink-0 text-right text-label tnum text-fg-secondary">
-        {r.round.keys_count} 个号
+        {t("rounds.keys-count", { count: r.round.keys_count })}
       </span>
       <span className="w-24 shrink-0 text-right">
         {/* 那天有多轮时才标 · 让用户知道这轮是当天最便宜还是最贵 */}
         {isMin ? (
-          <Chip tone="ok" className="text-[10px]">当天最低</Chip>
+          <Chip tone="ok" className="text-[10px]">{t("rounds.position.min")}</Chip>
         ) : isMax ? (
-          <Chip tone="danger" className="text-[10px]">当天最高</Chip>
+          <Chip tone="danger" className="text-[10px]">{t("rounds.position.max")}</Chip>
         ) : r.dayRounds > 1 ? (
-          <span className="text-label text-fg-tertiary">{r.dayRounds} 轮中</span>
+          <span className="text-label text-fg-tertiary">{t("rounds.position.of", { count: r.dayRounds })}</span>
         ) : (
-          <span className="text-label text-fg-tertiary">唯一一轮</span>
+          <span className="text-label text-fg-tertiary">{t("rounds.position.only")}</span>
         )}
       </span>
     </BareRow>
@@ -483,7 +495,7 @@ function RoundRow({
 /* ─────────────── 单行 ─────────────── */
 
 function VendorRow({
-  t, tags, dim, hoveredDate, selectedDate, onEnter, onLeave, onHoverDate, onSelectDate,
+  t: trend, tags, dim, hoveredDate, selectedDate, onEnter, onLeave, onHoverDate, onSelectDate,
 }: {
   t: VendorPriceTrend;
   tags: string[];
@@ -495,6 +507,7 @@ function VendorRow({
   onHoverDate: (d: string | null) => void;
   onSelectDate: (d: string) => void;
 }) {
+  const { t } = useTranslation("prices");
   return (
     <div
       className={cn(
@@ -508,34 +521,34 @@ function VendorRow({
       {/* 左：名字行 + 数据行 · 每个数字都带 label 和单位（裸数字没人看得懂） */}
       <div className="w-[300px] shrink-0 space-y-1.5">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="truncate font-medium">{t.vendor_label}</span>
+          <span className="truncate font-medium">{trend.vendor_label}</span>
           {tags.map((tag) => (
             <Chip key={tag} tone={TAG_TONE[tag] ?? "neutral"} className="text-[10px]">
-              {tag}
+              {t(`tag.${tag}`)}
             </Chip>
           ))}
         </div>
         <div className="flex items-baseline gap-4 text-label text-fg-tertiary">
           <MiniStat
-            label="均价"
-            value={<>{toCredits(t.price_avg)} <span className="font-normal text-fg-tertiary">积分</span></>}
+            label={t("stat.avg")}
+            value={<>{toCredits(trend.price_avg)} <span className="font-normal text-fg-tertiary">{t("stat.credits-unit")}</span></>}
             emphasis
           />
           <MiniStat
-            label="区间"
-            value={`${toCredits(t.price_low)}-${toCredits(t.price_high)}`}
+            label={t("stat.range")}
+            value={`${toCredits(trend.price_low)}-${toCredits(trend.price_high)}`}
           />
           <MiniStat
-            label="日均"
-            value={<>{t.avg_rounds_per_day} <span className="font-normal text-fg-tertiary">轮</span></>}
+            label={t("stat.rounds-per-day")}
+            value={<>{trend.avg_rounds_per_day} <span className="font-normal text-fg-tertiary">{t("stat.rounds-per-day.unit")}</span></>}
           />
           <MiniStat
-            label="断供"
+            label={t("stat.no-service")}
             value={
-              t.no_service_days > 0 ? (
-                <span className="text-warn-fg">{t.no_service_days} 天</span>
+              trend.no_service_days > 0 ? (
+                <span className="text-warn-fg">{t("stat.no-service.days", { days: trend.no_service_days })}</span>
               ) : (
-                <span className="text-fg-tertiary">无</span>
+                <span className="text-fg-tertiary">{t("stat.no-service.none")}</span>
               )
             }
           />
@@ -545,7 +558,7 @@ function VendorRow({
       {/* 中：箱线图 */}
       <div className="min-w-0 flex-1">
         <PriceBoxPlot
-          days={t.days}
+          days={trend.days}
           color={ROW_COLOR}
           height={ROW_H}
           hoveredDate={hoveredDate}
@@ -557,7 +570,7 @@ function VendorRow({
 
       {/* 右：涨跌 */}
       <span className="w-24 shrink-0 text-right">
-        <PctBadge pct={t.change_30d_pct} />
+        <PctBadge pct={trend.change_30d_pct} />
       </span>
     </div>
   );

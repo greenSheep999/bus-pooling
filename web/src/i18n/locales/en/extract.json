@@ -1,0 +1,147 @@
+{
+  "action": {
+    "handoff": "Download & take",
+    "into-bus": "Add to bus",
+    "push-pool": "Push to my pool"
+  },
+  "action.push-pool.disabled-hint": "Configure my pool in Settings first",
+  "assign-history": {
+    "chip": {
+      "downloaded": "Downloaded"
+    },
+    "col": {
+      "count": "Count",
+      "dest": "Destination",
+      "target": "Target",
+      "time": "Time",
+      "vendor": "vendor"
+    },
+    "detail": {
+      "just-pulled": "just now",
+      "key": "key",
+      "lifespan": "Alive at dispatch",
+      "region": "Region",
+      "used": "Used"
+    },
+    "empty": {
+      "desc": "Send pending keys to a bus / your pool / take-away · records land here",
+      "title": "No dispatch history yet"
+    },
+    "handoff-warn": {
+      "prefix": "Plaintext handed to you and removed from our side · ",
+      "strong": "cannot re-download",
+      "suffix": " · only masked records remain below"
+    },
+    "section": {
+      "sub": {
+        "prefix": "Dispatches · ",
+        "suffix": " total · tap a row to expand key details"
+      },
+      "title": "Dispatch history"
+    }
+  },
+  "dest": {
+    "handoff": "Download & take",
+    "into-bus": "Into bus",
+    "push-pool": "Push to my pool"
+  },
+  "downstream": {
+    "warn": {
+      "link": "Settings · My pool",
+      "prefix": "\"Push to my pool\" needs URL and token — set them in ",
+      "suffix": " first",
+      "title": "My pool not configured yet"
+    }
+  },
+  "extract-history": {
+    "col": {
+      "cost": "Cost",
+      "count": "Count",
+      "progress": "Dispatch progress",
+      "result": "Result",
+      "time": "Time",
+      "vendor-zone": "vendor · region"
+    },
+    "empty": {
+      "desc": "Tap \"Extract keys\" above to pull a batch · every action gets logged here",
+      "title": "No extract history yet"
+    },
+    "progress": {
+      "all-assigned": "All dispatched",
+      "pending-prefix": "Pending "
+    },
+    "section": {
+      "sub": {
+        "prefix": "Pull actions · ",
+        "suffix": " total"
+      },
+      "title": "Extract history"
+    },
+    "zone": {
+      "all": "All regions"
+    }
+  },
+  "extract-result": {
+    "failed": "Failed",
+    "partial": "Partial",
+    "refunded": "Refunded",
+    "success": "Success"
+  },
+  "form": {
+    "card": {
+      "sub": "Pick a vendor to see supply · set count and region · pull a batch",
+      "title": "Pull new keys"
+    }
+  },
+  "hero": {
+    "desc": "Pulled keys land in the \"Pending\" list · dispatch to 3 destinations: ",
+    "tag": {
+      "handoff": "Download txt · take away",
+      "into-bus": "Into bus",
+      "push-pool": "Push to my pool"
+    },
+    "title": "Extract keys"
+  },
+  "pending": {
+    "col": {
+      "key": "key · vendor · status",
+      "lifespan": "Lifespan",
+      "pulled-at": "Pulled",
+      "region": "Region",
+      "used": "Used"
+    },
+    "empty": {
+      "desc": "Tap \"Extract keys\" above to pull a batch · pulled keys show up here to dispatch",
+      "title": "No pending keys yet"
+    },
+    "section": {
+      "sub": {
+        "credits-tip": " credits frozen · pick rows to reveal the action bar",
+        "dead-sep": " · ",
+        "dead-suffix": " dead (can't dispatch)",
+        "empty": "Pull a batch of keys, then dispatch them from here",
+        "from": " · from ",
+        "usable-prefix": "",
+        "usable-suffix": " usable",
+        "vendor-mid": " vendors · "
+      },
+      "title": "Pending keys"
+    }
+  },
+  "row": {
+    "chip": {
+      "alive": "Live",
+      "dead": "Dead",
+      "warranty-refund": "Dead in warranty · refundable"
+    }
+  },
+  "tabs": {
+    "assign-history": "Dispatch history",
+    "extract-history": "Extract history",
+    "pending": "Pending"
+  },
+  "unit": {
+    "count": "",
+    "credits": "credits"
+  }
+}

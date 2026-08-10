@@ -1,0 +1,84 @@
+{
+  "filter": {
+    "days": {
+      "30": "30 天",
+      "7": "7 天"
+    },
+    "zone": {
+      "eu": "欧洲区",
+      "us": "美国区"
+    }
+  },
+  "footnote": "当前数据为演示用 mock · 真实数据将从上游轮次记录聚合",
+  "hero": {
+    "desc": {
+      "cheapest-label": "当前最便宜：",
+      "cheapest-suffix": "积分",
+      "empty": "暂无数据",
+      "prefix": "上游一天发多轮车 · 每轮产量不同、单价不同 · 竖条 = 那天的价格范围 · "
+    },
+    "title": "价格走势"
+  },
+  "legend": {
+    "density": "颜色越深 = 那天车越多",
+    "no-service": "没发车",
+    "range": "当天价格范围（多轮）",
+    "single": "只发 1 轮"
+  },
+  "matrix": {
+    "empty": "暂无数据",
+    "header": {
+      "change": "{{days}} 天涨跌",
+      "distribution": "{{days}} 天价格分布 · 竖条高度 = 当天最低~最高轮价",
+      "vendor": "vendor · {{days}} 天概况"
+    },
+    "loading": "加载中…"
+  },
+  "nav": {
+    "back-to-extract": "返回提取 key"
+  },
+  "rounds": {
+    "clear-filter": "清除筛选",
+    "empty": "暂无发车记录",
+    "header": {
+      "output": "产出",
+      "position": "当天位置",
+      "price": "单价",
+      "time": "时间",
+      "vendor": "vendor",
+      "zone": "区域"
+    },
+    "keys-count": "{{count}} 个号",
+    "position": {
+      "max": "当天最高",
+      "min": "当天最低",
+      "of": "{{count}} 轮中",
+      "only": "唯一一轮"
+    },
+    "price-unit": "积分",
+    "remain-unit": "轮",
+    "sub": {
+      "all": "{{zone}} 全部 vendor · <em>{{count}}</em> 轮 · 按时间倒序 · 点上图某天可筛",
+      "filtered": "{{label}} · {{date}} · <em>{{count}}</em> 轮"
+    },
+    "title": "发车记录",
+    "zone": {
+      "all": "全区"
+    }
+  },
+  "stat": {
+    "avg": "均价",
+    "credits-unit": "积分",
+    "no-service": "断供",
+    "range": "区间",
+    "rounds-per-day": "日均"
+  },
+  "stat.no-service.days": "{{days}} 天",
+  "stat.no-service.none": "无",
+  "stat.rounds-per-day.unit": "轮",
+  "tag": {
+    "cheapest": "最便宜",
+    "most-rounds": "车最多",
+    "most-stable": "车最稳"
+  }
+}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { Trans, useTranslation } from "react-i18next";
 import {
   Activity as ActivityIcon, AlertTriangle, ArrowLeft, Bus as BusIcon, Check,
   KeyRound, Link2 as LinkIcon, RefreshCw, Send, Settings, Trash2, UserCheck, UserMinus,
@@ -37,16 +38,16 @@ import type {
 
 type TabKey = "credentials" | "pulls" | "pushes" | "members" | "strategy" | "stats";
 
-const TABS: { value: TabKey; label: string }[] = [
-  { value: "credentials", label: "号列表" },
-  { value: "pulls", label: "拉号历史" },
-  { value: "pushes", label: "推送记录" },
-  { value: "members", label: "成员" },
-  { value: "strategy", label: "补车策略" },
-  { value: "stats", label: "数据" },
-];
-
 export default function BusDetail() {
+  const { t } = useTranslation("buses");
+  const TABS: { value: TabKey; label: string }[] = [
+    { value: "credentials", label: t("tabs.credentials") },
+    { value: "pulls", label: t("tabs.pulls") },
+    { value: "pushes", label: t("tabs.pushes") },
+    { value: "members", label: t("tabs.members") },
+    { value: "strategy", label: t("tabs.strategy") },
+    { value: "stats", label: t("tabs.stats") },
+  ];
   const { id } = useParams();
   const nav = useNavigate();
   const { data: bus } = useBus(id);
@@ -56,7 +57,7 @@ export default function BusDetail() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   if (!id) return null;
-  if (!bus) return <div className="py-12 text-center text-fg-tertiary">加载中…</div>;
+  if (!bus) return <div className="py-12 text-center text-fg-tertiary">{t("loading")}</div>;
 
   return (
     <div className="space-y-section">
@@ -82,7 +83,7 @@ export default function BusDetail() {
           className="inline-flex items-center gap-1 text-label font-medium text-fg-tertiary transition-colors hover:text-fg-secondary"
         >
           <ArrowLeft className="size-3.5" />
-          返回拼车
+          {t("back")}
         </Link>
 
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -93,24 +94,24 @@ export default function BusDetail() {
               </span>
               <h1 className="min-w-0 truncate text-hero font-semibold">{bus.name}</h1>
               <Chip tone={bus.status === "active" ? "ok" : "neutral"}>
-                {bus.status === "active" ? "活跃" : "已解散"}
+                {bus.status === "active" ? t("status.active") : t("status.dissolved")}
               </Chip>
             </div>
             <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-fg-tertiary">
               <span>
                 {bus.kind === "anon"
-                  ? "搭车池"
+                  ? t("kind.anon")
                   : bus.member_count > 1
-                    ? `${bus.member_count} 人拼车`
-                    : "独享"} ·{" "}
-                创建于 {new Date(bus.created_at).toLocaleDateString("zh-CN")}
+                    ? t("kind.multi", { count: bus.member_count })
+                    : t("kind.solo")} ·{" "}
+                {t("created-at", { date: new Date(bus.created_at).toLocaleDateString() })}
               </span>
               {/* 头部只放一个动作：复制邀请链接。码不在这儿露（成员 tab 里的链接看得到）·
                   它是"独享变拼车"的入口·不该埋在第 4 个 tab 里才找得到 */}
               {bus.kind !== "anon" && bus.invite_code && (
                 <>
                   <span>·</span>
-                  <span>拼车码</span>
+                  <span>{t("invite.code-label")}</span>
                   {/* 码当纯文本显示（可选中口述 / 手输）· 不给它单独的复制按钮 */}
                   <code className="font-mono font-semibold tracking-wider text-fg">
                     {bus.invite_code}
@@ -124,11 +125,11 @@ export default function BusDetail() {
                       setHeaderCopied(true);
                       setTimeout(() => setHeaderCopied(false), 1600);
                     }}
-                    title="复制拼车链接 · 发给朋友点开就能上车"
+                    title={t("invite.copy-link-title")}
                     className="inline-flex items-center gap-1 font-medium text-brand-strong underline-offset-2 hover:underline"
                   >
                     {headerCopied ? <Check className="size-3.5" /> : <LinkIcon className="size-3.5" />}
-                    {headerCopied ? "链接已复制" : "复制拼车链接"}
+                    {headerCopied ? t("invite.link-copied") : t("invite.copy-link")}
                   </button>
                 </>
               )}
@@ -138,14 +139,14 @@ export default function BusDetail() {
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="brand" onClick={() => setPullOpen(true)}>
               <KeyRound />
-              立即拉号
+              {t("action.pull-now")}
             </Button>
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setSettingsOpen(true)}
-              aria-label="车设置"
-              title="车设置"
+              aria-label={t("action.settings")}
+              title={t("action.settings")}
             >
               <Settings />
             </Button>
@@ -157,33 +158,33 @@ export default function BusDetail() {
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           icon={ActivityIcon}
-          label="正常号"
+          label={t("kpi.alive.label")}
           value={String(bus.alive_count)}
-          unit="个"
-          sub={<>已失效 <span className="font-semibold tnum">{bus.dead_count}</span></>}
+          unit={t("kpi.alive.unit")}
+          sub={<Trans t={t} i18nKey="kpi.alive.sub" values={{ count: bus.dead_count }} components={{ 1: <span className="font-semibold tnum" /> }} />}
         />
         <KpiCard
           icon={ZapOff}
-          label="今日消费"
+          label={t("kpi.spend-today.label")}
           value={fmtCredits(bus.spend_today)}
-          unit="积分"
-          sub={bus.spend_today > 0 ? <span className="text-danger-fg font-semibold">今日已扣</span> : "今日无消费"}
+          unit={t("kpi.spend-today.unit")}
+          sub={bus.spend_today > 0 ? <span className="text-danger-fg font-semibold">{t("kpi.spend-today.sub-spent")}</span> : t("kpi.spend-today.sub-empty")}
         />
         <KpiCard
           icon={Zap}
-          label="平均寿命"
+          label={t("kpi.lifespan.label")}
           value={fmtLifespan(bus.avg_lifespan_seconds)}
-          sub="按已挂号 / 号池全体计"
+          sub={t("kpi.lifespan.sub")}
         />
         <KpiCard
           icon={bus.strategy.auto_refill_enabled ? Zap : ZapOff}
-          label="补车模式"
-          value={bus.strategy.auto_refill_enabled ? "自动" : "手动"}
+          label={t("kpi.refill.label")}
+          value={bus.strategy.auto_refill_enabled ? t("kpi.refill.auto") : t("kpi.refill.manual")}
           sub={
             bus.strategy.auto_refill_enabled ? (
-              <>保活 <span className="font-semibold tnum">{bus.strategy.refill_watermark}</span></>
+              <Trans t={t} i18nKey="kpi.refill.watermark" values={{ count: bus.strategy.refill_watermark }} components={{ 1: <span className="font-semibold tnum" /> }} />
             ) : (
-              "号少时提醒不自动拉"
+              t("kpi.refill.manual-sub")
             )
           }
         />
@@ -192,8 +193,8 @@ export default function BusDetail() {
       {/* Tab · 3 段 · 只保留运行时数据（配置类走 ⚙ 设置 modal） */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className="space-y-6">
         <TabsList>
-          {TABS.map((t) => (
-            <TabsTrigger key={t.value} value={t.value}>{t.label}</TabsTrigger>
+          {TABS.map((item) => (
+            <TabsTrigger key={item.value} value={item.value}>{t(item.labelKey)}</TabsTrigger>
           ))}
         </TabsList>
 
@@ -205,7 +206,7 @@ export default function BusDetail() {
           <EditStrategyPanel busId={id} strategy={bus.strategy} />
         </TabsContent>
         <TabsContent value="stats">
-          <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">加载图表…</div>}>
+          <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">{t("stats.loading")}</div>}>
             <BusStats busId={id} />
           </Suspense>
         </TabsContent>
@@ -216,6 +217,7 @@ export default function BusDetail() {
 /* ── Tab · 成员 · 挂起 / 移除 / 拉人（decisions §8.26） ── */
 
 function TabMembers({ bus }: { bus: Bus }) {
+  const { t } = useTranslation("buses");
   const { data: me } = useMe();
   const setSuspended = useSetMemberSuspended(bus.id);
   const removeMember = useRemoveMember(bus.id);
@@ -243,13 +245,13 @@ function TabMembers({ bus }: { bus: Bus }) {
      只留一个动作：复制链接。码本身在链接尾巴上看得见·不再单独给复制按钮。 */
   const inviteCard = bus.kind !== "anon" && (
     <Card className="p-7">
-      <SectionHead title="拉人进车" sub="把链接发给朋友 · 他点开就能上车" />
+      <SectionHead title={t("members.invite.title")} sub={t("members.invite.sub")} />
 
       {/* 码放大显示 —— 当面口述 / 让对方在「输拼车码加入」手输时用 */}
       <div className="mt-4 flex items-baseline gap-2">
-        <span className="text-label text-fg-tertiary">拼车码</span>
+        <span className="text-label text-fg-tertiary">{t("invite.code-label")}</span>
         <code className="select-all font-mono text-num font-semibold tracking-widest">
-          {bus.invite_code ?? "—"}
+          {bus.invite_code ?? t("members.invite.code-dash")}
         </code>
       </div>
 
@@ -257,27 +259,27 @@ function TabMembers({ bus }: { bus: Bus }) {
       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
         <input
           readOnly
-          value={inviteLink || "—"}
+          value={inviteLink || t("members.invite.link-placeholder")}
           onFocus={(e) => e.currentTarget.select()}
           className="h-10 min-w-0 flex-1 rounded-xl border border-hairline bg-bg-elevated px-3 font-mono text-label text-fg-secondary outline-none focus:border-brand"
         />
         <Button className="h-10 shrink-0" onClick={onCopyLink} disabled={!inviteLink}>
           {copied ? <Check /> : <LinkIcon />}
-          {copied ? "已复制" : "复制链接"}
+          {copied ? t("members.invite.copied") : t("members.invite.copy")}
         </Button>
       </div>
 
       <p className="mt-3 text-label text-fg-tertiary">
-        链接泄漏了？
+        {t("members.invite.leaked-question")}
         <button
           type="button"
           onClick={() => regenCode.mutate()}
           disabled={regenCode.isPending}
           className="ml-1 font-medium text-brand-strong underline-offset-2 hover:underline disabled:opacity-50"
         >
-          换一条
+          {t("members.invite.regen")}
         </button>
-        {" "}· 旧码和旧链接立即失效，已进车的人不受影响
+        {" "}{t("members.invite.regen-note")}
       </p>
     </Card>
   );
@@ -287,16 +289,16 @@ function TabMembers({ bus }: { bus: Bus }) {
     return (
       <div className="space-y-6">
         <Card className="p-7">
-          <SectionHead title="成员" sub="只有你 · 独享号池 · 分享拼车码拉朋友加入" />
+          <SectionHead title={t("members.solo.title")} sub={t("members.solo.sub")} />
           <div className="mt-5 flex items-center gap-3 rounded-xl bg-bg-elevated p-4">
             <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-subtle font-semibold text-brand-strong">
-              我
+              {t("members.solo.me-avatar")}
             </span>
             <div className="min-w-0 flex-1">
-              <div className="font-semibold">{me?.username ?? "我"}</div>
-              <div className="text-label text-fg-tertiary">发起人 · 独享 · 无分摊</div>
+              <div className="font-semibold">{me?.username ?? t("members.solo.me-fallback")}</div>
+              <div className="text-label text-fg-tertiary">{t("members.solo.role-line")}</div>
             </div>
-            <Chip tone="brand">我发起</Chip>
+            <Chip tone="brand">{t("members.solo.me-chip")}</Chip>
           </div>
         </Card>
         {inviteCard}
@@ -309,23 +311,20 @@ function TabMembers({ bus }: { bus: Bus }) {
       <Card className="p-7">
         <div className="mb-4">
           <SectionHead
-            title="成员"
+            title={t("members.list.title")}
             sub={
-              <>
-                共 <Em>{members.length}</Em> 人 · 分摊比例加起来 100% ·
-                拉号和派号时按这个比例从各人钱包扣
-              </>
+              <Trans t={t} i18nKey="members.list.sub" values={{ count: members.length }} components={{ 1: <Em /> }} />
             }
           />
         </div>
 
         <BareList>
           <BareHead>
-            <span className="w-[200px] shrink-0">成员</span>
-            <span className="w-20 shrink-0 text-right">分摊</span>
-            <span className="w-24 shrink-0 text-right">余额</span>
-            <span className="min-w-0 flex-1">状态</span>
-            <span className="w-[132px] shrink-0 text-right">操作</span>
+            <span className="w-[200px] shrink-0">{t("members.header.member")}</span>
+            <span className="w-20 shrink-0 text-right">{t("members.header.share")}</span>
+            <span className="w-24 shrink-0 text-right">{t("members.header.balance")}</span>
+            <span className="min-w-0 flex-1">{t("members.header.status")}</span>
+            <span className="w-[132px] shrink-0 text-right">{t("members.header.actions")}</span>
           </BareHead>
           {members.map((m) => (
             <MemberRow
@@ -346,10 +345,7 @@ function TabMembers({ bus }: { bus: Bus }) {
 
         {/* 挂起规则 · 就一句话说清什么时候会自动挂起 */}
         <p className="mt-4 text-label text-fg-tertiary">
-          余额不够时该成员<Em plain>本次跳过</Em>
-          （不扣他积分，也不给他取这批号）· 连续被跳过{" "}
-          <Em>{SUSPEND_AFTER}</Em> 次自动挂起 ·
-          他充值后自己就恢复，不用你批
+          <Trans t={t} i18nKey="members.suspend-note" values={{ limit: SUSPEND_AFTER }} components={{ 1: <Em plain />, 3: <Em /> }} />
         </p>
       </Card>
 
@@ -379,6 +375,7 @@ function MemberRow({
   onToggleSuspend: () => void;
   onRemove: () => void;
 }) {
+  const { t } = useTranslation("buses");
   const suspended = m.status === "suspended";
   /* 「余额够不够」是相对下一轮花多少的 · 那个数现在不知道（价格随行就市）
      所以不猜 —— 只报后端记下的事实：他被跳过过几次 */
@@ -404,10 +401,10 @@ function MemberRow({
             <span className={cn("truncate font-semibold", suspended && "text-fg-tertiary")}>
               {m.username}
             </span>
-            {m.role === "owner" && <Chip tone="brand">车主</Chip>}
+            {m.role === "owner" && <Chip tone="brand">{t("members.role.owner")}</Chip>}
           </span>
           <span className="block text-label text-fg-tertiary">
-            {fmtTime(m.joined_at)} 进车
+            {t("members.row.joined-at", { time: fmtTime(m.joined_at) })}
           </span>
         </span>
       </span>
@@ -434,20 +431,20 @@ function MemberRow({
       <span className="flex min-w-0 flex-1 items-center gap-2 text-label">
         {suspended ? (
           <>
-            <Chip tone="neutral" dot>已挂起</Chip>
-            <span className="truncate text-fg-tertiary">取不到号 · 不参与分摊</span>
+            <Chip tone="neutral" dot>{t("members.status.suspended")}</Chip>
+            <span className="truncate text-fg-tertiary">{t("members.status.suspended-desc")}</span>
           </>
         ) : behind ? (
           <>
             <Chip tone="warn" dot>
-              已跳过 {m.skipped_count}/{SUSPEND_AFTER}
+              {t("members.status.skipped", { count: m.skipped_count, limit: SUSPEND_AFTER })}
             </Chip>
             <span className="truncate text-fg-tertiary">
-              再 {SUSPEND_AFTER - m.skipped_count} 次自动挂起
+              {t("members.status.skipped-desc", { remain: SUSPEND_AFTER - m.skipped_count })}
             </span>
           </>
         ) : (
-          <Chip tone="ok" dot>正常</Chip>
+          <Chip tone="ok" dot>{t("members.status.normal")}</Chip>
         )}
       </span>
 
@@ -459,15 +456,15 @@ function MemberRow({
           <>
             <Button variant="ghost" size="sm" onClick={onToggleSuspend} disabled={busy}>
               {suspended ? <UserCheck /> : <UserMinus />}
-              {suspended ? "解挂" : "挂起"}
+              {suspended ? t("members.action.unsuspend") : t("members.action.suspend")}
             </Button>
             <Button
               variant="ghost"
               size="icon"
               onClick={onRemove}
               disabled={busy}
-              aria-label={`移除 ${m.username}`}
-              title="移除出车"
+              aria-label={t("members.action.remove-aria", { name: m.username })}
+              title={t("members.action.remove-title")}
             >
               <Trash2 />
             </Button>
@@ -486,26 +483,27 @@ function RemoveMemberModal({
   onConfirm: () => void;
   pending: boolean;
 }) {
+  const { t } = useTranslation("buses");
+  const { t: tCommon } = useTranslation();
   return (
     <Dialog open={!!member} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-[460px]">
         <DialogHeader>
-          <DialogTitle>移除 {member?.username}？</DialogTitle>
-          <p className="text-label text-fg-tertiary">他立刻取不到这辆车的号</p>
+          <DialogTitle>{t("remove.title", { name: member?.username })}</DialogTitle>
+          <p className="text-label text-fg-tertiary">{t("remove.subtitle")}</p>
         </DialogHeader>
         <DialogBody>
-          <Alert tone="warn" icon={AlertTriangle} title="剩下的人分摊比例会重算">
-            他那 <span className="font-semibold tnum">{member?.share_pct}%</span> 会摊给其他人 ·
-            剩下的人平均分 · 立即生效且不可逆
+          <Alert tone="warn" icon={AlertTriangle} title={t("remove.alert-title")}>
+            <Trans t={t} i18nKey="remove.alert-body" values={{ share: member?.share_pct }} components={{ 1: <span className="font-semibold tnum" /> }} />
           </Alert>
           <p className="mt-3 text-label text-fg-tertiary">
-            只是他暂时没钱的话，用「挂起」更合适 —— 挂起不动分摊比例，他充值后自己就回来了
+            {t("remove.hint")}
           </p>
         </DialogBody>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>取消</Button>
+          <Button variant="ghost" onClick={onClose}>{tCommon("action.cancel")}</Button>
           <Button variant="danger" onClick={onConfirm} disabled={pending}>
-            {pending ? "移除中…" : "确认移除"}
+            {pending ? t("remove.action.confirming") : t("remove.action.confirm")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -516,6 +514,7 @@ function RemoveMemberModal({
 /* ── Tab · 号列表 ── */
 
 function TabCredentials({ busId }: { busId: string }) {
+  const { t } = useTranslation("buses");
   const { data: creds, isLoading } = useBusCredentials(busId);
   const items = creds ?? [];
 
@@ -523,13 +522,9 @@ function TabCredentials({ busId }: { busId: string }) {
     <Card className="p-7">
       <div className="mb-4">
         <SectionHead
-          title="号列表"
+          title={t("credentials.title")}
           sub={
-            <>
-              共 <Em>{items.length}</Em> 个 ·
-              正常 <Em tone="ok">{items.filter((c) => c.status === "alive").length}</Em>{" "}
-              · 失效 <Em tone="spend">{items.filter((c) => c.status === "dead").length}</Em>
-            </>
+            <Trans t={t} i18nKey="credentials.sub" values={{ count: items.length, alive: items.filter((c) => c.status === "alive").length, dead: items.filter((c) => c.status === "dead").length }} components={{ 1: <Em />, 3: <Em tone="ok" />, 5: <Em tone="spend" /> }} />
           }
         />
       </div>
@@ -539,19 +534,19 @@ function TabCredentials({ busId }: { busId: string }) {
       ) : items.length === 0 ? (
         <EmptyState
           icon={KeyRound}
-          title="这辆车还没有号"
-          desc="点右上「立即拉号」拉一批 · 号会直接进这辆车的池子"
+          title={t("credentials.empty.title")}
+          desc={t("credentials.empty.desc")}
         />
       ) : (
       <div className="overflow-x-auto">
         <div className="min-w-[680px]">
           <BareHead>
-            <span className="w-16 shrink-0">状态</span>
-            <span className="min-w-0 flex-1">号 · vendor</span>
-            <span className="w-20 shrink-0 text-center">寿命</span>
-            <span className="w-24 shrink-0 text-center">消耗</span>
-            <span className="w-20 shrink-0 text-center">推池</span>
-            <span className="w-20 shrink-0 text-right">拉入</span>
+            <span className="w-16 shrink-0">{t("credentials.header.status")}</span>
+            <span className="min-w-0 flex-1">{t("credentials.header.key-vendor")}</span>
+            <span className="w-20 shrink-0 text-center">{t("credentials.header.lifespan")}</span>
+            <span className="w-24 shrink-0 text-center">{t("credentials.header.usage")}</span>
+            <span className="w-20 shrink-0 text-center">{t("credentials.header.push")}</span>
+            <span className="w-20 shrink-0 text-right">{t("credentials.header.pulled")}</span>
           </BareHead>
           <BareList>
             {items.map((c) => <CredentialRow key={c.id} c={c} />)}
@@ -564,13 +559,14 @@ function TabCredentials({ busId }: { busId: string }) {
 }
 
 function CredentialRow({ c }: { c: Credential }) {
+  const { t } = useTranslation("buses");
   const { data: me } = useMe();
   const alive = c.status === "alive";
   return (
     <BareRow>
       <span className="w-16 shrink-0">
         <Chip tone={alive ? "ok" : "danger"} dot>
-          {alive ? "正常" : "已失效"}
+          {alive ? t("credentials.status.alive") : t("credentials.status.dead")}
         </Chip>
       </span>
 
@@ -587,16 +583,16 @@ function CredentialRow({ c }: { c: Credential }) {
 
       <span className="w-24 shrink-0 text-center text-label font-semibold tnum">
         {fmtCredits(c.credits_used)}
-        <span className="ml-0.5 font-medium text-fg-tertiary">积分</span>
+        <span className="ml-0.5 font-medium text-fg-tertiary">{t("credentials.unit.credits")}</span>
       </span>
 
       <span className="flex w-20 shrink-0 justify-center">
         {c.pushed_at ? (
-          <Chip tone="ok" icon={<Check className="size-3" />}>已推</Chip>
+          <Chip tone="ok" icon={<Check className="size-3" />}>{t("credentials.push.pushed")}</Chip>
         ) : c.push_failed ? (
-          <Chip tone="danger" icon={<X className="size-3" />}>推失败</Chip>
+          <Chip tone="danger" icon={<X className="size-3" />}>{t("credentials.push.failed")}</Chip>
         ) : (
-          <Chip tone="neutral">未推</Chip>
+          <Chip tone="neutral">{t("credentials.push.none")}</Chip>
         )}
       </span>
 
@@ -608,21 +604,26 @@ function CredentialRow({ c }: { c: Credential }) {
 }
 /* ── Tab · 拉号历史 ── */
 
-const RESULT: Record<PullResult, { label: string; tone: "ok" | "warn" | "danger" | "brand" }> = {
-  success: { label: "成功", tone: "ok" },
-  partial: { label: "部分", tone: "warn" },
-  failed: { label: "失败", tone: "danger" },
-  refunded: { label: "退款", tone: "brand" },
-};
+function useResultMap(): Record<PullResult, { label: string; tone: "ok" | "warn" | "danger" | "brand" }> {
+  const { t } = useTranslation("buses");
+  return {
+    success: { label: t("pulls.result.success"), tone: "ok" },
+    partial: { label: t("pulls.result.partial"), tone: "warn" },
+    failed: { label: t("pulls.result.failed"), tone: "danger" },
+    refunded: { label: t("pulls.result.refunded"), tone: "brand" },
+  };
+}
 
 function PushCell({ state, ratio }: { state: PushState; ratio: string | null }) {
-  if (state === "pushed") return <Chip tone="ok" icon={<Check className="size-3" />}>已推</Chip>;
-  if (state === "partial") return <Chip tone="warn" icon={<Check className="size-3" />}>部分推 {ratio}</Chip>;
-  if (state === "failed") return <Chip tone="danger" icon={<X className="size-3" />}>推失败</Chip>;
-  return <Chip tone="neutral">未推</Chip>;
+  const { t } = useTranslation("buses");
+  if (state === "pushed") return <Chip tone="ok" icon={<Check className="size-3" />}>{t("pulls.push.pushed")}</Chip>;
+  if (state === "partial") return <Chip tone="warn" icon={<Check className="size-3" />}>{t("pulls.push.partial", { ratio })}</Chip>;
+  if (state === "failed") return <Chip tone="danger" icon={<X className="size-3" />}>{t("pulls.push.failed")}</Chip>;
+  return <Chip tone="neutral">{t("pulls.push.none")}</Chip>;
 }
 
 function TabPulls({ busId }: { busId: string }) {
+  const { t } = useTranslation("buses");
   const { data: pulls, isLoading } = useBusPulls(busId);
   const rounds = pulls ?? [];
 
@@ -630,8 +631,8 @@ function TabPulls({ busId }: { busId: string }) {
     <Card className="p-7">
       <div className="mb-4">
         <SectionHead
-          title="拉号历史"
-          sub={<>共 <Em>{rounds.length}</Em> 轮 · 只列这辆车的</>}
+          title={t("pulls.title")}
+          sub={<Trans t={t} i18nKey="pulls.sub" values={{ count: rounds.length }} components={{ 1: <Em /> }} />}
         />
       </div>
 
@@ -640,19 +641,19 @@ function TabPulls({ busId }: { busId: string }) {
       ) : rounds.length === 0 ? (
         <EmptyState
           icon={KeyRound}
-          title="这辆车还没拉过号"
-          desc="点右上「立即拉号」· 每一轮的结果和花费都会记在这里"
+          title={t("pulls.empty.title")}
+          desc={t("pulls.empty.desc")}
         />
       ) : (
       <div className="overflow-x-auto">
         <div className="min-w-[720px]">
           <BareHead>
-            <span className="w-[86px] shrink-0">时间</span>
-            <span className="w-14 shrink-0">结果</span>
-            <span className="min-w-0 flex-1">流向</span>
-            <span className="w-20 shrink-0 text-center">号状态</span>
-            <span className="w-24 shrink-0 text-center">推池</span>
-            <span className="w-24 shrink-0 text-right">花费</span>
+            <span className="w-[86px] shrink-0">{t("pulls.header.time")}</span>
+            <span className="w-14 shrink-0">{t("pulls.header.result")}</span>
+            <span className="min-w-0 flex-1">{t("pulls.header.flow")}</span>
+            <span className="w-20 shrink-0 text-center">{t("pulls.header.key-status")}</span>
+            <span className="w-24 shrink-0 text-center">{t("pulls.header.push")}</span>
+            <span className="w-24 shrink-0 text-right">{t("pulls.header.cost")}</span>
           </BareHead>
           <BareList>
             {rounds.map((r) => <PullRow key={r.id} r={r} />)}
@@ -665,7 +666,9 @@ function TabPulls({ busId }: { busId: string }) {
 }
 
 function PullRow({ r }: { r: PullRound }) {
+  const { t } = useTranslation("buses");
   const { data: me } = useMe();
+  const RESULT = useResultMap();
   const res = RESULT[r.result];
   const failed = r.result === "failed";
   return (
@@ -680,13 +683,13 @@ function PullRow({ r }: { r: PullRound }) {
       <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
         {failed ? (
           <span className="truncate text-fg-tertiary">
-            未拉到号 · 尝试 {vendorLabel(r.vendor_id, !!me?.invited)} · {r.fail_reason ?? "缺货"}
+            {t("pulls.row.failed", { vendor: vendorLabel(r.vendor_id, !!me?.invited), reason: r.fail_reason ?? t("pulls.row.fail-reason-default") })}
           </span>
         ) : (
           <>
-            <span className="shrink-0 text-fg-secondary">共入车</span>
+            <span className="shrink-0 text-fg-secondary">{t("pulls.row.flow-prefix")}</span>
             <span className="shrink-0 font-semibold tnum text-fg">{r.count_purchased}</span>
-            <span className="shrink-0 text-fg-secondary">个号，从</span>
+            <span className="shrink-0 text-fg-secondary">{t("pulls.row.flow-suffix")}</span>
             <VendorTag name={vendorLabel(r.vendor_id, !!me?.invited)} size="sm" />
           </>
         )}
@@ -720,8 +723,8 @@ function PullRow({ r }: { r: PullRound }) {
           r.total_cost > 0 ? "text-ok-fg" : r.total_cost === 0 ? "text-fg-tertiary" : "text-fg",
         )}
       >
-        {r.total_cost === 0 ? "0" : fmtCredits(r.total_cost, { sign: true })}{" "}
-        <span className="font-medium text-fg-tertiary">积分</span>
+        {r.total_cost === 0 ? t("pulls.row.zero-cost") : fmtCredits(r.total_cost, { sign: true })}{" "}
+        <span className="font-medium text-fg-tertiary">{t("pulls.row.credits")}</span>
       </span>
     </BareRow>
   );
@@ -747,6 +750,7 @@ function hostOf(url: string): string {
 }
 
 function TabPushes({ busId }: { busId: string }) {
+  const { t } = useTranslation("buses");
   const { data: creds } = useBusCredentials(busId);
   const { data: downstream } = useDownstream();
 
@@ -783,12 +787,9 @@ function TabPushes({ busId }: { busId: string }) {
     <Card className="p-7">
       <div className="mb-4">
         <SectionHead
-          title="推送记录"
+          title={t("pushes.title")}
           sub={
-            <>
-              号从我方推给你号池的事件 · 共 <Em>{events.length}</Em> 条 ·
-              成功 <Em tone="ok">{success}</Em> · 失败 <Em tone="spend">{failed}</Em>
-            </>
+            <Trans t={t} i18nKey="pushes.sub" values={{ count: events.length, success, failed }} components={{ 1: <Em />, 3: <Em tone="ok" />, 5: <Em tone="spend" /> }} />
           }
         />
       </div>
@@ -796,17 +797,17 @@ function TabPushes({ busId }: { busId: string }) {
       {events.length === 0 ? (
         <EmptyState
           icon={Send}
-          title="还没有推送记录"
-          desc="配置了「推我的号池」的号才会有推送记录 · 在 设置 · 我的号池 里配 URL"
+          title={t("pushes.empty.title")}
+          desc={t("pushes.empty.desc")}
         />
       ) : (
         <div className="overflow-x-auto">
           <div className="min-w-[760px]">
             <BareHead>
-              <span className="w-[92px] shrink-0">时间</span>
-              <span className="w-24 shrink-0">状态</span>
-              <span className="min-w-0 flex-1">号 · vendor</span>
-              <span className="min-w-0 flex-[1.1]">去向 / 失败原因</span>
+              <span className="w-[92px] shrink-0">{t("pushes.header.time")}</span>
+              <span className="w-24 shrink-0">{t("pushes.header.status")}</span>
+              <span className="min-w-0 flex-1">{t("pushes.header.key-vendor")}</span>
+              <span className="min-w-0 flex-[1.1]">{t("pushes.header.target-or-reason")}</span>
               <span className="w-28 shrink-0" />
             </BareHead>
             <BareList>
@@ -822,6 +823,7 @@ function TabPushes({ busId }: { busId: string }) {
 function PushRow({
   e, targetHost,
 }: { e: PushEvent; targetHost: string | null }) {
+  const { t } = useTranslation("buses");
   const { data: me } = useMe();
   return (
     <BareRow>
@@ -830,9 +832,9 @@ function PushRow({
       </span>
       <span className="w-24 shrink-0">
         {e.status === "success" ? (
-          <Chip tone="ok" icon={<Check className="size-3" />}>已推</Chip>
+          <Chip tone="ok" icon={<Check className="size-3" />}>{t("pushes.status.success")}</Chip>
         ) : (
-          <Chip tone="danger" icon={<X className="size-3" />}>推失败</Chip>
+          <Chip tone="danger" icon={<X className="size-3" />}>{t("pushes.status.failed")}</Chip>
         )}
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-2">
@@ -862,7 +864,7 @@ function PushRow({
                 <span className="ml-1 truncate">{targetHost}</span>
               </TokenTag>
             ) : (
-              <span className="text-fg-tertiary">我的号池</span>
+              <span className="text-fg-tertiary">{t("pushes.target.default")}</span>
             )}
           </>
         )}
@@ -872,15 +874,15 @@ function PushRow({
       <span className="flex w-28 shrink-0 items-center justify-end gap-1">
         {e.status === "failed" && e.error && (
           e.error.retriable ? (
-            <Button variant="ghost" size="sm" title={`已试 ${e.error.attempts} 次`}>
+            <Button variant="ghost" size="sm" title={t("pushes.action.retry-title", { count: e.error.attempts })}>
               <RefreshCw />
-              重试
+              {t("pushes.action.retry")}
             </Button>
           ) : (
             <Button variant="ghost" size="sm" asChild>
               <Link to="/settings/downstream">
                 <Settings />
-                去检查
+                {t("pushes.action.check")}
               </Link>
             </Button>
           )

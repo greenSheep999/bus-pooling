@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   AlertTriangle, Bus as BusIcon, Check, ChevronRight, Download, KeyRound, Send,
 } from "lucide-react";
@@ -37,13 +38,14 @@ import type { AssignEvent, Credential, ExtractEvent, PullResult } from "@/types"
 
 type TabKey = "pending" | "extract-history" | "assign-history";
 
-const TABS: { value: TabKey; label: string }[] = [
-  { value: "pending", label: "待派" },
-  { value: "extract-history", label: "提取历史" },
-  { value: "assign-history", label: "派发历史" },
+const TABS: { value: TabKey; labelKey: string }[] = [
+  { value: "pending", labelKey: "tabs.pending" },
+  { value: "extract-history", labelKey: "tabs.extract-history" },
+  { value: "assign-history", labelKey: "tabs.assign-history" },
 ];
 
 export default function Extract() {
+  const { t } = useTranslation("extract");
   const { data: records } = usePullRecords();
   const { data: downstream } = useDownstream();
   const items = records?.items ?? [];
@@ -79,12 +81,12 @@ export default function Extract() {
 
       {/* Hero */}
       <div className="min-w-0 space-y-2">
-        <h1 className="text-hero font-semibold">提取 key</h1>
+        <h1 className="text-hero font-semibold">{t("hero.title")}</h1>
         <p className="text-fg-tertiary">
-          拉出来的 key 进"待派"列表 · 派 3 种去向：
-          <span className="mx-1"><TokenTag>进车</TokenTag></span>
-          <span className="mx-1"><TokenTag>推我的号池</TokenTag></span>
-          <span className="mx-1"><TokenTag>下载 txt · 拿走</TokenTag></span>
+          {t("hero.desc")}
+          <span className="mx-1"><TokenTag>{t("hero.tag.into-bus")}</TokenTag></span>
+          <span className="mx-1"><TokenTag>{t("hero.tag.push-pool")}</TokenTag></span>
+          <span className="mx-1"><TokenTag>{t("hero.tag.handoff")}</TokenTag></span>
         </p>
       </div>
 
@@ -102,8 +104,8 @@ export default function Extract() {
               <KeyRound className="size-4 text-brand-strong" />
             </span>
             <div className="min-w-0 space-y-1">
-              <h2 className="text-section font-semibold">提取新 key</h2>
-              <p className="text-label text-fg-tertiary">选 vendor 看上游 · 定数量和区域 · 拉一批</p>
+              <h2 className="text-section font-semibold">{t("form.card.title")}</h2>
+              <p className="text-label text-fg-tertiary">{t("form.card.sub")}</p>
             </div>
           </div>
           <PullExtractForm />
@@ -111,20 +113,20 @@ export default function Extract() {
       </Card>
 
       {!passengerpoolOk && (
-        <Alert tone="warn" icon={AlertTriangle} title="还没配置我的号池">
-          "推我的号池" 需要先在{" "}
+        <Alert tone="warn" icon={AlertTriangle} title={t("downstream.warn.title")}>
+          {t("downstream.warn.prefix")}
           <a href="/settings/downstream" className="font-semibold text-brand-strong hover:underline">
-            设置 · 我的号池
+            {t("downstream.warn.link")}
           </a>
-          {" "}里配 URL 和 token
+          {t("downstream.warn.suffix")}
         </Alert>
       )}
 
       {/* Tabs · 3 段 */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className="space-y-6">
         <TabsList>
-          {TABS.map((t) => (
-            <TabsTrigger key={t.value} value={t.value}>{t.label}</TabsTrigger>
+          {TABS.map((tb) => (
+            <TabsTrigger key={tb.value} value={tb.value}>{t(tb.labelKey)}</TabsTrigger>
           ))}
         </TabsList>
 
@@ -148,21 +150,21 @@ export default function Extract() {
       >
         <Button variant="brand" size="sm" onClick={() => startAssign("into_bus")}>
           <BusIcon />
-          加入拼车
+          {t("action.into-bus")}
         </Button>
         <Button
           variant="ghost"
           size="sm"
           onClick={() => startAssign("push_pool")}
           disabled={!passengerpoolOk}
-          title={passengerpoolOk ? undefined : "先在设置里配我的号池"}
+          title={passengerpoolOk ? undefined : t("action.push-pool.disabled-hint")}
         >
           <Send />
-          推我的号池
+          {t("action.push-pool")}
         </Button>
         <Button variant="ghost" size="sm" onClick={() => startAssign("handoff")}>
           <Download />
-          下载拿走
+          {t("action.handoff")}
         </Button>
       </BulkActionBar>
     </div>
@@ -178,6 +180,7 @@ function PendingTab({
   selected: Set<string>;
   setSelected: React.Dispatch<React.SetStateAction<Set<string>>>;
 }) {
+  const { t } = useTranslation("extract");
   const toggle = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -202,23 +205,22 @@ function PendingTab({
           批量操作走底部悬浮栏（BulkActionBar），始终在手边 */}
       <div className="mb-4">
         <SectionHead
-          title="待派 key"
+          title={t("pending.section.title")}
           sub={
             items.length > 0 ? (
               <>
-                可用 <Em>{usable.length}</Em> 个
+                {t("pending.section.sub.usable-prefix")}<Em>{usable.length}</Em>{t("pending.section.sub.usable-suffix")}
                 {items.length > usable.length && (
-                  <> · <span className="font-semibold tnum text-danger-fg">
+                  <>{t("pending.section.sub.dead-sep")}<span className="font-semibold tnum text-danger-fg">
                     {items.length - usable.length}
-                  </span> 个已失效（不能派）</>
+                  </span>{t("pending.section.sub.dead-suffix")}</>
                 )}
-                {" · 来自 "}
-                <span className="font-semibold tnum">{vendors}</span> 家 vendor · 累计冻结{" "}
-                <span className="font-semibold tnum">{fmtCredits(totalCredits)}</span> 积分 ·
-                勾选后底部出操作栏
+                {t("pending.section.sub.from")}
+                <span className="font-semibold tnum">{vendors}</span>{t("pending.section.sub.vendor-mid")}
+                <span className="font-semibold tnum">{fmtCredits(totalCredits)}</span>{t("pending.section.sub.credits-tip")}
               </>
             ) : (
-              "拉一批 key 后在这里派去向"
+              t("pending.section.sub.empty")
             )
           }
         />
@@ -227,8 +229,8 @@ function PendingTab({
       {items.length === 0 ? (
         <EmptyState
           icon={KeyRound}
-          title="还没有待派 key"
-          desc="点右上「提取 key」拉一批 · 拉到的号在这里选去向"
+          title={t("pending.empty.title")}
+          desc={t("pending.empty.desc")}
         />
       ) : (
         <div className="overflow-x-auto">
@@ -240,11 +242,11 @@ function PendingTab({
                   onCheckedChange={toggleAll}
                 />
               </span>
-              <span className="min-w-0 flex-1">key · vendor · 状态</span>
-              <span className="w-14 shrink-0 text-center">区域</span>
-              <span className="w-16 shrink-0 text-center">寿命</span>
-              <span className="w-20 shrink-0 text-center">已消耗</span>
-              <span className="w-24 shrink-0 text-right">拉入</span>
+              <span className="min-w-0 flex-1">{t("pending.col.key")}</span>
+              <span className="w-14 shrink-0 text-center">{t("pending.col.region")}</span>
+              <span className="w-16 shrink-0 text-center">{t("pending.col.lifespan")}</span>
+              <span className="w-20 shrink-0 text-center">{t("pending.col.used")}</span>
+              <span className="w-24 shrink-0 text-right">{t("pending.col.pulled-at")}</span>
             </BareHead>
             <BareList>
               {items.map((c) => (
@@ -265,6 +267,7 @@ function PendingTab({
 function RecordRow({
   c, picked, onToggle,
 }: { c: Credential; picked: boolean; onToggle: () => void }) {
+  const { t } = useTranslation("extract");
   const { data: me } = useMe();
   /* 失效的号不能派（推不上去、进车也没意义）· checkbox disable · decisions §8.25 */
   const dead = c.status === "dead";
@@ -298,12 +301,12 @@ function RecordRow({
         {/* 状态标记 · 正常 / 已失效（质保内的标出来，能退） */}
         {dead ? (
           inWarranty ? (
-            <Chip tone="warn" dot>质保内失效 · 可退</Chip>
+            <Chip tone="warn" dot>{t("row.chip.warranty-refund")}</Chip>
           ) : (
-            <Chip tone="danger" dot>已失效</Chip>
+            <Chip tone="danger" dot>{t("row.chip.dead")}</Chip>
           )
         ) : (
-          <Chip tone="ok" dot>正常</Chip>
+          <Chip tone="ok" dot>{t("row.chip.alive")}</Chip>
         )}
       </span>
       <span className="w-14 shrink-0 text-center">
@@ -320,7 +323,7 @@ function RecordRow({
       </span>
       <span className="w-20 shrink-0 text-center text-label font-semibold tnum">
         {fmtCredits(c.credits_used)}
-        <span className="ml-0.5 font-medium text-fg-tertiary">积分</span>
+        <span className="ml-0.5 font-medium text-fg-tertiary">{t("unit.credits")}</span>
       </span>
       <span className="w-24 shrink-0 text-right text-label font-medium tnum text-fg-tertiary">
         {fmtTime(c.pulled_at)}
@@ -331,14 +334,15 @@ function RecordRow({
 
 /* ─────────────── Tab · 提取历史 ─────────────── */
 
-const EXTRACT_RESULT: Record<PullResult, { label: string; tone: "ok" | "warn" | "danger" | "brand" }> = {
-  success: { label: "成功", tone: "ok" },
-  partial: { label: "部分", tone: "warn" },
-  failed: { label: "失败", tone: "danger" },
-  refunded: { label: "退款", tone: "brand" },
+const EXTRACT_RESULT: Record<PullResult, { labelKey: string; tone: "ok" | "warn" | "danger" | "brand" }> = {
+  success: { labelKey: "extract-result.success", tone: "ok" },
+  partial: { labelKey: "extract-result.partial", tone: "warn" },
+  failed: { labelKey: "extract-result.failed", tone: "danger" },
+  refunded: { labelKey: "extract-result.refunded", tone: "brand" },
 };
 
 function ExtractHistoryTab() {
+  const { t } = useTranslation("extract");
   const { data, isLoading } = useExtractEvents();
   const events = data?.items ?? [];
 
@@ -346,8 +350,8 @@ function ExtractHistoryTab() {
     <Card className="p-7">
       <div className="mb-4">
         <SectionHead
-          title="提取历史"
-          sub={<>每次拉号操作 · 共 <Em>{events.length}</Em> 次</>}
+          title={t("extract-history.section.title")}
+          sub={<>{t("extract-history.section.sub.prefix")}<Em>{events.length}</Em>{t("extract-history.section.sub.suffix")}</>}
         />
       </div>
 
@@ -356,19 +360,19 @@ function ExtractHistoryTab() {
       ) : events.length === 0 ? (
         <EmptyState
           icon={KeyRound}
-          title="还没有提取历史"
-          desc="点右上「提取 key」拉一批 · 每次操作都会记在这里"
+          title={t("extract-history.empty.title")}
+          desc={t("extract-history.empty.desc")}
         />
       ) : (
         <div className="overflow-x-auto">
           <div className="min-w-[760px]">
             <BareHead>
-              <span className="w-[92px] shrink-0">时间</span>
-              <span className="w-16 shrink-0">结果</span>
-              <span className="min-w-0 flex-1">vendor · 区域</span>
-              <span className="w-24 shrink-0 text-center">数量</span>
-              <span className="w-24 shrink-0 text-center">派发进度</span>
-              <span className="w-24 shrink-0 text-right">花费</span>
+              <span className="w-[92px] shrink-0">{t("extract-history.col.time")}</span>
+              <span className="w-16 shrink-0">{t("extract-history.col.result")}</span>
+              <span className="min-w-0 flex-1">{t("extract-history.col.vendor-zone")}</span>
+              <span className="w-24 shrink-0 text-center">{t("extract-history.col.count")}</span>
+              <span className="w-24 shrink-0 text-center">{t("extract-history.col.progress")}</span>
+              <span className="w-24 shrink-0 text-right">{t("extract-history.col.cost")}</span>
             </BareHead>
             <BareList>
               {events.map((e) => <ExtractEventRow key={e.id} e={e} />)}
@@ -381,6 +385,7 @@ function ExtractHistoryTab() {
 }
 
 function ExtractEventRow({ e }: { e: ExtractEvent }) {
+  const { t } = useTranslation("extract");
   const { data: me } = useMe();
   const res = EXTRACT_RESULT[e.result];
   const failed = e.result === "failed";
@@ -390,7 +395,7 @@ function ExtractEventRow({ e }: { e: ExtractEvent }) {
         {fmtTime(e.created_at)}
       </span>
       <span className="w-16 shrink-0">
-        <Chip tone={res.tone} dot>{res.label}</Chip>
+        <Chip tone={res.tone} dot>{t(res.labelKey)}</Chip>
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-2">
         <VendorTag name={vendorLabel(e.vendor_id, !!me?.invited)} size="sm" />
@@ -399,7 +404,7 @@ function ExtractEventRow({ e }: { e: ExtractEvent }) {
             {e.zone}
           </TokenTag>
         )}
-        {!e.zone && <span className="text-label text-fg-tertiary">全区</span>}
+        {!e.zone && <span className="text-label text-fg-tertiary">{t("extract-history.zone.all")}</span>}
       </span>
       <span className="w-24 shrink-0 text-center text-label font-medium tnum">
         {failed ? (
@@ -412,7 +417,7 @@ function ExtractEventRow({ e }: { e: ExtractEvent }) {
             {e.count_purchased !== e.count_requested && (
               <span className="text-fg-tertiary"> / {e.count_requested}</span>
             )}
-            <span className="ml-0.5 text-fg-tertiary"> 个</span>
+            <span className="ml-0.5 text-fg-tertiary"> {t("unit.count")}</span>
           </>
         )}
       </span>
@@ -421,10 +426,10 @@ function ExtractEventRow({ e }: { e: ExtractEvent }) {
           <span className="text-fg-tertiary">—</span>
         ) : e.pending_count > 0 ? (
           <span className="text-fg-secondary">
-            待派 <span className="font-semibold tnum">{e.pending_count}</span>
+            {t("extract-history.progress.pending-prefix")}<span className="font-semibold tnum">{e.pending_count}</span>
           </span>
         ) : (
-          <span className="text-ok-fg">已全派</span>
+          <span className="text-ok-fg">{t("extract-history.progress.all-assigned")}</span>
         )}
       </span>
       <span
@@ -434,7 +439,7 @@ function ExtractEventRow({ e }: { e: ExtractEvent }) {
         )}
       >
         {e.total_cost === 0 ? "—" : fmtCredits(e.total_cost, { sign: true })}
-        {e.total_cost !== 0 && <span className="ml-0.5 font-medium text-fg-tertiary">积分</span>}
+        {e.total_cost !== 0 && <span className="ml-0.5 font-medium text-fg-tertiary">{t("unit.credits")}</span>}
       </span>
     </BareRow>
   );
@@ -446,14 +451,15 @@ function ExtractEventRow({ e }: { e: ExtractEvent }) {
  *  handoff 的"不可恢复"提示走展开区的说明，不靠颜色吓人 */
 const DEST_META: Record<
   AssignEvent["destination"],
-  { label: string; icon: React.ComponentType<{ className?: string }>; tone: "brand" | "neutral" }
+  { labelKey: string; icon: React.ComponentType<{ className?: string }>; tone: "brand" | "neutral" }
 > = {
-  into_bus:  { label: "进车",       icon: BusIcon,  tone: "brand" },
-  push_pool: { label: "推我的号池", icon: Send,     tone: "neutral" },
-  handoff:   { label: "下载拿走",   icon: Download, tone: "neutral" },
+  into_bus:  { labelKey: "dest.into-bus",  icon: BusIcon,  tone: "brand" },
+  push_pool: { labelKey: "dest.push-pool", icon: Send,     tone: "neutral" },
+  handoff:   { labelKey: "dest.handoff",   icon: Download, tone: "neutral" },
 };
 
 function AssignHistoryTab() {
+  const { t } = useTranslation("extract");
   const { data, isLoading } = useAssignEvents();
   const events = data?.items ?? [];
 
@@ -461,8 +467,8 @@ function AssignHistoryTab() {
     <Card className="p-7">
       <div className="mb-4">
         <SectionHead
-          title="派发历史"
-          sub={<>每次派动作 · 共 <Em>{events.length}</Em> 次 · 点行展开看每个号</>}
+          title={t("assign-history.section.title")}
+          sub={<>{t("assign-history.section.sub.prefix")}<Em>{events.length}</Em>{t("assign-history.section.sub.suffix")}</>}
         />
       </div>
 
@@ -471,19 +477,19 @@ function AssignHistoryTab() {
       ) : events.length === 0 ? (
         <EmptyState
           icon={Send}
-          title="还没有派发历史"
-          desc="把待派的 key 派进车 / 推自己号池 / 拿走 · 记录会出现在这里"
+          title={t("assign-history.empty.title")}
+          desc={t("assign-history.empty.desc")}
         />
       ) : (
         <div className="overflow-x-auto">
           <div className="min-w-[760px]">
             <BareHead>
               <span className="w-6 shrink-0" />
-              <span className="w-[92px] shrink-0">时间</span>
-              <span className="w-24 shrink-0">去向</span>
-              <span className="min-w-0 flex-1">目标</span>
-              <span className="w-16 shrink-0 text-center">数量</span>
-              <span className="min-w-0 flex-[0.9]">vendor</span>
+              <span className="w-[92px] shrink-0">{t("assign-history.col.time")}</span>
+              <span className="w-24 shrink-0">{t("assign-history.col.dest")}</span>
+              <span className="min-w-0 flex-1">{t("assign-history.col.target")}</span>
+              <span className="w-16 shrink-0 text-center">{t("assign-history.col.count")}</span>
+              <span className="min-w-0 flex-[0.9]">{t("assign-history.col.vendor")}</span>
             </BareHead>
             <BareList>
               {events.map((e) => <AssignEventRow key={e.id} e={e} />)}
@@ -497,6 +503,7 @@ function AssignHistoryTab() {
 
 /** 派发事件行 · 点开看每个号的明细（masked / 区 / 已耗额度 / 派发时寿命） */
 function AssignEventRow({ e }: { e: AssignEvent }) {
+  const { t } = useTranslation("extract");
   const { data: me } = useMe();
   const [open, setOpen] = useState(false);
   const meta = DEST_META[e.destination];
@@ -528,7 +535,7 @@ function AssignEventRow({ e }: { e: AssignEvent }) {
               meta.tone === "neutral" && "text-fg-secondary",
             )}
           />
-          <span className="text-label font-medium">{meta.label}</span>
+          <span className="text-label font-medium">{t(meta.labelKey)}</span>
         </span>
 
         {/* 目标 · 进车给车名 · 推池给 host · 拿走给"已下载" chip */}
@@ -543,13 +550,13 @@ function AssignEventRow({ e }: { e: AssignEvent }) {
           ) : (
             /* 已下载 = 成功完成的动作 · 用 ok 绿不用 danger 红
                红色留给失败 / 危险操作 · 下载成功不是危险 */
-            <Chip tone="ok" icon={<Check className="size-3" />}>已下载</Chip>
+            <Chip tone="ok" icon={<Check className="size-3" />}>{t("assign-history.chip.downloaded")}</Chip>
           )}
         </span>
 
         <span className="w-16 shrink-0 text-center text-label font-semibold tnum">
           {e.count}
-          <span className="ml-0.5 font-medium text-fg-tertiary">个</span>
+          <span className="ml-0.5 font-medium text-fg-tertiary">{t("unit.count")}</span>
         </span>
 
         <span className="flex min-w-0 flex-[0.9] flex-wrap items-center gap-1">
@@ -567,16 +574,15 @@ function AssignEventRow({ e }: { e: AssignEvent }) {
             <div className="mx-1 mb-2 flex items-start gap-2 rounded-lg bg-warn-solid/10 px-2.5 py-2 text-label dark:bg-warn-solid/[.14]">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warn-fg" />
               <span className="text-fg-secondary">
-                明文已交给你并从我方删除 · <strong className="text-fg">无法重新下载</strong> ·
-                下面只保留打码记录
+                {t("assign-history.handoff-warn.prefix")}<strong className="text-fg">{t("assign-history.handoff-warn.strong")}</strong>{t("assign-history.handoff-warn.suffix")}
               </span>
             </div>
           )}
           <div className="flex items-center gap-4 px-1 pb-1.5 text-[10px] font-semibold text-fg-tertiary">
-            <span className="min-w-0 flex-1">key</span>
-            <span className="w-24 shrink-0">区域</span>
-            <span className="w-24 shrink-0 text-right">已耗额度</span>
-            <span className="w-24 shrink-0 text-right">派发时存活</span>
+            <span className="min-w-0 flex-1">{t("assign-history.detail.key")}</span>
+            <span className="w-24 shrink-0">{t("assign-history.detail.region")}</span>
+            <span className="w-24 shrink-0 text-right">{t("assign-history.detail.used")}</span>
+            <span className="w-24 shrink-0 text-right">{t("assign-history.detail.lifespan")}</span>
           </div>
           <div className="space-y-0.5">
             {e.keys.map((k) => (
@@ -590,10 +596,10 @@ function AssignEventRow({ e }: { e: AssignEvent }) {
                 <span className="w-24 shrink-0 tnum text-fg-tertiary">{k.region}</span>
                 <span className="w-24 shrink-0 text-right font-semibold tnum">
                   {fmtCredits(k.credits_used)}
-                  <span className="ml-0.5 font-medium text-fg-tertiary">积分</span>
+                  <span className="ml-0.5 font-medium text-fg-tertiary">{t("unit.credits")}</span>
                 </span>
                 <span className="w-24 shrink-0 text-right tnum text-fg-secondary">
-                  {k.lifespan_seconds > 0 ? fmtLifespan(k.lifespan_seconds) : "刚拉"}
+                  {k.lifespan_seconds > 0 ? fmtLifespan(k.lifespan_seconds) : t("assign-history.detail.just-pulled")}
                 </span>
               </div>
             ))}

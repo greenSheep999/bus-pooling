@@ -1,0 +1,154 @@
+{
+  "assign": {
+    "dest": {
+      "handoff": {
+        "desc": "拿明文后号离开系统 · 我方不再监控，也给不回明文",
+        "title": "拿走"
+      },
+      "into-bus": {
+        "desc": "号归车管理 · 车内成员共享 · 我方持续监控存活",
+        "title": "进车"
+      },
+      "push-pool": {
+        "desc": "双写到你配的号池 · 我方保留副本继续监控",
+        "title": "推我的号池"
+      }
+    },
+    "handoff": {
+      "alert": {
+        "body": "没 confirm 的话号不会被删 —— 所以第 2 步断线了可以重来 · confirm 之后明文就再也拿不到了",
+        "title": "第 3 步之前号还在"
+      },
+      "code": "# 1. 起单 → 拿 token\nPOST /api/me/pull-records/<id>/handoff-init\n\n# 2. 用 token 取明文（TTL 内可以重试）\nGET /api/me/handoff/<token>\n\n# 3. 确认收到 → 我方才真正删号\nPOST /api/me/handoff/<token>/confirm",
+      "sub": "防止「我方已删号、你却没收到明文」",
+      "title": "拿走是两阶段的"
+    },
+    "request-code": "// 请求\n{\n  \"credential_ids\": [\"01H8...\", \"01H9...\"],\n  \"destination\": \"into_bus\",\n  \"bus_id\": \"01HA...\"          // destination=into_bus 时必填\n}",
+    "section": {
+      "sub-suffix": " · 3 种去向",
+      "title": "派去向"
+    }
+  },
+  "errors": {
+    "alert": {
+      "part-1": " 和 ",
+      "part-2": " 都值得自动重试 · ",
+      "part-3": " 和 ",
+      "part-4": " 参数类的重试也没用"
+    },
+    "header": {
+      "code": "code",
+      "http": "HTTP",
+      "meaning": "含义"
+    },
+    "item": {
+      "bad-bus-id": "车不存在，或不是你的车",
+      "bad-count": "count 超范围",
+      "bad-json": "请求体不是合法 JSON，或带了未知字段",
+      "bad-vendor": "vendor_id 不认识",
+      "housepool-unavailable": "号池暂时不可用",
+      "idempotency-conflict": "同一个幂等键，但请求体不一样",
+      "insufficient-balance": "余额不够，先充值",
+      "internal": "我方的问题，可以报给我们",
+      "invalid-api-key": "key 无效或已吊销",
+      "no-stock": "上游缺货，过会儿再试",
+      "not-found": "资源不存在",
+      "rate-limited": "限流了，看 retry_after 秒数",
+      "session-required": "这个操作只能浏览器登录做（改密码 / 建 key）",
+      "vendor-error": "上游挂了或网络不通"
+    },
+    "sub-prefix": "按 ",
+    "sub-suffix": " 分派逻辑 · message 是给人看的，会改",
+    "title": "错误码"
+  },
+  "hero": {
+    "desc": "用 API key 调我方接口 · 拉号、派去向、收 webhook 都能脚本化",
+    "manage-key": "管理 API key",
+    "title": "对接文档"
+  },
+  "nav": {
+    "assign": "派去向",
+    "errors": "错误码",
+    "pull": "拉号",
+    "start": "开始",
+    "webhook": "Webhook"
+  },
+  "pull": {
+    "bus": {
+      "alert": "拉 1 个的单价比批量高 · 多拉几个更划算 · 返回体里的金额都是最终值，直接记账即可 · 拉号不涉及通道费，那个只在充值时收",
+      "request-code": "// 请求\n{\n  \"count\": 5,\n  \"vendor_id\": \"<vendor_id>\",   // 不传 = 让系统比价选（可选值见 /api/vendors/stock）\n  \"constraints\": {\n    \"max_unit_price\": 30000000  // 30 积分\n  }\n}",
+      "response-code": "// 响应\n{\n  \"pull_round_id\": \"01H8...\",\n  \"vendor_id\": \"<vendor_id>\",\n  \"purchased\": 5,\n  \"key_cost\": 100000000,        // 号价 · 原样转给上游\n  \"single_pull_fee\": 0,          // 只拉 1 个时才有\n  \"service_fee_total\": 5000000,  // 按号数\n  \"total_debit\": 105000000,\n  \"balance_remaining\": 895000000\n}",
+      "title": "给车拉号"
+    },
+    "solo": {
+      "code": "curl -X POST https://<base-url>/api/me/pull \\\n  -H \"X-API-Key: usr-<你的 key>\" \\\n  -H \"X-Idempotency-Key: $(openssl rand -hex 16)\" \\\n  -d '{\"count\": 2, \"zone\": \"us\"}'",
+      "sub-suffix": " · 号进「待派」等你决定去向",
+      "title": "不进车 · 单独拉"
+    }
+  },
+  "start": {
+    "auth": {
+      "alert": {
+        "body-1": "只能调 ",
+        "body-2": " · 不能改登录密码，也不能创建新的 API key —— 免得 key 泄露后被人反锁你自己",
+        "title": "API key 的权限是收窄的"
+      },
+      "code": "curl https://<base-url>/api/me/profile \\\n  -H \"X-API-Key: usr-<你的 key>\"\n\n# 或者用 Bearer\ncurl https://<base-url>/api/me/profile \\\n  -H \"Authorization: Bearer usr-<你的 key>\"",
+      "sub": "脚本用 API key · 浏览器登录后自动带 cookie",
+      "title": "鉴权"
+    },
+    "convention": {
+      "error": {
+        "label": "错误",
+        "value-prefix": "按 ",
+        "value-suffix": " 分派，别按 message（message 会改）"
+      },
+      "idempotency": {
+        "label": "幂等",
+        "value-1": "拉号 / 派去向 / 充值起单",
+        "value-2": "带",
+        "value-3": "（32 hex）",
+        "value-em": "必须"
+      },
+      "money": {
+        "label": "金额单位",
+        "value": "整数 microunit · 1 积分 ="
+      },
+      "page": {
+        "label": "分页"
+      },
+      "sub": "所有接口都遵守这几条",
+      "time": {
+        "label": "时间",
+        "value": "ISO-8601 UTC 字符串"
+      },
+      "title": "通用约定"
+    },
+    "idempotency": {
+      "code": "KEY=$(openssl rand -hex 16)\n\ncurl -X POST https://<base-url>/api/me/buses/<bus_id>/pull \\\n  -H \"X-API-Key: usr-<你的 key>\" \\\n  -H \"X-Idempotency-Key: $KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"count\": 3}'\n\n# 网络断了？拿同一个 $KEY 重发，不会拉第二批",
+      "note": "幂等窗口 30 天 · 之后同 key 视为新请求",
+      "sub": "同一个 key 重放，拿到字节一致的原响应，不会重复扣钱",
+      "title": "幂等键怎么用"
+    }
+  },
+  "webhook": {
+    "event": {
+      "code": "// 我方发给你的\n{\n  \"event\": \"round.completed\",\n  \"created_at\": \"2026-08-08T12:34:56.789Z\",\n  \"data\": {\n    \"pull_round_id\": \"01H8...\",\n    \"bus_id\": \"01HA...\",\n    \"purchased\": 3,\n    \"total_debit\": 63000000\n  }\n}",
+      "link": "机器人通知",
+      "link-prefix": "去 ",
+      "link-suffix": " 配地址和订阅哪些事件",
+      "sub": "我方 POST 到你配的地址 · 请求带 HMAC 签名",
+      "title": "收事件"
+    },
+    "verify": {
+      "alert": {
+        "body-1": "字符串短路比较会泄露信息 · 用 ",
+        "body-2": " · 也别拿 parse 过又 stringify 的 body 算，字节序会变",
+        "title": "别用 == 比签名"
+      },
+      "code": "import crypto from \"node:crypto\";\n\n// 用**原始 body 字节**算，不要先 JSON.parse 再 stringify\nfunction verify(rawBody, signature, secret) {\n  const mac = crypto.createHmac(\"sha256\", secret).update(rawBody).digest(\"hex\");\n  // 定长比较，避免时序侧信道\n  return crypto.timingSafeEqual(\n    Buffer.from(mac),\n    Buffer.from(signature),\n  );\n}",
+      "sub": "用你那边的 secret 算 HMAC-SHA256，跟 header 比",
+      "title": "验签"
+    }
+  }
+}

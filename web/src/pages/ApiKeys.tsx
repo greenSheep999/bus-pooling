@@ -3,6 +3,7 @@ import {
   AlertTriangle, Check, Copy, KeyRound, Loader2, Plus, Ban,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useApiKeys, useCreateApiKey, useRevokeApiKey } from "@/api/hooks";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonTable } from "@/components/ui/skeleton";
@@ -22,6 +23,7 @@ import { cn, fmtTime } from "@/lib/utils";
 import type { ApiKey } from "@/types";
 
 export default function ApiKeys() {
+  const { t } = useTranslation("settings");
   const { data: keys, isLoading } = useApiKeys();
   const items = keys ?? [];
   const [createOpen, setCreateOpen] = useState(false);
@@ -32,29 +34,28 @@ export default function ApiKeys() {
   return (
     <div className="space-y-section">
       <SettingsHead
-        crumb="API key"
-        title="API key"
+        crumb={t("api-keys.crumb")}
+        title={t("api-keys.title")}
         desc={
           <>
-            拿去调我方 API · 当前 <Em>{active.length}</Em> 个可用 ·
-            用法见 <Link to="/docs" className="font-semibold text-brand-strong hover:underline">对接文档</Link>
+            {t("api-keys.desc.prefix")}<Em>{active.length}</Em>{t("api-keys.desc.suffix")}<Link to="/docs" className="font-semibold text-brand-strong hover:underline">{t("api-keys.desc.docs-link")}</Link>
           </>
         }
         right={
           <Button variant="brand" onClick={() => setCreateOpen(true)}>
             <Plus />
-            新建 key
+            {t("api-keys.create")}
           </Button>
         }
       />
 
       <Card className="p-7">
         <SectionHead
-          title="我的 key"
+          title={t("api-keys.list.title")}
           sub={
             items.length === 0
-              ? "还没有 key"
-              : <>共 <Em>{items.length}</Em> 个 · 已吊销 <Em>{items.length - active.length}</Em> 个</>
+              ? t("api-keys.list.sub-empty")
+              : <>{t("api-keys.list.sub.prefix")}<Em>{items.length}</Em>{t("api-keys.list.sub.middle")}<Em>{items.length - active.length}</Em>{t("api-keys.list.sub.suffix")}</>
           }
         />
 
@@ -63,12 +64,12 @@ export default function ApiKeys() {
         ) : items.length === 0 ? (
           <EmptyState
             icon={KeyRound}
-            title="还没有 key"
-            desc="建一个 key 就能开始调 API"
+            title={t("api-keys.empty.title")}
+            desc={t("api-keys.empty.desc")}
             action={
               <Button variant="brand" size="sm" onClick={() => setCreateOpen(true)}>
                 <Plus />
-                新建 key
+                {t("api-keys.create")}
               </Button>
             }
           />
@@ -76,11 +77,11 @@ export default function ApiKeys() {
           <div className="mt-4 overflow-x-auto">
             <div className="min-w-[680px]">
               <BareHead>
-                <span className="min-w-0 flex-1">备注名</span>
-                <span className="w-[150px] shrink-0">前缀</span>
-                <span className="w-[92px] shrink-0">创建</span>
-                <span className="w-[110px] shrink-0">最近使用</span>
-                <span className="w-[104px] shrink-0 text-right">操作</span>
+                <span className="min-w-0 flex-1">{t("api-keys.table.name")}</span>
+                <span className="w-[150px] shrink-0">{t("api-keys.table.prefix")}</span>
+                <span className="w-[92px] shrink-0">{t("api-keys.table.created")}</span>
+                <span className="w-[110px] shrink-0">{t("api-keys.table.last-used")}</span>
+                <span className="w-[104px] shrink-0 text-right">{t("api-keys.table.actions")}</span>
               </BareHead>
               <BareList>
                 {items.map((k) => (
@@ -92,7 +93,7 @@ export default function ApiKeys() {
         )}
 
         <Alert tone="neutral" icon={KeyRound} className="mt-4">
-          key 只在创建那一次显示明文 · 丢了只能吊销重建 · 别写进前端代码或提交到仓库
+          {t("api-keys.warn")}
         </Alert>
       </Card>
 
@@ -103,6 +104,7 @@ export default function ApiKeys() {
 }
 
 function KeyRow({ k, onRevoke }: { k: ApiKey; onRevoke: () => void }) {
+  const { t } = useTranslation("settings");
   const [copied, setCopied] = useState(false);
 
   return (
@@ -111,7 +113,7 @@ function KeyRow({ k, onRevoke }: { k: ApiKey; onRevoke: () => void }) {
         <span className={cn("truncate font-semibold", k.revoked && "line-through")}>
           {k.name}
         </span>
-        {k.revoked && <Chip tone="neutral">已吊销</Chip>}
+        {k.revoked && <Chip tone="neutral">{t("api-keys.row.revoked")}</Chip>}
       </span>
 
       <span className="flex w-[150px] shrink-0 items-center gap-1">
@@ -123,7 +125,7 @@ function KeyRow({ k, onRevoke }: { k: ApiKey; onRevoke: () => void }) {
             setCopied(true);
             setTimeout(() => setCopied(false), 1600);
           }}
-          aria-label="复制前缀"
+          aria-label={t("api-keys.row.copy-prefix")}
           className="grid size-6 shrink-0 place-items-center rounded-md text-fg-tertiary transition-colors hover:bg-bg-elevated hover:text-fg-secondary"
         >
           {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
@@ -144,7 +146,7 @@ function KeyRow({ k, onRevoke }: { k: ApiKey; onRevoke: () => void }) {
         ) : (
           <Button variant="ghost" size="sm" onClick={onRevoke}>
             <Ban />
-            吊销
+            {t("api-keys.row.revoke")}
           </Button>
         )}
       </span>
@@ -154,6 +156,7 @@ function KeyRow({ k, onRevoke }: { k: ApiKey; onRevoke: () => void }) {
 
 /** 新建 · 明文只显示这一次（跟 handoff 同语义） */
 function CreateKeyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation("settings");
   const [name, setName] = useState("");
   const create = useCreateApiKey();
   const [plaintext, setPlaintext] = useState<string | null>(null);
@@ -170,40 +173,40 @@ function CreateKeyModal({ open, onClose }: { open: boolean; onClose: () => void 
         {plaintext ? (
           <>
             <DialogHeader>
-              <DialogTitle>key 建好了</DialogTitle>
-              <p className="text-label text-fg-tertiary">这是唯一一次可见，请立即复制保存</p>
+              <DialogTitle>{t("api-keys.create-modal.done.title")}</DialogTitle>
+              <p className="text-label text-fg-tertiary">{t("api-keys.create-modal.done.desc")}</p>
             </DialogHeader>
             <DialogBody>
-              <Alert tone="danger" icon={AlertTriangle} title="关掉这个窗口就再也拿不到明文">
-                丢了只能吊销重建 —— 我方不留明文
+              <Alert tone="danger" icon={AlertTriangle} title={t("api-keys.create-modal.done.warn-title")}>
+                {t("api-keys.create-modal.done.warn-body")}
               </Alert>
               <div className="mt-3">
                 <SecretField plaintext={plaintext} />
               </div>
             </DialogBody>
             <DialogFooter>
-              <Button variant="brand" onClick={close}>我已保存</Button>
+              <Button variant="brand" onClick={close}>{t("api-keys.create-modal.done.confirm")}</Button>
             </DialogFooter>
           </>
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>新建 API key</DialogTitle>
-              <p className="text-label text-fg-tertiary">给它起个名字，方便以后认出是哪个用途</p>
+              <DialogTitle>{t("api-keys.create-modal.new.title")}</DialogTitle>
+              <p className="text-label text-fg-tertiary">{t("api-keys.create-modal.new.desc")}</p>
             </DialogHeader>
             <DialogBody>
-              <Field label="备注名" hint="只给你自己看">
+              <Field label={t("api-keys.create-modal.new.label")} hint={t("api-keys.create-modal.new.hint")}>
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && name.trim() && create.mutate(name.trim())}
-                  placeholder="例：生产 · N8N 机器人"
+                  placeholder={t("api-keys.create-modal.new.placeholder")}
                   autoFocus
                 />
               </Field>
             </DialogBody>
             <DialogFooter>
-              <Button variant="ghost" onClick={close}>取消</Button>
+              <Button variant="ghost" onClick={close}>{t("common:action.cancel")}</Button>
               <Button
                 variant="brand"
                 disabled={!name.trim() || create.isPending}
@@ -213,7 +216,7 @@ function CreateKeyModal({ open, onClose }: { open: boolean; onClose: () => void 
                 }}
               >
                 {create.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
-                {create.isPending ? "创建中…" : "创建"}
+                {create.isPending ? t("api-keys.create-modal.new.submitting") : t("api-keys.create-modal.new.submit")}
               </Button>
             </DialogFooter>
           </>
@@ -224,25 +227,26 @@ function CreateKeyModal({ open, onClose }: { open: boolean; onClose: () => void 
 }
 
 function RevokeKeyModal({ k, onClose }: { k: ApiKey | null; onClose: () => void }) {
+  const { t } = useTranslation("settings");
   const revoke = useRevokeApiKey();
 
   return (
     <Dialog open={!!k} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-[440px]">
         <DialogHeader>
-          <DialogTitle>吊销 {k?.name}？</DialogTitle>
-          <p className="text-label text-fg-tertiary">用这个 key 的请求会立刻开始返回 401</p>
+          <DialogTitle>{t("api-keys.revoke-modal.title", { name: k?.name })}</DialogTitle>
+          <p className="text-label text-fg-tertiary">{t("api-keys.revoke-modal.desc")}</p>
         </DialogHeader>
         <DialogBody>
-          <Alert tone="danger" icon={AlertTriangle} title="不可恢复">
-            吊销后不能再启用 · 记录会保留（能看到它建于何时、最近何时用过），但 key 本身作废
+          <Alert tone="danger" icon={AlertTriangle} title={t("api-keys.revoke-modal.warn-title")}>
+            {t("api-keys.revoke-modal.warn-body")}
           </Alert>
           <p className="mt-3 text-label text-fg-tertiary">
-            先确认没有还在跑的脚本用它 —— 尤其是 CI 和机器人
+            {t("api-keys.revoke-modal.note")}
           </p>
         </DialogBody>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>取消</Button>
+          <Button variant="ghost" onClick={onClose}>{t("common:action.cancel")}</Button>
           <Button
             variant="danger"
             disabled={revoke.isPending}
@@ -252,7 +256,7 @@ function RevokeKeyModal({ k, onClose }: { k: ApiKey | null; onClose: () => void 
               onClose();
             }}
           >
-            {revoke.isPending ? "吊销中…" : "确认吊销"}
+            {revoke.isPending ? t("api-keys.revoke-modal.submitting") : t("api-keys.revoke-modal.submit")}
           </Button>
         </DialogFooter>
       </DialogContent>

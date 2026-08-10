@@ -1,0 +1,410 @@
+{
+  "action": {
+    "save": "保存",
+    "saving": "保存中…",
+    "dirty": "有未保存的修改",
+    "test": "测试连接",
+    "testing": "测试中…"
+  },
+  "defaults": {
+    "alert": {
+      "em": "新车的初值",
+      "post": " —— 已经建好的车按各自「补车策略」跑，改这里不影响它们",
+      "pre": "这些只是"
+    },
+    "count": {
+      "label": "每次拉几个"
+    },
+    "sub": "建新车时预填这些 · 改它不动已有的车",
+    "title": "新车默认值",
+    "vendor": {
+      "auto": "让系统比价",
+      "label": "默认来源"
+    },
+    "zone": {
+      "auto": "自动",
+      "eu": "欧洲区",
+      "label": "默认区域",
+      "us": "美国区"
+    }
+  },
+  "head": {
+    "crumb": "拉号偏好",
+    "desc": "每天的总上限，和建新车时的默认值",
+    "title": "拉号偏好"
+  },
+  "limit": {
+    "alert": "车里也能各自设限额 · 两个都不超才让拉（取更严的那个）·",
+    "max-price": {
+      "hint": "积分 / 个 · 留空 = 不限",
+      "label": "单价超过多少就不拉",
+      "note": "上游涨价超过这个数就拉不动 —— 手动拉也拦（确认窗里会说明超了多少）· 车里也能各自设更严的"
+    },
+    "placeholder": {
+      "unlimited": "不限"
+    },
+    "rounds": {
+      "hint": "留空 = 不限",
+      "label": "每天最多拉几轮"
+    },
+    "spend": {
+      "hint": "积分 · 留空 = 不限",
+      "label": "每天最多花多少"
+    },
+    "sub": "超了就不拉 · 跨所有车累加 · 单独提取 key 也算在里面",
+    "title": "拉号上限"
+  },
+  "limit.alert.link": "去车详情看每辆车的",
+  "usage": {
+    "filled": "已拉满",
+    "today": "今日已用",
+    "unit": {
+      "credits": "积分",
+      "round": "轮"
+    },
+    "unlimited-suffix": "· 不限"
+  },
+  "empty": {
+    "desc": "配好之后，拉到的号才能自动同步过去 · 不配也能用，只是得手动下载拿走",
+    "title": "还没配号池"
+  },
+  "endpoint": {
+    "desc": "你自己那台号池的地址和管理密钥 · 我方用它把号写进去",
+    "title": "号池端点",
+    "token": {
+      "current": "当前密钥",
+      "hint": {
+        "empty": "留空 = 不改",
+        "new": "保存后只留打码版"
+      },
+      "label": "管理密钥",
+      "placeholder": "输入新密钥以替换"
+    },
+    "url": {
+      "hint": "https://…",
+      "label": "号池地址",
+      "placeholder": "https://kiro-my.example.com"
+    }
+  },
+  "header": {
+    "connected": "已连通",
+    "crumb": "我的号池",
+    "desc": "把号同步到你自己的号池 · 我方仍保留副本监控存活，号死了这边也帮你清",
+    "disconnected": "未连通",
+    "title": "我的号池"
+  },
+  "rules": {
+    "bus-only": {
+      "desc": "开 = 只推进了车的号 · 关 = 拼车和单独提取的号都推",
+      "title": "只推拼车的号"
+    },
+    "push-on-pull": {
+      "desc": "拉到号就同步到你的号池（双写 · 我方保留副本继续监控存活）",
+      "title": "号进车立即推"
+    },
+    "resync-on-dead": {
+      "desc": "我方探到号失效时，也从你号池里删掉，省得你的客户端拿到死号",
+      "title": "号死了同步删"
+    },
+    "retry-on-failure": {
+      "desc": "退避重试 5s → 30s → 5min · 三次都失败才记失败",
+      "title": "推送失败自动重试"
+    },
+    "subtitle": "什么时候推、失败怎么办",
+    "title": "推送策略"
+  },
+  "status": {
+    "connection": {
+      "heartbeat": "最近心跳 {{time}}",
+      "label": "连通状态",
+      "no-heartbeat": "还没有心跳",
+      "value": {
+        "down": "断开",
+        "ok": "正常"
+      }
+    },
+    "success-rate": {
+      "failed-prefix": "失败",
+      "failed-suffix": "次",
+      "label": "推送成功率"
+    },
+    "total": {
+      "label": "累计推送",
+      "unit": "号次"
+    }
+  },
+  "test": {
+    "fail": {
+      "desc": "检查地址和密钥是否正确 · 以及这台机器能不能被我方访问",
+      "title": "连不上"
+    },
+    "ok": {
+      "desc-prefix": "握手耗时",
+      "desc-suffix": "ms",
+      "title": "连通正常"
+    }
+  },
+  "api-keys": {
+    "create": "新建 key",
+    "create-modal": {
+      "done": {
+        "confirm": "我已保存",
+        "desc": "这是唯一一次可见，请立即复制保存",
+        "title": "key 建好了",
+        "warn-body": "丢了只能吊销重建 —— 我方不留明文",
+        "warn-title": "关掉这个窗口就再也拿不到明文"
+      },
+      "new": {
+        "desc": "给它起个名字，方便以后认出是哪个用途",
+        "hint": "只给你自己看",
+        "label": "备注名",
+        "placeholder": "例：生产 · N8N 机器人",
+        "submit": "创建",
+        "submitting": "创建中…",
+        "title": "新建 API key"
+      }
+    },
+    "crumb": "API key",
+    "desc": {
+      "docs-link": "对接文档",
+      "prefix": "拿去调我方 API · 当前 ",
+      "suffix": " 个可用 · 用法见 "
+    },
+    "empty": {
+      "desc": "建一个 key 就能开始调 API",
+      "title": "还没有 key"
+    },
+    "list": {
+      "sub-empty": "还没有 key",
+      "sub": {
+        "middle": " 个 · 已吊销 ",
+        "prefix": "共 ",
+        "suffix": " 个"
+      },
+      "title": "我的 key"
+    },
+    "revoke-modal": {
+      "desc": "用这个 key 的请求会立刻开始返回 401",
+      "note": "先确认没有还在跑的脚本用它 —— 尤其是 CI 和机器人",
+      "submit": "确认吊销",
+      "submitting": "吊销中…",
+      "title": "吊销 {{name}}？",
+      "warn-body": "吊销后不能再启用 · 记录会保留（能看到它建于何时、最近何时用过），但 key 本身作废",
+      "warn-title": "不可恢复"
+    },
+    "row": {
+      "copy-prefix": "复制前缀",
+      "revoke": "吊销",
+      "revoked": "已吊销"
+    },
+    "table": {
+      "actions": "操作",
+      "created": "创建",
+      "last-used": "最近使用",
+      "name": "备注名",
+      "prefix": "前缀"
+    },
+    "title": "API key",
+    "warn": "key 只在创建那一次显示明文 · 丢了只能吊销重建 · 别写进前端代码或提交到仓库"
+  },
+  "card": {
+    "account": {
+      "desc": "邮箱 · 用户名 · 密码 · 第三方登录",
+      "meta": {
+        "email-label": "邮箱",
+        "email": {
+          "unverified": "未验证",
+          "verified": "已绑定"
+        },
+        "social-label": "社交登录",
+        "social": {
+          "unbound": "未绑定"
+        }
+      },
+      "status": "密码登录",
+      "title": "账号设置"
+    },
+    "api-keys": {
+      "desc": "脚本和机器人拿它调我方接口",
+      "meta": "共 <1>{{total}}</1> 个 · 已吊销 <3>{{revoked}}</3> 个",
+      "status": {
+        "active": "{{count}} 个可用",
+        "none": "还没建"
+      },
+      "title": "API key"
+    },
+    "downstream": {
+      "desc": "把号同步到你自己的号池 · 号死了这边也帮你清",
+      "meta": "推送成功率 <1>{{rate}}%</1> · 累计 <3>{{total}}</3> 次",
+      "status": {
+        "connected": "已连通",
+        "disconnected": "未连通"
+      },
+      "title": "我的号池"
+    },
+    "preferences": {
+      "desc": "每天总上限 · 建新车时的默认值",
+      "meta": "今日 <1>{{rounds}}</1>{{roundLimit}} 轮 · 花 <3>{{spend}}</3>{{spendLimit}}",
+      "status": {
+        "limit-set": "已设上限",
+        "limit-unset": "未设上限"
+      },
+      "title": "拉号偏好"
+    },
+    "webhook": {
+      "desc": "拉号完成、号失效、余额不足推到你的 webhook",
+      "meta": "已订阅 <1>{{count}}</1> 个事件",
+      "status": {
+        "disabled": "已停用",
+        "enabled": "启用中"
+      },
+      "title": "机器人通知"
+    }
+  },
+  "card.preferences.meta.round-limit": "/{{limit}}",
+  "card.preferences.meta.spend-limit": "/{{limit}}",
+  "page": {
+    "subtitle": "号池对接 · 事件通知 · API 访问",
+    "title": "账号设置",
+    "crumb": "账号设置",
+    "desc": "邮箱、用户名、登录密码和社交登录"
+  },
+  "account": {
+    "created-at": "注册时间",
+    "email": "邮箱",
+    "sub": "改邮箱或用户名要联系管理员 · 阶段 3+ 会加自助修改",
+    "title": "账号信息",
+    "username": "用户名"
+  },
+  "account.email.unverified": "未验证",
+  "account.email.verified": "已验证",
+  "password": {
+    "confirm": "确认新密码",
+    "current": "当前密码",
+    "error": {
+      "title": "改不了"
+    },
+    "forgot-hint": "忘记密码的找回流程阶段 3+ 才上 · 现在忘了得联系管理员重置",
+    "new": "新密码",
+    "placeholder": {
+      "confirm": "再输一次",
+      "dots": "••••••••"
+    },
+    "sub": "改完当前登录不会掉 · 其他设备需要重新登录",
+    "submit": {
+      "idle": "更新密码",
+      "pending": "更新中…"
+    },
+    "success": {
+      "desc": "下次登录用新密码",
+      "title": "密码已更新"
+    },
+    "title": "修改密码"
+  },
+  "password.confirm.mismatch": "两次输入不一致",
+  "password.new.hint": "至少 8 位",
+  "password.new.too-short": "至少 8 位",
+  "social": {
+    "coming-soon": "即将上线",
+    "sub": "用 Google / GitHub 直接登录 · 阶段 3+ 上线",
+    "title": "第三方登录",
+    "unbound": "未绑定"
+  },
+  "webhook": {
+    "action": {
+      "regen": "重新生成密钥",
+      "regen-title": "旧密钥立即失效",
+      "save": "保存",
+      "saving": "保存中…",
+      "send-test": "发测试事件",
+      "sending": "发送中…"
+    },
+    "deliveries": {
+      "chip": {
+        "failed": "失败",
+        "ok": "成功"
+      },
+      "col": {
+        "event": "事件",
+        "http": "HTTP",
+        "latency": "耗时",
+        "result": "结果",
+        "retry": "重试",
+        "time": "时间"
+      },
+      "empty-filter": "这个筛选下没有记录",
+      "empty-none": "还没有投递记录 · 发个测试事件试试",
+      "filter": {
+        "all": "全部",
+        "failed": "失败",
+        "ok": "成功"
+      },
+      "retry-count": "{{count}} 次",
+      "retry-note": "失败会自动退避重试 3 次(5s / 30s / 5min)· 一直失败先检查你那边能不能被公网访问",
+      "sub-total-fail": " · 失败 ",
+      "sub-total-middle": " 条 · 成功 ",
+      "sub-total-prefix": "共 ",
+      "title": "投递记录"
+    },
+    "endpoint": {
+      "old-secret-invalid": {
+        "body": "记得同步更新你机器人那边的验签配置,否则收到的事件会验签失败",
+        "title": "旧密钥已失效"
+      },
+      "secret-hint-masked": "只存打码版 · 要换就重新生成",
+      "secret-hint-visible": "这是唯一一次可见,请立即复制",
+      "secret-label": "签名密钥",
+      "sub": "我方 POST 事件到这个地址 · 请求带 HMAC 签名,用下面的密钥验",
+      "test-detail-middle": " · 耗时 ",
+      "test-detail-prefix": "HTTP ",
+      "test-detail-suffix": " ms",
+      "test-fail": "送不到",
+      "test-ok": "测试事件已送达",
+      "title": "Webhook 端点",
+      "url-hint": "https://…",
+      "url-label": "接收地址",
+      "url-placeholder": "https://bot.example.com/kiro-events"
+    },
+    "event": {
+      "bus-refilled": {
+        "desc": "水位跌破阈值、系统自己补了一轮",
+        "title": "自动补车触发"
+      },
+      "credential-dead": {
+        "desc": "我方探到某个号死了 · 补车前的信号",
+        "title": "号失效了"
+      },
+      "round-completed": {
+        "desc": "一轮拉号跑完 · 带拿到几个号、花了多少",
+        "title": "拉号完成"
+      },
+      "round-failed": {
+        "desc": "整轮没拿到号 · 带失败原因",
+        "title": "拉号失败"
+      },
+      "wallet-low": {
+        "desc": "余额低到快拉不动号了",
+        "title": "余额不足预警"
+      }
+    },
+    "head": {
+      "crumb": "机器人通知",
+      "desc": "事件推到你的 webhook · 拉号完成、号失效、余额不足都能收",
+      "title": "机器人通知"
+    },
+    "state": {
+      "disabled": "已停用",
+      "enabled": "启用中"
+    },
+    "subs": {
+      "sub-separator": " / ",
+      "sub-suffix": " 个",
+      "subscribed-prefix": "已订阅 ",
+      "title": "订阅事件"
+    },
+    "switch": {
+      "aria": "启用 webhook"
+    },
+    "unsaved": "有未保存的修改"
+  }
+}

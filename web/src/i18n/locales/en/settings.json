@@ -1,0 +1,410 @@
+{
+  "action": {
+    "save": "Save",
+    "saving": "Saving…",
+    "dirty": "Unsaved changes",
+    "test": "Test connection",
+    "testing": "Testing…"
+  },
+  "defaults": {
+    "alert": {
+      "em": "initial values for new buses",
+      "post": " — existing buses follow their own refill strategy, so changes here don't touch them",
+      "pre": "These are just "
+    },
+    "count": {
+      "label": "Keys per pull"
+    },
+    "sub": "Prefilled when you create a new bus · changing these leaves existing buses alone",
+    "title": "New bus defaults",
+    "vendor": {
+      "auto": "Auto (best price)",
+      "label": "Default source"
+    },
+    "zone": {
+      "auto": "Auto",
+      "eu": "EU",
+      "label": "Default region",
+      "us": "US"
+    }
+  },
+  "head": {
+    "crumb": "Pull preferences",
+    "desc": "Daily overall limits, plus defaults prefilled for new buses",
+    "title": "Pull preferences"
+  },
+  "limit": {
+    "alert": "Each bus can set its own caps · a pull needs both under the limit (whichever is stricter wins) ·",
+    "max-price": {
+      "hint": "credits / key · leave blank for no limit",
+      "label": "Skip if unit price exceeds",
+      "note": "Once upstream pricing climbs past this, pulls stop — manual pulls get blocked too (the confirm dialog shows how much over). Individual buses can set stricter caps of their own."
+    },
+    "placeholder": {
+      "unlimited": "No limit"
+    },
+    "rounds": {
+      "hint": "Leave blank for no limit",
+      "label": "Max pull rounds per day"
+    },
+    "spend": {
+      "hint": "credits · leave blank for no limit",
+      "label": "Max spend per day"
+    },
+    "sub": "Over the limit, nothing pulls · counts across every bus · standalone key extraction counts too",
+    "title": "Pull limits"
+  },
+  "limit.alert.link": "Open a bus to set per-bus caps",
+  "usage": {
+    "filled": "maxed out",
+    "today": "Used today",
+    "unit": {
+      "credits": "credits",
+      "round": "rounds"
+    },
+    "unlimited-suffix": "· no limit"
+  },
+  "empty": {
+    "desc": "Once configured, pulled keys sync over automatically. Without it, you can still download and hand them off manually.",
+    "title": "Pool not configured"
+  },
+  "endpoint": {
+    "desc": "Your pool's URL and admin token. We use them to write keys in.",
+    "title": "Pool endpoint",
+    "token": {
+      "current": "Current token",
+      "hint": {
+        "empty": "Leave empty to keep current",
+        "new": "Only a masked version is kept after saving"
+      },
+      "label": "Admin token",
+      "placeholder": "Enter a new token to replace"
+    },
+    "url": {
+      "hint": "https://…",
+      "label": "Pool URL",
+      "placeholder": "https://kiro-my.example.com"
+    }
+  },
+  "header": {
+    "connected": "Connected",
+    "crumb": "My pool",
+    "desc": "Sync keys to your own pool. We keep a copy to monitor liveness, and clean up dead keys on your side too.",
+    "disconnected": "Not connected",
+    "title": "My pool"
+  },
+  "rules": {
+    "bus-only": {
+      "desc": "On = only push keys that joined a bus. Off = push both bus keys and standalone pulls.",
+      "title": "Bus keys only"
+    },
+    "push-on-pull": {
+      "desc": "Sync to your pool the moment a key is pulled (dual write — we keep a copy to monitor liveness).",
+      "title": "Push on pull"
+    },
+    "resync-on-dead": {
+      "desc": "When we detect a key is dead, also remove it from your pool so your clients don't hand out dead keys.",
+      "title": "Delete on death"
+    },
+    "retry-on-failure": {
+      "desc": "Backoff retry 5s → 30s → 5min. Only recorded as failed after three attempts.",
+      "title": "Auto retry on failure"
+    },
+    "subtitle": "When to push, what to do on failure",
+    "title": "Push rules"
+  },
+  "status": {
+    "connection": {
+      "heartbeat": "Last heartbeat {{time}}",
+      "label": "Connection",
+      "no-heartbeat": "No heartbeat yet",
+      "value": {
+        "down": "Down",
+        "ok": "Healthy"
+      }
+    },
+    "success-rate": {
+      "failed-prefix": "Failed",
+      "failed-suffix": "times",
+      "label": "Push success rate"
+    },
+    "total": {
+      "label": "Total pushed",
+      "unit": "keys"
+    }
+  },
+  "test": {
+    "fail": {
+      "desc": "Check the URL and token, and confirm this host is reachable from our side.",
+      "title": "Cannot connect"
+    },
+    "ok": {
+      "desc-prefix": "Handshake took",
+      "desc-suffix": "ms",
+      "title": "Connected"
+    }
+  },
+  "api-keys": {
+    "create": "New key",
+    "create-modal": {
+      "done": {
+        "confirm": "Saved",
+        "desc": "This is the only time it's visible. Copy and save it now.",
+        "title": "Key created",
+        "warn-body": "Lose it and you can only revoke and recreate. We don't store plaintext.",
+        "warn-title": "Close this window and the plaintext is gone"
+      },
+      "new": {
+        "desc": "Give it a name so you can tell what it's for later",
+        "hint": "Just for you",
+        "label": "Label",
+        "placeholder": "e.g. Production · N8N bot",
+        "submit": "Create",
+        "submitting": "Creating…",
+        "title": "New API key"
+      }
+    },
+    "crumb": "API key",
+    "desc": {
+      "docs-link": "integration docs",
+      "prefix": "Call our API. Currently ",
+      "suffix": " active. See "
+    },
+    "empty": {
+      "desc": "Create a key to start calling the API",
+      "title": "No keys yet"
+    },
+    "list": {
+      "sub-empty": "No keys yet",
+      "sub": {
+        "middle": " total · ",
+        "prefix": "",
+        "suffix": " revoked"
+      },
+      "title": "My keys"
+    },
+    "revoke-modal": {
+      "desc": "Requests using this key will start returning 401 immediately",
+      "note": "Make sure nothing is still using it — especially CI and bots",
+      "submit": "Confirm revoke",
+      "submitting": "Revoking…",
+      "title": "Revoke {{name}}?",
+      "warn-body": "A revoked key can't be re-enabled. The record stays (you can see when it was created and last used), but the key itself is dead.",
+      "warn-title": "Not reversible"
+    },
+    "row": {
+      "copy-prefix": "Copy prefix",
+      "revoke": "Revoke",
+      "revoked": "Revoked"
+    },
+    "table": {
+      "actions": "Actions",
+      "created": "Created",
+      "last-used": "Last used",
+      "name": "Label",
+      "prefix": "Prefix"
+    },
+    "title": "API key",
+    "warn": "The key is shown once at creation. Lose it and you can only revoke and recreate. Don't hardcode it in frontend code or commit it to a repo."
+  },
+  "card": {
+    "account": {
+      "desc": "Email · username · password · social login",
+      "meta": {
+        "email-label": "Email",
+        "email": {
+          "unverified": "Unverified",
+          "verified": "Verified"
+        },
+        "social-label": "Social login",
+        "social": {
+          "unbound": "Not linked"
+        }
+      },
+      "status": "Password login",
+      "title": "Account settings"
+    },
+    "api-keys": {
+      "desc": "For scripts and bots to call our API",
+      "meta": "<1>{{total}}</1> total · <3>{{revoked}}</3> revoked",
+      "status": {
+        "active": "{{count}} active",
+        "none": "None yet"
+      },
+      "title": "API key"
+    },
+    "downstream": {
+      "desc": "Sync keys to your own pool · we clean up dead ones for you",
+      "meta": "Push success rate <1>{{rate}}%</1> · <3>{{total}}</3> total",
+      "status": {
+        "connected": "Connected",
+        "disconnected": "Not connected"
+      },
+      "title": "My key pool"
+    },
+    "preferences": {
+      "desc": "Daily cap · defaults for new buses",
+      "meta": "Today <1>{{rounds}}</1>{{roundLimit}} rounds · spent <3>{{spend}}</3>{{spendLimit}}",
+      "status": {
+        "limit-set": "Limits set",
+        "limit-unset": "No limits"
+      },
+      "title": "Pull preferences"
+    },
+    "webhook": {
+      "desc": "Pull completion, key expiry, low balance pushed to your webhook",
+      "meta": "Subscribed to <1>{{count}}</1> events",
+      "status": {
+        "disabled": "Disabled",
+        "enabled": "Enabled"
+      },
+      "title": "Bot notifications"
+    }
+  },
+  "card.preferences.meta.round-limit": "/{{limit}}",
+  "card.preferences.meta.spend-limit": "/{{limit}}",
+  "page": {
+    "subtitle": "Pool sync · Event notifications · API access",
+    "title": "Account settings",
+    "crumb": "Account settings",
+    "desc": "Email, username, password, and social sign-in"
+  },
+  "account": {
+    "created-at": "Joined",
+    "email": "Email",
+    "sub": "Contact admin to change email or username · self-service arrives in phase 3+",
+    "title": "Account info",
+    "username": "Username"
+  },
+  "account.email.unverified": "Unverified",
+  "account.email.verified": "Verified",
+  "password": {
+    "confirm": "Confirm new password",
+    "current": "Current password",
+    "error": {
+      "title": "Couldn't update"
+    },
+    "forgot-hint": "Password recovery lands in phase 3+ · for now, contact admin to reset",
+    "new": "New password",
+    "placeholder": {
+      "confirm": "Type it again",
+      "dots": "••••••••"
+    },
+    "sub": "Your current session stays signed in · other devices will need to sign in again",
+    "submit": {
+      "idle": "Update password",
+      "pending": "Updating…"
+    },
+    "success": {
+      "desc": "Use the new one next time you sign in",
+      "title": "Password updated"
+    },
+    "title": "Change password"
+  },
+  "password.confirm.mismatch": "Passwords don't match",
+  "password.new.hint": "At least 8 characters",
+  "password.new.too-short": "At least 8 characters",
+  "social": {
+    "coming-soon": "Coming soon",
+    "sub": "Sign in with Google or GitHub · arrives in phase 3+",
+    "title": "Social sign-in",
+    "unbound": "Not linked"
+  },
+  "webhook": {
+    "action": {
+      "regen": "Regenerate secret",
+      "regen-title": "Old secret invalidates immediately",
+      "save": "Save",
+      "saving": "Saving…",
+      "send-test": "Send test event",
+      "sending": "Sending…"
+    },
+    "deliveries": {
+      "chip": {
+        "failed": "Failed",
+        "ok": "OK"
+      },
+      "col": {
+        "event": "Event",
+        "http": "HTTP",
+        "latency": "Latency",
+        "result": "Result",
+        "retry": "Retry",
+        "time": "Time"
+      },
+      "empty-filter": "Nothing under this filter",
+      "empty-none": "No deliveries yet · try sending a test event",
+      "filter": {
+        "all": "All",
+        "failed": "Failed",
+        "ok": "OK"
+      },
+      "retry-count": "{{count}}x",
+      "retry-note": "Failures auto-retry with backoff 3 times (5s / 30s / 5min) · if it keeps failing, check whether your endpoint is reachable from the public internet",
+      "sub-total-fail": " ok · ",
+      "sub-total-middle": " total · ",
+      "sub-total-prefix": "",
+      "title": "Delivery log"
+    },
+    "endpoint": {
+      "old-secret-invalid": {
+        "body": "Update the verify config on your bot side too, otherwise incoming events will fail signature check",
+        "title": "Old secret is now invalid"
+      },
+      "secret-hint-masked": "Only the masked version is stored · regenerate to rotate",
+      "secret-hint-visible": "This is the only time it's visible, copy it now",
+      "secret-label": "Signing secret",
+      "sub": "We POST events to this URL · requests are HMAC-signed, verify with the secret below",
+      "test-detail-middle": " · latency ",
+      "test-detail-prefix": "HTTP ",
+      "test-detail-suffix": " ms",
+      "test-fail": "Couldn't reach it",
+      "test-ok": "Test event delivered",
+      "title": "Webhook endpoint",
+      "url-hint": "https://…",
+      "url-label": "Receive URL",
+      "url-placeholder": "https://bot.example.com/kiro-events"
+    },
+    "event": {
+      "bus-refilled": {
+        "desc": "Water level dropped below threshold, system pulled a new round on its own",
+        "title": "Auto-refill triggered"
+      },
+      "credential-dead": {
+        "desc": "We detected a key is dead · the signal before a refill",
+        "title": "Key went dead"
+      },
+      "round-completed": {
+        "desc": "A pull round finished · includes how many keys landed and total cost",
+        "title": "Pull completed"
+      },
+      "round-failed": {
+        "desc": "The whole round got nothing · includes the reason",
+        "title": "Pull failed"
+      },
+      "wallet-low": {
+        "desc": "Balance is too low to pull more keys soon",
+        "title": "Low balance warning"
+      }
+    },
+    "head": {
+      "crumb": "Bot notifications",
+      "desc": "Events pushed to your webhook · pull completions, dead keys, low balance all covered",
+      "title": "Bot notifications"
+    },
+    "state": {
+      "disabled": "Disabled",
+      "enabled": "Enabled"
+    },
+    "subs": {
+      "sub-separator": " / ",
+      "sub-suffix": "",
+      "subscribed-prefix": "Subscribed to ",
+      "title": "Event subscriptions"
+    },
+    "switch": {
+      "aria": "Enable webhook"
+    },
+    "unsaved": "Unsaved changes"
+  }
+}

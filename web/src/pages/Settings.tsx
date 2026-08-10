@@ -2,11 +2,13 @@ import type { LucideIcon } from "lucide-react";
 import { Bot, ChevronRight, Database, KeyRound, SlidersHorizontal, UserCog } from "lucide-react";
 import type { ReactNode } from "react";
 import { useApiKeys, useDownstream, useGlobalStrategy, useMe, useWebhook } from "@/api/hooks";
+import { Trans, useTranslation } from "react-i18next";
 import { Card, Chip, Em } from "@/components/ui/primitives";
 import { fmtCredits } from "@/lib/utils";
 
 /** 设置索引 · 设置的主入口 */
 export default function Settings() {
+  const { t } = useTranslation("settings");
   const { data: gs } = useGlobalStrategy();
   const { data: ds } = useDownstream();
   const { data: wh } = useWebhook();
@@ -18,8 +20,8 @@ export default function Settings() {
   return (
     <div className="space-y-section">
       <div className="min-w-0 space-y-2">
-        <h1 className="text-hero font-semibold">设置</h1>
-        <p className="text-fg-tertiary">号池对接 · 事件通知 · API 访问</p>
+        <h1 className="text-hero font-semibold">{t("page.title")}</h1>
+        <p className="text-fg-tertiary">{t("page.subtitle")}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -28,22 +30,27 @@ export default function Settings() {
         <SettingCard
           to="/settings/preferences"
           icon={SlidersHorizontal}
-          title="拉号偏好"
-          desc="每天总上限 · 建新车时的默认值"
+          title={t("card.preferences.title")}
+          desc={t("card.preferences.desc")}
           status={
             gs && (gs.daily_round_limit != null || gs.daily_spend_limit != null)
-              ? <Chip tone="ok" dot>已设上限</Chip>
-              : <Chip tone="warn" dot>未设上限</Chip>
+              ? <Chip tone="ok" dot>{t("card.preferences.status.limit-set")}</Chip>
+              : <Chip tone="warn" dot>{t("card.preferences.status.limit-unset")}</Chip>
           }
           meta={
             gs
               ? (
-                <>
-                  今日 <Em>{gs.used_today.rounds}</Em>
-                  {gs.daily_round_limit != null && <>/{gs.daily_round_limit}</>} 轮 ·
-                  花 <Em>{fmtCredits(gs.used_today.spend)}</Em>
-                  {gs.daily_spend_limit != null && <>/{fmtCredits(gs.daily_spend_limit)}</>}
-                </>
+                <Trans
+                  i18nKey="card.preferences.meta"
+                  ns="settings"
+                  values={{
+                    rounds: gs.used_today.rounds,
+                    roundLimit: gs.daily_round_limit != null ? t("card.preferences.meta.round-limit", { limit: gs.daily_round_limit }) : "",
+                    spend: fmtCredits(gs.used_today.spend),
+                    spendLimit: gs.daily_spend_limit != null ? t("card.preferences.meta.spend-limit", { limit: fmtCredits(gs.daily_spend_limit) }) : "",
+                  }}
+                  components={{ 1: <Em />, 3: <Em /> }}
+                />
               )
               : null
           }
@@ -52,16 +59,23 @@ export default function Settings() {
         <SettingCard
           to="/settings/downstream"
           icon={Database}
-          title="我的号池"
-          desc="把号同步到你自己的号池 · 号死了这边也帮你清"
+          title={t("card.downstream.title")}
+          desc={t("card.downstream.desc")}
           status={
             ds?.connected
-              ? <Chip tone="ok" dot>已连通</Chip>
-              : <Chip tone="danger" dot>未连通</Chip>
+              ? <Chip tone="ok" dot>{t("card.downstream.status.connected")}</Chip>
+              : <Chip tone="danger" dot>{t("card.downstream.status.disconnected")}</Chip>
           }
           meta={
             ds
-              ? <>推送成功率 <Em>{(ds.push_success_rate * 100).toFixed(1)}%</Em> · 累计 <Em>{ds.push_total}</Em> 次</>
+              ? (
+                <Trans
+                  i18nKey="card.downstream.meta"
+                  ns="settings"
+                  values={{ rate: (ds.push_success_rate * 100).toFixed(1), total: ds.push_total }}
+                  components={{ 1: <Em />, 3: <Em /> }}
+                />
+              )
               : null
           }
         />
@@ -69,39 +83,53 @@ export default function Settings() {
         <SettingCard
           to="/settings/webhook"
           icon={Bot}
-          title="机器人通知"
-          desc="拉号完成、号失效、余额不足推到你的 webhook"
+          title={t("card.webhook.title")}
+          desc={t("card.webhook.desc")}
           status={
             wh?.enabled
-              ? <Chip tone="ok" dot>启用中</Chip>
-              : <Chip tone="neutral" dot>已停用</Chip>
+              ? <Chip tone="ok" dot>{t("card.webhook.status.enabled")}</Chip>
+              : <Chip tone="neutral" dot>{t("card.webhook.status.disabled")}</Chip>
           }
-          meta={wh ? <>已订阅 <Em>{wh.events.length}</Em> 个事件</> : null}
+          meta={wh ? (
+            <Trans
+              i18nKey="card.webhook.meta"
+              ns="settings"
+              values={{ count: wh.events.length }}
+              components={{ 1: <Em /> }}
+            />
+          ) : null}
         />
 
         <SettingCard
           to="/settings/api-keys"
           icon={KeyRound}
-          title="API key"
-          desc="脚本和机器人拿它调我方接口"
+          title={t("card.api-keys.title")}
+          desc={t("card.api-keys.desc")}
           status={
             activeKeys > 0
-              ? <Chip tone="ok" dot>{activeKeys} 个可用</Chip>
-              : <Chip tone="neutral" dot>还没建</Chip>
+              ? <Chip tone="ok" dot>{t("card.api-keys.status.active", { count: activeKeys })}</Chip>
+              : <Chip tone="neutral" dot>{t("card.api-keys.status.none")}</Chip>
           }
-          meta={keys ? <>共 <Em>{keys.length}</Em> 个 · 已吊销 <Em>{keys.length - activeKeys}</Em> 个</> : null}
+          meta={keys ? (
+            <Trans
+              i18nKey="card.api-keys.meta"
+              ns="settings"
+              values={{ total: keys.length, revoked: keys.length - activeKeys }}
+              components={{ 1: <Em />, 3: <Em /> }}
+            />
+          ) : null}
         />
 
         <SettingCard
           to="/settings/account"
           icon={UserCog}
-          title="账号设置"
-          desc="邮箱 · 用户名 · 密码 · 第三方登录"
-          status={<Chip tone="neutral" dot>密码登录</Chip>}
+          title={t("card.account.title")}
+          desc={t("card.account.desc")}
+          status={<Chip tone="neutral" dot>{t("card.account.status")}</Chip>}
           meta={
             <>
-              邮箱 <Em>{me?.email_verified ? "已绑定" : "未验证"}</Em>
-              {" · "}社交登录 <Em>未绑定</Em>
+              {t("card.account.meta.email-label")} <Em>{me?.email_verified ? t("card.account.meta.email.verified") : t("card.account.meta.email.unverified")}</Em>
+              {" · "}{t("card.account.meta.social-label")} <Em>{t("card.account.meta.social.unbound")}</Em>
             </>
           }
         />

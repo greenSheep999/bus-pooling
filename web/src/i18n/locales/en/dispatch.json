@@ -1,0 +1,34 @@
+{
+  "feature": {
+    "audit": {
+      "desc": "Every provisioning event is logged: when, how many, which vendor. The bill always adds up.",
+      "title": "Fully auditable"
+    },
+    "aws": {
+      "desc": "Your account, your quota. We only forward the provisioning request and never touch your credentials.",
+      "title": "Keys run on your own AWS"
+    },
+    "lifetime": {
+      "desc": "Your own keys don't share quota with anyone, and won't get killed by someone else's usage.",
+      "title": "Longest-lived keys"
+    }
+  },
+  "footer": {
+    "and": " or ",
+    "link": {
+      "extract": "extract a key",
+      "pool": "pool a ride"
+    },
+    "prefix": "For now you can ",
+    "suffix": ". We'll notify you in-app when dispatch opens."
+  },
+  "hero": {
+    "badge": "Coming in phase 3",
+    "cta": {
+      "docs": "Read the integration docs",
+      "pool": "Pool a ride first"
+    },
+    "desc": "Provision keys on your own AWS account. We forward the request upstream — the key and its quota stay yours.",
+    "title": "My dispatch"
+  }
+}

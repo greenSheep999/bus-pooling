@@ -14,37 +14,23 @@ import { SecretField } from "@/components/ui/secret-field";
 import { Switch } from "@/components/ui/switch";
 import { cn, fmtTime } from "@/lib/utils";
 import type { DownstreamConfig } from "@/types";
+import { useTranslation } from "react-i18next";
 
 /** 4 条推送规则 · 跟 DownstreamConfig.rules 一一对应
  *  技术页（spec §10）· 但对外文案一律用「你自己的号池」· 不出上游软件名（CLAUDE.md §12.6） */
 const RULES: {
   key: keyof DownstreamConfig["rules"];
-  title: string;
-  desc: string;
+  titleKey: string;
+  descKey: string;
 }[] = [
-  {
-    key: "push_on_pull",
-    title: "号进车立即推",
-    desc: "拉到号就同步到你的号池（双写 · 我方保留副本继续监控存活）",
-  },
-  {
-    key: "resync_on_dead",
-    title: "号死了同步删",
-    desc: "我方探到号失效时，也从你号池里删掉，省得你的客户端拿到死号",
-  },
-  {
-    key: "retry_on_failure",
-    title: "推送失败自动重试",
-    desc: "退避重试 5s → 30s → 5min · 三次都失败才记失败",
-  },
-  {
-    key: "bus_only",
-    title: "只推拼车的号",
-    desc: "开 = 只推进了车的号 · 关 = 拼车和单独提取的号都推",
-  },
+  { key: "push_on_pull", titleKey: "rules.push-on-pull.title", descKey: "rules.push-on-pull.desc" },
+  { key: "resync_on_dead", titleKey: "rules.resync-on-dead.title", descKey: "rules.resync-on-dead.desc" },
+  { key: "retry_on_failure", titleKey: "rules.retry-on-failure.title", descKey: "rules.retry-on-failure.desc" },
+  { key: "bus_only", titleKey: "rules.bus-only.title", descKey: "rules.bus-only.desc" },
 ];
 
 export default function Downstream() {
+  const { t } = useTranslation("settings");
   const { data: cfg } = useDownstream();
   const save = useSaveDownstream();
   const test = useTestDownstream();
@@ -77,13 +63,13 @@ export default function Downstream() {
   return (
     <div className="space-y-section">
       <SettingsHead
-        crumb="我的号池"
-        title="我的号池"
-        desc="把号同步到你自己的号池 · 我方仍保留副本监控存活，号死了这边也帮你清"
+        crumb={t("header.crumb")}
+        title={t("header.title")}
+        desc={t("header.desc")}
         right={
           cfg?.connected
-            ? <Chip tone="ok" dot>已连通</Chip>
-            : <Chip tone="danger" dot>未连通</Chip>
+            ? <Chip tone="ok" dot>{t("header.connected")}</Chip>
+            : <Chip tone="danger" dot>{t("header.disconnected")}</Chip>
         }
       />
 
@@ -91,55 +77,55 @@ export default function Downstream() {
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
         <StatusCard
           icon={Plug}
-          label="连通状态"
-          value={cfg?.connected ? "正常" : "断开"}
+          label={t("status.connection.label")}
+          value={cfg?.connected ? t("status.connection.value.ok") : t("status.connection.value.down")}
           tone={cfg?.connected ? "ok" : "danger"}
           sub={
             cfg?.last_heartbeat_at
-              ? <>最近心跳 {fmtTime(cfg.last_heartbeat_at)}</>
-              : "还没有心跳"
+              ? <>{t("status.connection.heartbeat", { time: fmtTime(cfg.last_heartbeat_at) })}</>
+              : t("status.connection.no-heartbeat")
           }
         />
         <StatusCard
           icon={Activity}
-          label="推送成功率"
+          label={t("status.success-rate.label")}
           value={cfg ? `${(cfg.push_success_rate * 100).toFixed(1)}%` : "-"}
           tone={!cfg ? undefined : cfg.push_success_rate >= 0.95 ? "ok" : "warn"}
-          sub={cfg ? <>失败 <Em tone="spend">{cfg.push_failed}</Em> 次</> : null}
+          sub={cfg ? <>{t("status.success-rate.failed-prefix")} <Em tone="spend">{cfg.push_failed}</Em> {t("status.success-rate.failed-suffix")}</> : null}
         />
         <StatusCard
           icon={Send}
-          label="累计推送"
+          label={t("status.total.label")}
           value={cfg ? String(cfg.push_total) : "-"}
-          sub="号次"
+          sub={t("status.total.unit")}
         />
       </div>
 
       {/* 端点卡 · focal */}
       <Card focal focalTone="brand" className="p-7">
         <SectionHead
-          title="号池端点"
-          sub="你自己那台号池的地址和管理密钥 · 我方用它把号写进去"
+          title={t("endpoint.title")}
+          sub={t("endpoint.desc")}
         />
 
         <div className="mt-4 space-y-4">
-          <Field label="号池地址" hint="https://…">
+          <Field label={t("endpoint.url.label")} hint={t("endpoint.url.hint")}>
             <Input
               value={url}
               onChange={(e) => { setUrl(e.target.value); setTestResult(null); }}
-              placeholder="https://kiro-my.example.com"
+              placeholder={t("endpoint.url.placeholder")}
               className="font-mono"
             />
           </Field>
 
           <Field
-            label="管理密钥"
-            hint={token.trim() ? "保存后只留打码版" : "留空 = 不改"}
+            label={t("endpoint.token.label")}
+            hint={token.trim() ? t("endpoint.token.hint.new") : t("endpoint.token.hint.empty")}
           >
             <Input
               value={token}
               onChange={(e) => { setToken(e.target.value); setTestResult(null); }}
-              placeholder="输入新密钥以替换"
+              placeholder={t("endpoint.token.placeholder")}
               type="password"
               className="font-mono"
             />
@@ -148,7 +134,7 @@ export default function Downstream() {
           {/* 当前已存的密钥 · 只有打码版，拿不回明文 */}
           {cfg && !token.trim() && (
             <div className="space-y-1.5">
-              <span className="text-label font-semibold text-fg-secondary">当前密钥</span>
+              <span className="text-label font-semibold text-fg-secondary">{t("endpoint.token.current")}</span>
               <SecretField masked={cfg.passengerpool_token_masked} />
             </div>
           )}
@@ -157,38 +143,38 @@ export default function Downstream() {
             <Alert
               tone={testResult.ok ? "ok" : "danger"}
               icon={testResult.ok ? CheckCircle2 : Plug}
-              title={testResult.ok ? "连通正常" : "连不上"}
+              title={testResult.ok ? t("test.ok.title") : t("test.fail.title")}
             >
               {testResult.ok
-                ? <>握手耗时 <Em>{testResult.ms}</Em> ms</>
-                : "检查地址和密钥是否正确 · 以及这台机器能不能被我方访问"}
+                ? <>{t("test.ok.desc-prefix")} <Em>{testResult.ms}</Em> {t("test.ok.desc-suffix")}</>
+                : t("test.fail.desc")}
             </Alert>
           )}
 
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="brand" onClick={onSave} disabled={!dirty || save.isPending}>
               {save.isPending ? <Loader2 className="animate-spin" /> : <Save />}
-              {save.isPending ? "保存中…" : "保存"}
+              {save.isPending ? t("action.saving") : t("common:action.save")}
             </Button>
             <Button variant="ghost" onClick={onTest} disabled={!url.trim() || test.isPending}>
               {test.isPending ? <Loader2 className="animate-spin" /> : <Zap />}
-              {test.isPending ? "测试中…" : "测试连接"}
+              {test.isPending ? t("action.testing") : t("action.test")}
             </Button>
-            {dirty && <span className="text-label text-fg-tertiary">有未保存的修改</span>}
+            {dirty && <span className="text-label text-fg-tertiary">{t("action.dirty")}</span>}
           </div>
         </div>
       </Card>
 
       {/* 推送策略 */}
       <Card className="p-7">
-        <SectionHead title="推送策略" sub="什么时候推、失败怎么办" />
+        <SectionHead title={t("rules.title")} sub={t("rules.subtitle")} />
 
         <div className="mt-4 divide-y divide-hairline">
           {RULES.map((r) => (
             <div key={r.key} className="flex items-start justify-between gap-4 py-3.5">
               <div className="min-w-0 space-y-0.5">
-                <div className="font-semibold">{r.title}</div>
-                <p className="text-label text-fg-tertiary">{r.desc}</p>
+                <div className="font-semibold">{t(r.titleKey)}</div>
+                <p className="text-label text-fg-tertiary">{t(r.descKey)}</p>
               </div>
               <Switch
                 className="mt-0.5 shrink-0"
@@ -197,7 +183,7 @@ export default function Downstream() {
                 onCheckedChange={(v) =>
                   cfg && save.mutate({ rules: { ...cfg.rules, [r.key]: v } })
                 }
-                aria-label={r.title}
+                aria-label={t(r.titleKey)}
               />
             </div>
           ))}
@@ -206,8 +192,8 @@ export default function Downstream() {
 
       {/* 没配时给个说明 · 别让用户猜为什么推送没生效 */}
       {cfg && !cfg.passengerpool_url && (
-        <Alert tone="warn" icon={Database} title="还没配号池">
-          配好之后，拉到的号才能自动同步过去 · 不配也能用，只是得手动下载拿走
+        <Alert tone="warn" icon={Database} title={t("empty.title")}>
+          {t("empty.desc")}
         </Alert>
       )}
     </div>
