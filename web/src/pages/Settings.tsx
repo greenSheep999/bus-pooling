@@ -20,8 +20,8 @@ export default function Settings() {
   return (
     <div className="space-y-section">
       <div className="min-w-0 space-y-2">
-        <h1 className="text-hero font-semibold">{t("page.title")}</h1>
-        <p className="text-fg-tertiary">{t("page.subtitle")}</p>
+        <h1 className="text-hero font-semibold">{t("index.title")}</h1>
+        <p className="text-fg-tertiary">{t("index.subtitle")}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">

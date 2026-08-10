@@ -406,5 +406,9 @@
       "aria": "Enable webhook"
     },
     "unsaved": "Unsaved changes"
+  },
+  "index": {
+    "title": "Settings",
+    "subtitle": "Pool connection · notifications · API access"
   }
 }

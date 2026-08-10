@@ -5,7 +5,7 @@ import {
   KeyRound, LayoutDashboard, LogOut, Moon, Send, Settings,
   User, Users, Wallet,
 } from "lucide-react";
-import { useMe, usePromos, useStock, useWallet } from "@/api/hooks";
+import { useLogout, useMe, usePromos, useStock, useWallet } from "@/api/hooks";
 import { Muted } from "@/components/ui/primitives";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SplitFlapCountdown } from "@/components/ui/split-flap";
@@ -133,6 +133,8 @@ type MenuItem =
       label: string;
       sub?: string;
       to?: string;
+      /** 点击回调 · logout 那种需要跑 mutation 再跳的场景用它 · 跟 to 二选一 */
+      onClick?: () => void;
       hint?: string;
       submenu?: { code: string; label: string; soon?: boolean }[];
       value?: string;
@@ -146,6 +148,7 @@ function AvatarMenu() {
   const [theme, setTheme] = useTheme();
   const nav = useNavigate();
   const { data: me } = useMe();
+  const logout = useLogout();
   const seed = me?.email ?? me?.username ?? "?";
   const { bg, fg } = avatarColor(seed);
 
@@ -179,7 +182,16 @@ function AvatarMenu() {
       hint: t(THEMES.find((th) => th.code === theme)?.labelKey ?? "avatar.theme_system"),
     },
     { sep: true },
-    { icon: LogOut, label: t("avatar.logout"), to: "/login" },
+    {
+      icon: LogOut,
+      label: t("avatar.logout"),
+      // 真调 /api/logout · 清 react-query 缓存 · 再跳 /login
+      // 之前只是 to="/login" · session 不清 · 用户返回 /overview 就又"登着"了
+      onClick: async () => {
+        try { await logout.mutateAsync(); } catch { /* 即使失败也跳 login · 前端状态清干净 */ }
+        nav("/login");
+      },
+    },
   ];
 
   return (
@@ -212,7 +224,9 @@ function AvatarMenu() {
                         setFlyout((v) => (v === i ? null : i));
                         return;
                       }
-                      if (it.to) nav(it.to);
+                      // 优先 onClick（logout 用它跑 mutation）· 否则走 to
+                      if (it.onClick) { it.onClick(); }
+                      else if (it.to) nav(it.to);
                       setOpen(false);
                     }}
                     className={cn(
@@ -555,6 +569,25 @@ function FooterLink({ to, children }: { to: string; children: React.ReactNode })
 
 export default function AppLayout() {
   const { t } = useTranslation();
+  const { data: me, isPending, isError } = useMe();
+
+  /* 路由守卫 · me 加载失败（401/其他）→ 踢到 /login
+     · 401 由 client.ts 自动踢过 · 这里兜底 · 也覆盖 me 缓存清空但没跳的场景
+     · 用 window.location.replace 而不是 <Navigate> —— 后者会先 render AppLayout 再跳 · 造成闪 */
+  useEffect(() => {
+    if (!isPending && (isError || !me)) {
+      const next = window.location.pathname + window.location.search;
+      window.location.replace(`/login?next=${encodeURIComponent(next)}`);
+    }
+  }, [isPending, isError, me]);
+
+  if (isPending) {
+    return <div className="grid min-h-dvh place-items-center text-label text-fg-tertiary">…</div>;
+  }
+  if (!me) {
+    return null; // 上面 effect 会跳走 · render 空避免闪
+  }
+
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
       <PromoBar />

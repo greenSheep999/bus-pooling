@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import {
   ArrowDownLeft, ArrowUpRight, Check, Copy, Gift, Loader2, Lock,
   ShieldCheck, Ticket, TrendingDown, TrendingUp, Wallet as WalletIcon,

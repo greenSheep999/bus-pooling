@@ -1,90 +1,70 @@
 {
-  "community": {
-    "coming-soon": "即将开放",
-    "discord-desc": "讨论 · 技术支持",
-    "eyebrow": "社群",
-    "heading": "加入我们",
-    "subheading": "公告 · 技术支持 · 公测期间的额度发放",
-    "telegram-desc": "主频道 · 公告和额度发放"
-  },
-  "cta": {
-    "heading": "准备好了吗",
-    "primary": "立即注册",
-    "secondary": "登录",
-    "subheading": "注册免费 · 有专属邀请码拼车更便宜"
-  },
-  "explainer": {
-    "how": {
-      "body": "号会死 · 我们盯着自动补 · 你不用手动重新买 · 死了退你剩下的钱",
-      "title": "怎么运作"
-    },
-    "trust": {
-      "body": "每一次扣款都有明细 · 保修覆盖成活率 · 号能推到你自己的 kiro.rs",
-      "title": "凭什么信我们"
-    },
-    "what": {
-      "body": "一辆 vendor 号被多个乘客共享 · 单价直接除以人数 · 每人只出自己那份",
-      "title": "什么是拼车"
-    }
-  },
-  "footer": {
-    "beta": "公测中",
-    "tagline": "一起拼车 · 号更便宜"
-  },
   "hero": {
     "badge": "公测中",
-    "cta-primary": "立即注册",
-    "cta-secondary": "已有账号",
-    "desc": "找不到同路人？我们撮合。号会死？我们盯着自动补。想放自己号池？一键推。",
-    "title": "一起拼车 · 号更便宜"
+    "title": "满血 Kiro,一起拼一辆车",
+    "desc": "共享一辆车,人均成本按人头拆。全线支持 Claude Opus 5、GPT-5.6 等最新模型,AWS-Q 原生体验,Kiro 满血不缩水。",
+    "desc-2": "零限速缩水、零上下文腰斩、零嵌套注水——上车即用,个人体验不变形。",
+    "cta-primary": "立即上车",
+    "cta-secondary": "已有账号"
   },
-  "nav": {
-    "login": "登录",
-    "register": "注册"
+  "features": {
+    "heading": "支持的模型与体验",
+    "item-1": "Claude Opus 5",
+    "item-2": "GPT-5.6",
+    "item-3": "AWS-Q 原生",
+    "item-4": "满血 Kiro",
+    "item-5": "零注水 / 零嵌套"
   },
-  "promo": {
-    "eyebrow": "正在进行"
-  },
-  "step": {
-    "pull": {
-      "desc": "自己建车 / 加入他人的车 / 系统撮合 · 三选一",
-      "title": "拼车拉号"
+  "explainer": {
+    "what": {
+      "title": "为什么便宜",
+      "body": "一辆车的钱几个人分,人越多每人越少。"
     },
-    "register": {
-      "desc": "邮箱 + 密码 · 30 秒完事",
-      "title": "注册"
+    "how": {
+      "title": "你拿到什么",
+      "body": "全部模型,不限速、不砍上下文。省的是钱,不是体验。"
     },
-    "topup": {
-      "desc": "多渠道支付 · 通道费透传给支付方 · 我方不吃差价",
-      "title": "充值"
-    }
-  },
-  "steps": {
-    "eyebrow": "怎么用",
-    "heading": "3 步开始",
-    "subheading": "30 秒注册 · 充值 · 拉号"
-  },
-  "value": {
-    "pool": {
-      "desc": "多人拉号 · 单价直接摊掉 · 越多人越便宜",
-      "title": "拼单价"
-    },
-    "push": {
-      "desc": "拉到的号自动同步到你的 kiro.rs · 完整数据回流",
-      "title": "推自己号池"
-    },
-    "refill": {
-      "desc": "号死立刻拉新的进车 · 你的号池一直有活号",
-      "title": "号死自动补"
-    },
-    "transparent": {
-      "desc": "每次扣款都有明细 · 保修覆盖成活率",
-      "title": "结算透明"
+    "trust": {
+      "title": "各用各的",
+      "body": "同车的人额度独立、用量独立,互相看不到。"
     }
   },
   "values": {
     "eyebrow": "为什么用 bus-pooling",
-    "heading": "拼一辆车，什么都省了",
+    "heading": "拼一辆车,什么都省了",
     "subheading": "车主盯号池、盯补车、盯结算 · 你只管拉号"
-  }
+  },
+  "value": {
+    "pool": { "title": "拼单价", "desc": "多人拉号 · 单价直接摊掉 · 越多人越便宜" },
+    "refill": { "title": "号死自动补", "desc": "号死立刻拉新的进车 · 你的号池一直有活号" },
+    "push": { "title": "推自己号池", "desc": "拉到的号自动同步到你的 kiro.rs · 完整数据回流" },
+    "transparent": { "title": "结算透明", "desc": "每次扣款都有明细 · 保修覆盖成活率" }
+  },
+  "steps": {
+    "eyebrow": "怎么用",
+    "heading": "3 步上车",
+    "subheading": "30 秒注册 · 充值 · 上车拉号"
+  },
+  "step": {
+    "register": { "title": "注册", "desc": "邮箱 + 密码 · 30 秒完事" },
+    "topup": { "title": "充值", "desc": "多渠道支付 · 通道费透传给支付方 · 我方不吃差价" },
+    "pull": { "title": "上车拉号", "desc": "自己建车 / 加入他人的车 / 系统撮合 · 三选一" }
+  },
+  "community": {
+    "eyebrow": "社群",
+    "heading": "和其他乘客聊聊",
+    "subheading": "公告、答疑、语音房——按你想要的方式加入。",
+    "telegram-desc": "公告频道 · 更新和额度发放",
+    "discord-desc": "服务器 · 讨论和技术支持",
+    "coming-soon": "即将开放"
+  },
+  "cta": {
+    "heading": "准备好上车了吗",
+    "subheading": "注册免费 · 有专属邀请码拼车更便宜",
+    "primary": "立即上车",
+    "secondary": "登录"
+  },
+  "promo": { "eyebrow": "正在进行" },
+  "footer": { "beta": "公测中", "tagline": "满血 Kiro,一起拼一辆车" },
+  "nav": { "login": "登录", "register": "注册" }
 }

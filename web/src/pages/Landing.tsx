@@ -8,6 +8,7 @@ import { usePromos } from "@/api/hooks";
 import { DiscordLogo, TelegramLogo } from "@/components/ui/brand-icons";
 import { Button } from "@/components/ui/button";
 import { Card, Chip } from "@/components/ui/primitives";
+import { PublicControls } from "@/components/PublicControls";
 import LogoMark from "@/assets/logo/mark.svg";
 
 /** Landing · 未登录访客首页（迁自 kiro-auto MarketingPage · 迁移时删掉套餐 / 价格 · 换 bus-pooling 组件系统）
@@ -19,7 +20,8 @@ export default function Landing() {
 
   return (
     <div className="min-h-dvh bg-bg text-fg">
-      {/* 极简公共 header · 不用 AppLayout（那个假设已登录） */}
+      {/* 极简公共 header · 不用 AppLayout（那个假设已登录）
+          右侧顺序：语言 / 主题（PublicControls）· 登录 · 注册 */}
       <header className="border-b border-hairline bg-bg/85 backdrop-blur-xl">
         <div className="page-container flex h-14 items-center justify-between">
           <Link to="/" className="flex items-center gap-2.5">
@@ -27,6 +29,8 @@ export default function Landing() {
             <span className="text-body-lg font-semibold tracking-tight">bus-pooling</span>
           </Link>
           <div className="flex items-center gap-2">
+            <PublicControls />
+            <div className="ml-1 hidden h-6 w-px bg-hairline sm:block" />
             <Button variant="ghost" asChild>
               <Link to="/login">{t("nav.login")}</Link>
             </Button>
@@ -38,16 +42,20 @@ export default function Landing() {
       </header>
 
       <main className="page-container space-y-section py-12 sm:py-16">
-        {/* Hero */}
-        <section className="grid place-items-center gap-6 text-center">
+        {/* Hero · 两段 desc + 5 个特性 chip · 迁自 kiro-auto MarketingPage 的调性 */}
+        <section className="flex flex-col items-center gap-4 text-center">
           <Chip tone="brand" icon={<Sparkles className="size-3" />}>{t("hero.badge")}</Chip>
-          <h1 className="text-hero font-semibold sm:text-giant">
+          <h1 className="max-w-2xl text-hero font-semibold sm:text-giant">
             {t("hero.title")}
           </h1>
-          <p className="max-w-[560px] text-body-lg text-fg-tertiary">
+          <p className="mx-auto max-w-2xl text-body-lg text-fg-secondary">
             {t("hero.desc")}
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+          <p className="mx-auto max-w-2xl text-body-lg text-fg-tertiary">
+            {t("hero.desc-2")}
+          </p>
+
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <Button size="lg" variant="brand" asChild>
               <Link to="/register">
                 <Bus /> {t("hero.cta-primary")}
@@ -57,6 +65,18 @@ export default function Landing() {
             <Button size="lg" variant="ghost" asChild>
               <Link to="/login">{t("hero.cta-secondary")}</Link>
             </Button>
+          </div>
+
+          {/* Feature chips · 支持的模型 · 5 个 · 迁自 kiro-auto */}
+          <div className="mt-6 flex flex-col items-center gap-2.5">
+            <span className="text-label font-semibold uppercase tracking-wide text-fg-tertiary">
+              {t("features.heading")}
+            </span>
+            <div className="flex flex-wrap justify-center gap-2">
+              {["item-1", "item-2", "item-3", "item-4", "item-5"].map((k) => (
+                <Chip key={k} tone="brand">{t(`features.${k}`)}</Chip>
+              ))}
+            </div>
           </div>
         </section>
 

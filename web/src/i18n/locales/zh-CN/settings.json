@@ -406,5 +406,9 @@
       "aria": "启用 webhook"
     },
     "unsaved": "有未保存的修改"
+  },
+  "index": {
+    "title": "设置",
+    "subtitle": "号池对接 · 事件通知 · API 访问"
   }
 }

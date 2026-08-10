@@ -1,90 +1,70 @@
 {
-  "community": {
-    "coming-soon": "Coming soon",
-    "discord-desc": "Chat · technical support",
-    "eyebrow": "Community",
-    "heading": "Join us",
-    "subheading": "Announcements · support · beta credit drops",
-    "telegram-desc": "Main channel · announcements & credit drops"
+  "hero": {
+    "badge": "Public beta",
+    "title": "Kiro at full power · pool a bus with us",
+    "desc": "One bus, split the cost. Full Claude Opus 5, GPT-5.6, AWS-Q native and full-fat Kiro — no throttled model, no cut context.",
+    "desc-2": "Zero rate cap · zero context trim · zero nested wrapping — hop on and it just works.",
+    "cta-primary": "Hop on",
+    "cta-secondary": "Already have an account"
   },
-  "cta": {
-    "heading": "Ready?",
-    "primary": "Sign up",
-    "secondary": "Log in",
-    "subheading": "Free to sign up · a promo code gets you a cheaper ride"
+  "features": {
+    "heading": "Supported models & experience",
+    "item-1": "Claude Opus 5",
+    "item-2": "GPT-5.6",
+    "item-3": "AWS-Q native",
+    "item-4": "Full-fat Kiro",
+    "item-5": "No wrapping · no nesting"
   },
   "explainer": {
+    "what": {
+      "title": "Why it's cheaper",
+      "body": "One bus, split by riders — more riders, less per head."
+    },
     "how": {
-      "body": "Keys die · we watch and auto-refill · no manual re-buys · unused credit refunded",
-      "title": "How it runs"
+      "title": "What you get",
+      "body": "Every model, no rate limit, no cut context. The savings come out of the price, not the experience."
     },
     "trust": {
-      "body": "Every charge itemized · warranty covers key uptime · keys push to your own kiro.rs",
-      "title": "Why trust us"
-    },
-    "what": {
-      "body": "One vendor key shared across riders · unit price divided by headcount · you pay only your share",
-      "title": "What is pooling"
-    }
-  },
-  "footer": {
-    "beta": "Beta",
-    "tagline": "Pool up · cheaper keys"
-  },
-  "hero": {
-    "badge": "Beta",
-    "cta-primary": "Sign up",
-    "cta-secondary": "I have an account",
-    "desc": "No one to pool with? We match you. Key dies? We refill it. Want it in your own pool? One-tap push.",
-    "title": "Pool up · cheaper keys"
-  },
-  "nav": {
-    "login": "Log in",
-    "register": "Sign up"
-  },
-  "promo": {
-    "eyebrow": "What's live"
-  },
-  "step": {
-    "pull": {
-      "desc": "Start your own bus / join someone else's / auto-match · pick one",
-      "title": "Pool and pull"
-    },
-    "register": {
-      "desc": "Email + password · 30 seconds",
-      "title": "Sign up"
-    },
-    "topup": {
-      "desc": "Multiple payment channels · fees pass through · no markup on our end",
-      "title": "Top up"
-    }
-  },
-  "steps": {
-    "eyebrow": "How it works",
-    "heading": "3 steps to start",
-    "subheading": "Sign up in 30 seconds · top up · pull"
-  },
-  "value": {
-    "pool": {
-      "desc": "More riders pull together · unit price spreads out · more people, cheaper each",
-      "title": "Split the price"
-    },
-    "push": {
-      "desc": "Every pulled key syncs to your kiro.rs · full data returned",
-      "title": "Push to your pool"
-    },
-    "refill": {
-      "desc": "Dead key? A new one pulls in · your pool stays live",
-      "title": "Auto-refill on death"
-    },
-    "transparent": {
-      "desc": "Every charge itemized · warranty covers key uptime",
-      "title": "Transparent billing"
+      "title": "Everyone their own",
+      "body": "Riders on the same bus have independent quotas and traffic — no visibility into each other."
     }
   },
   "values": {
     "eyebrow": "Why bus-pooling",
-    "heading": "Pool one bus, skip the rest",
-    "subheading": "We watch the pool, refill, and settle · you just pull"
-  }
+    "heading": "One bus solves it all",
+    "subheading": "We babysit the pool, the refills and the ledger · you just pull"
+  },
+  "value": {
+    "pool": { "title": "Split the price", "desc": "Multiple riders pull together · unit price divides directly · more riders, cheaper" },
+    "refill": { "title": "Auto-refill on death", "desc": "Dead key gone? A new one lands in the bus at once · your pool stays alive" },
+    "push": { "title": "Push to your own pool", "desc": "Every pulled key syncs to your kiro.rs · full data round-trip" },
+    "transparent": { "title": "Transparent ledger", "desc": "Every debit itemized · warranty covers survival rate" }
+  },
+  "steps": {
+    "eyebrow": "How to use",
+    "heading": "3 steps to board",
+    "subheading": "30-second sign-up · top up · hop on"
+  },
+  "step": {
+    "register": { "title": "Sign up", "desc": "Email + password · 30 seconds" },
+    "topup": { "title": "Top up", "desc": "Multi-channel payment · fee passes through to the gateway · no markup" },
+    "pull": { "title": "Hop on & pull", "desc": "Start your own bus / join someone's / let us match — pick one" }
+  },
+  "community": {
+    "eyebrow": "Community",
+    "heading": "Talk to other riders",
+    "subheading": "Announcements, Q&A, voice rooms — join the way you prefer.",
+    "telegram-desc": "Channel · updates and credit drops",
+    "discord-desc": "Server · discussion and support",
+    "coming-soon": "Coming soon"
+  },
+  "cta": {
+    "heading": "Ready to hop on?",
+    "subheading": "Sign-up is free · promo code makes it cheaper still",
+    "primary": "Hop on",
+    "secondary": "Log in"
+  },
+  "promo": { "eyebrow": "Going on" },
+  "footer": { "beta": "Public beta", "tagline": "Kiro at full power · pool a bus with us" },
+  "nav": { "login": "Log in", "register": "Sign up" }
 }
