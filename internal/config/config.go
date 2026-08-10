@@ -388,15 +388,14 @@ func (c Config) Validate() error {
 
 // RequireSecrets 校验运行期必需的密钥。
 //
+// 只强制 master key —— vendor API key 的存在性由 buildVendorRegistry 在**装配时**
+// 从 vendor_account 表 + env 双通道 resolve 后再判定。这里过早报错会打断"生产走
+// seed CLI 写表 · env 里不需要放 key"的部署路径（decisions §11.6）。
+//
 // 跟 Validate 分开：migrate 之类的子命令不需要主密钥，不该因为没配 env 就跑不了。
 func (c Config) RequireSecrets() error {
 	if c.Secrets.MasterKey == "" {
 		return fmt.Errorf("缺少环境变量 %s（AES-256-GCM 主密钥 · 64 位 hex）", EnvMasterKey)
-	}
-	// 开了 vendor 却没给令牌 —— 起服务时就说，别等到第一次拉号才 401。
-	// DryRun 下不要求：那时根本不调真 vendor。
-	if c.Vendors.Kiro91.Enabled && !c.DryRun && c.Secrets.Kiro91APIKey == "" {
-		return fmt.Errorf("vendors.kiro91.enabled=true 但缺少环境变量 %s", EnvKiro91APIKey)
 	}
 	return nil
 }

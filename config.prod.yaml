@@ -1,0 +1,150 @@
+# bus-pooling 配置示例
+#
+# 复制成 config.yaml 后改（config.yaml 已在 .gitignore 里）。
+#
+# ⚠️ 敏感值不在这里 —— 只从环境变量读：
+#   BP_MASTER_KEY           AES-256-GCM 主密钥（64 位 hex · 用 `bus-pooling genkey` 生成）
+#   BP_HOUSEPOOL_ADMIN_KEY  我方 kiro.rs 的 admin key
+# 理由：yaml 会进 git，env 不会。
+
+server:
+  addr: ":8080"
+  read_timeout: 15s
+  write_timeout: 30s
+  shutdown_timeout: 20s
+
+db:
+  # SQLite WAL 单节点（CLAUDE.md §7.2）
+  path: "data/bus-pooling.db"
+  # 留空 = 用编译进二进制的迁移；填目录 = 从磁盘读（改 sql 不用重编译）
+  migrations_dir: ""
+
+httpx:
+  timeout: 20s
+  max_retries: 3
+  retry_base_wait: 500ms
+  # 出向代理 · 留空不走代理
+  proxy: ""
+  # 这些 host 不走代理（逗号分隔）
+  no_proxy: "localhost,127.0.0.1"
+
+housepool:
+  # 我方运维的 kiro.rs 实例
+  base_url: "https://kiro.aibbq.xyz"
+  # 绑 kiro.rs **语义版本**（不是 commit SHA · 上游未暴露 build sha）·
+  # 空 = 不校验。启动时对比 GET /admin/system/update/check 里的 current_version ·
+  # 不等则拒启动。**注意**：field 是 expected_version 不是 expected_sha·
+  # 老名字会被 YAML 静默忽略·照示例部署根本不校验版本（P2 修复）。
+  expected_version: ""
+
+# true = vendor 调用走 mock，不产生真实扣款
+# 默认 true —— 宁可开发时忘了关而不扣钱，也不要上线时忘了开而误扣
+dry_run: false
+
+# vendor 启用状态。**每家平等·任意启用即可 live**（1a-1b）。
+# 敏感的 API key 走 env（BP_VENDOR_<name>_API_KEY）· 这里只填 base_url + enabled。
+# vendor id 稳定标识：见 internal/providers/vendor.go 常量·或 env 名匹配。
+vendors:
+  kiro91:    { enabled: true,  base_url: "https://api.91kiro.com" }
+  kiroceo:   { enabled: true,  base_url: "https://kiro.ceo" }
+  kirooo:    { enabled: true,  base_url: "https://kiro.ooo" }
+  kiroappio: { enabled: true,  base_url: "https://kiroapp.io" }
+  kiroappcc: { enabled: true,  base_url: "https://kiroapp.cc" }
+  kirodrop:  { enabled: true,  base_url: "https://drop.kiro.ss" }
+
+# 拉号决策器配置。1a-1b 靠 default_vendor 显式配·未来（1d+）走真比价算法。
+decider:
+  # 客户端不传 vendor_id 时的默认 vendor。live 模式**必填**且必须是已启用的 vendor·
+  # 否则启动直接 fail（避免隐式偏向任何一家）。DRY_RUN 模式忽略。
+  # env override：BP_DECIDER_DEFAULT_VENDOR
+  default_vendor: ""
+
+# 拼车实体系统级配置（CLAUDE.md §2 · 一辆车就是一辆车）
+bus:
+  # 每辆车最多几人（含 owner） · 1c 阶段设 5 · 后续迭代可上调
+  # 应用范围：用户建的 team 车 + 系统建的 anon 搭车池
+  # 前端传的 max_members 一律忽略·全走这里
+  max_members: 5
+
+# 顶部跑马灯活动位（系统配置 · 运营改文案 / 倒计时不用重新部署前端）
+#
+# **文案铁律**（改之前先过 CLAUDE.md §12.6 + 00 §7.5 规则 B）：
+#   - 不出通道商 / vendor 真名 · 不出内部阶段标签（1a/1b）· 不出计费分项结构
+#   - **不承诺任何时长 / 质量指标**（规则 B：我方不承诺号的可用时长）
+#
+# countdown_until 到点后这条**自动不下发** —— 免得运营忘了关，过期活动还挂着
+# 社群渠道入口（GET /api/community/channels）· 空 = 前端展示占位
+# id 稳定标识 · 前端按它选官方 logo · enabled/false 或 url 空都不下发
+community:
+  channels:
+    - id: telegram_channel
+      name: "Telegram channel"
+      name_i18n:
+        zh-CN: "Telegram 频道"
+        en: "Telegram channel"
+      url: "https://t.me/tokensheep666"
+      enabled: true
+    - id: telegram_group
+      name: "Telegram group"
+      name_i18n:
+        zh-CN: "Telegram 群组"
+        en: "Telegram group"
+      url: "https://t.me/tokensheep001"
+      enabled: true
+    - id: discord
+      name: "Discord server"
+      name_i18n:
+        zh-CN: "Discord 服务器"
+        en: "Discord server"
+      url: "https://discord.gg/nH4qMVEpa"
+      enabled: true
+    - id: github
+      name: "GitHub"
+      name_i18n:
+        zh-CN: "GitHub"
+        en: "GitHub"
+      url: "https://github.com/greenSheep999/kiro.bus"
+      enabled: true
+
+promo:
+  items:
+    - id: community
+      # text 是兜底 · text_i18n 里没匹配到当前语言时用这个
+      text: "Beta special · join the Kiro.bus community for free credits"
+      text_i18n:
+        zh-CN: "公测期间限时特惠，加入 Kiro.bus 社群获取免费额度"
+        en: "Beta special · join the Kiro.bus community for free credits"
+      to: /community
+      enabled: true
+      # 社群免费额度 · 7 天
+      countdown_until: "2026-08-16T23:59:59Z"
+    - id: zero_service_fee
+      text: "Beta special · 0 pooling service fee · hop on and off freely"
+      text_i18n:
+        zh-CN: "公测期间限时特惠，0 拼车服务费，随时拼车，随时下车～"
+        en: "Beta special · 0 pooling service fee · hop on and off freely"
+      to: ""                   # 空 = 纯公告不可点
+      enabled: true
+      # 0 拼车服务费 · 15 天
+      countdown_until: "2026-08-24T23:59:59Z"
+    - id: invite_friends
+      text: "Invite a friend to pool · payment fee waived for a limited time"
+      text_i18n:
+        zh-CN: "邀请好友一起拼车，分摊单价更有限时减免支付手续费～"
+        en: "Invite a friend to pool · payment fee waived for a limited time"
+      to: /invite              # 邀请好友页
+      enabled: true
+      countdown_until: ""      # 手续费减免不设倒计时 · 文案里说"限时"即可
+
+# 拉号参数（decisions §8.35 #18）· 目标：避免并发打爆上游 + 尽量拉到号
+# 每辆车自己的策略在 bus 表里·这里是**系统级兜底和区间**·谁也不能超
+pull:
+  # 客户端没指定数量时拉几个
+  default_count: 3
+  # 单次拉号数量允许区间 · 超出直接拒（不静默截断 —— 静默改数量用户以为系统坏了）
+  min_count: 1
+  max_count: 50
+  # 同一 vendor 同时最多几个在飞的拉号 · 0 = 不限（单机 1c 够用·上量后必须设）
+  max_concurrent_per_vendor: 0
+  # 同一乘客同时最多几个在飞的拉号 · 防刷爆额度·也防自己的并发互相挤冻结
+  max_concurrent_per_passenger: 3
