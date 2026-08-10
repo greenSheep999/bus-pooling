@@ -146,9 +146,15 @@ _ALLOWLIST = [
     # vendor_webhook slug 白名单 map（运行时路径匹配·必须）
     (r"/api/vendor_webhook\.go$",
      r'"(91kiro|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)":\s*true'),
-    # vendor_webhook hmacSpecs 里的两条注册（要真名·跟 vendor 契约挂钩）
+    # vendor_webhook hmacSpecs 里的注册（要真名·跟 vendor 契约挂钩）
     (r"/api/vendor_webhook\.go$",
-     r'"91kiro":\s*\{|"kirodrop":\s*\{'),
+     r'"(91kiro|kirodrop|kiroappcc)":\s*\{'),
+    # hmacSpecs 里的 VendorID 字段 · vendor_account 表的主键值 · identifier
+    (r"/api/vendor_webhook\.go$",
+     r'VendorID:\s+"(kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)",'),
+    # slug（vendor 品牌写法）→ 内部 vendor_id 的映射 · 运行时路径匹配必须硬编
+    (r"/api/vendor_webhook\.go$",
+     r'if slug == "91kiro" \{|^\s*return "kiro91"$'),
     (r"/api/vendor_webhook\.go$",
      r'SecretEnv:\s+"BP_VENDOR_(KIRO91|KIRODROP)_WEBHOOK_SECRET"'),
     # main.go 里的 buildVendorRegistry / decider 装配（identifier 引用）

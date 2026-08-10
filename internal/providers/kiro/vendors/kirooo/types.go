@@ -1,5 +1,7 @@
 package kirooo
 
+import "encoding/json"
+
 // wire types — vendor 私有，不外暴。
 
 type profileResp struct {
@@ -11,17 +13,31 @@ type profileResp struct {
 	} `json:"profile"`
 }
 
+// stockResp /api/my/stock 响应。
+//
+// **注意上游变更过 stock 字段类型**（跟其他几家一样的坑）：
+//   - 旧形状：{"stock": {"claimable": N, "public_available": M}, "zones": [...]}
+//   - 新形状：{"stock": 7, "claimable": 7, "max": 7, "unit_price": 50, "credits": 70}
+//
+// 用 json.RawMessage 接 stock · toStockSnapshot 里两种都解一遍。
+// 不兼容会导致 Stock() 一直 unmarshal 失败 → 探针 alive=0 → status 页显示
+// "0% uptime"（但 backfill 其实好的）—— 2026-08-11 踩过。
 type stockResp struct {
-	Stock struct {
-		Claimable       int `json:"claimable"`
-		PublicAvailable int `json:"public_available"`
-		MyPrivate       int `json:"my_private"`
-	} `json:"stock"`
-	Zones []zoneItem `json:"zones"`
-	Max   int        `json:"max"`
-	Min   int        `json:"min_per_order"`
-	MaxPO int        `json:"max_per_order"`
-	WM    int        `json:"warranty_minutes"`
+	Stock     json.RawMessage `json:"stock"`
+	Claimable int             `json:"claimable"`
+	UnitPrice int64           `json:"unit_price"`
+	Zones     []zoneItem      `json:"zones"`
+	Max       int             `json:"max"`
+	Min       int             `json:"min_per_order"`
+	MaxPO     int             `json:"max_per_order"`
+	WM        int             `json:"warranty_minutes"`
+}
+
+// stockNested 旧形状里 stock 是嵌套对象。
+type stockNested struct {
+	Claimable       int `json:"claimable"`
+	PublicAvailable int `json:"public_available"`
+	MyPrivate       int `json:"my_private"`
 }
 
 type zoneItem struct {

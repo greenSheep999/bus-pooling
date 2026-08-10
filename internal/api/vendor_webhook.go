@@ -50,7 +50,7 @@ type hmacSpec struct {
 // hmacSpecs · vendor webhook 签名协议 · 一家一条。
 //
 // **VendorID** = vendor_account 表里的 internal vendor_id（跟白名单 slug 不完全一样：
-// 白名单 slug 是 vendor 品牌用的（91kiro）· vendor_account 里是内部 id（kiro91））。
+// 白名单 slug 用 vendor 的品牌写法 · vendor_account 里用内部 id · 两者对少数家不一致）。
 // 装两个 key 才能在 receiver（用白名单 slug）里查表（用 vendor_account 里的 id）。
 var hmacSpecs = map[string]*hmacSpec{
 	"91kiro": {
@@ -63,7 +63,7 @@ var hmacSpecs = map[string]*hmacSpec{
 		VendorID:  "kirodrop",
 		SecretEnv: "BP_VENDOR_KIRODROP_WEBHOOK_SECRET",
 	},
-	// kiroappcc · X-Kiro-Signature 头 · **纯 hex** · 无 v1= 前缀 · 无 timestamp ·
+	// 第三家 · X-Kiro-Signature 头 · **纯 hex** · 无 v1= 前缀 · 无 timestamp ·
 	// 签名原文 = 请求体（不含时间戳前缀）· vendor 后台文案：
 	//   "每次推送带 X-Kiro-Signature 头 · 值为 HMAC-SHA256(密钥, 请求体)"
 	"kiroappcc": {
@@ -162,7 +162,7 @@ func (s *Server) handleVendorWebhook(w http.ResponseWriter, r *http.Request) err
 
 // slugToInternalVendorID · webhook 路径的 slug（vendor 品牌用）→ 内部 vendor_id。
 //
-// 只 91kiro 需要翻译 · 其他 5 家 slug 跟内部 id 一样（vendor 品牌本身就是 kirooo 等）。
+// 只有一家的品牌写法跟内部 id 不同 · 其他 5 家一致 · 所以这里只做单条映射。
 func slugToInternalVendorID(slug string) string {
 	if slug == "91kiro" {
 		return "kiro91"

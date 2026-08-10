@@ -118,7 +118,7 @@ function StatusOverview() {
  *  布局：左（名字 + 标签）· 中（24h 柱图）· 右（3 个数字）
  *  所有 6 家同一种图 —— 数据来源不同只在图下角标一句说明。 */
 function VendorCard({ vendor }: { vendor: VendorStatusRow }) {
-  const { t } = useTranslation("status");
+  const { t, i18n } = useTranslation("status");
   const { data, isLoading } = useVendorDispatchEvents(vendor.anon_id, "168h");
   const events = data?.events ?? [];
   const summary = data?.summary;
@@ -153,13 +153,12 @@ function VendorCard({ vendor }: { vendor: VendorStatusRow }) {
           ) : (
             <DispatchChart events={events} hours={24} height={72} compact />
           )}
-          <p className="mt-1 text-[10px] text-fg-tertiary">
-            {events.length === 0
-              ? t("chart.no-data")
-              : derived
-                ? t("chart.source-observed")
-                : t("chart.source-vendor")}
-          </p>
+          {/* 数据来源说明 · 只在有数据时显示（空态图内部已经有提示 · 别重复） */}
+          {events.length > 0 && (
+            <p className="mt-1 text-[10px] text-fg-tertiary">
+              {derived ? t("chart.source-observed") : t("chart.source-vendor")}
+            </p>
+          )}
         </div>
 
         {/* 数字 · 3 项 · 单位写清楚 */}
@@ -173,7 +172,7 @@ function VendorCard({ vendor }: { vendor: VendorStatusRow }) {
             unit={t("unit.batches")}
             label={t("card.batches-7d")} />
           <Metric
-            value={last ? fmtRelative(last.at) : "—"}
+            value={last ? fmtRelative(last.at, i18n.language) : "—"}
             label={t("card.last-open")} />
         </div>
       </div>
@@ -193,7 +192,7 @@ function Metric({
     <div>
       <div className="font-mono text-lg font-semibold tabular-nums leading-tight">
         {value}
-        {unit && <span className="ml-0.5 text-[11px] font-normal text-fg-tertiary">{unit}</span>}
+        {unit && <span className="ml-1 text-[11px] font-normal text-fg-tertiary">{unit}</span>}
       </div>
       <div className="mt-0.5 text-[10px] leading-tight text-fg-tertiary">{label}</div>
     </div>
@@ -442,7 +441,7 @@ function EventLog({
   derived: boolean;
   loading: boolean;
 }) {
-  const { t } = useTranslation("status");
+  const { t, i18n } = useTranslation("status");
 
   if (loading) return <Skeleton className="h-64 w-full" />;
   if (events.length === 0) return null;
@@ -475,7 +474,7 @@ function EventLog({
             {/* 时间 · 绝对 + 相对 */}
             <div className="min-w-0">
               <div className="font-mono text-[11px] tabular-nums">{fmtDateTime(e.at)}</div>
-              <div className="text-[10px] text-fg-tertiary">{fmtRelative(e.at)}</div>
+              <div className="text-[10px] text-fg-tertiary">{fmtRelative(e.at, i18n.language)}</div>
             </div>
 
             {/* 区域 */}
@@ -541,14 +540,17 @@ function fmtInterval(min: number): string {
   return `${Math.round(min / 60 / 24)}d`;
 }
 
-function fmtRelative(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return "刚刚";
-  if (min < 60) return `${min} 分钟前`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h} 小时前`;
-  return `${Math.floor(h / 24)} 天前`;
+/** 相对时间 · 用 Intl.RelativeTimeFormat 走浏览器本地化 · 不硬编中文
+ *  （i18n.language 传进来 · 中文得"7 小时前"· 英文得"7 hours ago"） */
+function fmtRelative(iso: string, lang: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const rtf = new Intl.RelativeTimeFormat(lang, { numeric: "auto" });
+  const min = Math.round(diffMs / 60_000);
+  if (min < 1) return rtf.format(0, "minute");
+  if (min < 60) return rtf.format(-min, "minute");
+  const h = Math.round(min / 60);
+  if (h < 24) return rtf.format(-h, "hour");
+  return rtf.format(-Math.round(h / 24), "day");
 }
 
 function fmtDateTime(iso: string): string {

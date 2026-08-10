@@ -81,11 +81,30 @@ func toPurchaseResult(pr *purchaseResp, requested int, replayed bool, raw json.R
 //
 // 本 vendor 的 stock 主字段是 `claimable`（档案 §6），优先取；
 // 若为 0 再回退到 public_available（兼容其他家常用字段口径）。
+// toStockSnapshot 翻译 stock 响应 · 兼容 stock 字段的两种形状（见 types.go 注释）：
+//   - 数字型（新）："stock": 7 · 同层还有 claimable / unit_price
+//   - 对象型（旧）："stock": {"claimable": N, "public_available": M}
 func toStockSnapshot(sr *stockResp, raw json.RawMessage) *providers.StockSnapshot {
-	avail := sr.Stock.Claimable
-	if avail == 0 {
-		avail = sr.Stock.PublicAvailable
+	avail := 0
+	if len(sr.Stock) > 0 {
+		var n int
+		if err := json.Unmarshal(sr.Stock, &n); err == nil {
+			// 新形状 · stock 是数字 · claimable 是"我方现在能领几个"（更贴近可购量）
+			avail = n
+			if sr.Claimable > 0 && sr.Claimable < avail {
+				avail = sr.Claimable
+			}
+		} else {
+			var nested stockNested
+			if err := json.Unmarshal(sr.Stock, &nested); err == nil {
+				avail = nested.Claimable
+				if avail == 0 {
+					avail = nested.PublicAvailable
+				}
+			}
+		}
 	}
+
 	snap := &providers.StockSnapshot{
 		VendorID:        providers.VendorKiroOOO,
 		ObservedAt:      time.Now().UTC(),
@@ -101,6 +120,14 @@ func toStockSnapshot(sr *stockResp, raw json.RawMessage) *providers.StockSnapsho
 			Region:    z.Region,
 			Available: z.Available,
 			UnitPrice: credits(z.UnitPrice),
+		})
+	}
+	// 新形状没有 zones 数组 · 但有顶层 unit_price · 补一个默认 zone
+	// 让 status 页的 region_count / 价格不是 0
+	if len(snap.Zones) == 0 && sr.UnitPrice > 0 {
+		snap.Zones = append(snap.Zones, providers.ZoneStock{
+			Available: avail,
+			UnitPrice: credits(sr.UnitPrice),
 		})
 	}
 	return snap
