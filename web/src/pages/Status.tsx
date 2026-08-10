@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
@@ -166,7 +166,8 @@ function VendorCard({ vendor }: { vendor: VendorStatusRow }) {
           <Metric
             value={fmtCompact(summary?.keys ?? 0)}
             unit={t("unit.keys")}
-            label={t("card.keys-7d")} />
+            label={t("card.keys-7d")}
+            accent />
           <Metric
             value={String(summary?.batches ?? 0)}
             unit={t("unit.batches")}
@@ -180,17 +181,27 @@ function VendorCard({ vendor }: { vendor: VendorStatusRow }) {
   );
 }
 
-/** 数字 + 单位 + 说明 · 单位独立小字 · 避免"号"这种没头没尾的字 */
+/** 数字 + 单位 + 说明 · 单位独立小字 · 避免"号"这种没头没尾的字
+ *
+ *  accent：主数字（累计发号）用品牌紫强调 · 其余中性色 · 建立视觉层级 ·
+ *  零值一律走中性灰（0 不该抢眼） */
 function Metric({
-  value, unit, label,
+  value, unit, label, accent = false,
 }: {
   value: string;
   unit?: string;
   label: string;
+  accent?: boolean;
 }) {
+  const isZero = value === "0" || value === "—";
   return (
     <div>
-      <div className="font-mono text-lg font-semibold tabular-nums leading-tight">
+      <div
+        className={cn(
+          "font-mono text-lg font-semibold tabular-nums leading-tight",
+          accent && !isZero ? "text-brand-strong" : isZero ? "text-fg-tertiary" : "text-fg",
+        )}
+      >
         {value}
         {unit && <span className="ml-1 text-[11px] font-normal text-fg-tertiary">{unit}</span>}
       </div>
@@ -294,9 +305,20 @@ function DispatchChart({
     );
   }
 
+  // 渐变 id 必须每个实例唯一 —— 同页 6 张图共用一个 id 时 · <defs> 会互相覆盖。
+  // useId 保证稳定（不随 render 变）· 且 SSR/CSR 一致。冒号在 CSS url() 里非法 · 去掉。
+  const gradID = `dispatchGrad-${useId().replace(/:/g, "")}`;
+
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={buckets} margin={{ top: 4, right: 4, bottom: 0, left: compact ? 0 : -20 }}>
+        <defs>
+          {/* 品牌紫渐变 · 顶部饱和往下淡 · 跟 TrendChart 的 #9147FF 同色系 */}
+          <linearGradient id={gradID} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#9147FF" stopOpacity={0.95} />
+            <stop offset="100%" stopColor="#9147FF" stopOpacity={0.45} />
+          </linearGradient>
+        </defs>
         {!compact && (
           <CartesianGrid strokeDasharray="0" vertical={false} stroke="hsl(var(--hairline))" />
         )}
@@ -326,7 +348,8 @@ function DispatchChart({
           tick={{ fontSize: 11, fill: "hsl(var(--fg-tertiary))" }}
         />
         <Tooltip
-          cursor={{ fill: "hsl(var(--fg) / 0.04)" }}
+          // hover 高亮走品牌淡紫 · 比中性灰更有指向性（跟 TrendChart 的紫虚线同思路）
+          cursor={{ fill: "#9147FF", fillOpacity: 0.08 }}
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
             const p = payload[0].payload as { ts: number; keys: number };
@@ -346,11 +369,12 @@ function DispatchChart({
             );
           }}
         />
-        <Bar dataKey="keys" fill="hsl(var(--brand-solid))" radius={[2, 2, 0, 0]} />
+        <Bar dataKey="keys" fill={`url(#${gradID})`} radius={[3, 3, 0, 0]} maxBarSize={compact ? 10 : 22} />
       </BarChart>
     </ResponsiveContainer>
   );
 }
+
 
 // ═══════════════════════════════════════════════════════════
 // 详情页 · /status/:anon_id
@@ -404,7 +428,8 @@ function VendorDetail({ anonID }: { anonID: string }) {
                   <Metric
                     value={fmtCompact(summary?.keys ?? 0)}
                     unit={t("unit.keys")}
-                    label={t("detail.keys-7d")} />
+                    label={t("detail.keys-7d")}
+                    accent />
                   <Metric
                     value={String(summary?.batches ?? 0)}
                     unit={t("unit.batches")}
@@ -498,7 +523,7 @@ function EventLog({
             </div>
 
             {/* 数量 */}
-            <div className="font-mono font-semibold tabular-nums text-brand-fg">
+            <div className="font-mono font-semibold tabular-nums text-brand-strong">
               +{e.count}
               <span className="ml-0.5 text-[10px] font-normal text-fg-tertiary">
                 {t("unit.keys")}
