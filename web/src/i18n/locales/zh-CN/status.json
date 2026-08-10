@@ -4,11 +4,27 @@
     "description": "6 家上游 vendor 的实时状态 · 库存 · 稳定度 · 事件历史 · 公开可查"
   },
   "hero": {
-    "eyebrow": "上游状态",
-    "title": "多家 vendor,一份透明账",
-    "subtitle": "系统持续探测每家 vendor 的存活、库存、稳定度 · 24h 有事没事一目了然 · 想看价格请登录 /prices",
+    "eyebrow": "全线运行中",
+    "title": "多家上游 · 一份透明账",
+    "subtitle": "系统持续探测每家上游的存活、库存、稳定度 · 每次真开号事件都进这里",
     "probed-at": "最后探测 {{time}}",
     "no-data": "数据采集中 · 首次上线的 24 小时内指标可能不完整"
+  },
+  "overview": {
+    "total-keys": "累计发出",
+    "vendors-live": "vendor 在线",
+    "avg-interval": "平均间隔",
+    "latest-batch": "最新一批"
+  },
+  "fleet-timeline": {
+    "title": "24 小时开号节奏",
+    "subtitle": "每家一条 · 绿色 = 新号 · 灰色 = 挂号"
+  },
+  "row": {
+    "uptime": "{{pct}}% 存活",
+    "uptime-unknown": "-",
+    "batches": "{{count}} 批",
+    "warming-up": "数据采集中"
   },
   "col": {
     "vendor": "Vendor",

@@ -4,11 +4,27 @@
     "description": "Live status of 6 upstream vendors · stock, uptime, incident history · open to everyone"
   },
   "hero": {
-    "eyebrow": "Vendor status",
-    "title": "Many vendors, one transparent ledger",
-    "subtitle": "We probe every vendor continuously — liveness, stock, stability, incident history. 24h at a glance. For prices, log in and head to /prices.",
+    "eyebrow": "All systems running",
+    "title": "Multiple vendors, one transparent ledger",
+    "subtitle": "The system probes every vendor continuously — every real dispatch event lands here.",
     "probed-at": "Last probe {{time}}",
     "no-data": "Data still warming up · metrics may be incomplete in the first 24 hours after launch"
+  },
+  "overview": {
+    "total-keys": "Total keys dispatched",
+    "vendors-live": "Vendors live",
+    "avg-interval": "Avg. interval",
+    "latest-batch": "Latest batch"
+  },
+  "fleet-timeline": {
+    "title": "24-hour dispatch rhythm",
+    "subtitle": "One row per vendor · green = new keys · gray = dead"
+  },
+  "row": {
+    "uptime": "{{pct}}% up",
+    "uptime-unknown": "-",
+    "batches": "{{count}} batches",
+    "warming-up": "Warming up"
   },
   "col": {
     "vendor": "Vendor",
