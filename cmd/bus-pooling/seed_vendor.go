@@ -61,11 +61,20 @@ func runSeedVendor(ctx context.Context, cfg config.Config, args []string) error 
 		label         string
 		authScheme    string
 	)
-	fs.StringVar(&apiKey, "api-key", "", "vendor API key 明文（不传则交互式从 stdin 读·遮蔽显示）")
-	fs.StringVar(&webhookSecret, "webhook-secret", "", "webhook 签名密钥明文（可选 · 无 webhook 的 vendor 传空）")
+	fs.StringVar(&apiKey, "api-key", "", "vendor API key 明文（不传则交互式从 stdin 读·或用 SEED_API_KEY env）")
+	fs.StringVar(&webhookSecret, "webhook-secret", "", "webhook 签名密钥明文（不传则用 SEED_WEBHOOK_SECRET env · 空 = 保留旧值）")
 	fs.StringVar(&label, "label", "default", "凭证别名（默认 default · 主备号时用）")
 	fs.StringVar(&authScheme, "auth-scheme", "api_key", "认证方式 · api_key | bearer | cookie")
 	_ = fs.Parse(args[1:])
+
+	// env fallback · 让部署脚本能 `docker exec -e SEED_WEBHOOK_SECRET=X kirobus seed-vendor <slug>`
+	// 敏感值不进 shell 命令行·不进 ps 输出。flag 优先·env 兜底。
+	if apiKey == "" {
+		apiKey = os.Getenv("SEED_API_KEY")
+	}
+	if webhookSecret == "" {
+		webhookSecret = os.Getenv("SEED_WEBHOOK_SECRET")
+	}
 
 	database, err := db.Open(ctx, cfg.DB.Path)
 	if err != nil {
