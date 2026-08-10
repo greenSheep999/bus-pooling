@@ -1,0 +1,51 @@
+{
+  "bind": {
+    "already": "Bound · you're already getting community pricing",
+    "error": {
+      "already": "You're already a community member",
+      "invalid": "That code is invalid, expired, or fully used"
+    },
+    "field": {
+      "label": "Community invite code",
+      "placeholder": "KIROXXXX"
+    },
+    "hint": "No code? You can still ride. Regulars will get theirs over time.",
+    "sub": {
+      "guest": "Community badge · invite-only · one code per account",
+      "member": "Already bound · your status is permanent"
+    },
+    "submit": "Bind",
+    "submitting": "Binding…",
+    "success": "Bound · welcome to the community",
+    "title": "Bind community invite code"
+  },
+  "channel": {
+    "discord": {
+      "desc": "Chat · technical support"
+    },
+    "footnote": "Community links go live here once they open · we'll also push a top banner",
+    "soon": "Opening soon",
+    "telegram": {
+      "desc": "Main channel · announcements and credit drops"
+    }
+  },
+  "chip": {
+    "member": "Community member"
+  },
+  "join": {
+    "sub": "Announcements, support, and beta credit drops all live here",
+    "title": "Join the community"
+  },
+  "perks": {
+    "friends": "Meet more riders · bigger buses, cheaper keys",
+    "gift": {
+      "em": "top-up coupons",
+      "prefix": "Occasional ",
+      "suffix": " and redeem codes"
+    },
+    "news": "First to hear about product updates",
+    "title": "What you get"
+  },
+  "subtitle": "Got a community invite code? Bind it — cheaper rides.",
+  "title": "Community"
+}

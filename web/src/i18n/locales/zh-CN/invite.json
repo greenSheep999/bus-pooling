@@ -1,0 +1,55 @@
+{
+  "copy": {
+    "copied": "已复制",
+    "link": "复制链接"
+  },
+  "my": {
+    "code": {
+      "label": "邀请码"
+    },
+    "sub": "发链接最省事 · 朋友点开注册页会自动带上码",
+    "title": "我的邀请码"
+  },
+  "records": {
+    "col": {
+      "friend": "朋友",
+      "granted": "获得额度",
+      "joined": "注册时间"
+    },
+    "empty": {
+      "desc": "把上面的链接发给朋友 · 他注册成功你就拿到减免额度",
+      "title": "还没有人用你的码"
+    },
+    "footnote": "朋友的邮箱做了脱敏处理 · 只显示够你辨认的部分",
+    "granted": {
+      "unit": "次"
+    },
+    "sub": {
+      "count_prefix": "共 ",
+      "count_suffix": " 位朋友通过你的码注册",
+      "empty": "朋友用你的码注册后会出现在这里"
+    },
+    "title": "邀请记录"
+  },
+  "rules": {
+    "step1": "朋友注册时填你的码（或直接点你的链接）· 他注册成功你就拿到额度",
+    "step2": {
+      "em": "充值",
+      "prefix": "额度在你",
+      "suffix": "时自动抵扣支付手续费 · 用完就恢复正常费率"
+    },
+    "step3": "同一个朋友只算一次 · 不能用自己的码",
+    "title": "怎么算"
+  },
+  "stat": {
+    "invited": "已邀请",
+    "waiver": "手续费减免"
+  },
+  "stat.invited.desc": "成功注册的朋友数",
+  "stat.invited.unit": "人",
+  "stat.waiver.fresh": "充值时自动抵扣 · 无需手动填",
+  "stat.waiver.unit": "次可用",
+  "stat.waiver.used": "已用 {{n}} 次 · 充值时自动抵扣",
+  "subtitle": "朋友用你的码注册 · 你获得支付手续费减免额度",
+  "title": "邀请好友"
+}

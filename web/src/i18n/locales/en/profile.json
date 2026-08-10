@@ -1,0 +1,58 @@
+{
+  "card": {
+    "balance": {
+      "hint": "Top up",
+      "label": "Balance"
+    },
+    "buses": {
+      "hint": "View buses",
+      "label": "Active buses",
+      "unit": ""
+    }
+  },
+  "info": {
+    "email": "Email",
+    "identity": "Identity",
+    "joined_at": "Joined",
+    "my_invite_code": "My invite code"
+  },
+  "info.identity.member": "Community member",
+  "info.identity.none": "Not joined",
+  "invite": {
+    "copy_aria": "Copy invite code"
+  },
+  "member": {
+    "chip": "Community member"
+  },
+  "quick": {
+    "buses": {
+      "desc": "View and manage your buses",
+      "title": "My buses"
+    },
+    "section": {
+      "title": "Quick links"
+    },
+    "settings": {
+      "desc": "Key pool · notifications · API key · account",
+      "title": "Settings"
+    },
+    "wallet": {
+      "desc": "Balance, statements, top up",
+      "title": "Wallet · Top up"
+    }
+  },
+  "rollup": {
+    "invited": "Friends invited",
+    "pull": "Keys pulled",
+    "section": {
+      "sub": "See the overview page for earlier data",
+      "title": "Last 30 days"
+    },
+    "spend": "Spent",
+    "topup": "Topped up"
+  },
+  "rollup.invited.unit": "",
+  "rollup.pull.unit": "",
+  "subtitle": "Account info and quick links",
+  "title": "Me"
+}

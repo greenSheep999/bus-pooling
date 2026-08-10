@@ -1,0 +1,90 @@
+{
+  "community": {
+    "coming-soon": "Coming soon",
+    "discord-desc": "Chat · technical support",
+    "eyebrow": "Community",
+    "heading": "Join us",
+    "subheading": "Announcements · support · beta credit drops",
+    "telegram-desc": "Main channel · announcements & credit drops"
+  },
+  "cta": {
+    "heading": "Ready?",
+    "primary": "Sign up",
+    "secondary": "Log in",
+    "subheading": "Free to sign up · a promo code gets you a cheaper ride"
+  },
+  "explainer": {
+    "how": {
+      "body": "Keys die · we watch and auto-refill · no manual re-buys · unused credit refunded",
+      "title": "How it runs"
+    },
+    "trust": {
+      "body": "Every charge itemized · warranty covers key uptime · keys push to your own kiro.rs",
+      "title": "Why trust us"
+    },
+    "what": {
+      "body": "One vendor key shared across riders · unit price divided by headcount · you pay only your share",
+      "title": "What is pooling"
+    }
+  },
+  "footer": {
+    "beta": "Beta",
+    "tagline": "Pool up · cheaper keys"
+  },
+  "hero": {
+    "badge": "Beta",
+    "cta-primary": "Sign up",
+    "cta-secondary": "I have an account",
+    "desc": "No one to pool with? We match you. Key dies? We refill it. Want it in your own pool? One-tap push.",
+    "title": "Pool up · cheaper keys"
+  },
+  "nav": {
+    "login": "Log in",
+    "register": "Sign up"
+  },
+  "promo": {
+    "eyebrow": "What's live"
+  },
+  "step": {
+    "pull": {
+      "desc": "Start your own bus / join someone else's / auto-match · pick one",
+      "title": "Pool and pull"
+    },
+    "register": {
+      "desc": "Email + password · 30 seconds",
+      "title": "Sign up"
+    },
+    "topup": {
+      "desc": "Multiple payment channels · fees pass through · no markup on our end",
+      "title": "Top up"
+    }
+  },
+  "steps": {
+    "eyebrow": "How it works",
+    "heading": "3 steps to start",
+    "subheading": "Sign up in 30 seconds · top up · pull"
+  },
+  "value": {
+    "pool": {
+      "desc": "More riders pull together · unit price spreads out · more people, cheaper each",
+      "title": "Split the price"
+    },
+    "push": {
+      "desc": "Every pulled key syncs to your kiro.rs · full data returned",
+      "title": "Push to your pool"
+    },
+    "refill": {
+      "desc": "Dead key? A new one pulls in · your pool stays live",
+      "title": "Auto-refill on death"
+    },
+    "transparent": {
+      "desc": "Every charge itemized · warranty covers key uptime",
+      "title": "Transparent billing"
+    }
+  },
+  "values": {
+    "eyebrow": "Why bus-pooling",
+    "heading": "Pool one bus, skip the rest",
+    "subheading": "We watch the pool, refill, and settle · you just pull"
+  }
+}

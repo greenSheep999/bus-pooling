@@ -8,6 +8,7 @@ import { Link } from "react-router-dom";
 import {
   useBuses, useMe, useMyInvite, useOverview, useWallet,
 } from "@/api/hooks";
+import { useTranslation } from "react-i18next";
 import { Card, Chip, SectionHead } from "@/components/ui/primitives";
 import { avatarColor, avatarLetter, fmtCredits } from "@/lib/utils";
 
@@ -15,6 +16,7 @@ import { avatarColor, avatarLetter, fmtCredits } from "@/lib/utils";
  *  个人信息 + 快捷入口 + 个人维度的数据。不放设置子项（那是设置的事）。
  *  登出在头像下拉菜单里做（AppLayout），这里不重复。 */
 export default function Profile() {
+  const { t } = useTranslation("profile");
   const { data: me } = useMe();
   const { data: wallet } = useWallet();
   const { data: buses } = useBuses();
@@ -28,8 +30,8 @@ export default function Profile() {
   return (
     <div className="space-y-section">
       <div className="min-w-0 space-y-2">
-        <h1 className="text-hero font-semibold">我的</h1>
-        <p className="text-fg-tertiary">账号信息与快捷入口</p>
+        <h1 className="text-hero font-semibold">{t("title")}</h1>
+        <p className="text-fg-tertiary">{t("subtitle")}</p>
       </div>
 
       {/* 顶部三栏 · 左：个人信息（占 2 栏宽）· 右：余额卡 + 车数卡（各 1 栏） */}
@@ -50,30 +52,30 @@ export default function Profile() {
                 </span>
                 {/* 档次徽章 · 只有绑了专属邀请码的人才带 chip · 具体档次内部区分 · 对外不暴露 */}
                 {me?.tier && me.tier !== "retail" && (
-                  <Chip tone="brand" icon={<Ticket className="size-3" />}>社群成员</Chip>
+                  <Chip tone="brand" icon={<Ticket className="size-3" />}>{t("member.chip")}</Chip>
                 )}
               </div>
 
               <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
-                <InfoLine label="邮箱">
+                <InfoLine label={t("info.email")}>
                   <span className="flex items-center gap-1.5">
                     <span className="truncate">{me?.email ?? "-"}</span>
                     {me?.email_verified && <BadgeCheck className="size-3.5 shrink-0 text-ok-fg" />}
                   </span>
                 </InfoLine>
-                <InfoLine label="身份">
+                <InfoLine label={t("info.identity")}>
                   {me?.tier && me.tier !== "retail"
-                    ? <span className="text-ok-fg">社群成员</span>
-                    : <span className="text-fg-secondary">未加入</span>}
+                    ? <span className="text-ok-fg">{t("info.identity.member")}</span>
+                    : <span className="text-fg-secondary">{t("info.identity.none")}</span>}
                 </InfoLine>
-                <InfoLine label="注册于">
+                <InfoLine label={t("info.joined_at")}>
                   {me
                     ? new Date(me.created_at).toLocaleDateString("zh-CN", {
                         year: "numeric", month: "2-digit", day: "2-digit",
                       })
                     : "-"}
                 </InfoLine>
-                <InfoLine label="我的邀请码">
+                <InfoLine label={t("info.my_invite_code")}>
                   {invite?.code
                     ? <InviteCodeInline code={invite.code} />
                     : <span className="text-fg-tertiary">-</span>}
@@ -87,9 +89,9 @@ export default function Profile() {
         <MiniStatCard
           to="/wallet"
           icon={Wallet}
-          label="余额"
+          label={t("card.balance.label")}
           value={wallet ? fmtCredits(wallet.balance) : "-"}
-          hint="去充值"
+          hint={t("card.balance.hint")}
           tone="credit"
         />
 
@@ -97,45 +99,45 @@ export default function Profile() {
         <MiniStatCard
           to="/buses"
           icon={Bus}
-          label="进行中的车"
+          label={t("card.buses.label")}
           value={String(activeBuses)}
-          unit={activeBuses > 0 ? "辆" : undefined}
-          hint="去看车"
+          unit={activeBuses > 0 ? t("card.buses.unit") : undefined}
+          hint={t("card.buses.hint")}
         />
       </div>
 
       {/* 累计数据 · 近 30 天口径（跟 Overview 默认时间范围一致） */}
       <div className="space-y-3">
-        <SectionHead title="近 30 天" sub="更早的数据看概览页" />
+        <SectionHead title={t("rollup.section.title")} sub={t("rollup.section.sub")} />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <RollupStat
-            label="累计充值"
+            label={t("rollup.topup")}
             value={overview ? fmtCredits(overview.kpi.balance_delta_topup) : "-"}
           />
           <RollupStat
-            label="累计消费"
+            label={t("rollup.spend")}
             value={overview ? fmtCredits(overview.kpi.balance_delta_spend) : "-"}
           />
           <RollupStat
-            label="累计拉号"
+            label={t("rollup.pull")}
             value={overview ? String(overview.kpi.pull_total) : "-"}
-            unit={overview && overview.kpi.pull_total > 0 ? "个" : undefined}
+            unit={overview && overview.kpi.pull_total > 0 ? t("rollup.pull.unit") : undefined}
           />
           <RollupStat
-            label="邀请好友"
+            label={t("rollup.invited")}
             value={invite ? String(invite.invited_count) : "-"}
-            unit={invite && invite.invited_count > 0 ? "人" : undefined}
+            unit={invite && invite.invited_count > 0 ? t("rollup.invited.unit") : undefined}
           />
         </div>
       </div>
 
       {/* 快捷入口 · 3 大入口（不平铺设置子项） */}
       <div className="space-y-3">
-        <SectionHead title="快捷入口" />
+        <SectionHead title={t("quick.section.title")} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <NavCard to="/wallet" icon={Wallet} title="钱包 · 充值" desc="余额、账单、充值" />
-          <NavCard to="/buses" icon={Bus} title="我的车" desc="查看和管理拼车" />
-          <NavCard to="/settings" icon={Settings} title="设置" desc="号池 · 通知 · API key · 账号" />
+          <NavCard to="/wallet" icon={Wallet} title={t("quick.wallet.title")} desc={t("quick.wallet.desc")} />
+          <NavCard to="/buses" icon={Bus} title={t("quick.buses.title")} desc={t("quick.buses.desc")} />
+          <NavCard to="/settings" icon={Settings} title={t("quick.settings.title")} desc={t("quick.settings.desc")} />
         </div>
       </div>
     </div>
@@ -159,7 +161,7 @@ function InviteCodeInline({ code }: { code: string }) {
       <span className="font-mono">{code}</span>
       <button
         type="button"
-        aria-label="复制邀请码"
+        aria-label={useTranslation("profile").t("invite.copy_aria")}
         onClick={() => { navigator.clipboard?.writeText(code); }}
         className="rounded p-0.5 text-fg-tertiary transition-colors hover:bg-bg-elevated hover:text-fg-secondary"
       >

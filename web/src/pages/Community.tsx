@@ -6,6 +6,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { useTranslation } from "react-i18next";
 import { Card, Chip, Em, SectionHead } from "@/components/ui/primitives";
 
 /** 社群页 · /community
@@ -16,6 +17,7 @@ import { Card, Chip, Em, SectionHead } from "@/components/ui/primitives";
  *
  * 文案见 decisions §8.38。 */
 export default function Community() {
+  const { t } = useTranslation("community");
   const { data: me } = useMe();
   const bind = useBindSystemCode();
   const [code, setCode] = useState("");
@@ -32,14 +34,14 @@ export default function Community() {
     setMsg(null);
     try {
       await bind.mutateAsync(c);
-      setMsg({ tone: "ok", text: "绑定成功 · 你现在是社群成员了" });
+      setMsg({ tone: "ok", text: t("bind.success") });
       setCode("");
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : String(err);
       const text = raw.includes("404") || raw.toLowerCase().includes("not_found")
-        ? "这个专属邀请码无效、已停用或已用满"
+        ? t("bind.error.invalid")
         : raw.includes("409")
-          ? "你已经是社群成员了"
+          ? t("bind.error.already")
           : raw;
       setMsg({ tone: "danger", text });
     }
@@ -49,58 +51,58 @@ export default function Community() {
     <div className="space-y-section">
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-hero font-semibold">社群</h1>
+          <h1 className="text-hero font-semibold">{t("title")}</h1>
           {alreadyMember && (
-            <Chip tone="brand" icon={<BadgeCheck className="size-3" />}>社群成员</Chip>
+            <Chip tone="brand" icon={<BadgeCheck className="size-3" />}>{t("chip.member")}</Chip>
           )}
         </div>
         <p className="text-fg-tertiary">
-          有专属邀请码就绑上 · 拼车更便宜
+          {t("subtitle")}
         </p>
       </div>
 
       {/* 绑码 · 已经是成员就不给表单（避免重复绑的困惑） */}
       <Card className="p-7">
-        <SectionHead title="加入社群" sub="公告 · 技术支持 · 公测期间的额度发放都在这里" />
+        <SectionHead title={t("join.title")} sub={t("join.sub")} />
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <ChannelRow
             logo={<TelegramLogo className="size-8" />}
             name="Telegram"
-            desc="主频道 · 公告和额度发放"
+            desc={t("channel.telegram.desc")}
           />
           <ChannelRow
             logo={<DiscordLogo className="size-8" />}
             name="Discord"
-            desc="讨论 · 技术支持"
+            desc={t("channel.discord.desc")}
           />
         </div>
         <p className="mt-4 text-label text-fg-tertiary">
-          社群链接开放后会在这里更新 · 也会通过顶部公告推送
+          {t("channel.footnote")}
         </p>
       </Card>
 
       <Card className="p-7">
         <SectionHead
-          title="绑定专属邀请码"
+          title={t("bind.title")}
           sub={
             alreadyMember
-              ? "你已经绑过了 · 身份永久有效"
-              : "身份标识 · 邀请制 · 一个账号只能绑一次"
+              ? t("bind.sub.member")
+              : t("bind.sub.guest")
           }
         />
 
         {alreadyMember ? (
           <Alert tone="ok" icon={BadgeCheck} className="mt-4">
-            已绑定 · 你的拼车价格已经是社群价
+            {t("bind.already")}
           </Alert>
         ) : (
           <form onSubmit={onSubmit} className="mt-4 space-y-4">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <Field label="专属邀请码" className="min-w-0 flex-1">
+              <Field label={t("bind.field.label")} className="min-w-0 flex-1">
                 <Input
                   value={code}
                   onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  placeholder="KIROXXXX"
+                  placeholder={t("bind.field.placeholder")}
                   maxLength={32}
                   autoCapitalize="characters"
                   autoComplete="off"
@@ -114,7 +116,7 @@ export default function Community() {
                 disabled={bind.isPending || code.trim() === ""}
               >
                 <Ticket className="size-4" />
-                {bind.isPending ? "绑定中…" : "绑定"}
+                {bind.isPending ? t("bind.submitting") : t("bind.submit")}
               </Button>
             </div>
 
@@ -123,26 +125,26 @@ export default function Community() {
             )}
 
             <p className="text-label text-fg-tertiary">
-              拿不到也不影响使用 · 持续拼车的车友会陆续收到
+              {t("bind.hint")}
             </p>
           </form>
         )}
       </Card>
 
       <Card className="p-7">
-        <SectionHead title="加入社群能得到什么" />
+        <SectionHead title={t("perks.title")} />
         <ul className="mt-3 space-y-2 text-label text-fg-secondary">
           <li className="flex gap-2">
             <Megaphone className="mt-0.5 size-3.5 shrink-0 text-fg-tertiary" />
-            第一时间知道拼车服务的最新动态
+            {t("perks.news")}
           </li>
           <li className="flex gap-2">
             <Gift className="mt-0.5 size-3.5 shrink-0 text-fg-tertiary" />
-            不定期发<Em plain>充值优惠券</Em>和兑换码
+            {t("perks.gift.prefix")}<Em plain>{t("perks.gift.em")}</Em>{t("perks.gift.suffix")}
           </li>
           <li className="flex gap-2">
             <Users className="mt-0.5 size-3.5 shrink-0 text-fg-tertiary" />
-            认识更多一起拼车的车友 · 人多摊得更便宜
+            {t("perks.friends")}
           </li>
         </ul>
       </Card>
@@ -159,6 +161,7 @@ function ChannelRow({
   name: string;
   desc: string;
 }) {
+  const { t } = useTranslation("community");
   return (
     <div className="flex items-center gap-3 rounded-xl border border-hairline bg-bg-elevated p-4">
       <span className="grid size-9 shrink-0 place-items-center">
@@ -168,7 +171,7 @@ function ChannelRow({
         <div className="font-semibold">{name}</div>
         <div className="text-label text-fg-tertiary">{desc}</div>
       </div>
-      <Chip tone="neutral">即将开放</Chip>
+      <Chip tone="neutral">{t("channel.soon")}</Chip>
     </div>
   );
 }

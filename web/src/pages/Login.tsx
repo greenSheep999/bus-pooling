@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { ArrowRight, Loader2, Lock } from "lucide-react";
 import { useLogin } from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
@@ -10,6 +11,7 @@ import { Card } from "@/components/ui/primitives";
 import { Checkbox } from "@/components/ui/checkbox";
 
 export default function Login() {
+  const { t } = useTranslation("auth");
   const [searchParams] = useSearchParams();
   const login = useLogin();
 
@@ -40,12 +42,12 @@ export default function Login() {
   return (
     <Card className="w-full max-w-[400px] p-8">
       <div className="space-y-2">
-        <h1 className="text-hero font-semibold">登录</h1>
-        <p className="text-fg-tertiary">回到你的拼车</p>
+        <h1 className="text-hero font-semibold">{t("login.title")}</h1>
+        <p className="text-fg-tertiary">{t("login.subtitle")}</p>
       </div>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
-        <Field label="邮箱或用户名">
+        <Field label={t("login.account")}>
           <Input
             value={account}
             onChange={(e) => setAccount(e.target.value)}
@@ -55,7 +57,7 @@ export default function Login() {
           />
         </Field>
 
-        <Field label="密码">
+        <Field label={t("login.password")}>
           <Input
             type="password"
             value={password}
@@ -71,19 +73,19 @@ export default function Login() {
               checked={remember}
               onCheckedChange={(v) => setRemember(v === true)}
             />
-            记住我 30 天
+            {t("login.remember")}
           </label>
           {/* 忘记密码没端点（阶段 3+）· 不放假链接，直接说明 */}
           <span
             className="cursor-default text-label text-fg-tertiary"
-            title="阶段 3+ 支持 · 现在请联系管理员重置"
+            title={t("login.forgot-tip")}
           >
-            忘记密码？
+            {t("login.forgot")}
           </span>
         </div>
 
         {login.isError && (
-          <Alert tone="danger" icon={Lock} title="登录失败">
+          <Alert tone="danger" icon={Lock} title={t("login.error-title")}>
             {(login.error as Error).message}
           </Alert>
         )}
@@ -95,14 +97,14 @@ export default function Login() {
           disabled={!valid || login.isPending}
         >
           {login.isPending ? <Loader2 className="animate-spin" /> : <ArrowRight />}
-          {login.isPending ? "登录中…" : "登录"}
+          {login.isPending ? t("login.submitting") : t("login.submit")}
         </Button>
       </form>
 
       <p className="mt-5 text-center text-label text-fg-tertiary">
-        还没有账号？{" "}
+        {t("login.no-account")}{" "}
         <Link to="/register" className="font-semibold text-brand-strong hover:underline">
-          去注册
+          {t("login.go-register")}
         </Link>
       </p>
     </Card>

@@ -1,0 +1,58 @@
+{
+  "card": {
+    "balance": {
+      "hint": "去充值",
+      "label": "余额"
+    },
+    "buses": {
+      "hint": "去看车",
+      "label": "进行中的车",
+      "unit": "辆"
+    }
+  },
+  "info": {
+    "email": "邮箱",
+    "identity": "身份",
+    "joined_at": "注册于",
+    "my_invite_code": "我的邀请码"
+  },
+  "info.identity.member": "社群成员",
+  "info.identity.none": "未加入",
+  "invite": {
+    "copy_aria": "复制邀请码"
+  },
+  "member": {
+    "chip": "社群成员"
+  },
+  "quick": {
+    "buses": {
+      "desc": "查看和管理拼车",
+      "title": "我的车"
+    },
+    "section": {
+      "title": "快捷入口"
+    },
+    "settings": {
+      "desc": "号池 · 通知 · API key · 账号",
+      "title": "设置"
+    },
+    "wallet": {
+      "desc": "余额、账单、充值",
+      "title": "钱包 · 充值"
+    }
+  },
+  "rollup": {
+    "invited": "邀请好友",
+    "pull": "累计拉号",
+    "section": {
+      "sub": "更早的数据看概览页",
+      "title": "近 30 天"
+    },
+    "spend": "累计消费",
+    "topup": "累计充值"
+  },
+  "rollup.invited.unit": "人",
+  "rollup.pull.unit": "个",
+  "subtitle": "账号信息与快捷入口",
+  "title": "我的"
+}

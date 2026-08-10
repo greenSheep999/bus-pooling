@@ -1,0 +1,55 @@
+{
+  "copy": {
+    "copied": "Copied",
+    "link": "Copy link"
+  },
+  "my": {
+    "code": {
+      "label": "Code"
+    },
+    "sub": "Sharing the link is easiest · your code auto-fills on their signup page",
+    "title": "My invite code"
+  },
+  "records": {
+    "col": {
+      "friend": "Friend",
+      "granted": "Waivers earned",
+      "joined": "Signed up"
+    },
+    "empty": {
+      "desc": "Send the link to a friend · you earn a waiver when they sign up",
+      "title": "No one has used your code yet"
+    },
+    "footnote": "Emails are masked · only enough shown for you to recognize them",
+    "granted": {
+      "unit": ""
+    },
+    "sub": {
+      "count_prefix": "",
+      "count_suffix": " friends signed up with your code",
+      "empty": "Friends who use your code will show up here"
+    },
+    "title": "Referrals"
+  },
+  "rules": {
+    "step1": "Friend enters your code at signup (or clicks your link) · you earn a waiver on their signup",
+    "step2": {
+      "em": "top up",
+      "prefix": "Waivers auto-apply when you ",
+      "suffix": " · once used up, normal fees resume"
+    },
+    "step3": "One waiver per friend · you can't use your own code",
+    "title": "How it works"
+  },
+  "stat": {
+    "invited": "Invited",
+    "waiver": "Fee waivers"
+  },
+  "stat.invited.desc": "Friends who signed up",
+  "stat.invited.unit": "",
+  "stat.waiver.fresh": "Auto-applied at top-up · no need to enter",
+  "stat.waiver.unit": "left",
+  "stat.waiver.used": "Used {{n}} · auto-applied at top-up",
+  "subtitle": "Friends sign up with your code · you earn payment-fee waivers",
+  "title": "Invite friends"
+}

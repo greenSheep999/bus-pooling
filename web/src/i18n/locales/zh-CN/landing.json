@@ -1,0 +1,90 @@
+{
+  "community": {
+    "coming-soon": "即将开放",
+    "discord-desc": "讨论 · 技术支持",
+    "eyebrow": "社群",
+    "heading": "加入我们",
+    "subheading": "公告 · 技术支持 · 公测期间的额度发放",
+    "telegram-desc": "主频道 · 公告和额度发放"
+  },
+  "cta": {
+    "heading": "准备好了吗",
+    "primary": "立即注册",
+    "secondary": "登录",
+    "subheading": "注册免费 · 有专属邀请码拼车更便宜"
+  },
+  "explainer": {
+    "how": {
+      "body": "号会死 · 我们盯着自动补 · 你不用手动重新买 · 死了退你剩下的钱",
+      "title": "怎么运作"
+    },
+    "trust": {
+      "body": "每一次扣款都有明细 · 保修覆盖成活率 · 号能推到你自己的 kiro.rs",
+      "title": "凭什么信我们"
+    },
+    "what": {
+      "body": "一辆 vendor 号被多个乘客共享 · 单价直接除以人数 · 每人只出自己那份",
+      "title": "什么是拼车"
+    }
+  },
+  "footer": {
+    "beta": "公测中",
+    "tagline": "一起拼车 · 号更便宜"
+  },
+  "hero": {
+    "badge": "公测中",
+    "cta-primary": "立即注册",
+    "cta-secondary": "已有账号",
+    "desc": "找不到同路人？我们撮合。号会死？我们盯着自动补。想放自己号池？一键推。",
+    "title": "一起拼车 · 号更便宜"
+  },
+  "nav": {
+    "login": "登录",
+    "register": "注册"
+  },
+  "promo": {
+    "eyebrow": "正在进行"
+  },
+  "step": {
+    "pull": {
+      "desc": "自己建车 / 加入他人的车 / 系统撮合 · 三选一",
+      "title": "拼车拉号"
+    },
+    "register": {
+      "desc": "邮箱 + 密码 · 30 秒完事",
+      "title": "注册"
+    },
+    "topup": {
+      "desc": "多渠道支付 · 通道费透传给支付方 · 我方不吃差价",
+      "title": "充值"
+    }
+  },
+  "steps": {
+    "eyebrow": "怎么用",
+    "heading": "3 步开始",
+    "subheading": "30 秒注册 · 充值 · 拉号"
+  },
+  "value": {
+    "pool": {
+      "desc": "多人拉号 · 单价直接摊掉 · 越多人越便宜",
+      "title": "拼单价"
+    },
+    "push": {
+      "desc": "拉到的号自动同步到你的 kiro.rs · 完整数据回流",
+      "title": "推自己号池"
+    },
+    "refill": {
+      "desc": "号死立刻拉新的进车 · 你的号池一直有活号",
+      "title": "号死自动补"
+    },
+    "transparent": {
+      "desc": "每次扣款都有明细 · 保修覆盖成活率",
+      "title": "结算透明"
+    }
+  },
+  "values": {
+    "eyebrow": "为什么用 bus-pooling",
+    "heading": "拼一辆车，什么都省了",
+    "subheading": "车主盯号池、盯补车、盯结算 · 你只管拉号"
+  }
+}

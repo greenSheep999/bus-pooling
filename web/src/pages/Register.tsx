@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { ArrowRight, Loader2, Ticket, UserPlus } from "lucide-react";
 import { z } from "zod";
 import { useRegister } from "@/api/hooks";
@@ -10,26 +11,30 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
 
-/** 注册校验 · spec §2 要求前端校验密码强度 */
-const schema = z
-  .object({
-    email: z.string().email("邮箱格式不对"),
-    username: z
-      .string()
-      .min(2, "至少 2 个字")
-      .max(24, "最多 24 个字")
-      .regex(/^[\w一-龥-]+$/, "只能用字母、数字、下划线、横线或中文"),
-    password: z.string().min(8, "至少 8 位").regex(/\d/, "要含数字").regex(/[a-zA-Z]/, "要含字母"),
-    confirm: z.string(),
-  })
-  .refine((v) => v.password === v.confirm, {
-    path: ["confirm"],
-    message: "两次输入不一致",
-  });
-
 type FieldKey = "email" | "username" | "password" | "confirm";
 
 export default function Register() {
+  const { t } = useTranslation("auth");
+  /** 注册校验 · spec §2 要求前端校验密码强度 */
+  const schema = z
+    .object({
+      email: z.string().email(t("register.err.email")),
+      username: z
+        .string()
+        .min(2, t("register.err.username-min"))
+        .max(24, t("register.err.username-max"))
+        .regex(/^[\w一-龥-]+$/, t("register.err.username-format")),
+      password: z
+        .string()
+        .min(8, t("register.err.password-min"))
+        .regex(/\d/, t("register.err.password-digit"))
+        .regex(/[a-zA-Z]/, t("register.err.password-letter")),
+      confirm: z.string(),
+    })
+    .refine((v) => v.password === v.confirm, {
+      path: ["confirm"],
+      message: t("register.err.password-mismatch"),
+    });
   // 注册成功后用 window.location 强刷·让 useQuery 拿新 session 重取
   // ?next= 支持邀请链接场景（/join/:code → 注册 → 回来继续加入）· 只收同源相对路径
   const [searchParams] = useSearchParams();
@@ -58,7 +63,7 @@ export default function Register() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setTouched({ email: true, username: true, password: true, confirm: true });
+    setTouched({ email: true, username: true, password: true, confirm: true } as Record<FieldKey, boolean>);
     if (!parsed.success || register.isPending) return;
     try {
       await register.mutateAsync({
@@ -77,12 +82,12 @@ export default function Register() {
   return (
     <Card className="w-full max-w-[440px] p-8">
       <div className="space-y-2">
-        <h1 className="text-hero font-semibold">注册</h1>
-        <p className="text-fg-tertiary">建个账号就能开始拼车</p>
+        <h1 className="text-hero font-semibold">{t("register.title")}</h1>
+        <p className="text-fg-tertiary">{t("register.subtitle")}</p>
       </div>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
-        <Field label="邮箱" error={errorOf("email")}>
+        <Field label={t("register.email")} error={errorOf("email")}>
           <Input
             value={form.email}
             onChange={set("email")}
@@ -94,36 +99,36 @@ export default function Register() {
           />
         </Field>
 
-        <Field label="用户名" error={errorOf("username")}>
+        <Field label={t("register.username")} error={errorOf("username")}>
           <Input
             value={form.username}
             onChange={set("username")}
-            onBlur={() => setTouched((t) => ({ ...t, username: true }))}
-            placeholder="车友都看得到这个名字"
+            onBlur={() => setTouched((prev) => ({ ...prev, username: true }))}
+            placeholder={t("register.username-placeholder")}
             autoComplete="username"
             className={cn(errorOf("username") && "border-danger-fg/50")}
           />
         </Field>
 
-        <Field label="密码" hint="至少 8 位 · 含字母和数字" error={errorOf("password")}>
+        <Field label={t("register.password")} hint={t("register.password-hint")} error={errorOf("password")}>
           <Input
             type="password"
             value={form.password}
             onChange={set("password")}
-            onBlur={() => setTouched((t) => ({ ...t, password: true }))}
+            onBlur={() => setTouched((prev) => ({ ...prev, password: true }))}
             placeholder="••••••••"
             autoComplete="new-password"
             className={cn(errorOf("password") && "border-danger-fg/50")}
           />
         </Field>
 
-        <Field label="确认密码" error={errorOf("confirm")}>
+        <Field label={t("register.confirm")} error={errorOf("confirm")}>
           <Input
             type="password"
             value={form.confirm}
             onChange={set("confirm")}
-            onBlur={() => setTouched((t) => ({ ...t, confirm: true }))}
-            placeholder="再输一次"
+            onBlur={() => setTouched((prev) => ({ ...prev, confirm: true }))}
+            placeholder={t("register.confirm-placeholder")}
             autoComplete="new-password"
             className={cn(errorOf("confirm") && "border-danger-fg/50")}
           />
@@ -132,13 +137,13 @@ export default function Register() {
         {/* 邀请码 · 注册时填，永久绑账号（decisions §8.20）
             这里叫「邀请码」· 支付和提号那个叫「优惠码」，两个词不许混用 */}
         <Field
-          label="邀请码"
-          hint={prefillInvite ? "已从邀请链接带入" : "选填 · 专属邀请码或好友邀请码都填这里"}
+          label={t("register.invite")}
+          hint={prefillInvite ? t("register.invite-hint-prefilled") : t("register.invite-hint")}
         >
           <Input
             value={form.invite}
             onChange={set("invite")}
-            placeholder="有就填，没有也能注册"
+            placeholder={t("register.invite-placeholder")}
             className="font-mono uppercase"
           />
         </Field>
@@ -147,15 +152,15 @@ export default function Register() {
           /* 文案要对两种码都成立（decisions §8.29 §8.38）· 后端查白名单自动识别 */
           <Alert tone="brand" icon={Ticket}>
             {prefillInvite && form.invite.trim() === prefillInvite
-              ? "邀请码已带入 · 注册后自动生效"
-              : "填了邀请码 · 注册后自动生效"}
+              ? t("register.invite-alert-prefilled")
+              : t("register.invite-alert")}
             {" · "}
-            专属邀请码让你拼车更便宜 · 好友邀请码让邀请你的人得手续费减免
+            {t("register.invite-alert-explain")}
           </Alert>
         )}
 
         {register.isError && (
-          <Alert tone="danger" icon={UserPlus} title="注册失败">
+          <Alert tone="danger" icon={UserPlus} title={t("register.error-title")}>
             {(register.error as Error).message}
           </Alert>
         )}
@@ -167,14 +172,14 @@ export default function Register() {
           disabled={register.isPending}
         >
           {register.isPending ? <Loader2 className="animate-spin" /> : <ArrowRight />}
-          {register.isPending ? "注册中…" : "注册"}
+          {register.isPending ? t("register.submitting") : t("register.submit")}
         </Button>
       </form>
 
       <p className="mt-5 text-center text-label text-fg-tertiary">
-        已经有账号？{" "}
+        {t("register.has-account")}{" "}
         <Link to="/login" className="font-semibold text-brand-strong hover:underline">
-          去登录
+          {t("register.go-login")}
         </Link>
       </p>
     </Card>
