@@ -67,20 +67,6 @@ func runSeedVendor(ctx context.Context, cfg config.Config, args []string) error 
 	fs.StringVar(&authScheme, "auth-scheme", "api_key", "认证方式 · api_key | bearer | cookie")
 	_ = fs.Parse(args[1:])
 
-	if apiKey == "" {
-		// 交互式 · 不显示回显（TTY 上更好·但简化用普通 read + 提示）
-		fmt.Fprintf(os.Stderr, "输入 %s 的 API key（明文回车提交 · Ctrl-C 取消）：", vendorID)
-		reader := bufio.NewReader(os.Stdin)
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("seed-vendor: 读 stdin: %w", err)
-		}
-		apiKey = strings.TrimRight(line, "\r\n")
-	}
-	if apiKey == "" {
-		return errors.New("seed-vendor: API key 不能空")
-	}
-
 	database, err := db.Open(ctx, cfg.DB.Path)
 	if err != nil {
 		return fmt.Errorf("seed-vendor: 打开 DB: %w", err)
@@ -98,16 +84,56 @@ func runSeedVendor(ctx context.Context, cfg config.Config, args []string) error 
 		return fmt.Errorf("seed-vendor: cipher 装配: %w", err)
 	}
 	store := vendoraccount.NewStore(database.DB, cipher)
+
+	// 先读旧凭证 · 让新传的字段"打补丁"式覆盖 · 没传的保留旧值。
+	// 场景：先 seed api_key 部署跑起来 · 再回 vendor 后台配 webhook 拿到 secret ·
+	// 只跑 seed-vendor <slug> --webhook-secret=X · 不该把 api_key 冲掉。
+	var existing vendoraccount.Credential
+	if cur, err := store.LoadActive(ctx, vendorID); err == nil && cur != nil {
+		existing = *cur
+	}
+
+	// 未传 --api-key 且旧的空 → 交互问；旧的有 → 保留
+	if apiKey == "" && existing.APIKey == "" {
+		fmt.Fprintf(os.Stderr, "输入 %s 的 API key（明文回车提交 · Ctrl-C 取消）：", vendorID)
+		reader := bufio.NewReader(os.Stdin)
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("seed-vendor: 读 stdin: %w", err)
+		}
+		apiKey = strings.TrimRight(line, "\r\n")
+	}
+
 	cred := vendoraccount.Credential{
-		APIKey:        apiKey,
-		WebhookSecret: webhookSecret,
+		APIKey:        firstNonEmpty(apiKey, existing.APIKey),
+		WebhookSecret: firstNonEmpty(webhookSecret, existing.WebhookSecret),
+	}
+	if cred.APIKey == "" {
+		return errors.New("seed-vendor: API key 不能空（新 seed 至少要给 --api-key）")
 	}
 	if err := store.Upsert(ctx, vendorID, label, authScheme, cred); err != nil {
 		return err
 	}
-	// 输出**不含明文** · 只报成功
-	fmt.Fprintf(os.Stderr, "OK · %s (label=%s) 已加密写入 vendor_account\n", vendorID, label)
+
+	updated := []string{}
+	if apiKey != "" {
+		updated = append(updated, "api_key")
+	}
+	if webhookSecret != "" {
+		updated = append(updated, "webhook_secret")
+	}
+	// 输出**不含明文** · 只报"哪些字段被覆盖"
+	fmt.Fprintf(os.Stderr, "OK · %s (label=%s) 已加密写入 vendor_account · 本次更新字段 %v\n",
+		vendorID, label, updated)
 	return nil
+}
+
+// firstNonEmpty · 传参覆盖 · 但空传值保留旧的
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 // runListVendors 只列出哪些家已 seed · 不解密 · 输出安全
