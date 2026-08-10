@@ -49,8 +49,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        # workflow_run.head_sha 是**触发它那次 CI 的 sha** · 时间上可能是之前的 push（如果两次 push
+        # 时间接近·晚一次的 GHCR 会先看到早那次的 CI 完成 · checkout 到过期代码）· 用 main 分支 tip
+        # 更贴合"当前最新绿代码"的语义 · 只有 tag push 时保留 tag ref。
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -87,10 +90,12 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: true
           provenance: false
+          # scope 里加 sha 避免不同 commit 之间 build 缓存互相污染（我们之前踩过
+          # workflow_run.head_sha 拿到旧 sha 的坑 · 顺路加防线）
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
           build-args: |
-            BUILD_SHA=${{ github.event.workflow_run.head_sha || github.sha }}
+            BUILD_SHA=${{ github.sha }}
             BUILD_TIME=${{ steps.version.outputs.value }}
           tags: |
             ${{ steps.img.outputs.ref }}:${{ env.IMAGE_TAG }}-${{ matrix.arch }}
@@ -110,7 +115,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.ref }}
 
       - name: Log in to GHCR
         uses: docker/login-action@v3

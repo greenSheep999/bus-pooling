@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# vps22 一键部署 · 替换旧 kiro-auto container · 上新 bus-pooling (kirobus 镜像)
+# vps22 一键部署 · 替换旧 kiro-auto container · 上新 bus-pooling 镜像 (kirobus tag)
 #
 # 前置：
 #   - GHCR 镜像已经 build 完（GitHub Actions ghcr-build.yml 跑绿）
-#   - vps22 已 `docker login ghcr.io`
-#   - .env + config.yaml 已经在 /opt/bus-pooling/ 下准备好
+#   - vps22 已经 docker login ghcr.io（.docker/config.json 里 ghcr.io 项已在）
+#   - vps22 上 /opt/bus-pooling 由本脚本创建·docker-compose.yml + .env + config.yaml 由脚本 scp 过去
+#   - 本机 BP_MASTER_KEY 已在 .dev.env（或生成新的，脚本会引导）
 #
-# 使用：本机 `bash scripts/deploy-vps22.sh` · 通过 SSH 到 vps22 执行
+# 使用：本机 `bash scripts/deploy-vps22.sh`
 
 set -euo pipefail
 
@@ -14,68 +15,123 @@ REMOTE=vps22
 REMOTE_DIR=/opt/bus-pooling
 IMAGE=ghcr.io/greensheep999/bus-pooling:kirobus
 
+echo "===== step 0 · 本地检查 ====="
+if [ ! -f .dev.env ]; then
+  echo "!! .dev.env 缺失·脚本需要它来 seed vendor 凭证"
+  exit 1
+fi
+
+echo ""
 echo "===== step 1 · 确认镜像已经在 GHCR ====="
-docker manifest inspect "$IMAGE" >/dev/null 2>&1 \
-  || { echo "!! 镜像 $IMAGE 还没上 GHCR · 等 Actions build 完再跑本脚本"; exit 1; }
+if ! docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+  echo "!! 镜像 $IMAGE 还没上 GHCR"
+  echo "   看 https://github.com/greenSheep999/bus-pooling/actions"
+  echo "   等 Build Docker image workflow 绿了再跑本脚本"
+  exit 1
+fi
 echo "OK · $IMAGE 存在"
 
 echo ""
-echo "===== step 2 · SSH 到 vps22 · 拉镜像 ====="
-ssh "$REMOTE" docker pull "$IMAGE"
+echo "===== step 2 · 准备 /opt/bus-pooling 部署目录 ====="
+ssh "$REMOTE" "mkdir -p ${REMOTE_DIR}/data"
 
 echo ""
-echo "===== step 3 · 备份旧 container + 停 kiro-auto 相关 ====="
+echo "===== step 3 · scp docker-compose.yml + config.yaml ====="
+# 生产 config.yaml 由本地 config.example.yaml 生成 · 只留业务参数（不敏感）
+scp docker-compose.yml "${REMOTE}:${REMOTE_DIR}/docker-compose.yml"
+
+# config.yaml · 优先用本地 config.yaml · 没就用 example
+if [ -f config.yaml ]; then
+  scp config.yaml "${REMOTE}:${REMOTE_DIR}/config.yaml"
+else
+  echo "!! 本地 config.yaml 不存在 · 用 config.example.yaml 兜底（生产可能要改）"
+  scp config.example.yaml "${REMOTE}:${REMOTE_DIR}/config.yaml"
+fi
+
+echo ""
+echo "===== step 4 · 准备 .env（只放 BP_MASTER_KEY · 敏感凭证走 seed-vendor CLI）====="
 ssh "$REMOTE" bash <<REMOTE_SH
 set -euo pipefail
-echo "-- 当前占 9917 的 =="
+ENV_FILE=${REMOTE_DIR}/.env
+if [ ! -f "\$ENV_FILE" ]; then
+  echo "-- 生成新 .env --"
+  # BP_MASTER_KEY 从本地传过来
+  cat > "\$ENV_FILE" <<ENV_END
+BP_MASTER_KEY=${BP_MASTER_KEY:-CHANGE_ME_RUN_GENKEY}
+BP_ADDR=:8080
+BP_DB_PATH=/app/data/bus-pooling.db
+BP_CONFIG=/app/config.yaml
+DRY_RUN=0
+ENV_END
+  chmod 600 "\$ENV_FILE"
+  echo "-- .env 写入 · chmod 600 --"
+else
+  echo "-- .env 已存在·保留 --"
+fi
+REMOTE_SH
+
+echo ""
+echo "===== step 5 · 停旧 kiro-auto container（保留数据卷·可回滚）====="
+ssh "$REMOTE" bash <<'REMOTE_SH'
+set -euo pipefail
+echo "-- 当前 9917 上跑的：--"
 docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}' | grep -E "9917|kiro-auto" || echo "(无)"
 echo ""
-echo "-- 停 kiro-auto 相关（保留数据卷·可回滚） --"
 docker stop kiro-auto kiro-auto-supertokens-1 kiro-auto-supertokens-db-1 2>/dev/null || true
-docker rm kiro-auto 2>/dev/null || true
-echo "-- 旧 container 已停 · SuperTokens 数据卷保留 · 需要回滚可 docker start --"
+docker rm kiro-auto kiro-auto-supertokens-1 kiro-auto-supertokens-db-1 2>/dev/null || true
+echo "-- 旧 container 已停 + 删 · SuperTokens PostgreSQL 数据卷保留 --"
 REMOTE_SH
 
 echo ""
-echo "===== step 4 · 准备 /opt/bus-pooling 部署目录 ====="
-ssh "$REMOTE" bash <<REMOTE_SH
-set -euo pipefail
-mkdir -p ${REMOTE_DIR}/data
-cd ${REMOTE_DIR}
-if [ ! -f docker-compose.yml ]; then
-  echo "!! ${REMOTE_DIR}/docker-compose.yml 缺失 · scp 一份过来："
-  echo "   scp docker-compose.yml ${REMOTE}:${REMOTE_DIR}/"
-fi
-if [ ! -f .env ]; then
-  echo "!! ${REMOTE_DIR}/.env 缺失 · 需要手工创建（BP_MASTER_KEY + 6 家 vendor API key）"
-fi
-if [ ! -f config.yaml ]; then
-  echo "!! ${REMOTE_DIR}/config.yaml 缺失 · 需要手工创建"
-fi
-REMOTE_SH
-
-echo ""
-echo "===== step 5 · 起新容器 ====="
+echo "===== step 6 · 拉新镜像 + 起容器 ====="
 ssh "$REMOTE" bash <<REMOTE_SH
 set -euo pipefail
 cd ${REMOTE_DIR}
 docker compose pull
 docker compose up -d
-sleep 5
+sleep 8
 echo ""
-echo "-- 起后状态 --"
 docker ps --filter name=kirobus --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
 echo ""
-echo "-- 健康检查（等 15s） --"
-sleep 10
-docker ps --filter name=kirobus --format '{{.Status}}'
+echo "-- 迁移 up（首次部署 vendor_account 等表要建）--"
+docker exec kirobus /app/bus-pooling migrate up || true
 REMOTE_SH
 
 echo ""
-echo "===== step 6 · 外部验证 ====="
-echo "本机测："
-echo "  curl -I https://kirobus.com/healthz"
-echo "  curl https://kirobus.com/api/vendors/status"
+echo "===== step 7 · seed 6 家 vendor 凭证 · 从本地 .dev.env 读明文加密写表 ====="
+# 从本地 .dev.env 加载
+set -a; . ./.dev.env; set +a
+
+seed_one() {
+  local slug="$1"; local key_var="$2"
+  local key="${!key_var:-}"
+  if [ -z "$key" ]; then
+    echo "-- SKIP $slug · $key_var 空 --"
+    return
+  fi
+  ssh "$REMOTE" "docker exec kirobus /app/bus-pooling seed-vendor $slug --api-key='$key'" \
+    && echo "OK · seeded $slug" \
+    || echo "!! FAIL · seed $slug"
+}
+
+seed_one kiro91    BP_VENDOR_KIRO91_API_KEY
+seed_one kiroceo   BP_VENDOR_KIROCEO_API_KEY
+seed_one kirooo    BP_VENDOR_KIROOOO_API_KEY
+seed_one kiroappio BP_VENDOR_KIROAPPIO_API_KEY
+seed_one kiroappcc BP_VENDOR_KIROAPPCC_API_KEY
+seed_one kirodrop  BP_VENDOR_KIRODROP_API_KEY
+
 echo ""
-echo "如需回滚 kiro-auto："
-echo "  ssh $REMOTE 'docker compose -f ${REMOTE_DIR}/docker-compose.yml down && docker start kiro-auto kiro-auto-supertokens-1 kiro-auto-supertokens-db-1'"
+echo "===== step 8 · 触发重启让 adapter 读表凭证 ====="
+ssh "$REMOTE" "cd ${REMOTE_DIR} && docker compose restart"
+
+sleep 8
+ssh "$REMOTE" "docker ps --filter name=kirobus --format '{{.Status}}'"
+
+echo ""
+echo "===== step 9 · 外部验证 ====="
+echo "curl https://kirobus.com/healthz"
+curl -sS -I https://kirobus.com/healthz | head -3
+echo ""
+echo "如需回滚："
+echo "  ssh $REMOTE 'docker compose -f ${REMOTE_DIR}/docker-compose.yml down && docker start kiro-auto'"
