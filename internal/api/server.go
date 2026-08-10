@@ -28,6 +28,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/topupchannel"
 	"github.com/bus-pooling/bus-pooling/internal/vendoraccount"
 	"github.com/bus-pooling/bus-pooling/internal/vendorview"
+	"github.com/bus-pooling/bus-pooling/internal/webhookin"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
 
@@ -66,6 +67,9 @@ type Server struct {
 	// vaStore · vendor_account 表 · webhook receiver 从这里读 webhook_secret 明文
 	// （AES 解密后的·内存里·永不落 log）· nil 时 fallback 到 env
 	vaStore *vendoraccount.Store
+	// webhookDispatcher · webhookin 分派器 · 收到 vendor webhook 后处理 event
+	// nil 时 receiver 只 log 不分派（保留旧行为兼容测试 / 旧部署）
+	webhookDispatcher *webhookin.Dispatcher
 }
 
 // ServerDeps 装配 Server 需要的依赖。decider 允许为 nil（migrate 之类的
@@ -97,6 +101,8 @@ type ServerDeps struct {
 	// VendorAccounts vendor_account 表 · webhook receiver 验签时 · 从表读 vendor
 	// 的 webhook_secret（AES 解密后的明文）· 允许 nil（旧集成走 env fallback）
 	VendorAccounts *vendoraccount.Store
+	// WebhookDispatcher webhookin 分派器 · 允许 nil（老装配路径 · receiver 只 log 不分派）
+	WebhookDispatcher *webhookin.Dispatcher
 }
 
 func NewServer(d ServerDeps) *Server {
@@ -128,6 +134,7 @@ func NewServer(d ServerDeps) *Server {
 		promos:              d.Promos,
 		communityChannels:   d.CommunityChannels,
 		vaStore:             d.VendorAccounts,
+		webhookDispatcher:   d.WebhookDispatcher,
 	}
 }
 

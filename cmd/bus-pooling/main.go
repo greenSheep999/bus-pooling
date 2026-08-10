@@ -50,6 +50,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/vendoraccount"
 	"github.com/bus-pooling/bus-pooling/internal/vendorview"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
+	"github.com/bus-pooling/bus-pooling/internal/webhookin"
 )
 
 func main() {
@@ -575,6 +576,31 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		slog.Warn("payment gateway 未装配（BP_GW_BASE/TOKEN/SETTLEMENT_SECRET 缺失）· 走 dev mock topup 路径")
 	}
 
+	// deathwatch 只在真号池 live 起时建（mock 模式没 pool 可探）· goroutine 后面 Run
+	// **提前建**（原来在 apiSrv 后建）· 因为 webhookin.Dispatcher 需要它做 SweepTrigger ·
+	// 而 apiSrv 又要 dispatcher。顺序：pool → deathwatch → webhookin → apiSrv → go w.Run
+	var deathwatchWatcher *deathwatch.Watcher
+	if poolClient != nil {
+		deathwatchWatcher = deathwatch.New(deathwatch.Config{
+			DB:      database.DB,
+			Pool:    poolClient,
+			Refunds: deathwatch.NewSQLRefundStore(database.DB),
+		})
+	}
+
+	// webhookin 分派器 · 收到 vendor webhook 后按事件类型走 vendor_dispatch / deathwatch / refund
+	// db / dispatchStore / deathwatch 允许 nil · dispatcher 内部会 skip
+	var deathwatchTrigger webhookin.SweepTrigger
+	if deathwatchWatcher != nil {
+		deathwatchTrigger = &deathwatchTriggerAdapter{w: deathwatchWatcher}
+	}
+	webhookDispatcher := webhookin.New(webhookin.Config{
+		DB:            database.DB,
+		DispatchStore: orderKeyStore, // 复用 backfiller 的 store（同一张 vendor_dispatch 表）
+		Deathwatch:    deathwatchTrigger,
+	})
+	slog.Info("webhookin 分派器已装配")
+
 	apiSrv := api.NewServer(api.ServerDeps{
 		DB:                  database.DB,
 		Passengers:          passenger.NewStore(database.DB),
@@ -597,7 +623,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		SecureCookie:        secureCookie,
 		Promos:              cfg.Promo.Items,
 		CommunityChannels:   cfg.Community.Channels,
-		VendorAccounts:      vaStore, // vendor_account 表 · webhook 验签走这里读 secret
+		VendorAccounts:      vaStore,           // vendor_account 表 · webhook 验签走这里读 secret
+		WebhookDispatcher:   webhookDispatcher, // vendor webhook 事件的分派器
 	})
 	apiSrv.Routes(mux)
 
@@ -662,15 +689,9 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	go topupJanitor.Run(ctx)
 	slog.Info("topup janitor 已启动")
 
-	// deathwatch 只在真号池 live 起时跑（mock 模式没 pool 可探）
-	if poolClient != nil {
-		// 1c · 装质保退款（00 §7.5 规则 B）· 上游退我方才退乘客积分
-		w := deathwatch.New(deathwatch.Config{
-			DB:      database.DB,
-			Pool:    poolClient,
-			Refunds: deathwatch.NewSQLRefundStore(database.DB),
-		})
-		go w.Run(ctx)
+	// deathwatch 已经在起 apiSrv 之前建好了（deathwatchWatcher 变量）· 这里只 Run
+	if deathwatchWatcher != nil {
+		go deathwatchWatcher.Run(ctx)
 		slog.Info("deathwatch 已启动")
 	}
 
@@ -710,5 +731,31 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+// deathwatchTriggerAdapter · 把 *deathwatch.Watcher 转成 webhookin.SweepTrigger。
+//
+// 两个包各自定义了 SweepReport / RefundReport（防包依赖循环）· 字段一样但类型不同 ·
+// 这里做字段拷贝翻译。
+type deathwatchTriggerAdapter struct {
+	w *deathwatch.Watcher
+}
+
+func (a *deathwatchTriggerAdapter) SweepOnce(ctx context.Context) webhookin.SweepReport {
+	r := a.w.SweepOnce(ctx)
+	return webhookin.SweepReport{
+		Scanned:    r.Scanned,
+		MarkedDead: r.MarkedDead,
+		Errors:     r.Errors,
+	}
+}
+
+func (a *deathwatchTriggerAdapter) RefundOnce(ctx context.Context, limit int) webhookin.RefundReport {
+	r := a.w.RefundOnce(ctx, limit)
+	return webhookin.RefundReport{
+		Scanned:  r.Scanned,
+		Refunded: r.Refunded,
+		Errors:   r.Errors,
 	}
 }

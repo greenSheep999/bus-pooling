@@ -40,7 +40,8 @@ var wantTables = []string{
 	"vendor_daily",    // 021 · 24h 聚合 · incident_flag · uptime%
 	"vendor_order",    // 023 · vendor 侧历史订单 backfill
 	"vendor_key",      // 023 · vendor 侧 key 生命周期 backfill
-	"vendor_dispatch", // 024 · vendor 侧平台开号批次（fleet-wide）
+	"vendor_dispatch",        // 024 · vendor 侧平台开号批次（fleet-wide）
+	"inbound_webhook_event",  // 025 · vendor 推给我方的事件日志 + 幂等去重
 }
 
 func openTestDB(t *testing.T) *DB {

@@ -530,6 +530,20 @@ func (s *Service) lookupEnabled(id string) (providers.VendorEntry, bool) {
 	return providers.VendorEntry{}, false
 }
 
+// LookupVendor · 拿 vendor 实例（包括未启用的·webhook receiver 用 · 停用 vendor 仍
+// 会有历史事件到达 · 应该继续接住并落 event log）· 返 (nil, false) = 未注册。
+func (s *Service) LookupVendor(vendorID string) (providers.Vendor, bool) {
+	if s.registry == nil {
+		return nil, false
+	}
+	for _, e := range s.registry.All() {
+		if string(e.VendorID) == vendorID {
+			return e.Vendor, true
+		}
+	}
+	return nil, false
+}
+
 func (s *Service) lookupAny(id string) (providers.VendorEntry, bool) {
 	for _, e := range s.registry.All() {
 		if string(e.VendorID) == id {

@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
 // vendor webhook 接收端 · 阶段 1a 骨架：
@@ -110,26 +112,71 @@ func (s *Server) handleVendorWebhook(w http.ResponseWriter, r *http.Request) err
 		}
 	}
 
-	// 阶段 1a 只 log · 事件类型 / body 前 256 字节
-	// 不解析·不写状态·不触发号死处理（那是 1d 的 webhookin 包）
+	// log 一条 · body 前 256 字节（原始 body 只在 log 里保留 · inbound_webhook_event
+	// 表存归一化字段 · 明文 key payload 不落库）
 	preview := string(raw)
 	if len(preview) > 256 {
 		preview = preview[:256] + "…"
 	}
-	slog.Info("vendor webhook 收到（1a 只 log·不处理）",
+	slog.Info("vendor webhook 收到",
 		"vendor", slug,
 		"event_type", r.Header.Get("X-Event-Type"),
 		"content_type", r.Header.Get("Content-Type"),
 		"body_bytes", len(raw),
 		"body_preview", preview)
 
+	// 分派到 webhookin.Dispatcher · 用 vendor adapter 的 Parse() 归一化事件类型 ·
+	// 然后按类型走 vendor_dispatch / deathwatch / refund 三条链路。
+	//
+	// dispatcher 未装配（老部署 / 测试）· 或 registry 里查不到 vendor · 都直接 200
+	// 不阻塞 vendor 侧（vendor 只关心 2xx · 我方内部错误自己重试或人工排查）
+	processed := false
+	if s.webhookDispatcher != nil {
+		internalID := slugToInternalVendorID(slug)
+		if v, ok := s.lookupVendorByID(internalID); ok {
+			if wp, ok := v.(providers.WebhookParser); ok {
+				if evt, err := wp.Parse(raw, r.Header); err == nil && evt != nil {
+					if evt.VendorID == "" {
+						evt.VendorID = providers.VendorID(internalID)
+					}
+					if err := s.webhookDispatcher.Handle(r.Context(), evt); err != nil {
+						slog.Warn("webhookin 分派出错 · vendor 侧仍返 200",
+							"vendor", slug, "event_id", evt.EventID, "err", err)
+					} else {
+						processed = true
+					}
+				} else if err != nil {
+					slog.Warn("vendor adapter Parse 失败", "vendor", slug, "err", err)
+				}
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"received":  true,
 		"vendor":    slug,
-		"processed": false,
-		"note":      "阶段 1a 仅接收 · 事件在 1d 处理",
+		"processed": processed,
 	})
 	return nil
+}
+
+// slugToInternalVendorID · webhook 路径的 slug（vendor 品牌用）→ 内部 vendor_id。
+//
+// 只 91kiro 需要翻译 · 其他 5 家 slug 跟内部 id 一样（vendor 品牌本身就是 kirooo 等）。
+func slugToInternalVendorID(slug string) string {
+	if slug == "91kiro" {
+		return "kiro91"
+	}
+	return slug
+}
+
+// lookupVendorByID · 从 vendorView 里查 vendor · 让 receiver 拿到 WebhookParser。
+// 没装配 vendorView 时返 nil, false（老部署路径）。
+func (s *Server) lookupVendorByID(vendorID string) (providers.Vendor, bool) {
+	if s.vendorView == nil {
+		return nil, false
+	}
+	return s.vendorView.LookupVendor(vendorID)
 }
 
 // resolveWebhookSecret · 从 vendor_account 表读 webhook_secret 明文（AES 解密后）·
