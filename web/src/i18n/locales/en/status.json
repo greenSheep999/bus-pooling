@@ -25,7 +25,8 @@
     "no-data-window": "No dispatches in the last {{hours}}h",
     "source-vendor": "Batch records reported by upstream",
     "source-observed": "Inferred from our per-minute probing (upstream exposes no batch API)",
-    "no-data-days": "No dispatches in the last {{days}} days"
+    "no-data-days": "No dispatches in the last {{days}} days",
+    "avg-label": "avg {{value}} {{unit}}"
   },
   "tags": {
     "stock-many": "In stock",

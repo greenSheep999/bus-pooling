@@ -25,7 +25,8 @@
     "no-data-window": "近 {{hours}} 小时无开号记录",
     "source-vendor": "上游自报的批次记录",
     "source-observed": "我方每分钟观测推算（上游未提供批次接口）",
-    "no-data-days": "近 {{days}} 天无开号记录"
+    "no-data-days": "近 {{days}} 天无开号记录",
+    "avg-label": "平均 {{value}} {{unit}}"
   },
   "tags": {
     "stock-many": "现货充足",

@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import {
-  Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, Label, ReferenceLine,
+  ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { AppFooter } from "@/components/AppFooter";
 import { PromoBar } from "@/components/PromoBar";
@@ -292,6 +293,12 @@ function DispatchChart({
       .map(([ts, keys]) => ({ ts, keys }));
   }, [events, hours, bucketMs]);
 
+  // 平均值 · 只算**有开号的桶**（把大量 0 算进去会把线压到贴地 · 失去参照意义）
+  const nonZero = buckets.filter(b => b.keys > 0);
+  const avg = nonZero.length
+    ? nonZero.reduce((s, b) => s + b.keys, 0) / nonZero.length
+    : 0;
+
   const hasAny = buckets.some(b => b.keys > 0);
   if (!hasAny) {
     // 窗口 > 48h 时说"天"更好读（"近 30 天无开号记录" 比 "近 720 小时" 清楚）
@@ -319,8 +326,19 @@ function DispatchChart({
             <stop offset="100%" stopColor="#9147FF" stopOpacity={0.45} />
           </linearGradient>
         </defs>
-        {!compact && (
-          <CartesianGrid strokeDasharray="0" vertical={false} stroke="hsl(var(--hairline))" />
+        {/* 横向网格线 · compact 卡片也画（原来只有详情页有 · 卡片里柱子悬空没参照）·
+            卡片里只画 3 条淡线 · 详情页交给 YAxis 的 tick 决定 */}
+        <CartesianGrid
+          strokeDasharray="0"
+          vertical={false}
+          stroke="hsl(var(--hairline))"
+          strokeOpacity={compact ? 0.7 : 1}
+        />
+
+        {/* 基线 · x 轴那条 · compact 下 XAxis 是 hide 的 · 手动补一条浅线
+            让柱子"站在地上"而不是悬空 */}
+        {compact && (
+          <ReferenceLine y={0} stroke="hsl(var(--hairline))" strokeWidth={1} />
         )}
         <XAxis
           dataKey="ts"
@@ -369,10 +387,71 @@ function DispatchChart({
             );
           }}
         />
-        <Bar dataKey="keys" fill={`url(#${gradID})`} radius={[3, 3, 0, 0]} maxBarSize={compact ? 10 : 22} />
+        {/* 平均线 · 只在详情大图显示（compact 卡片放不下 label）
+            让"这根柱比平时高还是低"有参照 · 跟 TrendChart 的灰虚线同款 */}
+        {!compact && avg > 0 && (
+          <ReferenceLine
+            y={avg}
+            stroke="currentColor"
+            className="text-fg-tertiary"
+            strokeDasharray="4 4"
+            strokeWidth={1}
+            ifOverflow="extendDomain"
+          >
+            <Label
+              value={t("chart.avg-label", { value: Math.round(avg), unit: t("unit.keys") })}
+              position="insideTopRight"
+              fill="currentColor"
+              className="text-fg-tertiary"
+              fontSize={11}
+              offset={6}
+            />
+          </ReferenceLine>
+        )}
+
+        <Bar
+          dataKey="keys"
+          fill={`url(#${gradID})`}
+          radius={[3, 3, 0, 0]}
+          maxBarSize={compact ? 10 : 22}
+          shape={<DispatchBarShape />}
+        />
       </BarChart>
     </ResponsiveContainer>
   );
+}
+
+/** 柱子形状 · 自定义原因：**0 值也要留一个浅灰小墩**。
+ *
+ *  为什么要：连续时间轴里"这个时段没开号"和"图表这块没渲染"看起来一样（都是空白）·
+ *  用户会以为前面的空白是 bug。留 2px 浅灰墩 = 明确告诉你"这个格子存在 · 只是没数据"。
+ *
+ *  recharts 的 minPointSize 只对非 0 值生效 · 所以只能自定义 shape。 */
+function DispatchBarShape(props: {
+  x?: number; y?: number; width?: number; height?: number;
+  fill?: string; payload?: { keys: number };
+}) {
+  const { x = 0, y = 0, width = 0, height = 0, fill, payload } = props;
+  const isEmpty = !payload?.keys;
+
+  if (isEmpty) {
+    // 空桶 · 贴基线的浅灰小墩 · 高 2px · 不抢视觉但能看出格子在
+    const stubH = 2;
+    const baseY = y + height - stubH;
+    return (
+      <rect
+        x={x}
+        y={baseY}
+        width={width}
+        height={stubH}
+        rx={1}
+        className="fill-fg-tertiary"
+        opacity={0.28}
+      />
+    );
+  }
+
+  return <rect x={x} y={y} width={width} height={height} rx={3} ry={3} fill={fill} />;
 }
 
 
