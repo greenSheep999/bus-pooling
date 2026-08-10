@@ -17,7 +17,7 @@ COPY web/ ./
 RUN npm run build
 
 # ────────────────────────── go-build ───────────────────────────
-FROM golang:1.23-alpine AS go-build
+FROM golang:1.26-alpine AS go-build
 WORKDIR /src
 
 # 依赖缓存层
