@@ -80,5 +80,14 @@
     "cheapest": "最便宜",
     "most-rounds": "车最多",
     "most-stable": "车最稳"
+  },
+  "boxplot": {
+    "no-service": "那天没发车",
+    "rounds-label": "发车",
+    "rounds-unit": "轮",
+    "range-label": "区间",
+    "avg-label": "均价",
+    "credits-unit": "积分",
+    "click-hint": "点一下 · 下方看每轮明细"
   }
 }

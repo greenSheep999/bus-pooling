@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
 	"github.com/bus-pooling/bus-pooling/internal/vendorview"
@@ -25,6 +26,50 @@ func viewerOf(p *passenger.Passenger, r *http.Request) vendorview.Viewer {
 		Invited:     p != nil && p.Invited,
 		WaiveMarkup: false,
 	}
+}
+
+// GET /api/vendors/status · **公开端点**（不要求登录）
+//
+// 返回值经 vendorview.StatusOverview 已做脱敏（匿名 label · 档位化 · 无价格 · 无内部字段）。
+// vendorView == nil 时（老装配路径）返空的 StatusOverview · 前端展示"数据采集中"。
+func (s *Server) handleVendorsStatus(w http.ResponseWriter, r *http.Request) error {
+	if s.vendorView == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"vendors": []any{}})
+		return nil
+	}
+	out := s.vendorView.StatusOverview(r.Context())
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// GET /api/vendors/status/{anon_id}/trend?window=24h · **公开端点**
+//
+// 返回单家 vendor 过去 windowHours 小时的 15min 分桶数据（uptime + stock 档位）。
+// 用 anon_id 定位 · 内部 vendor_id 永远不出。窗口默认 24h · 最大 168h（7 天）。
+func (s *Server) handleVendorStatusTrend(w http.ResponseWriter, r *http.Request) error {
+	if s.vendorView == nil {
+		return ErrNotFound("vendor status 未装配")
+	}
+	anonID := r.PathValue("anon_id")
+	if anonID == "" {
+		return ErrBadRequest("缺少 anon_id")
+	}
+	windowHours := atoiDefault(strings.TrimSuffix(r.URL.Query().Get("window"), "h"), 24)
+	if windowHours < 1 {
+		windowHours = 24
+	}
+	if windowHours > 168 {
+		windowHours = 168
+	}
+	out, err := s.vendorView.StatusTrend(r.Context(), anonID, windowHours)
+	if err != nil {
+		return err
+	}
+	if out == nil {
+		return ErrNotFound("找不到这家 vendor")
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
 }
 
 // GET /api/vendors/stock

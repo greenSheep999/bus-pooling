@@ -1,7 +1,8 @@
 import { Link } from "react-router-dom";
+import { Trans, useTranslation } from "react-i18next";
 import { ArrowUpRight, Bus as BusIcon, Download, UserPlus, Zap, ZapOff } from "lucide-react";
 import { useBusCredentials } from "@/api/hooks";
-import { Card, Chip } from "./ui/primitives";
+import { Card, Chip, Em } from "./ui/primitives";
 import { OwnerBadge } from "./ui/tags";
 import { Button } from "./ui/button";
 import { PoolDistribution } from "./PoolDistribution";
@@ -23,15 +24,16 @@ export function BusFocalCard({
   role?: "owner" | "member";
   onPullClick: () => void;
 }) {
+  const { t } = useTranslation("buses");
   const { data: creds } = useBusCredentials(bus.id);
 
   // 一辆车就是一辆车（CLAUDE.md §2）· label 按当前人数
   const kindLabel =
     bus.kind === "anon"
-      ? `搭车 · ${bus.member_count} 车友`
+      ? t("kind.anon-with-count", { count: bus.member_count })
       : bus.member_count > 1
-        ? `拼车 · ${bus.member_count} 车友`
-        : "独享";
+        ? t("kind.multi-card", { count: bus.member_count })
+        : t("kind.solo");
 
   const created = new Date(bus.created_at);
   const daysAgo = Math.max(1, Math.floor((Date.now() - created.getTime()) / 86_400_000));
@@ -48,12 +50,12 @@ export function BusFocalCard({
             <BusIcon className="size-3" />
             {kindLabel}
           </Chip>
-          {bus.status === "active" && <Chip tone="ok" dot>活跃</Chip>}
+          {bus.status === "active" && <Chip tone="ok" dot>{t("card.chip-active")}</Chip>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <MembersStack bus={bus} />
           <span className="hidden text-label text-fg-tertiary sm:inline">
-            创建于 {daysAgo} 天前
+            {t("focal.created-ago", { count: daysAgo })}
           </span>
         </div>
       </div>
@@ -68,49 +70,54 @@ export function BusFocalCard({
         </div>
         <p className="mt-0.5 text-label text-fg-tertiary">
           {bus.member_count <= 1 ? (
-            <>独享号池 · 你一个人的车</>
+            t("focal.solo-desc")
           ) : (
-            <>
-              你 · <span className="font-medium text-fg-secondary">@wei</span> ·{" "}
-              <span className="font-medium text-fg-secondary">@lin</span>
-            </>
+            // TODO: 拉真实成员名替换 · 目前是 mock 车友占位
+            <Trans
+              i18nKey="focal.solo-members-mock"
+              ns="buses"
+              components={{
+                a: <span className="font-medium text-fg-secondary" />,
+                b: <span className="font-medium text-fg-secondary" />,
+              }}
+            />
           )}
         </p>
       </div>
 
       {/* 4 KPI 一排 · 数字用 text-num 不用超大 */}
       <div className="grid grid-cols-4 gap-3">
-        <FocalStat value={String(bus.alive_count)} label="正常号" dot="ok" />
+        <FocalStat value={String(bus.alive_count)} label={t("focal.kpi-alive")} dot="ok" />
         <FocalStat
           value={String(bus.dead_count)}
-          label="已失效"
+          label={t("focal.kpi-dead")}
           dot={bus.dead_count > 0 ? "danger" : "neutral"}
         />
         <FocalStat
           value={fmtCredits(bus.spend_today)}
-          unit="积分"
-          label="今日消费"
+          unit={t("focal.kpi-credits-unit")}
+          label={t("focal.kpi-spend")}
         />
         <FocalStat
           value={fmtLifespan(bus.avg_lifespan_seconds)}
-          label="平均寿命"
+          label={t("focal.kpi-lifespan")}
         />
       </div>
 
       {/* 号池分布 · 按 vendor · compact 版跟 BusCard 呼应 */}
-      <PoolDistribution credentials={creds} variant="compact" label="号池分布 · 按 vendor" />
+      <PoolDistribution credentials={creds} variant="compact" label={t("card.distribution-label")} />
 
       {/* 底部动作行 · mt-auto 沉底 */}
       <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={onPullClick}>
             <Download />
-            给这辆车拉号
+            {t("focal.action.pull")}
             <kbd className="ml-0.5 rounded bg-white/20 px-1 py-0.5 text-[10px] font-semibold">P</kbd>
           </Button>
           <Button variant="ghost" asChild>
             <Link to={`/buses/${bus.id}`}>
-              车详情
+              {t("focal.action.detail")}
               <ArrowUpRight />
             </Link>
           </Button>
@@ -119,7 +126,7 @@ export function BusFocalCard({
             <Button variant="ghost" asChild>
               <Link to={`/buses/${bus.id}`}>
                 <UserPlus />
-                邀请车友
+                {t("focal.action.invite")}
               </Link>
             </Button>
           )}
@@ -128,16 +135,21 @@ export function BusFocalCard({
         {bus.strategy.auto_refill_enabled ? (
           <span className="flex items-center gap-1.5 rounded-full border border-hairline bg-bg/60 px-3 py-1 text-label font-medium text-fg-secondary">
             <Zap className="size-3.5 text-brand-strong" />
-            <span className="font-semibold text-brand-strong">自动补车</span>
+            <span className="font-semibold text-brand-strong">{t("card.refill.auto")}</span>
             <span className="text-fg-tertiary">
-              · 下次 <span className="font-semibold tnum">{nextRefillMinutes}</span> 分钟后
+              <Trans
+                t={t}
+                i18nKey="focal.refill-next"
+                values={{ count: nextRefillMinutes }}
+                components={{ 1: <Em /> }}
+              />
             </span>
           </span>
         ) : (
           <span className="flex items-center gap-1.5 rounded-full border border-hairline bg-bg/60 px-3 py-1 text-label font-medium text-fg-secondary">
             <ZapOff className="size-3.5 text-fg-tertiary" />
-            <span className="font-medium">手动模式</span>
-            <span className="text-fg-tertiary">· 号少时提醒</span>
+            <span className="font-medium">{t("card.refill.manual")}</span>
+            <span className="text-fg-tertiary">{t("card.refill.manual-hint")}</span>
           </span>
         )}
       </div>

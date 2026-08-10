@@ -26,6 +26,7 @@ type Config struct {
 	Bus       Bus       `yaml:"bus"`
 	Pull      Pull      `yaml:"pull"`
 	Promo     Promo     `yaml:"promo"`
+	Community Community `yaml:"community"`
 
 	// DryRun=true 时 vendor 调用走 mock，不产生真实扣款（sprint Iss #13）。
 	// 默认 true —— 宁可开发时忘了关而不扣钱，也不要上线时忘了开而误扣。
@@ -110,6 +111,29 @@ type Bus struct {
 	MaxMembers int `yaml:"max_members"`
 }
 
+// Community · 社群渠道链接（TG / Discord / GitHub / X 等）。
+//
+// 运营改一次不用重发前端。前端从 `GET /api/community/channels` 拉。
+// 空数组 = 前端展示"敬请期待"占位。
+type Community struct {
+	Channels []CommunityChannel `yaml:"channels"`
+}
+
+// CommunityChannel 一条社群入口。
+type CommunityChannel struct {
+	// ID 稳定标识 · 前端做 key + 决定用哪个 logo
+	//   telegram_channel / telegram_group / discord / github / x
+	ID string `yaml:"id"`
+	// Name 展示名（"Telegram 频道" / "Discord 服务器"）· 兜底
+	Name string `yaml:"name"`
+	// NameI18n BCP-47 → 展示名 · 前端按 i18n.language 选一条
+	NameI18n map[string]string `yaml:"name_i18n"`
+	// URL 点击去哪 · 空 = 不下发（未上线的渠道别渲染死链）
+	URL string `yaml:"url"`
+	// Enabled false = 不下发
+	Enabled bool `yaml:"enabled"`
+}
+
 // Promo · 顶部跑马灯活动位（系统配置 · 不是给用户改的）。
 //
 // 为什么走 config 而不是硬编在前端：文案 / 倒计时 / 开关都是运营要随时改的东西，
@@ -126,8 +150,11 @@ type Promo struct {
 type PromoItem struct {
 	// ID 稳定标识 · 前端用它做 key（顺序可能变）
 	ID string `yaml:"id"`
-	// Text 展示文案
+	// Text 兜底文案 · 前端语言在 TextI18n 里找不到时用这个
 	Text string `yaml:"text"`
+	// TextI18n 按 BCP-47 语言标签给多语文案 · 前端按 i18n.language 选
+	// key 举例：`en` / `zh-CN` · 找不到就 fallback 到 Text
+	TextI18n map[string]string `yaml:"text_i18n"`
 	// To 点击去哪 · 空 = 不可点（纯公告）
 	To string `yaml:"to"`
 	// Enabled false = 不下发（下线一条活动不用删配置）
@@ -223,6 +250,8 @@ func Default() Config {
 		},
 		// Promo 默认空 —— 文案是运营内容·不硬编在代码里（config.yaml 配）
 		Promo: Promo{},
+		// Community 默认空 —— 社群渠道链接也是运营内容
+		Community: Community{},
 		DryRun: true,
 	}
 }

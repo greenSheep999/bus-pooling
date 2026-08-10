@@ -23,13 +23,23 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// Service 是对外的 vendor 视图。api 层拿 Service 调 Stock / Prices / AutoPick 等。
+// Service 是对外的 vendor 视图。api 层拿 Service 调 Stock / Prices / AutoPick / Status 等。
 type Service struct {
 	registry *providers.Registry
 	rates    decider.Rates
 	// stockTimeout 单家 vendor Stock 调用的超时。默认 3s。
 	// 聚合端点里一家慢不能拖垮整体（默认值兜底：Config 传 0 时用 3s）。
 	stockTimeout time.Duration
+
+	// probeStore + probeInterval 供 StatusOverview 用 · nil 时 status 端点返空。
+	// 探针本身跑在 Prober 里 · Service 只负责读聚合。
+	probeStore    *ProbeStore
+	probeInterval time.Duration
+
+	// orderKeyStore 供 StatusOverview + Prices 用（共享 vendor_order/vendor_key）
+	// nil 时 backfill 数据字段返空 · 前端展示"数据采集中"
+	orderKeyStore *OrderKeyStore
+
 	// now / newCtx 可注入 · 测试时控时钟和取消
 	now func() time.Time
 }
@@ -39,6 +49,11 @@ type Config struct {
 	Registry     *providers.Registry
 	Rates        decider.Rates
 	StockTimeout time.Duration
+	// ProbeStore / ProbeInterval · 传 nil 就是不启用 status 视图（老部署 / 测试兼容）
+	ProbeStore    *ProbeStore
+	ProbeInterval time.Duration
+	// OrderKeyStore 供 status/prices 读 backfill 数据 · 传 nil = 不启用
+	OrderKeyStore *OrderKeyStore
 }
 
 // New 建 Service。rates 为零值时零费率（真实环境从后台配置注入）。
@@ -50,11 +65,18 @@ func New(cfg Config) (*Service, error) {
 	if to <= 0 {
 		to = 3 * time.Second
 	}
+	probeInterval := cfg.ProbeInterval
+	if probeInterval <= 0 {
+		probeInterval = 60 * time.Second
+	}
 	return &Service{
-		registry:     cfg.Registry,
-		rates:        cfg.Rates,
-		stockTimeout: to,
-		now:          func() time.Time { return time.Now().UTC() },
+		registry:      cfg.Registry,
+		rates:         cfg.Rates,
+		stockTimeout:  to,
+		probeStore:    cfg.ProbeStore,
+		probeInterval: probeInterval,
+		orderKeyStore: cfg.OrderKeyStore,
+		now:           func() time.Time { return time.Now().UTC() },
 	}, nil
 }
 

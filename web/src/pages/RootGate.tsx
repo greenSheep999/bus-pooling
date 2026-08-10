@@ -4,6 +4,15 @@ import { useMe } from "@/api/hooks";
 
 const Landing = lazy(() => import("./Landing"));
 
+/** 无文案 spinner · 跟 router.PageFallback 视觉一致 · 中英不闪 */
+function GateSpinner() {
+  return (
+    <div className="grid min-h-[40vh] place-items-center" role="status" aria-busy="true">
+      <span className="inline-block size-5 animate-spin rounded-full border-2 border-hairline border-t-brand-strong" />
+    </div>
+  );
+}
+
 /** 根路由分流 · 已登录 → /overview（AppLayout 包裹）· 未登录 → Landing（独立布局）
  *
  *  为什么分流：
@@ -13,14 +22,10 @@ const Landing = lazy(() => import("./Landing"));
 export default function RootGate() {
   const { data: me, isPending } = useMe();
 
-  if (isPending) {
-    return <div className="p-6 text-label text-fg-tertiary">加载中…</div>;
-  }
-  if (me) {
-    return <Navigate to="/overview" replace />;
-  }
+  if (isPending) return <GateSpinner />;
+  if (me) return <Navigate to="/overview" replace />;
   return (
-    <Suspense fallback={<div className="p-6 text-label text-fg-tertiary">加载中…</div>}>
+    <Suspense fallback={<GateSpinner />}>
       <Landing />
     </Suspense>
   );

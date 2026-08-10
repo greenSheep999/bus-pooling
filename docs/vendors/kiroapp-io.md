@@ -508,3 +508,15 @@ POST /api/me/purchase
 - **ledger 类型枚举明确**：`stripe_recharge / redeem_credit / purchase_debit / supplier_payout / open_fee / warranty_refund / admin_adjust`（**是 6 家里 ledger 语义最全的**，且提示接受 **Stripe 支付**）
 - **分页上限 500** 而不是 200
 - **时区东八区 CST**（`2026-01-02 15:04:05 CST`），与其他家 ISO-8601 UTC 差异
+
+## 15. Fleet 观测端点（2026-08-10 探测）
+
+| 端点 | 结果 | 备注 |
+|------|------|------|
+| `GET /api/status` | ✅ 免 auth `{generating, price, price_us, price_eu, stock, stock_us, stock_eu, started_at, uptime_seconds}` | **无 keys_ * 字段** · 只有当下库存 + 生成状态 |
+| `GET /api/public/stats` | 200 `{mother_price, price, price_eu, price_us, stock, stock_eu, stock_us, warranty_minutes}` | 与 `/api/status` 高度重叠 · 前者多了 uptime |
+| `GET /api/me/fleet-summary` | 200 `{mine:[], public:[]}` | **返空 · 未来可能承载 fleet 数据** · 目前不可用 |
+| `GET /api/me/orders` | 200 `{items:[],pages:0,total:0}` | 账户空 |
+| `GET /api/me/stock` | ✅ `{stock, price, price_us, price_eu, balance, max, stock_us, stock_eu, warranty_minutes}` | **注意契约变更**：曾是 `{stock:{public_available:N}}` 嵌套对象 · 2026-08 改成 `stock: N` 数字 · 我方 adapter 已做双形状兼容（`mapper.go`） |
+
+**结论**：kiroappio **无 dispatch 历史端点** · PublicStatus 只有 `generating/uptime`（无 keys_*）· `/status` 页从 `vendor_probe.stock_total` 增量推 dispatch · 精度较低。

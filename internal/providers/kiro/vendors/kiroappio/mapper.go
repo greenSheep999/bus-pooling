@@ -80,12 +80,28 @@ func toPurchaseResult(pr *purchaseResp, requested int, replayed bool, raw json.R
 
 // toStockSnapshot 翻译 stock 响应。
 //
-// Available 取 public_available（不含 my_private —— 自己车的免费号不是"可买库存"）。
+// vendor 侧的 stock 字段有两种形状（见 types.go 注释）· 这里两种都尝试解一次：
+//   - 数字型（新）："stock": 0 · 直接取 · 有 stock_us / stock_eu 分区库存
+//   - 对象型（旧）："stock": {"public_available": N, ...} · 取 public_available
+//
+// Available **不含 my_private**（旧形状）—— 自己车的免费号不是"可买库存"。
 func toStockSnapshot(sr *stockResp, raw json.RawMessage) *providers.StockSnapshot {
+	available := 0
+	if len(sr.Stock) > 0 {
+		var n int
+		if err := json.Unmarshal(sr.Stock, &n); err == nil {
+			available = n
+		} else {
+			var nested stockNested
+			if err := json.Unmarshal(sr.Stock, &nested); err == nil {
+				available = nested.PublicAvailable
+			}
+		}
+	}
 	snap := &providers.StockSnapshot{
 		VendorID:        providers.VendorKiroAppIO,
 		ObservedAt:      time.Now().UTC(),
-		Available:       sr.Stock.PublicAvailable,
+		Available:       available,
 		MinPerOrder:     sr.Min,
 		MaxPerOrder:     sr.MaxPO,
 		WarrantyMinutes: sr.WM,
@@ -99,6 +115,23 @@ func toStockSnapshot(sr *stockResp, raw json.RawMessage) *providers.StockSnapsho
 			// UnitPrice 是该区最便宜的一档，仅供估价 —— 实扣看 TotalCost
 			UnitPrice: credits(z.UnitPrice),
 		})
+	}
+	// 新形状无 zones · 用 stock_us / stock_eu 拼两个 zone（就算 available=0 也要展示）
+	if len(snap.Zones) == 0 && (sr.StockUS > 0 || sr.StockEU > 0 || sr.PriceUS > 0) {
+		if sr.PriceUS > 0 || sr.StockUS >= 0 {
+			snap.Zones = append(snap.Zones, providers.ZoneStock{
+				Zone:      providers.ZoneUS,
+				Available: sr.StockUS,
+				UnitPrice: credits(int64(sr.PriceUS)),
+			})
+		}
+		if sr.PriceEU > 0 || sr.StockEU >= 0 {
+			snap.Zones = append(snap.Zones, providers.ZoneStock{
+				Zone:      providers.ZoneEU,
+				Available: sr.StockEU,
+				UnitPrice: credits(int64(sr.PriceEU)),
+			})
+		}
 	}
 	return snap
 }

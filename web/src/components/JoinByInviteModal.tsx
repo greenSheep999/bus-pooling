@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { Info, Ticket } from "lucide-react";
 import { useJoinByInviteCode } from "@/api/hooks";
@@ -20,6 +21,7 @@ import { Field } from "@/components/ui/field";
 export function JoinByInviteModal({
   open, onClose,
 }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation("buses");
   const nav = useNavigate();
   const join = useJoinByInviteCode();
   const [code, setCode] = useState("");
@@ -37,7 +39,7 @@ export function JoinByInviteModal({
     setError(null);
     const trimmed = code.trim();
     if (trimmed.length < 4) {
-      setError("拼车码至少 4 位");
+      setError(t("join-invite-modal.error-too-short"));
       return;
     }
     try {
@@ -48,9 +50,9 @@ export function JoinByInviteModal({
       const msg = err instanceof Error ? err.message : String(err);
       // 后端 404 = 拼车码无效 · 409 = 车满 · 别的按原文
       if (msg.includes("404") || msg.toLowerCase().includes("not_found")) {
-        setError("拼车码无效或车已解散");
+        setError(t("join-invite-modal.error-not-found"));
       } else if (msg.includes("409") || msg.toLowerCase().includes("bus_full")) {
-        setError("车已满 · 找车主确认或另找一辆");
+        setError(t("join-invite-modal.error-full"));
       } else {
         setError(msg);
       }
@@ -61,17 +63,17 @@ export function JoinByInviteModal({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>输拼车码加入</DialogTitle>
-          <DialogDescription>用朋友给的拼车码加入他的车 · 共享号池按人头分摊</DialogDescription>
+          <DialogTitle>{t("join-invite-modal.title")}</DialogTitle>
+          <DialogDescription>{t("join-invite-modal.desc")}</DialogDescription>
         </DialogHeader>
 
         <DialogBody>
           <form id="join-invite-form" onSubmit={onSubmit} className="space-y-5">
-            <Field label="拼车码">
+            <Field label={t("join-invite-modal.field-label")}>
               <Input
                 value={code}
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
-                placeholder="AAAA0000"
+                placeholder={t("join-invite-modal.placeholder")}
                 autoFocus
                 maxLength={12}
                 autoCapitalize="characters"
@@ -82,7 +84,7 @@ export function JoinByInviteModal({
             </Field>
 
             <Alert tone="brand" icon={Info}>
-              拼车码大小写不区分 · 一个码可以重复用（车主可随时换码）
+              {t("join-invite-modal.alert-body")}
             </Alert>
 
             {error && (
@@ -92,10 +94,10 @@ export function JoinByInviteModal({
         </DialogBody>
 
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose}>取消</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>{t("join-invite-modal.cancel")}</Button>
           <Button type="submit" form="join-invite-form" disabled={join.isPending}>
             <Ticket className="size-4" />
-            {join.isPending ? "加入中…" : "加入"}
+            {join.isPending ? t("join-invite-modal.submit-pending") : t("join-invite-modal.submit")}
           </Button>
         </DialogFooter>
       </DialogContent>

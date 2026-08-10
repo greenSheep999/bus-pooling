@@ -1,13 +1,20 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { useCommunityChannels } from "@/api/hooks";
 import { DiscordMark, GithubMark, TelegramMark } from "@/components/ui/brand-icons";
-import LogoMark from "@/assets/logo/mark.svg";
+import { BrandLogo } from "@/components/BrandLogo";
 
 /** 底部 footer · 登录前后共用（AppLayout 和 Landing 都挂它）
  *  左侧品牌 + 社群 icon · 右侧 3 栏菜单靠右
  *  真实存在的政策入口，不堆 dead link */
 export function AppFooter() {
   const { t } = useTranslation();
+  const { data: channelsData } = useCommunityChannels();
+  const channels = channelsData?.channels ?? [];
+  // 按 id 挑一条 · 后端没配就不渲染，绝不给死链
+  const tg = channels.find((c) => c.id === "telegram_channel") ?? channels.find((c) => c.id === "telegram_group");
+  const discord = channels.find((c) => c.id === "discord");
+  const github = channels.find((c) => c.id === "github");
   return (
     <footer className="mt-auto border-t border-hairline bg-bg-elevated">
       <div className="page-container py-10">
@@ -15,26 +22,27 @@ export function AppFooter() {
         <div className="flex flex-col gap-10 lg:flex-row lg:justify-between lg:gap-16">
           {/* 品牌区 · 左侧 · max-w 收紧不占位 */}
           <div className="max-w-xs space-y-3">
-            <div className="flex items-center gap-2.5">
-              <img src={LogoMark} alt="" className="size-7 rounded-lg" />
-              <span className="text-body-lg font-semibold tracking-tight">
-                bus-pooling
-              </span>
-            </div>
+            <BrandLogo />
             <p className="text-label leading-relaxed text-fg-tertiary">
               {t("footer.blurb")}
             </p>
             {/* 社群 · Telegram · Discord · GitHub（就这 3 个 · 不放邮件） */}
             <div className="flex items-center gap-2 pt-1">
-              <SocialLink href="https://t.me/bus-pooling" label="Telegram">
-                <TelegramMark className="size-[18px]" />
-              </SocialLink>
-              <SocialLink href="https://discord.gg/bus-pooling" label="Discord">
-                <DiscordMark className="size-[18px]" />
-              </SocialLink>
-              <SocialLink href="https://github.com/bus-pooling" label="GitHub">
-                <GithubMark className="size-[18px]" />
-              </SocialLink>
+              {tg && (
+                <SocialLink href={tg.url} label="Telegram">
+                  <TelegramMark className="size-[18px]" />
+                </SocialLink>
+              )}
+              {discord && (
+                <SocialLink href={discord.url} label="Discord">
+                  <DiscordMark className="size-[18px]" />
+                </SocialLink>
+              )}
+              {github && (
+                <SocialLink href={github.url} label="GitHub">
+                  <GithubMark className="size-[18px]" />
+                </SocialLink>
+              )}
             </div>
           </div>
 
@@ -59,9 +67,10 @@ export function AppFooter() {
             </FooterCol>
 
             <FooterCol title={t("footer.docs_policy")}>
-              <FooterLink to="/legal/terms">{t("footer.terms")}</FooterLink>
-              <FooterLink to="/legal/privacy">{t("footer.privacy")}</FooterLink>
-              <FooterLink to="/legal/compliance">{t("footer.compliance")}</FooterLink>
+              <FooterLink to="/legal/terms">{t("legal.pages.terms")}</FooterLink>
+              <FooterLink to="/legal/usage">{t("legal.pages.usage")}</FooterLink>
+              <FooterLink to="/legal/services">{t("legal.pages.services")}</FooterLink>
+              <FooterLink to="/legal/regions">{t("legal.pages.regions")}</FooterLink>
               <FooterLink to="/docs">{t("footer.docs")}</FooterLink>
             </FooterCol>
           </div>
@@ -76,14 +85,12 @@ export function AppFooter() {
               <span className="size-1.5 rounded-full bg-ok-solid" />
               {t("footer.status_ok")}
             </span>
-            <a
-              href="https://status.example"
-              target="_blank"
-              rel="noreferrer"
+            <Link
+              to="/status"
               className="transition-colors hover:text-fg-secondary"
             >
               {t("footer.status_page")}
-            </a>
+            </Link>
           </div>
         </div>
       </div>

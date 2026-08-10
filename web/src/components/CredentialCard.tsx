@@ -1,4 +1,5 @@
 import { Clock3, CloudCheck } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useMe } from "@/api/hooks";
 import { Card, Chip, Meter, Stat } from "./ui/primitives";
 import {
@@ -18,6 +19,7 @@ export function CredentialCard({
   cred: Credential;
   onClick?: () => void;
 }) {
+  const { t } = useTranslation("buses");
   const { data: me } = useMe();
   const alive = cred.status === "alive";
   const used = toCredits(cred.credits_used);
@@ -49,7 +51,7 @@ export function CredentialCard({
           </div>
 
           {!alive ? (
-            <Chip tone="danger">已失效</Chip>
+            <Chip tone="danger">{t("credentials.status.dead")}</Chip>
           ) : cred.pushed_at ? (
             <CloudCheck className="size-3.5 text-ok-fg" />
           ) : null}
@@ -59,7 +61,10 @@ export function CredentialCard({
         <div className="space-y-2">
           <Stat
             value={fmtK(used)}
-            unit={`k / ${QUOTA_MAX / 1000}k 积分`}
+            unit={t("credentials.card.quota-unit", {
+              max: QUOTA_MAX / 1000,
+              defaultValue: `k / ${QUOTA_MAX / 1000}k credits`,
+            })}
             size="stat"
             tone={level === "danger" ? color : undefined}
           />

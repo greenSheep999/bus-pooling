@@ -323,3 +323,14 @@ kiro.ooo 是**唯一把发车方能力完整 API 化**的家。
 - **UA 头 `kiro-reseller-webhook/1.0`** 可用于服务端识别
 - **时区 UTC+8 明写**（`2026-08-02 14:30:00` 无时区后缀）
 - **文档页有"一键复制整篇"按钮** —— 是 6 家里对开发者最友好的对接文档
+
+## 15. Fleet 观测端点（2026-08-10 探测）
+
+| 端点 | 结果 | 备注 |
+|------|------|------|
+| `GET /api/status` | ✅ **免 auth** `{keys_active, keys_alive, keys_dead, keys_suspect, keys_stock, keys_total, generating, started_at, uptime_secs}` | 最丰富的 PublicStatus 端点 · 有 5 种 key 状态计数 |
+| `GET /api/my/stock/regions` | ✅ `regions[].dispatches[]` `{alive, dead, delivered, dead_at, running, time}` | **含 dead 明细** · 是 6 家里最完整的 dispatch 视图 |
+| `GET /api/my/stock` | ⚠️ 偶尔网络超时（不是接口问题）| 有 zones · 有 unit_price |
+| `GET /api/my/gen-logs` | 404 明确 `{"message":"接口不存在"}` | 无此端点 |
+
+**结论**：kirooo 是**观测能力最强**的 vendor · 同时给出"当前累计"（`/api/status`）+"最近开号明细"（`/api/my/stock/regions`）· 我方 adapter 里 `fleet.go` 和 `public_status.go` 分别接这两个。

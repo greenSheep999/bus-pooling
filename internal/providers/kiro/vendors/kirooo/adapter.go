@@ -70,7 +70,7 @@ func (a *Adapter) Capability() providers.Capability {
 }
 
 func (a *Adapter) Stock(ctx context.Context, opts providers.StockOptions) (*providers.StockSnapshot, error) {
-	req, err := a.newReq(ctx, http.MethodGet, "/my/stock", nil)
+	req, err := a.newReq(ctx, http.MethodGet, "/api/my/stock", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func (a *Adapter) Purchase(ctx context.Context, req providers.PurchaseRequest) (
 		ClientOrderID: req.ClientOrderID,
 	}
 	payload, _ := json.Marshal(body)
-	httpReq, err := a.newReq(ctx, http.MethodPost, "/my/keys/claim", payload)
+	httpReq, err := a.newReq(ctx, http.MethodPost, "/api/my/keys/claim", payload)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func (a *Adapter) Purchase(ctx context.Context, req providers.PurchaseRequest) (
 
 func (a *Adapter) OrderKeys(ctx context.Context, orderID string) (*providers.PurchaseResult, error) {
 	// 补拉端点：GET /my/purchase-orders/{order_id}/keys（任务卡指定路径）
-	path := "/my/purchase-orders/" + orderID + "/keys"
+	path := "/api/my/purchase-orders/" + orderID + "/keys"
 	req, err := a.newReq(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -146,7 +146,7 @@ func (a *Adapter) OrderKeys(ctx context.Context, orderID string) (*providers.Pur
 }
 
 func (a *Adapter) Balance(ctx context.Context) (*providers.Balance, error) {
-	req, err := a.newReq(ctx, http.MethodGet, "/my/profile", nil)
+	req, err := a.newReq(ctx, http.MethodGet, "/api/my/profile", nil)
 	if err != nil {
 		return nil, err
 	}

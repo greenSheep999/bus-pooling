@@ -519,3 +519,15 @@ def verify(secret: str, timestamp: str, signature: str, body: bytes) -> bool:
 - **webhook 载荷不含 key** —— 与"直接把 key 推过来"的 vendor 不同，必须再回调 purchase 兑现。
 - **HMAC 签名内容包含 timestamp 前缀**：`sha256(secret, timestamp + "." + body)`，且必须用**原始字节**校验。
 - **换 API 令牌走网页**（`session_required` 403）—— 与允许 API 自服务 rotate 的 vendor 不同。
+
+## 15. Fleet 观测端点（2026-08-10 探测）
+
+| 端点 | 结果 | 备注 |
+|------|------|------|
+| `GET /api/my/gen-logs` | ⚠️ `{logs:null}` | 端点存在 · 但账户视角**只返自己账户下的批** · 我方账户无购买 → null |
+| `GET /api/my/orders` | 200 `{orders:null,total:0}` | 账户空 |
+| `GET /api/status` | 404 | **无 fleet 自报端点** |
+| `GET /openapi/orders` | 200 但返 HTML（SPA 拦截） | 不可用 |
+| `GET /api/public/*` | 全 404 | 不暴露公开数据 |
+
+**结论**：kiro91 无 fleet-wide 数据端点 · 我方 `/status` 页从 `vendor_probe.stock_total` 增量推 dispatch（`internal/vendorview/dispatch_deriver.go`）· 精度较低但真实。

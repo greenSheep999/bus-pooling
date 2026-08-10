@@ -80,5 +80,14 @@
     "cheapest": "Cheapest",
     "most-rounds": "Most rounds",
     "most-stable": "Most stable"
+  },
+  "boxplot": {
+    "no-service": "No rounds that day",
+    "rounds-label": "Rounds",
+    "rounds-unit": "",
+    "range-label": "Range",
+    "avg-label": "Avg",
+    "credits-unit": "credits",
+    "click-hint": "Click to see per-round details below"
   }
 }

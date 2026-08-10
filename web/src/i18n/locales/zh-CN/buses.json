@@ -69,7 +69,7 @@
   },
   "action": {
     "pull-now": "立即拉号",
-    "settings": "车设置"
+    "settings": "拼车设置"
   },
   "back": "返回拼车",
   "created-at": "创建于 {{date}}",
@@ -99,6 +99,9 @@
     "title": "号列表",
     "unit": {
       "credits": "积分"
+    },
+    "card": {
+      "quota-unit": "k / {{max}}k 积分"
     }
   },
   "invite": {
@@ -109,8 +112,152 @@
   },
   "kind": {
     "anon": "搭车池",
+    "anon-with-count": "搭车 · {{count}} 车友",
     "multi": "{{count}} 人拼车",
+    "multi-card": "拼车 · {{count}} 车友",
     "solo": "独享"
+  },
+  "pool-distribution": {
+    "vendor-count": "{{count}} 家 vendor",
+    "empty": "号池空",
+    "empty-full": "号池空 · 待拉号",
+    "row-unit": "{{count}} 个"
+  },
+  "card": {
+    "alive-suffix": "个 · 已失效 <1>{{dead}}</1>",
+    "alive-status": "号在池",
+    "credits-unit": "积分",
+    "spend-today-label": "今日消费 · 积分",
+    "distribution-label": "号池分布 · 按 vendor",
+    "lifespan-prefix": "平均寿命",
+    "created-at": "创建于 {{date}}",
+    "view": "查看",
+    "chip-active": "活跃",
+    "refill": {
+      "auto": "自动补车",
+      "manual": "手动模式",
+      "manual-hint": "· 号少时提醒",
+      "watermark": "· 保活 <1>{{count}}</1>",
+      "per-round": "· 每轮 <1>{{count}}</1>"
+    },
+    "strategy": {
+      "max-price": "单价 ≤ <1>{{value}}</1>",
+      "daily-limit": "日限 <1>{{value}}</1>",
+      "preferred": "首选 <1>{{vendor}}</1>"
+    }
+  },
+  "join-anon-modal": {
+    "title": "搭车",
+    "desc": "找一辆区域 / 单价上限匹配的活跃车加入 · 找不到就自己建一辆等人来搭",
+    "field-zone": "区域",
+    "zone-cn": "中国大陆",
+    "zone-overseas": "海外",
+    "field-max-price": "单价上限（积分 · 可留空）",
+    "max-price-placeholder": "不限",
+    "how-title": "怎么运作",
+    "how-body": "系统先找区域和价格上限匹配的活跃车 · 有就直接加入 · 没有就自己建一辆让别人来搭。多人拼车按 N 分摊号价 · 车友越多每人越便宜。",
+    "error-generic": "搭车失败 · 稍后重试",
+    "new-bus-name": "搭车池",
+    "cancel": "取消",
+    "submit-pending": "撮合中…",
+    "submit": "开始搭车"
+  },
+  "join-invite-modal": {
+    "title": "输拼车码加入",
+    "desc": "用朋友给的拼车码加入他的车 · 共享号池按人头分摊",
+    "field-label": "拼车码",
+    "placeholder": "AAAA0000",
+    "alert-body": "拼车码大小写不区分 · 一个码可以重复用（车主可随时换码）",
+    "cancel": "取消",
+    "submit-pending": "加入中…",
+    "submit": "加入",
+    "error-too-short": "拼车码至少 4 位",
+    "error-not-found": "拼车码无效或车已解散",
+    "error-full": "车已满 · 找车主确认或另找一辆"
+  },
+  "start-modal": {
+    "title": "发起拼车",
+    "desc": "建一辆自己的车 · 首次发车一并完成",
+    "default-bus-name": "我的车",
+    "field-name": "车名",
+    "name-placeholder": "给车起个名字",
+    "field-count": "拉几个号",
+    "field-vendor": "vendor",
+    "vendor-auto": "让系统选（按有效成本比价）",
+    "bargain-alert-title": "拉 2 个及以上单价更低",
+    "bargain-alert-body": "一次只拉 1 个成本偏高 · 建议至少拉 2 个",
+    "cheap-alert-title": "单价更划算",
+    "cheap-alert-body-prefix": "一次拉 ",
+    "cheap-alert-body-suffix": " 个号 · 均摊后单价更低",
+    "auto-refill-title": "开启自动补车",
+    "auto-refill-desc": "号池活号少于保活数时，系统自动拉一轮补车。关闭则手动决定何时拉号。",
+    "field-watermark": "保活数（正常号少于此数就补）",
+    "field-per-round": "每轮补几个",
+    "advanced-title": "高级选项",
+    "advanced-sub": "单价上限 · 日轮次 · 日花费",
+    "field-max-price": "单价上限（积分）",
+    "field-daily-round": "日轮次上限",
+    "field-daily-spend": "日花费上限（积分）",
+    "no-limit": "不限",
+    "tip-prefix": "建车后自动发首轮车 · ",
+    "tip-mid": " 个号进池 · 可在车详情页调策略、查看号列表、手动再拉",
+    "cancel": "取消",
+    "submit-pending": "发车中…",
+    "submit": "发车"
+  },
+  "pull-now-modal": {
+    "title": "立即拉号",
+    "field-count": "拉几个号",
+    "field-vendor": "vendor",
+    "hint-cap-prefix": "单价上限 ",
+    "hint-cap-suffix": " 积分",
+    "hint-cap-global": "（全局）",
+    "vendor-auto": "让系统选（按有效成本比价）",
+    "bargain-alert-title": "拉 2 个及以上单价更低",
+    "bargain-alert-body": "一次只拉 1 个成本偏高",
+    "cancel": "取消",
+    "submit-pending": "拉号中…",
+    "submit": "拉 {{count}} 个号"
+  },
+  "settings-modal": {
+    "title": "拼车设置",
+    "rename": {
+      "label": "拼车名字",
+      "placeholder": "给这辆车起个名字",
+      "save": "保存",
+      "saving": "保存中…",
+      "saved": "已保存 ✓"
+    },
+    "danger": {
+      "title": "危险区",
+      "dissolve-title": "解散这辆拼车",
+      "dissolve-desc": "活的 key 挪到你的提取记录 · 失效的归档 · 已扣积分不退",
+      "dissolve-button": "解散拼车",
+      "confirm-title": "解散拼车",
+      "confirm-alert-title": "此操作不可撤销",
+      "confirm-alert-body": "解散后活的 key 挪到提取记录 · 失效的归档 · 已扣积分不退",
+      "confirm-label-prefix": "输入拼车名字",
+      "confirm-label-suffix": "确认",
+      "cancel": "取消",
+      "confirm-button": "确认解散",
+      "confirming": "解散中…"
+    }
+  },
+  "focal": {
+    "created-ago": "创建于 {{count}} 天前",
+    "solo-desc": "独享号池 · 你一个人的车",
+    "solo-members-mock": "你 · <a>@wei</a> · <b>@lin</b>",
+    "kpi-alive": "正常",
+    "kpi-dead": "已失效",
+    "kpi-spend": "今日消费",
+    "kpi-lifespan": "平均寿命",
+    "kpi-credits-unit": "积分",
+    "action": {
+      "pull": "给这辆车提取 key",
+      "detail": "车详情",
+      "invite": "邀请车友"
+    },
+    "refill-next": "· 下次 <1>{{count}}</1> 分钟后"
   },
   "kpi": {
     "alive": {
@@ -263,7 +410,73 @@
     "title": "移除 {{name}}？"
   },
   "stats": {
-    "loading": "加载图表…"
+    "loading": "加载图表…",
+    "head": {
+      "title": "数据",
+      "sub": "这辆车的时间维度趋势 · 每天多少 key 入池 / 多少积分花了 / key 能活多久 · 30 天窗口"
+    },
+    "pull-volume": {
+      "title": "取 key 次数",
+      "sub-prefix": "30 天共",
+      "sub-suffix": "个 key 入池 · 按 vendor 分色",
+      "empty": "这辆车 30 天没取过 key",
+      "tooltip-unit": "个",
+      "tooltip-total": "共"
+    },
+    "daily-spend": {
+      "title": "每日消费",
+      "sub-prefix": "30 天共扣",
+      "sub-suffix": "积分",
+      "empty": "这辆车 30 天没消费",
+      "tooltip-charge": "扣",
+      "tooltip-credits": "积分"
+    },
+    "lifespan": {
+      "title": "key 存活时长",
+      "sub-count-prefix": "",
+      "sub-count-mid": "个 key · 平均活",
+      "sub-empty": "还没有能统计寿命的 key",
+      "empty": "取 key 后 / key 失效后才有寿命数据",
+      "tooltip-unit": "个 key",
+      "hours-min-suffix": "分",
+      "hours-hour-suffix": "小时",
+      "hours-day-suffix": "天",
+      "bucket": {
+        "under-1h": "<1h",
+        "1-6h": "1-6h",
+        "6-24h": "6-24h",
+        "1-3d": "1-3d",
+        "over-3d": ">3d"
+      }
+    },
+    "push-rate": {
+      "title": "推送成功率",
+      "sub-desc": "把 key 推给你号池的成功率",
+      "sub-attempts-prefix": "30 天",
+      "sub-attempts-suffix": "次推送尝试",
+      "sub-empty": "还没有推送尝试",
+      "empty": "没有 key 被推给你的号池",
+      "warn-prefix": "未配置我的号池 · 在",
+      "warn-link": "设置 · 我的号池",
+      "warn-suffix": "里配 URL 后有数据",
+      "tooltip-rate": "成功率",
+      "tooltip-empty": "无推送数据"
+    },
+    "member": {
+      "title": "成员用量",
+      "sub-prefix": "谁分到多少 key · 摊了多少积分 · 共",
+      "sub-mid": "key ·",
+      "sub-suffix": "积分",
+      "role-owner": "发起人",
+      "status-suspended": "已挂起",
+      "count-suffix": "key",
+      "credits-suffix": "积分",
+      "push-prefix": "· 推送",
+      "row-prefix": "参与",
+      "row-mid": "轮 · 分摊比例",
+      "row-percent": "%",
+      "footnote": "消费按每轮实际分到的 key 数摊 · 跟分摊比例可能有出入（有人余额不足被跳过时）"
+    }
   },
   "status": {
     "active": "活跃",
@@ -276,5 +489,36 @@
     "pushes": "推送记录",
     "stats": "数据",
     "strategy": "补车策略"
+  },
+  "strategy-panel": {
+    "title": "补车策略",
+    "sub": "策略跟这辆车绑 · 不影响其他车 · 变更即时生效",
+    "action": {
+      "save": "保存策略",
+      "saving": "保存中…",
+      "saved": "已保存 ✓"
+    },
+    "auto": {
+      "on-label": "自动补车",
+      "on-desc": "号池活号少于保活数 · 系统自动拉一轮补车",
+      "off-label": "手动模式",
+      "off-desc": "号少时只提醒 · 不自动拉 · 你手动决定何时拉号"
+    },
+    "field": {
+      "watermark": "保活数（正常号少于此数就补）",
+      "per-round": "每轮补几个",
+      "max-price": "单价上限（积分）",
+      "daily-round": "日轮次上限",
+      "daily-spend": "日花费上限（积分）",
+      "preferred-vendor": "首选 vendor",
+      "unlimited-placeholder": "不限"
+    },
+    "preferred": {
+      "auto": "让系统比价选"
+    },
+    "tip": {
+      "chip": "Tip",
+      "text": "策略变更点保存后立即生效 · 下次自动补车 / 手动拉号都按新策略走"
+    }
   }
 }

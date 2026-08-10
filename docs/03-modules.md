@@ -345,6 +345,23 @@
 - **P 标签**：2c
 - **备注**：管理端 UI 靠后，登录能力也靠后
 
+### `internal/vendorview/`
+
+- **目的**：`providers.Registry` 的**对外视图层**——把 registry 的原始能力按调用者身份翻译成脱敏 + 已计价的展示数据。**不是**新业务包（在 CLAUDE.md §4 的 15 包上限外），是 view/aggregation。
+- **组件**：
+  - `Service` · aggregate stock / prices / auto-pick / stats（api 层直接调这里）
+  - `Prober` · 每 60s 打每家 vendor 的 `Stock()` + `PublicStatus()` · 结果落 `vendor_probe`
+  - `Backfiller` · 每 5min 拉 vendor 侧真历史（`FleetLister` / `OrderHistoryLister` / `KeyHistoryLister`）· 落 `vendor_order` / `vendor_key` / `vendor_dispatch`
+  - `ProbeStore` · `vendor_probe` 读写 + `DeriveDispatchSummary()`（3 家无 fleet 端点的兜底：从探针增量推 dispatch）
+  - `OrderKeyStore` · `vendor_order` / `vendor_key` / `vendor_dispatch` 读写 + `DispatchSummary` / `HistorySummary` / `KeyLifecycleBuckets`
+- **对外接口**（optional interfaces · `internal/providers/`）：
+  - `PublicStatuser` · fleet 累计（kirooo / kirodrop / kiroappio）
+  - `FleetLister` · 历史开号批（kirooo / kiroceo / kiroappcc）
+  - `OrderHistoryLister` · 个人订单
+  - `KeyHistoryLister` · 个人 key 生命周期
+- **P 标签**：1a
+- **6 家端点覆盖矩阵**：见 `docs/vendors/README.md` 底部 · 决策见 `docs/decisions.md §11`
+
 ### `web/`
 
 - **目的**：前端 SPA（乘客侧 + 管理侧）

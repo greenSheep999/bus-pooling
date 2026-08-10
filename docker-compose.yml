@@ -1,0 +1,51 @@
+# bus-pooling · 生产 docker-compose
+#
+# 假设 SSH 到 /opt/bus-pooling 后 · `docker compose up -d --build`
+#
+# 前置：
+#   - .env 里放 BP_MASTER_KEY + 6 家 vendor API key + housepool admin key
+#   - config.yaml 覆盖 config.example.yaml 里的 default_vendor / promo / community
+#
+# 端口暴露：127.0.0.1:9917 · Caddy 反代 kirobus.com → 9917 已有配置
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_SHA: ${BUILD_SHA:-dev}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
+    image: kirobus:latest
+    container_name: kirobus
+    restart: unless-stopped
+
+    # 只绑本机 · Caddy 反代过来（vps22 上已有 kirobus.com → 127.0.0.1:9917 的配置）
+    ports:
+      - "127.0.0.1:9917:8080"
+
+    volumes:
+      # SQLite 数据 · 容器重建不能丢
+      - ./data:/app/data
+      # 生产 config.yaml · 不进镜像（有 vendor base_url / default_vendor 等业务参数）
+      - ./config.yaml:/app/config.yaml:ro
+
+    env_file:
+      - .env
+
+    # 传给 config 装配的额外覆盖 · env_file 已经在了 · 这里放不敏感的运行时开关
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"

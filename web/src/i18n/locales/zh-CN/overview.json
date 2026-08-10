@@ -129,5 +129,19 @@
     "sub": "按 vendor 分布",
     "center_label": "次拉号",
     "row_val": "{{n}} 次"
+  },
+  "chart": {
+    "unit": {
+      "credits": "积分",
+      "pulls": "次",
+      "lifespan": "h"
+    },
+    "avg-label": "平均 {{value}} {{unit}}",
+    "peak-label": "峰值 {{value}} {{unit}} · {{date}}",
+    "legend": {
+      "current": "当期用量",
+      "average": "期间平均",
+      "peak": "期间峰值"
+    }
   }
 }

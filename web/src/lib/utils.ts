@@ -60,10 +60,29 @@ export const SUSPEND_AFTER = 3;
  *  只在充值时出现 —— 拉号 / 提取 / 派号都是积分抵扣，那些页面不显示它 */
 export const CHANNEL_FEE_RATE = 0.05;
 
+/** 展示层汇率 · CNY/USD · 7 元 = 1 美元（CLAUDE.md §1.4）
+ *  只用于 landing / 充值等对外**展示**层 —— 后端记账单位始终是积分 */
+export const CNY_PER_USD = 7;
+
+/** 充值预设金额（积分）· landing 落地页展示 + 钱包页复用 · 单点更新 */
+export const TOPUP_PRESETS = [50, 100, 200, 500] as const;
+
 /** 充值：付款额 → 通道费 + 实际到账 */
 export function topupBreakdown(paid: number): { fee: number; credits: number } {
   const fee = Math.round(paid * CHANNEL_FEE_RATE);
   return { fee, credits: paid - fee };
+}
+
+/** 想到账 N 积分 · 通道费加在上面 · 支付金额换算成 USD（CLAUDE.md §1.4）
+ *  返回单位统一为 USD · toFixed(2) 由调用方按展示需求处理 */
+export function topupUsdBreakdown(wantCredits: number): {
+  usdCredits: number;
+  usdFee: number;
+  usdTotal: number;
+} {
+  const usdCredits = wantCredits / CNY_PER_USD;
+  const usdFee = usdCredits * CHANNEL_FEE_RATE;
+  return { usdCredits, usdFee, usdTotal: usdCredits + usdFee };
 }
 
 /** 号额度阈值配色（decisions §8.14 · 10k 积分寿终阈值） */

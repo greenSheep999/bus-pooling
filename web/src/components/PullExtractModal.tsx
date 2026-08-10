@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { KeyRound } from "lucide-react";
 import {
   Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle,
@@ -10,6 +11,7 @@ import { PullExtractForm } from "@/components/PullExtractForm";
 export function PullExtractModal({
   open, onClose,
 }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation("extract");
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-[640px]">
@@ -17,7 +19,7 @@ export function PullExtractModal({
           <DialogTitle>
             <span className="inline-flex items-center gap-2">
               <KeyRound className="size-4 text-brand-strong" />
-              提取 key
+              {t("hero.title")}
             </span>
           </DialogTitle>
         </DialogHeader>

@@ -19,11 +19,13 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { cn, fmtCredits, fmtTime, MICRO, toCredits } from "@/lib/utils";
+import {
+  cn, fmtCredits, fmtTime, MICRO, toCredits, TOPUP_PRESETS,
+} from "@/lib/utils";
 import type { LedgerEntry, LedgerType, TopupOrder } from "@/types";
 
-/* 充值快捷档 · 元 */
-const PRESETS = [50, 100, 200, 500];
+/* 充值快捷档 · 复用 lib/utils.ts 里的常量 · landing / wallet 单点更新 */
+const PRESETS = TOPUP_PRESETS;
 
 export default function WalletPage() {
   const { t } = useTranslation("wallet");

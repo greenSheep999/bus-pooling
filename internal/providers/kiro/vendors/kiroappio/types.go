@@ -1,5 +1,7 @@
 package kiroappio
 
+import "encoding/json"
+
 // wire types — vendor 私有，不外暴。
 
 type profileResp struct {
@@ -13,16 +15,32 @@ type profileResp struct {
 	} `json:"profile"`
 }
 
+// stockResp kiroappio /api/me/stock 响应。
+//
+// **注意 vendor 侧曾变更过 stock 字段类型**：
+//   - 旧形状：{"stock": {"public_available": N, "my_private": M}, "zones": [...]}
+//   - 新形状：{"stock": 0, "stock_us": 0, "stock_eu": 0, "price": 80, ...}
+//
+// 用 json.RawMessage 接住 stock 字段 · toStockSnapshot 里两种都解一遍 · 兼容双形状。
+// 新形状里 stock_us / stock_eu 是分区库存 · 用 StockUS/StockEU 直接接。
 type stockResp struct {
-	Stock struct {
-		PublicAvailable int `json:"public_available"`
-		MyPrivate       int `json:"my_private"`
-	} `json:"stock"`
-	Zones []zoneItem `json:"zones"`
-	Max   int        `json:"max"`
-	Min   int        `json:"min_per_order"`
-	MaxPO int        `json:"max_per_order"`
-	WM    int        `json:"warranty_minutes"`
+	Stock    json.RawMessage `json:"stock"`
+	StockUS  int             `json:"stock_us"`
+	StockEU  int             `json:"stock_eu"`
+	Price    int             `json:"price"`
+	PriceUS  int             `json:"price_us"`
+	PriceEU  int             `json:"price_eu"`
+	Zones    []zoneItem      `json:"zones"`
+	Max      int             `json:"max"`
+	Min      int             `json:"min_per_order"`
+	MaxPO    int             `json:"max_per_order"`
+	WM       int             `json:"warranty_minutes"`
+}
+
+// stockNested 旧形状里 stock 是嵌套对象。
+type stockNested struct {
+	PublicAvailable int `json:"public_available"`
+	MyPrivate       int `json:"my_private"`
 }
 
 type zoneItem struct {

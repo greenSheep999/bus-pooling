@@ -28,6 +28,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/config"
 	"github.com/bus-pooling/bus-pooling/internal/db"
 	"github.com/bus-pooling/bus-pooling/internal/deathwatch"
+	"github.com/bus-pooling/bus-pooling/internal/web"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
 	"github.com/bus-pooling/bus-pooling/internal/delivery/handoff"
 	"github.com/bus-pooling/bus-pooling/internal/downstream"
@@ -460,13 +461,44 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	}
 
 	// vendorview 用同一份 rates（费率不进代码，走 decider.Rates 唯一入口）
+	// 加上 probeStore + probeInterval · 让 StatusOverview 有历史数据可读
+	probeStore := vendorview.NewProbeStore(database.DB)
+	const probeInterval = 60 * time.Second
+	orderKeyStoreForView := vendorview.NewOrderKeyStore(database.DB)
 	vendorSvc, err := vendorview.New(vendorview.Config{
-		Registry: vendorRegistry,
-		Rates:    rates,
+		Registry:      vendorRegistry,
+		Rates:         rates,
+		ProbeStore:    probeStore,
+		ProbeInterval: probeInterval,
+		OrderKeyStore: orderKeyStoreForView,
 	})
 	if err != nil {
 		return err
 	}
+
+	// vendor 状态探针 · 每 vendor 一个 goroutine · 每 60s 拨号 vendor.Stock
+	// 结果写 vendor_probe · /api/vendors/status 从表读，不实时打上游
+	// 探测 timeout 10s（vendor 侧偶尔慢·比原 3s 更宽松·避免误报 timeout）
+	prober := vendorview.NewProber(vendorview.ProberConfig{
+		Registry: vendorRegistry,
+		Store:    probeStore,
+		Interval: probeInterval,
+		Timeout:  10 * time.Second,
+	})
+	prober.Start(ctx)
+	defer prober.Stop(3 * time.Second)
+
+	// Backfiller · 每 5 分钟拉一次 vendor 侧全量订单 + key 历史
+	// 落 vendor_order + vendor_key · 是 /api/vendors/status + /api/vendors/prices 共同数据源
+	orderKeyStore := vendorview.NewOrderKeyStore(database.DB)
+	backfiller := vendorview.NewBackfiller(vendorview.BackfillerConfig{
+		Registry: vendorRegistry,
+		Store:    orderKeyStore,
+		Interval: 5 * time.Minute,
+		Timeout:  20 * time.Second,
+	})
+	backfiller.Start(ctx)
+	defer backfiller.Stop(5 * time.Second)
 
 	handoffs := handoff.NewStore(database.DB, 0) // 0 = 默认 TTL
 
@@ -508,6 +540,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		PaymentGWSuccessURL: os.Getenv("BP_GW_SUCCESS_URL"),
 		SecureCookie:        secureCookie,
 		Promos:              cfg.Promo.Items,
+		CommunityChannels:   cfg.Community.Channels,
 	})
 	apiSrv.Routes(mux)
 
@@ -592,6 +625,10 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+
+	// SPA 静态资源兜底 · 优先级最低 · mux 里 /api /healthz 都在前面 ·
+	// 未匹配的走 web.Handler() 内嵌 dist（Docker 里 web-build stage 打进来）
+	mux.Handle("/", web.Handler())
 
 	srv := &http.Server{
 		Addr:         cfg.Server.Addr,

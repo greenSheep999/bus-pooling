@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
@@ -17,6 +18,7 @@ import type { Credential, PullRound } from "@/types";
  *  数据源：credentials + pull_rounds 已有字段（不需要新 API）
  *  成员维度阶段 2a 落地（§8.18 分摊扣款接线后）· 现在留 EmptyState 占位 */
 export default function BusStats({ busId }: { busId: string }) {
+  const { t } = useTranslation("buses");
   const { data: creds } = useBusCredentials(busId);
   const { data: pulls } = useBusPulls(busId);
   const { data: downstream } = useDownstream();
@@ -25,8 +27,8 @@ export default function BusStats({ busId }: { busId: string }) {
     <div className="space-y-6">
       {/* 头 · 说明这是什么 · 减少用户困惑 */}
       <SectionHead
-        title="数据"
-        sub="这辆车的时间维度趋势 · 每天多少号进池 / 多少积分花了 / 号能活多久 · 30 天窗口"
+        title={t("stats.head.title")}
+        sub={t("stats.head.sub")}
       />
 
       {/* 上排 · 2 图 · 拉号量 + 每日消费 */}
@@ -72,6 +74,7 @@ function shortDay(dateISO: string): string {
 /* ─────────────── 图 1 · 拉号量柱图 · 按 vendor 分色堆叠 ─────────────── */
 
 function PullVolumeChart({ pulls }: { pulls: PullRound[] }) {
+  const { t } = useTranslation("buses");
   const { data: me } = useMe();
   /* 30 天按 vendor 分组 · Recharts 需要每天一个 row · 每个 vendor 一列 */
   const { data, vendors } = useMemo(() => {
@@ -105,11 +108,11 @@ function PullVolumeChart({ pulls }: { pulls: PullRound[] }) {
   return (
     <Card className="p-6">
       <ChartHead
-        title="拉号量"
-        sub={<>30 天共 <strong className="tnum text-fg">{total}</strong> 个号进池 · 按 vendor 分色</>}
+        title={t("stats.pull-volume.title")}
+        sub={<>{t("stats.pull-volume.sub-prefix")} <strong className="tnum text-fg">{total}</strong> {t("stats.pull-volume.sub-suffix")}</>}
       />
       {total === 0 ? (
-        <EmptyChart hint="这辆车 30 天没拉过号" />
+        <EmptyChart hint={t("stats.pull-volume.empty")} />
       ) : (
         <>
           <div className="h-52">
@@ -125,7 +128,7 @@ function PullVolumeChart({ pulls }: { pulls: PullRound[] }) {
                   tickLine={false} axisLine={false} allowDecimals={false}
                   tick={{ fontSize: 11, fill: "hsl(var(--fg-tertiary))" }}
                 />
-                <Tooltip content={<StackedTooltip vendors={vendors} unit="个" />} />
+                <Tooltip content={<StackedTooltip vendors={vendors} unit={t("stats.pull-volume.tooltip-unit")} />} />
                 {vendors.map((v) => (
                   <Bar key={v} dataKey={v} stackId="a" fill={vendorColor(v)} radius={[3, 3, 0, 0]} />
                 ))}
@@ -150,6 +153,7 @@ function PullVolumeChart({ pulls }: { pulls: PullRound[] }) {
 /* ─────────────── 图 2 · 每日消费柱图 ─────────────── */
 
 function DailySpendChart({ pulls }: { pulls: PullRound[] }) {
+  const { t } = useTranslation("buses");
   const data = useMemo(() => {
     const days = last30DaysKeys();
     const agg: Record<string, number> = {};
@@ -166,11 +170,11 @@ function DailySpendChart({ pulls }: { pulls: PullRound[] }) {
   return (
     <Card className="p-6">
       <ChartHead
-        title="每日消费"
-        sub={<>30 天共扣 <strong className="tnum text-fg">{fmtCredits(total)}</strong> 积分</>}
+        title={t("stats.daily-spend.title")}
+        sub={<>{t("stats.daily-spend.sub-prefix")} <strong className="tnum text-fg">{fmtCredits(total)}</strong> {t("stats.daily-spend.sub-suffix")}</>}
       />
       {total === 0 ? (
-        <EmptyChart hint="这辆车 30 天没消费" />
+        <EmptyChart hint={t("stats.daily-spend.empty")} />
       ) : (
         <div className="h-52">
           <ResponsiveContainer width="100%" height="100%">
@@ -198,15 +202,16 @@ function DailySpendChart({ pulls }: { pulls: PullRound[] }) {
 
 /* ─────────────── 图 3 · 号存活时长分布 ─────────────── */
 
-const LIFE_BUCKETS: { label: string; min: number; max: number }[] = [
-  { label: "<1h", min: 0, max: 3_600 },
-  { label: "1-6h", min: 3_600, max: 6 * 3_600 },
-  { label: "6-24h", min: 6 * 3_600, max: 24 * 3_600 },
-  { label: "1-3d", min: 24 * 3_600, max: 3 * 24 * 3_600 },
-  { label: ">3d", min: 3 * 24 * 3_600, max: Infinity },
+const LIFE_BUCKETS: { key: string; min: number; max: number }[] = [
+  { key: "under-1h", min: 0, max: 3_600 },
+  { key: "1-6h", min: 3_600, max: 6 * 3_600 },
+  { key: "6-24h", min: 6 * 3_600, max: 24 * 3_600 },
+  { key: "1-3d", min: 24 * 3_600, max: 3 * 24 * 3_600 },
+  { key: "over-3d", min: 3 * 24 * 3_600, max: Infinity },
 ];
 
 function LifespanHistogram({ creds }: { creds: Credential[] }) {
+  const { t } = useTranslation("buses");
   const data = useMemo(() => {
     const buckets = LIFE_BUCKETS.map((b) => ({ ...b, count: 0 }));
     for (const c of creds) {
@@ -216,8 +221,8 @@ function LifespanHistogram({ creds }: { creds: Credential[] }) {
         if (life >= b.min && life < b.max) { b.count += 1; break; }
       }
     }
-    return buckets.map((b) => ({ label: b.label, count: b.count }));
-  }, [creds]);
+    return buckets.map((b) => ({ label: t(`stats.lifespan.bucket.${b.key}`), count: b.count }));
+  }, [creds, t]);
 
   const total = data.reduce((s, b) => s + b.count, 0);
   /* 用平均寿命当"这辆车的号质量" · 只统计有寿命数据的号 */
@@ -231,17 +236,17 @@ function LifespanHistogram({ creds }: { creds: Credential[] }) {
   return (
     <Card className="p-6">
       <ChartHead
-        title="号存活时长"
+        title={t("stats.lifespan.title")}
         sub={
           total > 0 ? (
-            <>{total} 个号 · 平均活 <strong className="tnum text-fg">{formatHours(avgLife)}</strong></>
+            <>{total} {t("stats.lifespan.sub-count-mid")} <strong className="tnum text-fg">{formatHours(avgLife, t)}</strong></>
           ) : (
-            "还没有能统计寿命的号"
+            t("stats.lifespan.sub-empty")
           )
         }
       />
       {total === 0 ? (
-        <EmptyChart hint="拉号后 / 号失效后才有寿命数据" />
+        <EmptyChart hint={t("stats.lifespan.empty")} />
       ) : (
         <div className="h-52">
           <ResponsiveContainer width="100%" height="100%">
@@ -255,7 +260,7 @@ function LifespanHistogram({ creds }: { creds: Credential[] }) {
                 tickLine={false} axisLine={false} allowDecimals={false}
                 tick={{ fontSize: 11, fill: "hsl(var(--fg-tertiary))" }}
               />
-              <Tooltip content={<HistogramTooltip />} />
+              <Tooltip content={<HistogramTooltip unit={t("stats.lifespan.tooltip-unit")} />} />
               <Bar dataKey="count" radius={[3, 3, 0, 0]}>
                 {data.map((_, i) => (
                   /* 越靠右（活得久）越紫 · 直观暗示"号质量" */
@@ -270,10 +275,10 @@ function LifespanHistogram({ creds }: { creds: Credential[] }) {
   );
 }
 
-function formatHours(seconds: number): string {
-  if (seconds < 3_600) return `${Math.round(seconds / 60)} 分`;
-  if (seconds < 24 * 3_600) return `${(seconds / 3_600).toFixed(1)} 小时`;
-  return `${(seconds / 24 / 3_600).toFixed(1)} 天`;
+function formatHours(seconds: number, t: (k: string) => string): string {
+  if (seconds < 3_600) return `${Math.round(seconds / 60)} ${t("stats.lifespan.hours-min-suffix")}`;
+  if (seconds < 24 * 3_600) return `${(seconds / 3_600).toFixed(1)} ${t("stats.lifespan.hours-hour-suffix")}`;
+  return `${(seconds / 24 / 3_600).toFixed(1)} ${t("stats.lifespan.hours-day-suffix")}`;
 }
 
 /* ─────────────── 图 4 · 推送成功率折线 ─────────────── */
@@ -281,6 +286,7 @@ function formatHours(seconds: number): string {
 function PushSuccessRateChart({
   creds, hasDownstream,
 }: { creds: Credential[]; hasDownstream: boolean }) {
+  const { t } = useTranslation("buses");
   const data = useMemo(() => {
     const days = last30DaysKeys();
     /* 每天 · 有 pushed_at 的 credential 记一次 attempt，成功/失败按 push_failed 判 */
@@ -310,10 +316,10 @@ function PushSuccessRateChart({
   if (!hasDownstream) {
     return (
       <Card className="p-6">
-        <ChartHead title="推送成功率" sub="推我方号池 → 你的 passengerpool 的成功率" />
+        <ChartHead title={t("stats.push-rate.title")} sub={t("stats.push-rate.sub-desc")} />
         <div className="grid h-52 place-items-center">
           <Alert tone="warn">
-            未配置我的号池 · 在 <strong className="text-fg">设置 · 我的号池</strong> 里配 URL 后有数据
+            {t("stats.push-rate.warn-prefix")} <strong className="text-fg">{t("stats.push-rate.warn-link")}</strong> {t("stats.push-rate.warn-suffix")}
           </Alert>
         </div>
       </Card>
@@ -323,17 +329,17 @@ function PushSuccessRateChart({
   return (
     <Card className="p-6">
       <ChartHead
-        title="推送成功率"
+        title={t("stats.push-rate.title")}
         sub={
           totalAttempts > 0 ? (
-            <>30 天 <strong className="tnum text-fg">{totalAttempts}</strong> 次推送尝试</>
+            <>{t("stats.push-rate.sub-attempts-prefix")} <strong className="tnum text-fg">{totalAttempts}</strong> {t("stats.push-rate.sub-attempts-suffix")}</>
           ) : (
-            "还没有推送尝试"
+            t("stats.push-rate.sub-empty")
           )
         }
       />
       {totalAttempts === 0 ? (
-        <EmptyChart hint="没有号被推给你的号池" />
+        <EmptyChart hint={t("stats.push-rate.empty")} />
       ) : (
         <div className="h-52">
           <ResponsiveContainer width="100%" height="100%">
@@ -349,7 +355,7 @@ function PushSuccessRateChart({
                 tickFormatter={(v: number) => `${v}%`}
                 tick={{ fontSize: 11, fill: "hsl(var(--fg-tertiary))" }}
               />
-              <Tooltip content={<RateTooltip />} />
+              <Tooltip content={<RateTooltip rateLabel={t("stats.push-rate.tooltip-rate")} emptyLabel={t("stats.push-rate.tooltip-empty")} />} />
               <Line
                 type="monotone" dataKey="rate" stroke="#22C55E"
                 strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }}
@@ -368,6 +374,7 @@ function PushSuccessRateChart({
 /** 各成员分到多少号 / 花了多少积分 · 数据来自 pull_round 的实际号数分配
  *  1 人车只有自己一行（占比 100%）· 没什么可比的·所以只在多人时显示 */
 function MemberBreakdown({ busId }: { busId: string }) {
+  const { t } = useTranslation("buses");
   const { data } = useBusMemberStats(busId);
   const members = data?.members ?? [];
 
@@ -383,12 +390,12 @@ function MemberBreakdown({ busId }: { busId: string }) {
   return (
     <Card className="p-6">
       <ChartHead
-        title="成员用量"
+        title={t("stats.member.title")}
         sub={
           <>
-            谁分到多少号 · 摊了多少积分 · 共{" "}
-            <span className="font-semibold tnum">{totalKeys}</span> 号 ·{" "}
-            <span className="font-semibold tnum">{fmtCredits(totalSpend)}</span> 积分
+            {t("stats.member.sub-prefix")}{" "}
+            <span className="font-semibold tnum">{totalKeys}</span> {t("stats.member.sub-mid")}{" "}
+            <span className="font-semibold tnum">{fmtCredits(totalSpend)}</span> {t("stats.member.sub-suffix")}
           </>
         }
       />
@@ -405,24 +412,24 @@ function MemberBreakdown({ busId }: { busId: string }) {
                   <span className="truncate font-medium">{m.username}</span>
                   {m.role === "owner" && (
                     <span className="shrink-0 rounded-md bg-brand-subtle px-1.5 py-0.5 text-[10px] font-semibold text-brand-strong">
-                      发起人
+                      {t("stats.member.role-owner")}
                     </span>
                   )}
                   {m.status === "suspended" && (
                     <span className="shrink-0 rounded-md bg-bg-elevated px-1.5 py-0.5 text-[10px] font-medium text-fg-tertiary">
-                      已挂起
+                      {t("stats.member.status-suspended")}
                     </span>
                   )}
                 </span>
                 <span className="shrink-0 text-label text-fg-tertiary">
-                  <span className="font-semibold tnum text-fg">{m.keys_taken}</span> 号
+                  <span className="font-semibold tnum text-fg">{m.keys_taken}</span> {t("stats.member.count-suffix")}
                   {" · "}
                   <span className="tnum">{keyPct.toFixed(0)}%</span>
                   {" · "}
-                  <span className="font-semibold tnum text-fg">{fmtCredits(m.spend_total)}</span> 积分
+                  <span className="font-semibold tnum text-fg">{fmtCredits(m.spend_total)}</span> {t("stats.member.credits-suffix")}
                   {anyPush && pushTotal > 0 && (
                     <>
-                      {" · 推送 "}
+                      {" "}{t("stats.member.push-prefix")}{" "}
                       <span className="tnum">
                         {m.pushed_ok}/{pushTotal}
                       </span>
@@ -442,8 +449,8 @@ function MemberBreakdown({ busId }: { busId: string }) {
                 />
               </div>
               <div className="text-label text-fg-tertiary">
-                参与 <span className="tnum">{m.rounds_joined}</span> 轮 · 分摊比例{" "}
-                <span className="tnum">{m.share_pct}%</span>
+                {t("stats.member.row-prefix")} <span className="tnum">{m.rounds_joined}</span> {t("stats.member.row-mid")}{" "}
+                <span className="tnum">{m.share_pct}{t("stats.member.row-percent")}</span>
               </div>
             </div>
           );
@@ -451,7 +458,7 @@ function MemberBreakdown({ busId }: { busId: string }) {
       </div>
 
       <p className="mt-4 text-label text-fg-tertiary">
-        消费按每轮实际分到的号数摊 · 跟分摊比例可能有出入（有人余额不足被跳过时）
+        {t("stats.member.footnote")}
       </p>
     </Card>
   );
@@ -497,6 +504,7 @@ function TooltipShell({ label, children }: { label?: string; children: React.Rea
 function StackedTooltip({
   active, payload, label, vendors, unit,
 }: TooltipProps & { vendors: string[]; unit: string }) {
+  const { t } = useTranslation("buses");
   const { data: me } = useMe();
   if (!active || !payload?.length) return null;
   const total = payload.reduce((s, p) => s + p.value, 0);
@@ -517,7 +525,7 @@ function StackedTooltip({
             );
           })}
         <div className="mt-1 flex justify-between border-t border-hairline pt-1">
-          <span className="text-fg-tertiary">共</span>
+          <span className="text-fg-tertiary">{t("stats.pull-volume.tooltip-total")}</span>
           <span className="font-semibold tnum">{total} {unit}</span>
         </div>
       </div>
@@ -526,41 +534,42 @@ function StackedTooltip({
 }
 
 function SpendTooltip({ active, payload, label }: TooltipProps) {
+  const { t } = useTranslation("buses");
   if (!active || !payload?.length) return null;
   const val = payload[0].value;
   return (
     <TooltipShell label={label}>
       <div className="flex items-center gap-2">
-        <span className="text-fg-tertiary">扣</span>
+        <span className="text-fg-tertiary">{t("stats.daily-spend.tooltip-charge")}</span>
         <span className="font-semibold tnum text-danger-fg">-{fmtCredits(val)}</span>
-        <span className="text-fg-tertiary">积分</span>
+        <span className="text-fg-tertiary">{t("stats.daily-spend.tooltip-credits")}</span>
       </div>
     </TooltipShell>
   );
 }
 
-function HistogramTooltip({ active, payload, label }: TooltipProps) {
+function HistogramTooltip({ active, payload, label, unit }: TooltipProps & { unit: string }) {
   if (!active || !payload?.length) return null;
   return (
     <TooltipShell label={label}>
       <div className="flex items-center gap-2">
         <span className="font-semibold tnum">{payload[0].value}</span>
-        <span className="text-fg-tertiary">个号</span>
+        <span className="text-fg-tertiary">{unit}</span>
       </div>
     </TooltipShell>
   );
 }
 
-function RateTooltip({ active, payload, label }: TooltipProps) {
+function RateTooltip({ active, payload, label, rateLabel, emptyLabel }: TooltipProps & { rateLabel: string; emptyLabel: string }) {
   if (!active || !payload?.length) return null;
   const val = payload[0].value;
   return (
     <TooltipShell label={label}>
       {val == null ? (
-        <span className="text-fg-tertiary">无推送数据</span>
+        <span className="text-fg-tertiary">{emptyLabel}</span>
       ) : (
         <div className="flex items-center gap-2">
-          <span className="text-fg-tertiary">成功率</span>
+          <span className="text-fg-tertiary">{rateLabel}</span>
           <span className="font-semibold tnum text-ok-fg">{val}%</span>
         </div>
       )}

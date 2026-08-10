@@ -20,14 +20,13 @@
     "title": "Bind community invite code"
   },
   "channel": {
-    "discord": {
-      "desc": "Chat · technical support"
-    },
+    "telegram_channel": { "desc": "Announcements · credit drops · read-only" },
+    "telegram_group": { "desc": "Rider chat · technical support" },
+    "discord": { "desc": "Chat · technical support" },
+    "github": { "desc": "Open source repo · file an issue" },
+    "telegram": { "desc": "Main channel · announcements and credit drops" },
     "footnote": "Community links go live here once they open · we'll also push a top banner",
-    "soon": "Opening soon",
-    "telegram": {
-      "desc": "Main channel · announcements and credit drops"
-    }
+    "soon": "Opening soon"
   },
   "chip": {
     "member": "Community member"

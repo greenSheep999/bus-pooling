@@ -1,0 +1,39 @@
+# 敏感 / 大文件 · 绝不进镜像
+.dev.env
+.env
+.env.*
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# git 元数据
+.git/
+.gitignore
+.gitattributes
+
+# 前端 node_modules · 让 web-build stage 自己 npm ci
+web/node_modules/
+web/dist/
+
+# Go build cache（如果本地有过）
+tmp/
+bin/
+
+# 平台产物
+.playwright-mcp/
+.claude/
+
+# 开发时脚本 / 日志 / 编辑器缓存
+*.log
+.DS_Store
+*.swp
+
+# CI/工具
+.github/
+Makefile
+
+# 文档 · 不进镜像（省 5MB）
+docs/
+design/
+web/e2e-*.md

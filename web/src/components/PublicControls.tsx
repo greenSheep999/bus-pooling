@@ -1,7 +1,7 @@
 import { Globe, Moon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useTheme, type ThemeMode } from "@/lib/theme";
-import { LANGUAGES } from "@/i18n";
+import { LANGUAGES, resolveLang } from "@/i18n";
 import {
   Popover, PopoverContent, PopoverItem, PopoverTrigger,
 } from "@/components/ui/popover";
@@ -37,7 +37,7 @@ export function PublicControls() {
             <PopoverItem
               key={l.code}
               onSelect={() => { void i18n.changeLanguage(l.code); }}
-              className={i18n.language === l.code ? "font-semibold text-fg" : ""}
+              className={resolveLang(i18n.language) === l.code ? "font-semibold text-fg" : ""}
             >
               {l.label}
             </PopoverItem>

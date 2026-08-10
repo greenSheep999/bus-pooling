@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { ArrowRight, Check, X } from "lucide-react";
 import { useMe } from "@/api/hooks";
 import { BareRow, Chip } from "./ui/primitives";
@@ -9,24 +10,27 @@ import type { Activity, PullResult, PullRound, PushState } from "@/types";
 
 /* ── 拉号轮次行 · 6 列 ── */
 
-const RESULT: Record<PullResult, { label: string; tone: "ok" | "warn" | "danger" | "brand" }> = {
-  success: { label: "成功", tone: "ok" },
-  partial: { label: "部分", tone: "warn" },
-  failed: { label: "失败", tone: "danger" },
-  refunded: { label: "退款", tone: "brand" },
+const RESULT_TONE: Record<PullResult, "ok" | "warn" | "danger" | "brand"> = {
+  success: "ok",
+  partial: "warn",
+  failed: "danger",
+  refunded: "brand",
 };
 
 function PushCell({ state, ratio }: { state: PushState; ratio: string | null }) {
-  if (state === "pushed") return <Chip tone="ok" icon={<Check className="size-3" />}>已推</Chip>;
-  if (state === "partial") return <Chip tone="warn" icon={<Check className="size-3" />}>部分推 {ratio}</Chip>;
-  if (state === "failed") return <Chip tone="danger" icon={<X className="size-3" />}>推失败</Chip>;
-  return <Chip tone="neutral">未推</Chip>;
+  const { t } = useTranslation("common");
+  if (state === "pushed") return <Chip tone="ok" icon={<Check className="size-3" />}>{t("status.push.pushed")}</Chip>;
+  if (state === "partial") return <Chip tone="warn" icon={<Check className="size-3" />}>{t("status.push.partial", { ratio })}</Chip>;
+  if (state === "failed") return <Chip tone="danger" icon={<X className="size-3" />}>{t("status.push.failed")}</Chip>;
+  return <Chip tone="neutral">{t("status.push.none")}</Chip>;
 }
 
 export function PullRow({ r }: { r: PullRound }) {
+  const { t } = useTranslation("common");
   const { data: me } = useMe();
-  const res = RESULT[r.result];
   const failed = r.result === "failed";
+  const resTone = RESULT_TONE[r.result];
+  const resLabel = t(`status.pull-result.${r.result}`);
 
   return (
     <BareRow>
@@ -35,8 +39,8 @@ export function PullRow({ r }: { r: PullRound }) {
       </span>
 
       <span className="w-14 shrink-0">
-        <Chip tone={res.tone} dot className="w-full justify-center">
-          {res.label}
+        <Chip tone={resTone} dot className="w-full justify-center">
+          {resLabel}
         </Chip>
       </span>
 
@@ -44,12 +48,15 @@ export function PullRow({ r }: { r: PullRound }) {
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {failed ? (
           <span className="truncate text-fg-tertiary">
-            未拉到号 · 尝试 {vendorLabel(r.vendor_id, !!me?.invited)} · {r.fail_reason}
+            {t("activity.pull.failed", {
+              vendor: vendorLabel(r.vendor_id, !!me?.invited),
+              reason: r.fail_reason,
+            })}
           </span>
         ) : (
           <>
             <span className="font-semibold tnum">+{r.count_purchased}</span>
-            <span className="text-fg-secondary">号</span>
+            <span className="text-fg-secondary">{t("activity.pull.count-suffix")}</span>
             <span className="text-fg-secondary">{vendorLabel(r.vendor_id, !!me?.invited)}</span>
             <ArrowRight className="size-3 shrink-0 text-fg-tertiary" />
             <span className="truncate font-medium">{r.bus_name}</span>
@@ -89,7 +96,7 @@ export function PullRow({ r }: { r: PullRound }) {
           r.total_cost > 0 ? "text-ok-fg" : r.total_cost === 0 ? "text-fg-tertiary" : "",
         )}
       >
-        {r.total_cost === 0 ? "0" : fmtCredits(r.total_cost, { sign: true })} 积分
+        {r.total_cost === 0 ? t("activity.pull.credits-zero") : fmtCredits(r.total_cost, { sign: true })} {t("activity.pull.credits-suffix")}
       </span>
     </BareRow>
   );
@@ -99,14 +106,14 @@ export function PullRow({ r }: { r: PullRound }) {
 
 type BadgeTone = "ok" | "warn" | "danger" | "brand" | "neutral";
 
-const KIND: Record<Activity["kind"], { label: string; tone: BadgeTone }> = {
-  into_bus: { label: "入车", tone: "brand" },
-  extract: { label: "提取", tone: "warn" },
-  refill: { label: "补车", tone: "brand" },
-  dead: { label: "号失效", tone: "danger" },
-  topup: { label: "充值", tone: "ok" },
-  redeem: { label: "兑换", tone: "ok" },
-  push: { label: "推池", tone: "neutral" },
+const KIND_TONE: Record<Activity["kind"], BadgeTone> = {
+  into_bus: "brand",
+  extract: "warn",
+  refill: "brand",
+  dead: "danger",
+  topup: "ok",
+  redeem: "ok",
+  push: "neutral",
 };
 
 /* 去向流可视化：vendor [badge] → 车/号池 [badge]
@@ -128,22 +135,24 @@ function FlowBadge({ children }: { children: React.ReactNode }) {
     - 号流转（vendor → 车/号池）用两个 badge + 箭头，清晰又紧凑
     - 补车 / 失效 / 充值 / 兑换：完整文字叙述，不硬套 badge */
 function ActivityContent({ a }: { a: Activity }) {
+  const { t } = useTranslation("common");
   const isFlow = a.target_kind && FLOW_TARGETS[a.target_kind];
 
   if (isFlow && a.source && a.target) {
     /* 号流转行 · 完整中文描述句：
        「共 <动词> N 个号 / 个 key，从 [vendor] → [目的地]」
        动词按 kind 派生：提取 / 入车 / 推池 · 数量加粗嵌在句子里 · 流转 badge 在后 */
-    const verb =
-      a.kind === "extract" ? "提取"
-        : a.kind === "into_bus" ? "入车"
-          : a.kind === "push" ? "推池"
-            : "拉";
+    const verbKey =
+      a.kind === "extract" ? "extract"
+        : a.kind === "into_bus" ? "into_bus"
+          : a.kind === "push" ? "push"
+            : "fallback";
+    const verb = t(`activity.verb.${verbKey}`);
 
     return (
       <span className="flex min-w-0 items-center gap-1.5 truncate">
         <span className="shrink-0 text-fg-secondary">
-          共{verb}
+          {t("activity.flow.sum-prefix", { verb })}
         </span>
         {a.count !== undefined && (
           <span className="shrink-0 font-semibold tnum text-fg">
@@ -151,7 +160,7 @@ function ActivityContent({ a }: { a: Activity }) {
           </span>
         )}
         <span className="shrink-0 text-fg-secondary">
-          {a.count_unit ?? "个"}，从
+          {a.count_unit ?? t("activity.flow.count-unit-fallback")}{t("activity.flow.from")}
         </span>
         <FlowBadge>{a.source}</FlowBadge>
         <ArrowRight className="size-3 shrink-0 text-fg-tertiary" />
@@ -169,7 +178,9 @@ function ActivityContent({ a }: { a: Activity }) {
 }
 
 export function ActivityRow({ a, onClick }: { a: Activity; onClick?: () => void }) {
-  const k = KIND[a.kind];
+  const { t } = useTranslation("common");
+  const tone = KIND_TONE[a.kind];
+  const kindLabel = t(`activity.kind.${a.kind}`);
 
   return (
     <BareRow onClick={onClick}>
@@ -180,8 +191,8 @@ export function ActivityRow({ a, onClick }: { a: Activity; onClick?: () => void 
 
       {/* 类型 badge · 定宽不换行 */}
       <span className="w-14 shrink-0">
-        <Chip tone={k.tone} className="w-full justify-center whitespace-nowrap">
-          {k.label}
+        <Chip tone={tone} className="w-full justify-center whitespace-nowrap">
+          {kindLabel}
         </Chip>
       </span>
 
@@ -201,7 +212,7 @@ export function ActivityRow({ a, onClick }: { a: Activity; onClick?: () => void 
               : "",
         )}
       >
-        {a.amount === null ? "-" : `${fmtCredits(a.amount, { sign: true })} 积分`}
+        {a.amount === null ? "-" : `${fmtCredits(a.amount, { sign: true })} ${t("activity.pull.amount-suffix")}`}
       </span>
     </BareRow>
   );

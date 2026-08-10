@@ -2,13 +2,8 @@ import {
   Area, AreaChart, CartesianGrid, Label, ReferenceDot, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
+import { useTranslation } from "react-i18next";
 import type { TrendPoint } from "@/types";
-
-const UNIT: Record<string, string> = {
-  credits: "积分",
-  pulls: "次",
-  lifespan: "h",
-};
 
 export default function TrendChart({
   data,
@@ -19,7 +14,9 @@ export default function TrendChart({
   metric: string;
   height?: number;
 }) {
-  const unit = UNIT[metric] ?? "";
+  const { t } = useTranslation("overview");
+  const unitKey = `chart.unit.${metric}`;
+  const unit = t(unitKey, { defaultValue: "" });
 
   /* 平均 + 峰值：直接在数据上算一次，别塞进 Chart 内部 —— 数据变了 tooltip 也用 */
   const values = data.map((d) => d.value);
@@ -91,7 +88,10 @@ export default function TrendChart({
             ifOverflow="extendDomain"
           >
             <Label
-              value={`平均 ${metric === "pulls" ? Math.round(avg) : avg.toFixed(1)} ${unit}`}
+              value={t("chart.avg-label", {
+                value: metric === "pulls" ? Math.round(avg) : avg.toFixed(1),
+                unit,
+              })}
               position="insideTopRight"
               fill="currentColor"
               className="text-fg-tertiary"
@@ -123,7 +123,11 @@ export default function TrendChart({
             ifOverflow="visible"
           >
             <Label
-              value={`峰值 ${peak.value} ${unit} · ${peak.date.slice(5).replace("-", "/")}`}
+              value={t("chart.peak-label", {
+                value: peak.value,
+                unit,
+                date: peak.date.slice(5).replace("-", "/"),
+              })}
               position="top"
               fill="hsl(var(--brand-strong))"
               fontSize={11}

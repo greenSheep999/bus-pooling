@@ -32,7 +32,10 @@ export const useLedger = () =>
  *  文案 / 跳转 / 倒计时都在后端 config.promo.items · 运营改了不用重新部署前端 */
 export interface PromoItem {
   id: string;
+  /** 兜底文案 · text_i18n 里没匹配到当前语言时用这个 */
   text: string;
+  /** BCP-47 → 文案 · 前端按 i18n.language 选一条 */
+  text_i18n?: Record<string, string>;
   /** 空 / 缺省 = 不可点（纯公告） */
   to?: string;
   /** 空 / 缺省 = 不显示倒计时 · 非空是 RFC3339 */
@@ -46,6 +49,141 @@ export const usePromos = () =>
     // 活动位不需要实时 · 5 分钟够了（运营改完最多 5 分钟生效）
     staleTime: 5 * 60_000,
     // 未登录也要显示 · 401 不重试（这个端点本来就不需要登录·真 401 说明后端配错了）
+    retry: false,
+  });
+
+/** 社群渠道入口（GET /api/community/channels）· 公开端点
+ *  空数组 = 前端展示"敬请期待"占位 · 未上线的渠道 backend 不下发 */
+export interface CommunityChannel {
+  /** telegram_channel / telegram_group / discord / github / x · 前端按它挑 logo */
+  id: string;
+  /** 兜底展示名 · name_i18n 里没匹配到当前语言时用这个 */
+  name: string;
+  name_i18n?: Record<string, string>;
+  url: string;
+}
+
+/** Vendor 上游状态（GET /api/vendors/status）· **公开端点**
+ *  展示层严格脱敏 · 匿名 label（"AWS-Q Kiro Vendor 01"）· 无真名 · 无价格
+ *  真名只有登录后 wholesale 档才能看到（走别的端点）· 见 decisions §10.4 */
+/** Vendor 自报的 fleet 累计数据（走 vendor 的 /api/status 端点）
+ *  支持的 vendor（kirooo / kirodrop / kiroappio）才有值 · 其他 vendor 这个字段整个 undefined
+ *  这是 vendor 侧的**真实历史累计**（不是我方探针积累的）· 上线首日就有数据 */
+export interface VendorPublicStatus {
+  keys_active?: number;
+  keys_alive?: number;
+  keys_dead?: number;
+  keys_stock?: number;
+  keys_suspect?: number;
+  keys_total?: number;
+  generating?: boolean;
+  uptime_seconds?: number;
+  /** vendor 平台启动时间 · RFC3339 UTC */
+  started_at?: string;
+}
+
+/** Backfill 汇总（vendor 侧真历史 · 上线一秒到手）
+ *  vendor 支持 order + key history 端点才有 · kirodrop 这种没端点的字段 undefined */
+export interface VendorHistoryOut {
+  total_orders: number;
+  total_keys: number;
+  active_keys: number;
+  dead_keys: number;
+  /** 平均寿命秒数 · 用于前端算 lifespan_bucket 或直接展示 */
+  avg_lifespan_sec?: number;
+  /** vendor 侧第一单时间 · RFC3339 UTC */
+  first_order_at?: string;
+  /** vendor 侧最新一单时间 · RFC3339 UTC */
+  last_order_at?: string;
+}
+
+export interface VendorStatusRow {
+  anon_id: string;
+  anon_label: string;
+  alive: boolean;
+  error_kind?: string;
+  /** many / low / out / unknown */
+  stock_bucket: "many" | "low" | "out" | "unknown";
+  region_count: number;
+  has_warranty: boolean;
+  warranty_minutes?: number;
+  max_per_order?: number;
+  /** 探测样本 < 10 时省略 · 前端展示 "-" */
+  uptime_24h_pct?: number;
+  stockout_24h_minutes?: number;
+  /** long / mid / short / unknown */
+  lifespan_bucket?: "long" | "mid" | "short" | "unknown";
+  incidents_7d?: string[];
+  public_status?: VendorPublicStatus;
+  history?: VendorHistoryOut;
+  /** Vendor 平台开号节奏 · 6 家都能有（有 FleetLister 就走真数据 · 否则从探针增量推） */
+  dispatch?: VendorDispatchOut;
+}
+
+/** Vendor 平台 fleet-wide 发货节奏 · 上线一秒到手（后端从 vendor 侧真历史或探针增量推） */
+export interface VendorDispatchOut {
+  total_batches: number;
+  total_keys_dispatched: number;
+  avg_interval_min?: number;
+  last_dispatch_at?: string;
+}
+
+export interface VendorStatusOverview {
+  probed_at?: string;
+  vendors: VendorStatusRow[];
+}
+
+/** Vendor 状态趋势（GET /api/vendors/status/{anon_id}/trend）· **公开端点**
+ *  两种数据源：
+ *    - source=backfill · 桶 1h · 真历史 · 每桶 keys_born / keys_died / avg_lifespan_sec
+ *    - source=probe    · 桶 15min · 我方探针 · 每桶 uptime_pct / stock_bucket / samples
+ *  前端按 source 决定画哪种曲线 */
+export interface VendorStatusTrendPoint {
+  /** 桶起点 · RFC3339 UTC */
+  t: string;
+  /** probe 源字段 */
+  uptime_pct?: number;
+  stock_bucket?: "many" | "low" | "out" | "unknown";
+  samples?: number;
+  /** backfill 源字段 */
+  keys_born?: number;
+  keys_died?: number;
+  avg_lifespan_sec?: number;
+}
+
+export interface VendorStatusTrend {
+  anon_id: string;
+  anon_label: string;
+  window: string; // "24h"
+  source: "backfill" | "probe" | "empty";
+  points: VendorStatusTrendPoint[];
+}
+
+export const useVendorStatus = () =>
+  useQuery({
+    queryKey: ["vendor-status"],
+    queryFn: () => api<VendorStatusOverview>("/vendors/status"),
+    staleTime: 30_000,      // 探针 60s 采样 · 30s 缓存合理
+    refetchInterval: 60_000, // 挂着看的话每分钟刷一次
+    retry: false,           // 公开端点 · 401 不重试
+  });
+
+export const useVendorStatusTrend = (anonID: string | undefined, window: string = "24h") =>
+  useQuery({
+    queryKey: ["vendor-status-trend", anonID, window],
+    queryFn: () => api<VendorStatusTrend>(`/vendors/status/${anonID}/trend`, { params: { window } }),
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+    retry: false,
+    enabled: !!anonID,
+  });
+
+export const useCommunityChannels = () =>
+  useQuery({
+    queryKey: ["community-channels"],
+    queryFn: () => api<{ channels: CommunityChannel[] }>("/community/channels"),
+    // 社群链接极少变 · 缓存 10 分钟
+    staleTime: 10 * 60_000,
     retry: false,
   });
 

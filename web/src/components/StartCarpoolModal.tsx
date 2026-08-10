@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { Info, Sparkles, Zap } from "lucide-react";
 import {
@@ -37,13 +38,15 @@ import {
 export function StartCarpoolModal({
   open, onClose,
 }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation("buses");
   const { data: me } = useMe();
   const nav = useNavigate();
   const createBus = useCreateBus();
   const { data: vendors } = useVendorStats();
   const availableVendors = (vendors?.stats ?? []).filter((v) => !v.out_of_stock);
 
-  const [name, setName] = useState("我的车");
+  const defaultName = t("start-modal.default-bus-name");
+  const [name, setName] = useState(defaultName);
   const [count, setCount] = useState(3);
   const [vendorId, setVendorId] = useState<string>("auto");
   const [autoRefill, setAutoRefill] = useState(false);
@@ -56,7 +59,7 @@ export function StartCarpoolModal({
   // 打开时重置
   useEffect(() => {
     if (open) {
-      setName("我的车");
+      setName(defaultName);
       setCount(3);
       setVendorId("auto");
       setAutoRefill(false);
@@ -64,7 +67,7 @@ export function StartCarpoolModal({
       setDailyRoundLimit("");
       setDailySpendLimit("");
     }
-  }, [open]);
+  }, [open, defaultName]);
 
   const bargain = count === 1;
 
@@ -93,24 +96,24 @@ export function StartCarpoolModal({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>发起拼车</DialogTitle>
-          <DialogDescription>建一辆自己的车 · 首次发车一并完成</DialogDescription>
+          <DialogTitle>{t("start-modal.title")}</DialogTitle>
+          <DialogDescription>{t("start-modal.desc")}</DialogDescription>
         </DialogHeader>
 
         <DialogBody>
           <form id="start-carpool-form" onSubmit={onSubmit} className="space-y-5">
-            <Field label="车名">
+            <Field label={t("start-modal.field-name")}>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="给车起个名字"
+                placeholder={t("start-modal.name-placeholder")}
                 required
                 maxLength={30}
               />
             </Field>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-[140px_minmax(0,1fr)]">
-              <Field label="拉几个号">
+              <Field label={t("start-modal.field-count")}>
                 <Input
                   type="number"
                   min={1}
@@ -119,13 +122,13 @@ export function StartCarpoolModal({
                   onChange={(e) => setCount(Math.max(1, Math.min(200, Number(e.target.value) || 1)))}
                 />
               </Field>
-              <Field label="vendor">
+              <Field label={t("start-modal.field-vendor")}>
                 <Select value={vendorId} onValueChange={setVendorId}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="auto">让系统选（按有效成本比价）</SelectItem>
+                    <SelectItem value="auto">{t("start-modal.vendor-auto")}</SelectItem>
                     {availableVendors.map((v) => (
                       <SelectItem key={v.vendor_id} value={v.vendor_id}>
                         {vendorLabel(v.vendor_id, !!me?.invited)}
@@ -138,12 +141,12 @@ export function StartCarpoolModal({
 
             {/* 单价提示 · 向下省视角（不用内部计费术语） */}
             {bargain ? (
-              <Alert tone="neutral" icon={Sparkles} title="拉 2 个及以上单价更低">
-                一次只拉 1 个成本偏高 · 建议至少拉 2 个
+              <Alert tone="neutral" icon={Sparkles} title={t("start-modal.bargain-alert-title")}>
+                {t("start-modal.bargain-alert-body")}
               </Alert>
             ) : (
-              <Alert tone="ok" icon={Sparkles} title="单价更划算">
-                一次拉 <span className="font-semibold tnum">{count}</span> 个号 · 均摊后单价更低
+              <Alert tone="ok" icon={Sparkles} title={t("start-modal.cheap-alert-title")}>
+                {t("start-modal.cheap-alert-body-prefix")}<span className="font-semibold tnum">{count}</span>{t("start-modal.cheap-alert-body-suffix")}
               </Alert>
             )}
 
@@ -160,9 +163,9 @@ export function StartCarpoolModal({
                 )}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="font-semibold">开启自动补车</div>
+                <div className="font-semibold">{t("start-modal.auto-refill-title")}</div>
                 <div className="mt-0.5 text-label text-fg-tertiary">
-                  号池活号少于保活数时，系统自动拉一轮补车。关闭则手动决定何时拉号。
+                  {t("start-modal.auto-refill-desc")}
                 </div>
               </div>
               <Switch
@@ -174,7 +177,7 @@ export function StartCarpoolModal({
 
             {autoRefill && (
               <div className="grid grid-cols-2 gap-4">
-                <Field label="保活数（正常号少于此数就补）">
+                <Field label={t("start-modal.field-watermark")}>
                   <Input
                     type="number"
                     min={1}
@@ -182,7 +185,7 @@ export function StartCarpoolModal({
                     onChange={(e) => setRefillWatermark(Math.max(1, Number(e.target.value) || 1))}
                   />
                 </Field>
-                <Field label="每轮补几个">
+                <Field label={t("start-modal.field-per-round")}>
                   <Input
                     type="number"
                     min={1}
@@ -193,50 +196,49 @@ export function StartCarpoolModal({
               </div>
             )}
 
-            <CollapsiblePanel title="高级选项" subtitle="单价上限 · 日轮次 · 日花费">
+            <CollapsiblePanel title={t("start-modal.advanced-title")} subtitle={t("start-modal.advanced-sub")}>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <Field label="单价上限（积分）">
+                <Field label={t("start-modal.field-max-price")}>
                   <Input
                     type="number"
                     value={maxPrice}
                     onChange={(e) => setMaxPrice(e.target.value)}
-                    placeholder="不限"
+                    placeholder={t("start-modal.no-limit")}
                   />
                 </Field>
-                <Field label="日轮次上限">
+                <Field label={t("start-modal.field-daily-round")}>
                   <Input
                     type="number"
                     value={dailyRoundLimit}
                     onChange={(e) => setDailyRoundLimit(e.target.value)}
-                    placeholder="不限"
+                    placeholder={t("start-modal.no-limit")}
                   />
                 </Field>
-                <Field label="日花费上限（积分）">
+                <Field label={t("start-modal.field-daily-spend")}>
                   <Input
                     type="number"
                     value={dailySpendLimit}
                     onChange={(e) => setDailySpendLimit(e.target.value)}
-                    placeholder="不限"
+                    placeholder={t("start-modal.no-limit")}
                   />
                 </Field>
               </div>
             </CollapsiblePanel>
 
             <Alert tone="brand" icon={Info}>
-              建车后自动发首轮车 · <span className="font-semibold text-fg">{count}</span> 个号进池 ·
-              可在车详情页调策略、查看号列表、手动再拉
+              {t("start-modal.tip-prefix")}<span className="font-semibold text-fg">{count}</span>{t("start-modal.tip-mid")}
             </Alert>
           </form>
         </DialogBody>
 
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose}>取消</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>{t("start-modal.cancel")}</Button>
           <Button
             type="submit"
             form="start-carpool-form"
             disabled={createBus.isPending}
           >
-            {createBus.isPending ? "发车中…" : "发车"}
+            {createBus.isPending ? t("start-modal.submit-pending") : t("start-modal.submit")}
           </Button>
         </DialogFooter>
       </DialogContent>

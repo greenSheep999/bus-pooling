@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toCredits } from "@/lib/utils";
 import type { VendorDayRounds, VendorRound } from "@/types";
 
@@ -170,6 +171,7 @@ export function RoundsTooltip({
   label: string;
   color: string;
 }) {
+  const { t } = useTranslation("prices");
   const head = (
     <div className="flex items-center gap-1.5">
       <span className="size-1.5 rounded-sm" style={{ backgroundColor: color }} />
@@ -182,7 +184,7 @@ export function RoundsTooltip({
     return (
       <div className="rounded-xl border border-hairline bg-bg px-3 py-2 text-label shadow-pop">
         {head}
-        <div className="mt-1 text-fg-tertiary">那天没发车</div>
+        <div className="mt-1 text-fg-tertiary">{t("boxplot.no-service")}</div>
       </div>
     );
   }
@@ -191,30 +193,38 @@ export function RoundsTooltip({
   const min = Math.min(...prices);
   const max = Math.max(...prices);
   const avg = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
+  const creditsUnit = t("boxplot.credits-unit");
+  const roundsUnit = t("boxplot.rounds-unit");
 
   return (
     <div className="min-w-[180px] rounded-xl border border-hairline bg-bg px-3 py-2.5 text-label shadow-pop">
       {head}
       <div className="mt-2 space-y-1 border-t border-hairline pt-2">
-        <TipRow label="发车" value={<><strong className="tnum">{rounds.length}</strong> 轮</>} />
         <TipRow
-          label="区间"
+          label={t("boxplot.rounds-label")}
+          value={<><strong className="tnum">{rounds.length}</strong>{roundsUnit ? ` ${roundsUnit}` : ""}</>}
+        />
+        <TipRow
+          label={t("boxplot.range-label")}
           value={
             min === max ? (
-              <><strong className="tnum">{toCredits(min)}</strong> 积分</>
+              <><strong className="tnum">{toCredits(min)}</strong> {creditsUnit}</>
             ) : (
               <>
                 <strong className="tnum">{toCredits(min)}</strong>
                 {" - "}
-                <strong className="tnum">{toCredits(max)}</strong> 积分
+                <strong className="tnum">{toCredits(max)}</strong> {creditsUnit}
               </>
             )
           }
         />
-        <TipRow label="均价" value={<><strong className="tnum">{toCredits(avg)}</strong> 积分</>} />
+        <TipRow
+          label={t("boxplot.avg-label")}
+          value={<><strong className="tnum">{toCredits(avg)}</strong> {creditsUnit}</>}
+        />
       </div>
       <div className="mt-2 border-t border-hairline pt-1.5 text-fg-tertiary">
-        点一下 · 下方看每轮明细
+        {t("boxplot.click-hint")}
       </div>
     </div>
   );

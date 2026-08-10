@@ -161,6 +161,50 @@
 
 }
 
+/* Legal MD 渲染的排版 · react-markdown 输出的裸标签走这里
+   （没装 @tailwindcss/typography · 手写够用） */
+.legal-prose h1 {
+  @apply text-hero font-semibold tracking-tight;
+}
+.legal-prose h2 {
+  @apply mt-10 text-section font-semibold tracking-tight;
+}
+.legal-prose h3 {
+  @apply mt-6 text-body-lg font-semibold;
+}
+.legal-prose p {
+  @apply mt-4 leading-relaxed text-fg-secondary;
+}
+.legal-prose ul,
+.legal-prose ol {
+  @apply mt-3 space-y-1.5 pl-6 text-fg-secondary;
+}
+.legal-prose ul {
+  @apply list-disc;
+}
+.legal-prose ol {
+  @apply list-decimal;
+}
+.legal-prose li {
+  @apply leading-relaxed;
+}
+.legal-prose li > ul,
+.legal-prose li > ol {
+  @apply mt-1.5;
+}
+.legal-prose strong {
+  @apply font-semibold text-fg;
+}
+.legal-prose a {
+  @apply text-brand-strong underline underline-offset-2 hover:text-brand;
+}
+.legal-prose code {
+  @apply rounded bg-bg-elevated px-1.5 py-0.5 font-mono text-[0.9em] text-fg;
+}
+.legal-prose hr {
+  @apply my-8 border-t border-hairline;
+}
+
 /* 全局裸规则（不放 @layer，避免 tailwind purge 因源码里搜不到 .recharts-* 而砍掉） */
 /* Recharts svg/surface/path 点击后会有浏览器蓝色 focus ring · 只在图表内关掉 */
 .recharts-wrapper,

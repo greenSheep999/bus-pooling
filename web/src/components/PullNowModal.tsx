@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { KeyRound, Sparkles } from "lucide-react";
 import {
   useGlobalStrategy, useMe, usePullForBus, useVendorStats,
@@ -28,6 +29,7 @@ export function PullNowModal({
   preferredVendor: string | null;
   maxUnitPrice: number | null;
 }) {
+  const { t } = useTranslation("buses");
   const { data: me } = useMe();
   const pull = usePullForBus(busId);
   const { data: vendors } = useVendorStats();
@@ -70,14 +72,14 @@ export function PullNowModal({
           <DialogTitle>
             <span className="inline-flex items-center gap-2">
               <KeyRound className="size-4 text-brand-strong" />
-              立即拉号
+              {t("pull-now-modal.title")}
             </span>
           </DialogTitle>
         </DialogHeader>
 
         <DialogBody>
           <form id="pull-now-form" onSubmit={onSubmit} className="space-y-4">
-            <Field label="拉几个号">
+            <Field label={t("pull-now-modal.field-count")}>
               <Input
                 type="number" min={1} max={200} value={count}
                 onChange={(e) => setCount(Math.max(1, Math.min(200, Number(e.target.value) || 1)))}
@@ -85,12 +87,12 @@ export function PullNowModal({
             </Field>
 
             <Field
-              label="vendor"
+              label={t("pull-now-modal.field-vendor")}
               hint={
                 effectiveCap != null ? (
                   <>
-                    单价上限 <span className="font-semibold tnum">{toCredits(effectiveCap)}</span> 积分
-                    {capFrom === "global" && <span className="text-fg-tertiary">（全局）</span>}
+                    {t("pull-now-modal.hint-cap-prefix")}<span className="font-semibold tnum">{toCredits(effectiveCap)}</span>{t("pull-now-modal.hint-cap-suffix")}
+                    {capFrom === "global" && <span className="text-fg-tertiary">{t("pull-now-modal.hint-cap-global")}</span>}
                   </>
                 ) : undefined
               }
@@ -100,7 +102,7 @@ export function PullNowModal({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto">让系统选（按有效成本比价）</SelectItem>
+                  <SelectItem value="auto">{t("pull-now-modal.vendor-auto")}</SelectItem>
                   {availableVendors.map((v) => (
                     <SelectItem key={v.vendor_id} value={v.vendor_id}>
                       {vendorLabel(v.vendor_id, !!me?.invited)}
@@ -111,17 +113,17 @@ export function PullNowModal({
             </Field>
 
             {bargain && (
-              <Alert tone="neutral" icon={Sparkles} title="拉 2 个及以上单价更低">
-                一次只拉 1 个成本偏高
+              <Alert tone="neutral" icon={Sparkles} title={t("pull-now-modal.bargain-alert-title")}>
+                {t("pull-now-modal.bargain-alert-body")}
               </Alert>
             )}
           </form>
         </DialogBody>
 
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose}>取消</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>{t("pull-now-modal.cancel")}</Button>
           <Button type="submit" form="pull-now-form" disabled={pull.isPending}>
-            {pull.isPending ? "拉号中…" : `拉 ${count} 个号`}
+            {pull.isPending ? t("pull-now-modal.submit-pending") : t("pull-now-modal.submit", { count })}
           </Button>
         </DialogFooter>
       </DialogContent>

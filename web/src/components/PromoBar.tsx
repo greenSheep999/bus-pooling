@@ -1,13 +1,28 @@
 import { useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import type { PromoItem } from "@/api/hooks";
 import { usePromos } from "@/api/hooks";
 import { SplitFlapCountdown } from "@/components/ui/split-flap";
+
+/** 按当前 i18n 语言选一条文案 · text_i18n 里找不到就 fallback 到 text
+ *  例：language = "en" 时先查 text_i18n.en，没有再查 text_i18n["en-US"]，都没有再兜底 */
+function pickText(p: PromoItem, lang: string): string {
+  const map = p.text_i18n;
+  if (!map) return p.text;
+  if (map[lang]) return map[lang];
+  // "en-US" → "en" 前缀降级
+  const short = lang.split("-")[0];
+  if (map[short]) return map[short];
+  return p.text;
+}
 
 /** 顶部活动条 · 登录前后共用（AppLayout 和 Landing 都挂它）
  *  多条时 6s 轮播 · 有 countdown_until 才显示翻牌倒计时 · 没条目返回 null 不占位 */
 export function PromoBar() {
   const { data } = usePromos();
+  const { i18n } = useTranslation();
   const items = data?.items ?? [];
   const [i, setI] = useState(0);
 
@@ -27,7 +42,7 @@ export function PromoBar() {
 
   const body = (
     <>
-      <span className="truncate text-center">{p.text}</span>
+      <span className="truncate text-center">{pickText(p, i18n.language)}</span>
       {p.countdown_until && (
         <SplitFlapCountdown
           until={p.countdown_until}

@@ -13,8 +13,11 @@ import (
 // 客户端时钟不可信（用户改系统时间就能看过期活动），而且过期条目根本不该出网。
 
 type promoItemDTO struct {
-	ID   string `json:"id"`
+	ID string `json:"id"`
+	// Text 兜底文案 · 前端语言在 TextI18n 里找不到时用这个
 	Text string `json:"text"`
+	// TextI18n BCP-47 → 文案 · 前端按当前语言选一条
+	TextI18n map[string]string `json:"text_i18n,omitempty"`
 	// To 空 = 不可点（纯公告）
 	To string `json:"to,omitempty"`
 	// CountdownUntil 空 = 不显示倒计时 · 非空是 RFC3339
@@ -48,6 +51,7 @@ func (s *Server) handleListPromos(w http.ResponseWriter, r *http.Request) error 
 		items = append(items, promoItemDTO{
 			ID:             p.ID,
 			Text:           p.Text,
+			TextI18n:       p.TextI18n,
 			To:             p.To,
 			CountdownUntil: p.CountdownUntil,
 		})

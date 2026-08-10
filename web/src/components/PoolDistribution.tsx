@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { Credential } from "@/types";
 import { useMe } from "@/api/hooks";
 import { Label } from "./ui/primitives";
@@ -15,6 +16,7 @@ export function PoolDistribution({
   variant?: "full" | "compact";
   label?: string;
 }) {
+  const { t } = useTranslation("buses");
   const { data: me } = useMe();
   const alive = (credentials ?? []).filter((c) => c.status === "alive");
   const total = alive.length;
@@ -32,7 +34,9 @@ export function PoolDistribution({
           <div className="flex items-baseline justify-between">
             <Label>{label}</Label>
             <span className="text-label text-fg-tertiary">
-              {rows.length ? `${rows.length} 家 vendor` : "号池空"}
+              {rows.length
+                ? t("pool-distribution.vendor-count", { count: rows.length })
+                : t("pool-distribution.empty")}
             </span>
           </div>
         )}
@@ -81,7 +85,7 @@ export function PoolDistribution({
       </div>
       <div className="space-y-2 pt-1">
         {rows.length === 0 ? (
-          <div className="text-label text-fg-tertiary">号池空 · 待拉号</div>
+          <div className="text-label text-fg-tertiary">{t("pool-distribution.empty-full")}</div>
         ) : (
           rows.map((v, i) => (
             <div key={v.id} className="flex items-center gap-2">
@@ -92,7 +96,7 @@ export function PoolDistribution({
               <span className="min-w-0 flex-1 truncate font-medium text-fg-secondary">
                 {vendorLabel(v.id, !!me?.invited)}
               </span>
-              <span className="font-semibold tnum">{v.n} 个</span>
+              <span className="font-semibold tnum">{t("pool-distribution.row-unit", { count: v.n })}</span>
             </div>
           ))
         )}

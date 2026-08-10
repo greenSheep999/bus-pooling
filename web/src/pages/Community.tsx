@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { BadgeCheck, Gift, Megaphone, Ticket, Users } from "lucide-react";
-import { useBindSystemCode, useMe } from "@/api/hooks";
-import { DiscordLogo, TelegramLogo } from "@/components/ui/brand-icons";
+import { ArrowUpRight, BadgeCheck, Gift, Megaphone, Ticket, Users } from "lucide-react";
+import { useBindSystemCode, useCommunityChannels, useMe, type CommunityChannel } from "@/api/hooks";
+import { DiscordLogo, GithubMark, TelegramLogo } from "@/components/ui/brand-icons";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -17,8 +17,10 @@ import { Card, Chip, Em, SectionHead } from "@/components/ui/primitives";
  *
  * 文案见 decisions §8.38。 */
 export default function Community() {
-  const { t } = useTranslation("community");
+  const { t, i18n } = useTranslation("community");
   const { data: me } = useMe();
+  const { data: channelsData } = useCommunityChannels();
+  const channels = channelsData?.channels ?? [];
   const bind = useBindSystemCode();
   const [code, setCode] = useState("");
   const [msg, setMsg] = useState<{ tone: "ok" | "danger"; text: string } | null>(null);
@@ -65,16 +67,22 @@ export default function Community() {
       <Card className="p-7">
         <SectionHead title={t("join.title")} sub={t("join.sub")} />
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <ChannelRow
-            logo={<TelegramLogo className="size-8" />}
-            name="Telegram"
-            desc={t("channel.telegram.desc")}
-          />
-          <ChannelRow
-            logo={<DiscordLogo className="size-8" />}
-            name="Discord"
-            desc={t("channel.discord.desc")}
-          />
+          {channels.length === 0 ? (
+            <>
+              <ChannelRow logo={<TelegramLogo className="size-8" />} name="Telegram" desc={t("channel.telegram.desc")} />
+              <ChannelRow logo={<DiscordLogo className="size-8" />} name="Discord" desc={t("channel.discord.desc")} />
+            </>
+          ) : (
+            channels.map((c) => (
+              <ChannelRow
+                key={c.id}
+                logo={channelLogo(c.id)}
+                name={pickChannelName(c, i18n.language)}
+                desc={channelDesc(c.id, t)}
+                url={c.url}
+              />
+            ))
+          )}
         </div>
         <p className="mt-4 text-label text-fg-tertiary">
           {t("channel.footnote")}
@@ -152,18 +160,29 @@ export default function Community() {
   );
 }
 
-/** 社群渠道行 · 链接未配置时不给可点的死链 */
+/** 社群渠道行 · 有 url 时渲染成可点外链 · 无 url 时纯展示 + soon 徽标 */
 function ChannelRow({
-  logo, name, desc,
+  logo, name, desc, url,
 }: {
   /** 官方彩色 logo（品牌配色 · 不跟站内主题色混） */
   logo: React.ReactNode;
   name: string;
   desc: string;
+  url?: string;
 }) {
   const { t } = useTranslation("community");
+  const Wrapper = url ? "a" : "div";
+  const wrapperProps = url
+    ? { href: url, target: "_blank", rel: "noopener noreferrer" as const }
+    : {};
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-hairline bg-bg-elevated p-4">
+    <Wrapper
+      {...wrapperProps}
+      className={
+        "flex items-center gap-3 rounded-xl border border-hairline bg-bg-elevated p-4 transition-colors " +
+        (url ? "hover:border-brand hover:bg-bg" : "")
+      }
+    >
       <span className="grid size-9 shrink-0 place-items-center">
         {logo}
       </span>
@@ -171,7 +190,36 @@ function ChannelRow({
         <div className="font-semibold">{name}</div>
         <div className="text-label text-fg-tertiary">{desc}</div>
       </div>
-      <Chip tone="neutral">{t("channel.soon")}</Chip>
-    </div>
+      {url ? (
+        <ArrowUpRight className="size-4 shrink-0 text-fg-tertiary" />
+      ) : (
+        <Chip tone="neutral">{t("channel.soon")}</Chip>
+      )}
+    </Wrapper>
   );
+}
+
+/** 按 channel id 挑官方彩色 logo · 未知 id 兜底文字 */
+function channelLogo(id: string): React.ReactNode {
+  if (id.startsWith("telegram")) return <TelegramLogo className="size-8" />;
+  if (id === "discord") return <DiscordLogo className="size-8" />;
+  if (id === "github") return <GithubMark className="size-7 text-fg" />;
+  return null;
+}
+
+/** 描述文案从 i18n community.channel.<id>.desc 拿 · 缺就空 */
+function channelDesc(id: string, t: (k: string) => string): string {
+  const key = `channel.${id}.desc`;
+  const v = t(key);
+  return v === key ? "" : v;
+}
+
+/** 从 name_i18n 挑当前语言 · 找不到 fallback 到 name */
+function pickChannelName(c: CommunityChannel, lang: string): string {
+  const m = c.name_i18n;
+  if (!m) return c.name;
+  if (m[lang]) return m[lang];
+  const short = lang.split("-")[0];
+  if (m[short]) return m[short];
+  return c.name;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AlertTriangle, KeyRound, ShieldAlert, Tag } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useGlobalStrategy } from "@/api/hooks";
@@ -38,6 +39,7 @@ export function ExtractConfirmModal({
   pending: boolean;
   info: ExtractConfirmInfo;
 }) {
+  const { t } = useTranslation("extract");
   const [coupon, setCoupon] = useState("");
   const [applied, setApplied] = useState<string | null>(null);
 
@@ -67,7 +69,7 @@ export function ExtractConfirmModal({
           <DialogTitle>
             <span className="inline-flex items-center gap-2">
               <KeyRound className="size-4 text-brand-strong" />
-              确认提取
+              {t("confirm-modal.title")}
             </span>
           </DialogTitle>
         </DialogHeader>
@@ -75,28 +77,28 @@ export function ExtractConfirmModal({
         <DialogBody className="space-y-5">
           {/* 复核信息 */}
           <div className="rounded-xl border border-hairline bg-bg-elevated/40 p-4">
-            <div className="mb-3 text-label font-semibold text-fg">提取信息</div>
+            <div className="mb-3 text-label font-semibold text-fg">{t("confirm-modal.info-title")}</div>
             <dl className="space-y-2 text-label">
               <InfoRow
-                label="来源"
+                label={t("confirm-modal.info-source")}
                 value={
                   <>
                     {info.vendorLabel}
-                    {info.isAuto && <span className="ml-1.5 text-fg-tertiary">系统派</span>}
+                    {info.isAuto && <span className="ml-1.5 text-fg-tertiary">{t("confirm-modal.info-auto-suffix")}</span>}
                   </>
                 }
               />
-              <InfoRow label="区域" value={info.zone ?? "全区"} />
+              <InfoRow label={t("confirm-modal.info-zone")} value={info.zone ?? t("confirm-modal.info-zone-all")} />
               <InfoRow
-                label="数量"
-                value={<><strong className="tnum">{info.count}</strong> 个</>}
+                label={t("confirm-modal.info-count")}
+                value={<><strong className="tnum">{info.count}</strong> {t("confirm-modal.info-count-unit")}</>}
               />
               <InfoRow
-                label="单价"
+                label={t("confirm-modal.info-unit-price")}
                 value={
                   discounted != null ? (
                     <>
-                      <strong className="tnum">{toCredits(discounted)}</strong> 积分 / 个
+                      <strong className="tnum">{toCredits(discounted)}</strong> {t("confirm-modal.info-unit-price-suffix")}
                       {applied && info.unitPrice != null && (
                         <span className="ml-2 text-fg-tertiary line-through tnum">
                           {toCredits(info.unitPrice)}
@@ -104,30 +106,30 @@ export function ExtractConfirmModal({
                       )}
                     </>
                   ) : (
-                    "—"
+                    t("confirm-modal.info-dash")
                   )
                 }
               />
               <InfoRow
-                label="质保"
+                label={t("confirm-modal.info-warranty")}
                 value={
                   info.warrantyMinutes > 0
-                    ? <><strong className="tnum">{info.warrantyMinutes}</strong> 分钟内失效可退</>
-                    : <span className="text-warn-fg">无质保</span>
+                    ? <><strong className="tnum">{info.warrantyMinutes}</strong> {t("confirm-modal.info-warranty-prefix")}</>
+                    : <span className="text-warn-fg">{t("confirm-modal.info-warranty-none")}</span>
                 }
               />
             </dl>
           </div>
 
           {/* 优惠码 */}
-          <Field label="优惠码" hint={applied ? "已应用" : "选填"}>
+          <Field label={t("confirm-modal.coupon-label")} hint={applied ? t("confirm-modal.coupon-hint-applied") : t("confirm-modal.coupon-hint-optional")}>
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Tag className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-tertiary" />
                 <Input
                   value={coupon}
                   onChange={(e) => { setCoupon(e.target.value); setApplied(null); }}
-                  placeholder="有优惠码可减免"
+                  placeholder={t("confirm-modal.coupon-placeholder")}
                   className="pl-9"
                 />
               </div>
@@ -137,7 +139,7 @@ export function ExtractConfirmModal({
                 disabled={!code || applied === code}
                 onClick={() => setApplied(code)}
               >
-                {applied === code ? "已应用" : "应用"}
+                {applied === code ? t("confirm-modal.coupon-btn-applied") : t("confirm-modal.coupon-btn-apply")}
               </Button>
             </div>
           </Field>
@@ -145,16 +147,16 @@ export function ExtractConfirmModal({
           {/* 合计 · 对外只展示单价 × 数量 / 服务费 / 小计（不展示计费分项 · §8.20） */}
           <div className="space-y-1.5 rounded-xl bg-bg-elevated p-4 text-label">
             <FeeRow
-              label={discounted != null ? `单价 · ${toCredits(discounted)} × ${info.count}` : "单价"}
-              value={`${fmtCredits(discounted != null ? discounted * info.count : 0)} 积分`}
+              label={discounted != null ? `${t("confirm-modal.fee-unit-label")} · ${toCredits(discounted)} × ${info.count}` : t("confirm-modal.fee-unit-label")}
+              value={`${fmtCredits(discounted != null ? discounted * info.count : 0)} ${t("confirm-modal.fee-credits")}`}
             />
             {svcFee > 0 && (
-              <FeeRow label="服务费" value={`${fmtCredits(svcFee)} 积分`} muted />
+              <FeeRow label={t("confirm-modal.fee-service")} value={`${fmtCredits(svcFee)} ${t("confirm-modal.fee-credits")}`} muted />
             )}
             <div className="mt-2 border-t border-hairline pt-2">
               <FeeRow
-                label="合计扣除"
-                value={<strong className="tnum text-fg">{fmtCredits(total)} 积分</strong>}
+                label={t("confirm-modal.fee-total")}
+                value={<strong className="tnum text-fg">{fmtCredits(total)} {t("confirm-modal.fee-credits")}</strong>}
                 strong
               />
             </div>
@@ -163,30 +165,30 @@ export function ExtractConfirmModal({
           {overCap ? (
             /* 超了你自己设的上限 · 拦住 · 说清超多少、去哪儿改（不给"就这次放行"的口子，
                要放行就去改上限 —— 免得护栏形同虚设） */
-            <Alert tone="danger" icon={ShieldAlert} title="超过你设的单价上限">
-              现在 <strong className="tnum">{toCredits(discounted ?? 0)}</strong> 积分 / 个 ·
-              你的上限是 <strong className="tnum">{toCredits(cap!)}</strong> ·
-              超了 <strong className="tnum">{toCredits((discounted ?? 0) - cap!)}</strong>
+            <Alert tone="danger" icon={ShieldAlert} title={t("confirm-modal.cap-alert-title")}>
+              {t("confirm-modal.cap-alert-prefix")}<strong className="tnum">{toCredits(discounted ?? 0)}</strong>
+              {t("confirm-modal.cap-alert-mid1")}<strong className="tnum">{toCredits(cap!)}</strong>
+              {t("confirm-modal.cap-alert-mid2")}<strong className="tnum">{toCredits((discounted ?? 0) - cap!)}</strong>
               <div className="mt-1">
-                等价格降下来 · 或者去
+                {t("confirm-modal.cap-alert-tail")}
                 <Link
                   to="/settings/preferences"
                   className="mx-1 font-semibold text-brand-strong hover:underline"
                 >
-                  拉号偏好
+                  {t("confirm-modal.cap-alert-link")}
                 </Link>
-                调高上限
+                {t("confirm-modal.cap-alert-tail-suffix")}
               </div>
             </Alert>
           ) : (
             <Alert tone="warn" icon={AlertTriangle}>
-              价格受市场波动影响 · 实际扣除以成交为准 · 确认前请核对上面信息
+              {t("confirm-modal.warn-alert")}
             </Alert>
           )}
         </DialogBody>
 
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose}>取消</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>{t("confirm-modal.cancel")}</Button>
           <Button
             type="button"
             variant="primary"
@@ -194,7 +196,7 @@ export function ExtractConfirmModal({
             onClick={() => onConfirm(applied ?? undefined)}
           >
             <KeyRound />
-            {overCap ? "超过上限 · 拉不了" : pending ? "提取中…" : `确认提取 ${info.count} 个`}
+            {overCap ? t("confirm-modal.confirm-over-cap") : pending ? t("confirm-modal.confirm-pending") : t("confirm-modal.confirm-submit", { count: info.count })}
           </Button>
         </DialogFooter>
       </DialogContent>

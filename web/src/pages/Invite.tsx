@@ -141,7 +141,7 @@ export default function Invite() {
                         </span>
                       </span>
                       <span className="w-24 shrink-0 text-center">
-                        <Chip tone="ok">+{r.waiver_granted} {t("records.granted.unit") || "次"}</Chip>
+                        <Chip tone="ok">+{r.waiver_granted} {t("records.granted.unit")}</Chip>
                       </span>
                       <span className="w-[92px] shrink-0 text-right text-label tnum text-fg-tertiary">
                         {fmtTime(r.joined_at)}

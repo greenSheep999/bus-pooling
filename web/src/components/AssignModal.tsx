@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   AlertTriangle, ArrowRight, Bus, Coins, Copy, Download, Send, UserMinus,
 } from "lucide-react";
@@ -103,6 +104,7 @@ export function AssignModal({
   passengerpoolConnected: boolean;
   presetKind?: Kind;
 }) {
+  const { t } = useTranslation("extract");
   const { data: me } = useMe();
   const assign = useAssign();
   const { data: buses } = useBuses();
@@ -177,20 +179,19 @@ export function AssignModal({
         <DialogHeader>
           {/* preset 模式（从悬浮栏带去向进来）· 标题直接说要做什么，不再说"选一种去向" */}
           <DialogTitle>
-            {presetKind === "into_bus" && "确认加入拼车"}
-            {presetKind === "push_pool" && "确认推我的号池"}
-            {presetKind === "handoff" && "确认下载拿走"}
-            {!presetKind && "派去向"}
+            {presetKind === "into_bus" && t("assign-modal.title-into-bus")}
+            {presetKind === "push_pool" && t("assign-modal.title-push-pool")}
+            {presetKind === "handoff" && t("assign-modal.title-handoff")}
+            {!presetKind && t("assign-modal.title-default")}
           </DialogTitle>
           <p className="text-label text-fg-tertiary">
             {presetKind ? (
               <>
-                共 <Em>{records.length}</Em> 个 key ·
-                核对后确认
+                {t("assign-modal.sub-preset-prefix")}<Em>{records.length}</Em>{t("assign-modal.sub-preset-suffix")}
               </>
             ) : (
               <>
-                选中 <Em>{records.length}</Em> 个 key · 选一种去向
+                {t("assign-modal.sub-select-prefix")}<Em>{records.length}</Em>{t("assign-modal.sub-select-suffix")}
               </>
             )}
           </p>
@@ -200,8 +201,8 @@ export function AssignModal({
           <>
             <DialogBody>
               {/* 号此刻**还没删** —— 点下面「我已保存」才删。所以这里说"确认后删除"而不是"已删除" */}
-              <Alert tone="danger" icon={AlertTriangle} title="这是唯一一次可见，请立即复制保存">
-                确认后我方立即删除 · 之后再也拿不到明文
+              <Alert tone="danger" icon={AlertTriangle} title={t("assign-modal.handoff-alert-title")}>
+                {t("assign-modal.handoff-alert-body")}
               </Alert>
               <div className="mt-3 max-h-60 space-y-2 overflow-y-auto rounded-xl border border-hairline bg-bg-elevated p-3">
                 {handoff.keys.map((k) => (
@@ -213,7 +214,7 @@ export function AssignModal({
                       variant="ghost"
                       size="icon"
                       onClick={() => navigator.clipboard.writeText(k.key)}
-                      aria-label="复制"
+                      aria-label={t("assign-modal.handoff-copy-aria")}
                     >
                       <Copy />
                     </Button>
@@ -227,19 +228,19 @@ export function AssignModal({
                 onClick={() => navigator.clipboard.writeText(handoff.keys.map((k) => k.key).join("\n"))}
               >
                 <Copy />
-                复制全部
+                {t("assign-modal.handoff-copy-all")}
               </Button>
             </DialogBody>
             <DialogFooter>
               {/* 「返回」不 confirm → 号留在池里，可以重来（这正是三段式的意义） */}
-              <Button variant="ghost" onClick={() => setHandoff(null)}>返回</Button>
+              <Button variant="ghost" onClick={() => setHandoff(null)}>{t("assign-modal.handoff-back")}</Button>
               <Button
                 variant="danger"
                 onClick={onConfirmHandoff}
                 disabled={handoffConfirm.isPending}
               >
                 <ArrowRight />
-                {handoffConfirm.isPending ? "处理中…" : "我已保存 · 确认拿走"}
+                {handoffConfirm.isPending ? t("assign-modal.handoff-confirm-pending") : t("assign-modal.handoff-confirm")}
               </Button>
             </DialogFooter>
           </>
@@ -258,17 +259,17 @@ export function AssignModal({
                           : Download
                     }
                   >
-                    {presetKind === "into_bus" && "号进车后由车管理 · 车内成员共享 · 我方持续监控存活"}
-                    {presetKind === "push_pool" && "双写到你配的号池 · 我方仍监控存活"}
-                    {presetKind === "handoff" && "下载明文 key 后号离开系统 · 我方不再监控，也无法重新下载"}
+                    {presetKind === "into_bus" && t("assign-modal.preset-into-bus-desc")}
+                    {presetKind === "push_pool" && t("assign-modal.preset-push-pool-desc")}
+                    {presetKind === "handoff" && t("assign-modal.preset-handoff-desc")}
                   </Alert>
 
                   {/* 进车必须选车 · 选完才算得出清算 */}
                   {presetKind === "into_bus" && (
                     <div className="space-y-2">
-                      <Field label="派到哪辆车">
+                      <Field label={t("assign-modal.field-target-bus")}>
                         <Select value={busId} onValueChange={setBusId}>
-                          <SelectTrigger><SelectValue placeholder="选择⋯" /></SelectTrigger>
+                          <SelectTrigger><SelectValue placeholder={t("assign-modal.select-placeholder")} /></SelectTrigger>
                           <SelectContent>
                             {(buses?.items ?? []).map((b) => (
                               <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
@@ -282,7 +283,7 @@ export function AssignModal({
 
                   {/* 选中的 key 清单 */}
                   <div className="rounded-xl border border-hairline bg-bg-elevated/40 p-3">
-                    <div className="mb-2 text-label font-semibold">这些 key</div>
+                    <div className="mb-2 text-label font-semibold">{t("assign-modal.keys-title")}</div>
                     <div className="max-h-40 space-y-1 overflow-y-auto">
                       {records.map((r) => (
                         <div key={r.id} className="flex items-center gap-2 text-label">
@@ -299,15 +300,15 @@ export function AssignModal({
                 /* 没带去向（兜底路径）· 让用户选 */
                 <div className="space-y-2">
                   <KindOption
-                    icon={Bus} title="进车" desc="进入一辆已有的车 · 号池由车管理"
+                    icon={Bus} title={t("assign-modal.kind-into-bus-title")} desc={t("assign-modal.kind-into-bus-desc")}
                     picked={kind === "into_bus"} onPick={() => setKind("into_bus")}
                   />
                   {kind === "into_bus" && (
                     <div className="ml-11 space-y-2 rounded-xl bg-bg-elevated p-3">
-                      <Field label="选一辆车">
+                      <Field label={t("assign-modal.field-target-bus-alt")}>
                         <Select value={busId} onValueChange={setBusId}>
                           <SelectTrigger>
-                            <SelectValue placeholder="选择⋯" />
+                            <SelectValue placeholder={t("assign-modal.select-placeholder")} />
                           </SelectTrigger>
                           <SelectContent>
                             {(buses?.items ?? []).map((b) => (
@@ -321,14 +322,14 @@ export function AssignModal({
                   )}
 
                   <KindOption
-                    icon={Send} title="推我的号池" desc="双写到你配的 passengerpool · 我方仍监控存活"
+                    icon={Send} title={t("assign-modal.kind-push-pool-title")} desc={t("assign-modal.kind-push-pool-desc")}
                     picked={kind === "push_pool"} onPick={() => setKind("push_pool")}
                     disabled={!passengerpoolConnected}
-                    disabledReason={!passengerpoolConnected ? "未配置" : undefined}
+                    disabledReason={!passengerpoolConnected ? t("assign-modal.kind-push-pool-disabled-reason") : undefined}
                   />
 
                   <KindOption
-                    icon={Download} title="拿走号数据" desc="下载明文 key · 号离开系统 · 我方不再监控"
+                    icon={Download} title={t("assign-modal.kind-handoff-title")} desc={t("assign-modal.kind-handoff-desc")}
                     picked={kind === "handoff"} onPick={() => setKind("handoff")}
                     warn
                   />
@@ -338,14 +339,14 @@ export function AssignModal({
 
             <DialogFooter>
               <span className="mr-auto text-label text-fg-tertiary">
-                {kind === "handoff" && "⚠️ 拿走后号数据只能看这一次"}
+                {kind === "handoff" && t("assign-modal.footer-handoff-hint")}
               </span>
-              <Button variant="ghost" onClick={onClose}>取消</Button>
+              <Button variant="ghost" onClick={onClose}>{t("assign-modal.cancel")}</Button>
               <Button
                 onClick={onSubmit}
                 disabled={!canSubmit || assign.isPending}
               >
-                {assign.isPending ? "处理中…" : "确认"}
+                {assign.isPending ? t("assign-modal.submit-pending") : t("assign-modal.submit")}
               </Button>
             </DialogFooter>
           </>
@@ -360,19 +361,20 @@ export function AssignModal({
  *  逐成员份额在车详情页成员 tab 看，这里不重复
  *  例外：余额不足时必须展开说是谁（这时候用户得知道找谁） */
 function SettlementNote({ settlement }: { settlement: Settlement }) {
+  const { t } = useTranslation("extract");
   if (settlement.kind === "solo") {
-    return <Muted>独享车 · 无分摊</Muted>;
+    return <Muted>{t("assign-modal.settlement-solo")}</Muted>;
   }
 
   const skipLabel = settlement.skipped
-    .map((s) => `@${s.username}${s.skipReason === "suspended" ? "（已挂起）" : "（余额不足）"}`)
+    .map((s) => `@${s.username}${s.skipReason === "suspended" ? t("assign-modal.settlement-skipped-suspended") : t("assign-modal.settlement-skipped-short")}`)
     .join(" · ");
 
   /* 一个人都参与不了 · 派进去等于纯赠送 · 拦下来 */
   if (settlement.payers.length === 0) {
     return (
-      <Alert tone="danger" icon={AlertTriangle} title="没有车友能参与这次分摊">
-        {skipLabel} · 现在派进去等于你白送 · 等他们充值或先解挂
+      <Alert tone="danger" icon={AlertTriangle} title={t("assign-modal.settlement-none-title")}>
+        {skipLabel}{t("assign-modal.settlement-none-body-suffix")}
       </Alert>
     );
   }
@@ -380,14 +382,14 @@ function SettlementNote({ settlement }: { settlement: Settlement }) {
   return (
     <div className="space-y-2">
       <Alert tone="ok" icon={Coins}>
-        车友分摊后你将收到{" "}
-        <span className="font-semibold tnum text-ok-fg">{fmtCredits(settlement.income)}</span> 积分
+        {t("assign-modal.settlement-payers-prefix")}
+        <span className="font-semibold tnum text-ok-fg">{fmtCredits(settlement.income)}</span>{t("assign-modal.settlement-payers-suffix")}
       </Alert>
       {/* 跳过的只是这次不参与 · 车照进 · 所以是 warn 不是 danger */}
       {settlement.skipped.length > 0 && (
-        <Alert tone="warn" icon={UserMinus} title={`${skipLabel} · 本次跳过`}>
-          不扣他积分，也不给取这批号 · 你少收{" "}
-          <span className="font-semibold tnum">{fmtCredits(settlement.lost)}</span> 积分
+        <Alert tone="warn" icon={UserMinus} title={`${skipLabel}${t("assign-modal.settlement-skipped-title-suffix")}`}>
+          {t("assign-modal.settlement-skipped-body-prefix")}
+          <span className="font-semibold tnum">{fmtCredits(settlement.lost)}</span>{t("assign-modal.settlement-skipped-body-suffix")}
         </Alert>
       )}
     </div>
@@ -406,6 +408,7 @@ function KindOption({
   disabledReason?: string;
   warn?: boolean;
 }) {
+  const { t } = useTranslation("extract");
   return (
     <button
       type="button"
@@ -428,7 +431,7 @@ function KindOption({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 font-semibold">
           {title}
-          {warn && <Chip tone="warn" className="text-[10px]">fire-and-forget</Chip>}
+          {warn && <Chip tone="warn" className="text-[10px]">{t("assign-modal.chip-fire-and-forget")}</Chip>}
           {disabled && disabledReason && (
             <Chip tone="neutral" className="text-[10px]">{disabledReason}</Chip>
           )}

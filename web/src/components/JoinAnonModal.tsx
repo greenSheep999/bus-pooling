@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { Info, Sparkles, Users } from "lucide-react";
 import { useCreateBus, useMatchAnonBus } from "@/api/hooks";
@@ -25,6 +26,7 @@ import {
 export function JoinAnonModal({
   open, onClose,
 }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation("buses");
   const nav = useNavigate();
   const match = useMatchAnonBus();
   const createBus = useCreateBus();
@@ -57,7 +59,7 @@ export function JoinAnonModal({
       }
       // 没匹配 · 建新 anon 车 · 当前用户是 owner · 等后来人搭
       const bus = await createBus.mutateAsync({
-        name: "搭车池",
+        name: t("join-anon-modal.new-bus-name"),
         kind: "anon",
         max_members: 5,
         anon_zone: zone,
@@ -66,7 +68,7 @@ export function JoinAnonModal({
       onClose();
       nav(`/buses/${bus.id}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "搭车失败·稍后重试");
+      setError(err instanceof Error ? err.message : t("join-anon-modal.error-generic"));
     }
   };
 
@@ -76,39 +78,38 @@ export function JoinAnonModal({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>搭车</DialogTitle>
+          <DialogTitle>{t("join-anon-modal.title")}</DialogTitle>
           <DialogDescription>
-            找一辆区域 / 单价上限匹配的活跃车加入 · 找不到就自己建一辆等人来搭
+            {t("join-anon-modal.desc")}
           </DialogDescription>
         </DialogHeader>
 
         <DialogBody>
           <form id="join-anon-form" onSubmit={onSubmit} className="space-y-5">
-            <Field label="区域">
+            <Field label={t("join-anon-modal.field-zone")}>
               <Select value={zone} onValueChange={setZone}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="cn">中国大陆</SelectItem>
-                  <SelectItem value="overseas">海外</SelectItem>
+                  <SelectItem value="cn">{t("join-anon-modal.zone-cn")}</SelectItem>
+                  <SelectItem value="overseas">{t("join-anon-modal.zone-overseas")}</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
 
-            <Field label="单价上限（积分 · 可留空）">
+            <Field label={t("join-anon-modal.field-max-price")}>
               <Input
                 type="number"
                 min={0}
                 value={maxPriceCredits}
                 onChange={(e) => setMaxPriceCredits(e.target.value)}
-                placeholder="不限"
+                placeholder={t("join-anon-modal.max-price-placeholder")}
               />
             </Field>
 
-            <Alert tone="brand" icon={Sparkles} title="怎么运作">
-              系统先找区域和价格上限匹配的活跃车 · 有就直接加入·没有就自己建一辆让别人来搭。
-              多人拼车按 N 分摊号价·车友越多每人越便宜。
+            <Alert tone="brand" icon={Sparkles} title={t("join-anon-modal.how-title")}>
+              {t("join-anon-modal.how-body")}
             </Alert>
 
             {error && (
@@ -118,10 +119,10 @@ export function JoinAnonModal({
         </DialogBody>
 
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose}>取消</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>{t("join-anon-modal.cancel")}</Button>
           <Button type="submit" form="join-anon-form" disabled={pending}>
             <Users className="size-4" />
-            {pending ? "撮合中…" : "开始搭车"}
+            {pending ? t("join-anon-modal.submit-pending") : t("join-anon-modal.submit")}
           </Button>
         </DialogFooter>
       </DialogContent>

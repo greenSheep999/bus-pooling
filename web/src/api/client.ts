@@ -17,11 +17,13 @@ export class ApiError extends Error {
 /** 未登录也能停留的路径 · 401 到这些路径不踢
  *  - `/` = Landing（RootGate 内部判空显示 Landing）
  *  - `/login` / `/register` = 登录/注册页
- *  - `/join/:code` = 邀请链接落地 · 引导注册后回跳 */
-const PUBLIC_PATHS = ["/", "/login", "/register"];
+ *  - `/join/:code` = 邀请链接落地 · 引导注册后回跳
+ *  - `/legal/*` = 法务页（协议 / 使用政策 / 支持地区）· 未登录也要能看 */
+const PUBLIC_PATHS = ["/", "/login", "/register", "/legal", "/status"];
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;
   if (pathname.startsWith("/join/")) return true;
+  if (pathname.startsWith("/legal/")) return true;
   return false;
 }
 

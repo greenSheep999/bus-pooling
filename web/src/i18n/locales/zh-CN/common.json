@@ -4,7 +4,11 @@
     "buses": "拼车",
     "extract": "提取 key",
     "dispatch": "我的发车",
-    "docs": "对接文档"
+    "docs": "对接文档",
+    "status": "上游状态",
+    "login": "登录",
+    "signup": "免费上车",
+    "enter_dashboard": "进入控制台"
   },
   "header": {
     "credits": "积分",
@@ -43,13 +47,35 @@
     "privacy": "隐私政策",
     "compliance": "合规声明",
     "docs": "对接文档",
-    "brand": "bus-pooling",
+    "brand": "Kiro.bus",
     "tagline": "· 公测中",
     "slogan": "一起拼车 · 号更便宜",
-    "blurb": "开源公益拼车工具 · 让不同规模的用户一起摊 vendor 号价 · 监控号存活 · 号死自动质保 · 数据透明可查",
-    "copyright": "© 2026 bus-pooling · 开源公益项目",
+    "blurb": "开源共享的拼车工具 · 多家 vendor 一个入口 · 独享或拼车都是目前最省钱的用 API key 方式 · 明文交付即删,数据透明可查",
+    "copyright": "© 2026 Kiro.bus · 开源共享项目",
     "status_ok": "系统正常",
     "status_page": "状态页 →"
+  },
+  "meta": {
+    "title": "Kiro.bus · 一起拼车,号更便宜",
+    "description": "开源共享的拼车工具 · 多家 vendor 一个入口 · 独享或拼车都是目前最省钱的用 API key 方式 · 数据透明可查,车主自己看账"
+  },
+  "legal": {
+    "title": "法务条款",
+    "intro": "Kiro.bus 是一个开源共享的拼车工具 · 我方负责路由 API key,不负责生产。以下页面说明这对您意味着什么。",
+    "backToIndex": "全部法务页",
+    "notFound": "页面未找到。",
+    "pages": {
+      "terms": "用户协议",
+      "usage": "使用政策",
+      "services": "服务专项条款",
+      "regions": "支持的国家/地区"
+    },
+    "summary": {
+      "terms": "您与我方之间就使用 Kiro.bus 达成的约定。",
+      "usage": "使用本服务时能做什么、不能做什么。",
+      "services": "具体功能如何运作 —— 拼车、质保、handoff、webhook。",
+      "regions": "平台、支付渠道、上游 Vendor 各自的覆盖地区。"
+    }
   },
   "action": {
     "save": "保存",
@@ -71,5 +97,48 @@
     "empty": "暂无数据",
     "error": "加载失败",
     "error_desc": "网络或服务异常 · 点下面重试"
+  },
+  "status": {
+    "pull-result": {
+      "success": "成功",
+      "partial": "部分",
+      "failed": "失败",
+      "refunded": "退款"
+    },
+    "push": {
+      "pushed": "已推",
+      "partial": "部分推 {{ratio}}",
+      "failed": "推失败",
+      "none": "未推"
+    }
+  },
+  "activity": {
+    "kind": {
+      "into_bus": "入车",
+      "extract": "提取",
+      "refill": "补车",
+      "dead": "key 失效",
+      "topup": "充值",
+      "redeem": "兑换",
+      "push": "推池"
+    },
+    "verb": {
+      "into_bus": "入车",
+      "extract": "提取",
+      "push": "推池",
+      "fallback": "拉"
+    },
+    "flow": {
+      "sum-prefix": "共{{verb}}",
+      "from": "，从",
+      "count-unit-fallback": "个"
+    },
+    "pull": {
+      "failed": "未拉到号 · 尝试 {{vendor}} · {{reason}}",
+      "count-suffix": "号",
+      "credits-zero": "0",
+      "credits-suffix": "积分",
+      "amount-suffix": "积分"
+    }
   }
 }

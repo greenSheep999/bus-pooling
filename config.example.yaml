@@ -73,22 +73,65 @@ bus:
 #   - **不承诺任何时长 / 质量指标**（规则 B：我方不承诺号的可用时长）
 #
 # countdown_until 到点后这条**自动不下发** —— 免得运营忘了关，过期活动还挂着
+# 社群渠道入口（GET /api/community/channels）· 空 = 前端展示占位
+# id 稳定标识 · 前端按它选官方 logo · enabled/false 或 url 空都不下发
+community:
+  channels:
+    - id: telegram_channel
+      name: "Telegram channel"
+      name_i18n:
+        zh-CN: "Telegram 频道"
+        en: "Telegram channel"
+      url: "https://t.me/tokensheep666"
+      enabled: true
+    - id: telegram_group
+      name: "Telegram group"
+      name_i18n:
+        zh-CN: "Telegram 群组"
+        en: "Telegram group"
+      url: "https://t.me/tokensheep001"
+      enabled: true
+    - id: discord
+      name: "Discord server"
+      name_i18n:
+        zh-CN: "Discord 服务器"
+        en: "Discord server"
+      url: "https://discord.gg/nH4qMVEpa"
+      enabled: true
+    - id: github
+      name: "GitHub"
+      name_i18n:
+        zh-CN: "GitHub"
+        en: "GitHub"
+      url: "https://github.com/greenSheep999/kiro.bus"
+      enabled: true
+
 promo:
   items:
     - id: community
-      text: "公测期间限时特惠，加入 Kirobus 社群获取免费额度"
+      # text 是兜底 · text_i18n 里没匹配到当前语言时用这个
+      text: "Beta special · join the Kiro.bus community for free credits"
+      text_i18n:
+        zh-CN: "公测期间限时特惠，加入 Kiro.bus 社群获取免费额度"
+        en: "Beta special · join the Kiro.bus community for free credits"
       to: /community
       enabled: true
       # 社群免费额度 · 7 天
       countdown_until: "2026-08-16T23:59:59Z"
     - id: zero_service_fee
-      text: "公测期间限时特惠，0 拼车服务费，随时拼车，随时下车～"
+      text: "Beta special · 0 pooling service fee · hop on and off freely"
+      text_i18n:
+        zh-CN: "公测期间限时特惠，0 拼车服务费，随时拼车，随时下车～"
+        en: "Beta special · 0 pooling service fee · hop on and off freely"
       to: ""                   # 空 = 纯公告不可点
       enabled: true
       # 0 拼车服务费 · 15 天
       countdown_until: "2026-08-24T23:59:59Z"
     - id: invite_friends
-      text: "邀请好友一起拼车，分摊单价更有限时减免支付手续费～"
+      text: "Invite a friend to pool · payment fee waived for a limited time"
+      text_i18n:
+        zh-CN: "邀请好友一起拼车，分摊单价更有限时减免支付手续费～"
+        en: "Invite a friend to pool · payment fee waived for a limited time"
       to: /invite              # 邀请好友页
       enabled: true
       countdown_until: ""      # 手续费减免不设倒计时 · 文案里说"限时"即可

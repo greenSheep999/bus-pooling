@@ -87,10 +87,171 @@
     "refunded": "退款",
     "success": "成功"
   },
+  "assign-modal": {
+    "title-into-bus": "确认加入拼车",
+    "title-push-pool": "确认推我的号池",
+    "title-handoff": "确认下载拿走",
+    "title-default": "派去向",
+    "sub-preset-prefix": "共 ",
+    "sub-preset-suffix": " 个 key · 核对后确认",
+    "sub-select-prefix": "选中 ",
+    "sub-select-suffix": " 个 key · 选一种去向",
+    "handoff-alert-title": "这是唯一一次可见，请立即复制保存",
+    "handoff-alert-body": "确认后我方立即删除 · 之后再也拿不到明文",
+    "handoff-copy-aria": "复制",
+    "handoff-copy-all": "复制全部",
+    "handoff-back": "返回",
+    "handoff-confirm-pending": "处理中…",
+    "handoff-confirm": "我已保存 · 确认拿走",
+    "preset-into-bus-desc": "号进车后由车管理 · 车内成员共享 · 我方持续监控存活",
+    "preset-push-pool-desc": "双写到你配的号池 · 我方仍监控存活",
+    "preset-handoff-desc": "下载明文 key 后号离开系统 · 我方不再监控，也无法重新下载",
+    "field-target-bus": "派到哪辆车",
+    "field-target-bus-alt": "选一辆车",
+    "select-placeholder": "选择⋯",
+    "keys-title": "这些 key",
+    "kind-into-bus-title": "进车",
+    "kind-into-bus-desc": "进入一辆已有的车 · 号池由车管理",
+    "kind-push-pool-title": "推我的号池",
+    "kind-push-pool-desc": "双写到你配的 passengerpool · 我方仍监控存活",
+    "kind-push-pool-disabled-reason": "未配置",
+    "kind-handoff-title": "拿走号数据",
+    "kind-handoff-desc": "下载明文 key · 号离开系统 · 我方不再监控",
+    "chip-fire-and-forget": "fire-and-forget",
+    "footer-handoff-hint": "⚠️ 拿走后号数据只能看这一次",
+    "cancel": "取消",
+    "submit-pending": "处理中…",
+    "submit": "确认",
+    "settlement-solo": "独享车 · 无分摊",
+    "settlement-skipped-suspended": "（已挂起）",
+    "settlement-skipped-short": "（余额不足）",
+    "settlement-none-title": "没有车友能参与这次分摊",
+    "settlement-none-body-suffix": " · 现在派进去等于你白送 · 等他们充值或先解挂",
+    "settlement-payers-prefix": "车友分摊后你将收到 ",
+    "settlement-payers-suffix": " 积分",
+    "settlement-skipped-title-suffix": " · 本次跳过",
+    "settlement-skipped-body-prefix": "不扣他积分，也不给取这批号 · 你少收 ",
+    "settlement-skipped-body-suffix": " 积分"
+  },
+  "confirm-modal": {
+    "title": "确认提取",
+    "info-title": "提取信息",
+    "info-source": "来源",
+    "info-auto-suffix": "系统派",
+    "info-zone": "区域",
+    "info-zone-all": "全区",
+    "info-count": "数量",
+    "info-count-unit": "个",
+    "info-unit-price": "单价",
+    "info-unit-price-suffix": "积分 / 个",
+    "info-warranty": "质保",
+    "info-warranty-prefix": "分钟内失效可退",
+    "info-warranty-none": "无质保",
+    "info-dash": "—",
+    "coupon-label": "优惠码",
+    "coupon-hint-applied": "已应用",
+    "coupon-hint-optional": "选填",
+    "coupon-placeholder": "有优惠码可减免",
+    "coupon-btn-applied": "已应用",
+    "coupon-btn-apply": "应用",
+    "fee-unit-label": "单价",
+    "fee-service": "服务费",
+    "fee-total": "合计扣除",
+    "fee-credits": "积分",
+    "cap-alert-title": "超过你设的单价上限",
+    "cap-alert-prefix": "现在 ",
+    "cap-alert-mid1": " 积分 / 个 · 你的上限是 ",
+    "cap-alert-mid2": " · 超了 ",
+    "cap-alert-tail": "等价格降下来 · 或者去",
+    "cap-alert-link": "拉号偏好",
+    "cap-alert-tail-suffix": "调高上限",
+    "warn-alert": "价格受市场波动影响 · 实际扣除以成交为准 · 确认前请核对上面信息",
+    "cancel": "取消",
+    "confirm-over-cap": "超过上限 · 拉不了",
+    "confirm-pending": "提取中…",
+    "confirm-submit": "确认提取 {{count}} 个"
+  },
   "form": {
     "card": {
       "sub": "选 vendor 看上游 · 定数量和区域 · 拉一批",
       "title": "提取新 key"
+    }
+  },
+  "upstream-panel": {
+    "loading-auto": "正在挑最优 vendor…",
+    "loading-vendor": "加载 vendor 状态…",
+    "auto-title": "系统派号",
+    "auto-arrow": "→",
+    "vendor-title": "上游即时状态",
+    "default-zone-prefix": "默认区 · ",
+    "stat": {
+      "stock": "库存",
+      "unit-price": "单价",
+      "warranty": "质保",
+      "max-per-order": "单次上限",
+      "history": "历史存活"
+    },
+    "stock": {
+      "out-of-stock": "0 · 缺货",
+      "available": "个",
+      "available-suffix": "可提"
+    },
+    "unit-price-value": "积分 / 个",
+    "warranty": {
+      "none": "无质保",
+      "minutes-suffix": "分钟内失效可退"
+    },
+    "max-per-order-value": "个 / 单",
+    "history-line": {
+      "avg-prefix": "平均",
+      "sep": " · ",
+      "alive-rate-30d": "30 天成活率",
+      "percent": "%",
+      "empty": "暂无数据",
+      "empty-recent": "近 30 天没拉过"
+    },
+    "note": {
+      "hold-cap-prefix": "这家 vendor 名下持有额度只剩",
+      "hold-cap-suffix": "个 · 拉多了会被拒",
+      "currency": "这家 vendor 按美元定价 · 实扣按当日汇率折算成积分",
+      "no-region": "这家 vendor 不分区域 · 一档到底"
+    }
+  },
+  "pull-form": {
+    "field": {
+      "vendor": "vendor",
+      "zone": "区域",
+      "count": "数量",
+      "count-hint": "{{min}} - {{max}}"
+    },
+    "vendor": {
+      "auto": "系统派号（推荐）",
+      "auto-fallback": "系统派号"
+    },
+    "zone": {
+      "auto": "让系统选",
+      "us": "美国区 (us)",
+      "eu": "欧洲区 (eu)"
+    },
+    "estimate": {
+      "title": "预估费用",
+      "unit-line": "单价 · {{count}} 个",
+      "unit-value": "{{unit}} × {{count}} 积分",
+      "service-fee": "服务费",
+      "service-fee-value": "{{value}} 积分",
+      "total-label": "小计",
+      "total-value": "{{value}} 积分",
+      "loading": "正在算价…"
+    },
+    "bargain": {
+      "title": "拉 2 个及以上单价更低",
+      "body": "一次只拉 1 个成本偏高"
+    },
+    "history-link": "查看历史价格趋势",
+    "history-note": "价格受市场波动影响，会有波动，提取前请仔细核对提取信息。",
+    "submit": {
+      "out-of-stock": "该区缺货",
+      "text": "提取 {{count}} 个 key"
     }
   },
   "hero": {

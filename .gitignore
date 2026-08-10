@@ -54,3 +54,15 @@ coverage.out
 # 本地开发起服务的 key + DB
 .dev.env
 data/dev.db*
+
+# 前端 build 产物不进 git · Docker 构建时 web-build stage 生成
+internal/web/dist/*
+!internal/web/dist/.gitkeep
+!internal/web/dist/index.html
+
+# 本地日志 · 不进 git
+bus-pooling.log
+*.log
+
+# IDE / agent 本地技能包 · 不进 git（团队各自本地维护）
+.agents/

@@ -1,0 +1,156 @@
+{
+  "meta": {
+    "title": "上游状态 · Kiro.bus",
+    "description": "6 家上游 vendor 的实时状态 · 库存 · 稳定度 · 事件历史 · 公开可查"
+  },
+  "hero": {
+    "eyebrow": "上游状态",
+    "title": "多家 vendor,一份透明账",
+    "subtitle": "系统持续探测每家 vendor 的存活、库存、稳定度 · 24h 有事没事一目了然 · 想看价格请登录 /prices",
+    "probed-at": "最后探测 {{time}}",
+    "no-data": "数据采集中 · 首次上线的 24 小时内指标可能不完整"
+  },
+  "col": {
+    "vendor": "Vendor",
+    "status": "状态",
+    "stock": "库存",
+    "region": "覆盖区域",
+    "warranty": "质保",
+    "uptime": "24h 稳定度",
+    "stockout": "24h 断供",
+    "lifespan": "平均寿命",
+    "incidents": "7 天事件"
+  },
+  "status": {
+    "alive": "运行中",
+    "dead": "异常",
+    "unknown": "未知"
+  },
+  "error-kind": {
+    "timeout": "超时",
+    "auth": "凭据失效",
+    "http_5xx": "上游 5xx",
+    "http_4xx": "上游 4xx",
+    "canceled": "已取消",
+    "empty_response": "空响应",
+    "other": "其他错误"
+  },
+  "stock-bucket": {
+    "many": "充足",
+    "low": "偏少",
+    "out": "缺货",
+    "unknown": "-"
+  },
+  "region": {
+    "count": "{{count}} 区可用",
+    "unknown": "-"
+  },
+  "warranty": {
+    "yes": "质保 {{minutes}} 分钟",
+    "no-warranty": "无质保",
+    "no-data": "-"
+  },
+  "max-per-order": {
+    "value": "单次最多 {{count}}",
+    "no-data": ""
+  },
+  "uptime": {
+    "value": "{{pct}}%",
+    "unknown": "样本不足"
+  },
+  "stockout": {
+    "none": "0 分钟",
+    "value": "{{minutes}} 分钟"
+  },
+  "lifespan": {
+    "long": "长（>1h）",
+    "mid": "中（10min–1h）",
+    "short": "短（<10min）",
+    "unknown": "-"
+  },
+  "incidents": {
+    "none": "过去 7 天无事件",
+    "count": "{{count}} 天有事件"
+  },
+  "sparkline": {
+    "label": "24h 稳定度",
+    "probe-label": "24h 稳定度",
+    "backfill-label": "Key 生命周期",
+    "aria": "Vendor 活跃度趋势图",
+    "warming-up": "数据采集中",
+    "born": "+{{count}} 新发",
+    "died": "-{{count}} 已挂"
+  },
+  "public-status": {
+    "strip-label": "Vendor 自报",
+    "active": "活跃",
+    "dead": "失效",
+    "stock": "库存",
+    "total": "累计",
+    "uptime": "运行",
+    "generating": "生成中"
+  },
+  "history-strip": {
+    "label": "我方历史",
+    "orders": "订单",
+    "keys": "Key",
+    "active": "活",
+    "dead": "挂",
+    "avg-life": "平均寿命"
+  },
+  "cta": {
+    "prices": {
+      "title": "想看单价?",
+      "body": "登录后到 /prices 查看每家 vendor 的详细价格趋势与箱线矩阵",
+      "action": "去看价格"
+    },
+    "join": {
+      "title": "想试试拼车?",
+      "body": "免费注册,发起自己的车或加入他人拼车,单价按人头分摊,车友越多越省",
+      "action": "免费上车"
+    }
+  },
+  "three-things": {
+    "avail": {
+      "label": "能不能用",
+      "yes": "在线",
+      "no": "掉线",
+      "stock-many": "库存充足",
+      "stock-low": "库存偏少",
+      "stock-out": "缺货",
+      "stock-unknown": "库存未知",
+      "region-count": "{{count}} 区可用",
+      "no-region": "全区",
+      "warranty-yes": "质保 {{minutes}} 分钟",
+      "warranty-no": "不质保"
+    },
+    "stable": {
+      "label": "有多稳",
+      "uptime-value": "{{pct}}% 存活",
+      "uptime-unknown": "-",
+      "stockout-none": "24h 无断供",
+      "stockout-value": "24h 断供 {{minutes}} 分钟",
+      "incidents-none": "近 7 天无事件",
+      "incidents-value": "{{count}} 天有事件",
+      "sparkline-caption": "24h 存活曲线 · 每 15 分钟一个点"
+    },
+    "reliable": {
+      "label": "多可靠",
+      "batches-value": "累计 {{count}} 批",
+      "keys-value": "共发出 {{count}} 号",
+      "interval-value": "平均 {{minutes}} 分钟一批",
+      "interval-fast": "平均 {{minutes}} 分钟一批",
+      "no-dispatch": "数据采集中",
+      "last-value": "最新一批 · {{when}}",
+      "lifespan-long": "号平均寿命 > 1 小时",
+      "lifespan-mid": "号平均寿命 10–60 分钟",
+      "lifespan-short": "号平均寿命 < 10 分钟",
+      "lifespan-unknown": "寿命数据采集中",
+      "sparkline-caption": "近期开号节奏 · 每小时一根柱"
+    },
+    "just-now": "刚刚",
+    "mins-ago": "{{count}} 分钟前",
+    "hours-ago": "{{count}} 小时前",
+    "days-ago": "{{count}} 天前"
+  }
+}

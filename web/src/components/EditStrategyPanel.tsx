@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Save, Zap, ZapOff } from "lucide-react";
 import {
   useMe, useUpdateStrategy, useVendorStats,
@@ -21,6 +22,7 @@ import type { BusStrategy } from "@/types";
 export function EditStrategyPanel({
   busId, strategy,
 }: { busId: string; strategy: BusStrategy }) {
+  const { t } = useTranslation("buses");
   const { data: me } = useMe();
   const upd = useUpdateStrategy(busId);
   const { data: vendors } = useVendorStats();
@@ -83,14 +85,18 @@ export function EditStrategyPanel({
     <Card className="p-7">
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-section font-semibold">补车策略</h2>
-          <p className="text-label text-fg-tertiary">策略跟这辆车绑 · 不影响其他车 · 变更即时生效</p>
+          <h2 className="text-section font-semibold">{t("strategy-panel.title")}</h2>
+          <p className="text-label text-fg-tertiary">{t("strategy-panel.sub")}</p>
         </div>
         {/* 保存按钮 · 只在 dirty 或刚保存完的 2s toast 期间显示 · 未改动零动作零按钮 */}
         {(dirty || saved) && (
           <Button onClick={onSave} disabled={!dirty || upd.isPending}>
             <Save />
-            {upd.isPending ? "保存中…" : saved ? "已保存 ✓" : "保存策略"}
+            {upd.isPending
+              ? t("strategy-panel.action.saving")
+              : saved
+                ? t("strategy-panel.action.saved")
+                : t("strategy-panel.action.save")}
           </Button>
         )}
       </div>
@@ -109,11 +115,13 @@ export function EditStrategyPanel({
             )}
           </span>
           <div className="min-w-0 flex-1">
-            <div className="font-semibold">{auto ? "自动补车" : "手动模式"}</div>
+            <div className="font-semibold">
+              {auto ? t("strategy-panel.auto.on-label") : t("strategy-panel.auto.off-label")}
+            </div>
             <div className="mt-0.5 text-label text-fg-tertiary">
               {auto
-                ? "号池活号少于保活数 · 系统自动拉一轮补车"
-                : "号少时只提醒 · 不自动拉 · 你手动决定何时拉号"}
+                ? t("strategy-panel.auto.on-desc")
+                : t("strategy-panel.auto.off-desc")}
             </div>
           </div>
           <Switch
@@ -125,13 +133,13 @@ export function EditStrategyPanel({
 
         {auto && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="保活数（正常号少于此数就补）">
+            <Field label={t("strategy-panel.field.watermark")}>
               <Input
                 type="number" min={1} value={watermark}
                 onChange={(e) => setWatermark(Math.max(1, Number(e.target.value) || 1))}
               />
             </Field>
-            <Field label="每轮补几个">
+            <Field label={t("strategy-panel.field.per-round")}>
               <Input
                 type="number" min={1} value={perRound}
                 onChange={(e) => setPerRound(Math.max(1, Number(e.target.value) || 1))}
@@ -141,36 +149,36 @@ export function EditStrategyPanel({
         )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field label="单价上限（积分）">
+          <Field label={t("strategy-panel.field.max-price")}>
             <Input
               type="number" value={maxPrice}
               onChange={(e) => setMaxPrice(e.target.value)}
-              placeholder="不限"
+              placeholder={t("strategy-panel.field.unlimited-placeholder")}
             />
           </Field>
-          <Field label="日轮次上限">
+          <Field label={t("strategy-panel.field.daily-round")}>
             <Input
               type="number" value={dailyRound}
               onChange={(e) => setDailyRound(e.target.value)}
-              placeholder="不限"
+              placeholder={t("strategy-panel.field.unlimited-placeholder")}
             />
           </Field>
-          <Field label="日花费上限（积分）">
+          <Field label={t("strategy-panel.field.daily-spend")}>
             <Input
               type="number" value={dailySpend}
               onChange={(e) => setDailySpend(e.target.value)}
-              placeholder="不限"
+              placeholder={t("strategy-panel.field.unlimited-placeholder")}
             />
           </Field>
         </div>
 
-        <Field label="首选 vendor">
+        <Field label={t("strategy-panel.field.preferred-vendor")}>
           <Select value={pref} onValueChange={setPref}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="auto">让系统比价选</SelectItem>
+              <SelectItem value="auto">{t("strategy-panel.preferred.auto")}</SelectItem>
               {availableVendors.map((v) => (
                 <SelectItem key={v.vendor_id} value={v.vendor_id}>
                   {vendorLabel(v.vendor_id, !!me?.invited)}
@@ -181,8 +189,8 @@ export function EditStrategyPanel({
         </Field>
 
         <p className="rounded-xl bg-bg-elevated p-3 text-label text-fg-tertiary">
-          <Chip tone="brand" className="mr-2">Tip</Chip>
-          策略变更点保存后立即生效 · 下次自动补车 / 手动拉号都按新策略走
+          <Chip tone="brand" className="mr-2">{t("strategy-panel.tip.chip")}</Chip>
+          {t("strategy-panel.tip.text")}
         </p>
       </div>
     </Card>

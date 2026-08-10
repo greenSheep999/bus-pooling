@@ -111,43 +111,86 @@ export default function Buses() {
           </div>
           <Button variant="brand" onClick={() => setModalKind("single")}>{t("empty.cta")}</Button>
         </Card>
-      ) : (
-        /* 车列表整块 · focal 显示条件（方案 A · 决定见对话）：
-           - 有多人车（team/anon）→ 启用双列 focal + mini（多人车做 focal · 单人车做 mini）
-           - 全是 single → 3 张 BusCard 平铺（前 3 辆）· 剩下的走"查看全部"展开
-           理由：focal 大卡（车友头像组 · 邀请车友 · 24h 柱图）本身是给多人车设计的
-                 阶段 1a 全 single 时不 focal，避免为设计而设计 */
-        <div className="space-y-6">
-          {(() => {
-            const multiBus = items.find((b) => b.kind !== "single");
+      ) : (() => {
+        /* 车列表 · 按车数 + 有没有多人车分档，纯声明式无 toggle
+         *
+         *   多人车 = member_count > 1（CLAUDE.md §2 · 1 人是状态不是类型 · 不看 kind）
+         *
+         *   ┌──────────┬──────────────┬─────────────────────────────────────┐
+         *   │ 车数     │ 有多人车？   │ 布局                                │
+         *   ├──────────┼──────────────┼─────────────────────────────────────┤
+         *   │ 1 辆     │ 独享         │ 1 张 BusCard（1 列宽 · 靠左）        │
+         *   │ 1 辆     │ 多人         │ 1 张 focal 大卡 · 全宽              │
+         *   │ 2–3 辆   │ 任意         │ 左 mini 列表 + 右 focal（focal 挑   │
+         *   │          │              │ 第一辆多人车，没多人就挑第一辆）    │
+         *   │ > 3 辆   │ 全独享       │ 所有车 BusCard 3 列平铺             │
+         *   │ > 3 辆   │ 有多人       │ 顶部 focal 独占一行（挑第一辆多人） │
+         *   │          │              │ + 下面剩余车 3 列平铺（不再重复）   │
+         *   └──────────┴──────────────┴─────────────────────────────────────┘ */
+        const multiBus = items.find((b) => b.member_count > 1);
 
-            if (multiBus) {
-              // 阶段 2+ 有多人车：左 2 mini + 右 focal
-              const miniList = items.filter((b) => b.id !== multiBus.id).slice(0, 2);
-              return (
-                <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
-                  <div className="flex flex-col gap-3">
-                    {miniList.map((b) => {
-                      const idx = items.findIndex((x) => x.id === b.id);
-                      return (
-                        <BusMiniCard
-                          key={b.id} bus={b} role={roleOf(idx)}
-                          active={false}
-                          onClick={() => setSelectedId(b.id)}
-                        />
-                      );
-                    })}
-                  </div>
-                  <BusFocalCard
-                    bus={multiBus}
-                    role={roleOf(items.findIndex((b) => b.id === multiBus.id))}
-                    onPullClick={() => setPullBus(multiBus)}
-                  />
-                </div>
-              );
-            }
+        // Case 1: 只有 1 辆
+        if (items.length === 1) {
+          const b = items[0];
+          if (b.member_count > 1) {
+            return (
+              <BusFocalCard
+                bus={b}
+                role={roleOf(0)}
+                onPullClick={() => setPullBus(b)}
+              />
+            );
+          }
+          // 独享 · 1 列宽 · 3 列 grid 里的第一个位置就是靠左
+          return (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <BusCard bus={b} role={roleOf(0)} />
+            </div>
+          );
+        }
 
-            // 阶段 1a · 全 single · 3 张 BusCard 平铺（前 3 辆）
+        // Case 2: 2–3 辆 · 有多人 → mini + focal · 全独享 → 直接平铺
+        //   focal 大卡是给多人车设计的（车友头像组 / 邀请码 / 24h 柱图）
+        //   全独享的时候硬套 focal 是为设计而设计，直接平铺更诚实
+        if (items.length <= 3) {
+          if (!multiBus) {
+            return (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {items.map((b, i) => (
+                  <BusCard key={b.id} bus={b} role={roleOf(i)} />
+                ))}
+              </div>
+            );
+          }
+          const miniList = items.filter((b) => b.id !== multiBus.id);
+          return (
+            <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
+              <div className="flex flex-col gap-3">
+                {miniList.map((b) => {
+                  const idx = items.findIndex((x) => x.id === b.id);
+                  return (
+                    <BusMiniCard
+                      key={b.id} bus={b} role={roleOf(idx)}
+                    />
+                  );
+                })}
+              </div>
+              <BusFocalCard
+                bus={multiBus}
+                role={roleOf(items.findIndex((b) => b.id === multiBus.id))}
+                onPullClick={() => setPullBus(multiBus)}
+              />
+            </div>
+          );
+        }
+
+        // > 3 辆 · 折叠 / 展开 toggle
+        //   折叠：精选（有多人 → 顶部 focal + 剩下前几辆平铺；全独享 → 前 3 辆平铺）
+        //   展开：所有车 BusCard 3 列平铺
+        //   toggle 用 LoadMoreButton · label 显示总数 N
+        const collapsedGrid = () => {
+          if (!multiBus) {
+            // > 3 辆 · 全独享 · 折叠 = 前 3 辆平铺
             return (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {items.slice(0, 3).map((b, i) => (
@@ -155,25 +198,45 @@ export default function Buses() {
                 ))}
               </div>
             );
-          })()}
-
-          {/* 展开 · 所有车 BusCard grid · 永远可展开 · 跟主视图紧贴 */}
-          {expanded && (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {items.map((b, i) => (
-                <BusCard key={b.id} bus={b} role={roleOf(i)} />
-              ))}
+          }
+          // > 3 辆 · 有多人 · 折叠 = 顶部 focal + 后面 3 辆 BusCard 平铺
+          //   focal 那辆不重复出现在下方 grid 里
+          const rest = items.filter((b) => b.id !== multiBus.id).slice(0, 3);
+          return (
+            <div className="space-y-6">
+              <BusFocalCard
+                bus={multiBus}
+                role={roleOf(items.findIndex((b) => b.id === multiBus.id))}
+                onPullClick={() => setPullBus(multiBus)}
+              />
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {rest.map((b) => (
+                  <BusCard key={b.id} bus={b} role={roleOf(items.findIndex((x) => x.id === b.id))} />
+                ))}
+              </div>
             </div>
-          )}
+          );
+        };
 
-          {/* 按钮 · 永远显示 · pt-6 独立呼吸 */}
-          <LoadMoreButton
-            expanded={expanded}
-            onToggle={() => setExpanded((v) => !v)}
-            labelExpand={<>{t("list.load-more-prefix")} <span className="tnum font-semibold">{items.length}</span> {t("list.load-more-suffix")}</>}
-          />
-        </div>
-      )}
+        const expandedGrid = (
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {items.map((b, i) => (
+              <BusCard key={b.id} bus={b} role={roleOf(i)} />
+            ))}
+          </div>
+        );
+
+        return (
+          <div className="space-y-6">
+            {expanded ? expandedGrid : collapsedGrid()}
+            <LoadMoreButton
+              expanded={expanded}
+              onToggle={() => setExpanded((v) => !v)}
+              labelExpand={<>{t("list.load-more-prefix")} <span className="tnum font-semibold">{items.length}</span> {t("list.load-more-suffix")}</>}
+            />
+          </div>
+        );
+      })()}
 
       {/* 底部拼车拉号记录 · decisions §8.13 */}
       <PoolingPullHistory buses={items.map((b) => b.id)} />

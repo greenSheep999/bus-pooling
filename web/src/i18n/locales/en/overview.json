@@ -129,5 +129,19 @@
     "sub": "Distribution by vendor",
     "center_label": "pulls",
     "row_val": "{{n}}"
+  },
+  "chart": {
+    "unit": {
+      "credits": "credits",
+      "pulls": "pulls",
+      "lifespan": "h"
+    },
+    "avg-label": "Avg {{value}} {{unit}}",
+    "peak-label": "Peak {{value}} {{unit}} · {{date}}",
+    "legend": {
+      "current": "Current",
+      "average": "Average",
+      "peak": "Peak"
+    }
   }
 }

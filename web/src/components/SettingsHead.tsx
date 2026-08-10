@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
 /** 设置类页面统一的头 · 面包屑 +（hero 标题 + 描述）+ 右侧动作
@@ -19,15 +20,16 @@ export function SettingsHead({
   desc: ReactNode;
   right?: ReactNode;
 }) {
+  const { t } = useTranslation("settings");
   return (
     <div className="space-y-4">
       {/* 「设置」指向索引页 /settings（真实主入口）· 不是 /me —— 账号不是一种设置 */}
       <nav
-        aria-label="面包屑"
+        aria-label={t("head.breadcrumb-aria")}
         className="flex items-center gap-1 text-label font-medium text-fg-tertiary"
       >
         <Link to="/settings" className="transition-colors hover:text-fg-secondary">
-          设置
+          {t("head.root")}
         </Link>
         <ChevronRight className="size-3.5" aria-hidden />
         <span className="text-fg-secondary">{crumb}</span>

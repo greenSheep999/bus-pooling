@@ -99,6 +99,9 @@
     "title": "Keys",
     "unit": {
       "credits": "credits"
+    },
+    "card": {
+      "quota-unit": "k / {{max}}k credits"
     }
   },
   "invite": {
@@ -109,8 +112,152 @@
   },
   "kind": {
     "anon": "Ride pool",
+    "anon-with-count": "Ride pool · {{count}} riders",
     "multi": "{{count}}-person bus",
+    "multi-card": "Pool · {{count}} riders",
     "solo": "Solo"
+  },
+  "pool-distribution": {
+    "vendor-count": "{{count}} vendors",
+    "empty": "Pool empty",
+    "empty-full": "Pool empty · fetch some keys",
+    "row-unit": "{{count}}"
+  },
+  "card": {
+    "alive-suffix": "live · dead <1>{{dead}}</1>",
+    "alive-status": "in pool",
+    "credits-unit": "cr",
+    "spend-today-label": "Spent today · cr",
+    "distribution-label": "Pool by vendor",
+    "lifespan-prefix": "Avg lifespan",
+    "created-at": "Created {{date}}",
+    "view": "View",
+    "chip-active": "Active",
+    "refill": {
+      "auto": "Auto refill",
+      "manual": "Manual",
+      "manual-hint": "· notify when low",
+      "watermark": "· keep <1>{{count}}</1>",
+      "per-round": "· {{count}} per round"
+    },
+    "strategy": {
+      "max-price": "unit ≤ <1>{{value}}</1>",
+      "daily-limit": "daily <1>{{value}}</1>",
+      "preferred": "prefer <1>{{vendor}}</1>"
+    }
+  },
+  "join-anon-modal": {
+    "title": "Hop on",
+    "desc": "Match into an active bus with the same region and price cap · or start one and wait for riders",
+    "field-zone": "Region",
+    "zone-cn": "Mainland China",
+    "zone-overseas": "Overseas",
+    "field-max-price": "Max unit price (credits · optional)",
+    "max-price-placeholder": "No cap",
+    "how-title": "How it works",
+    "how-body": "The system first looks for an active bus that matches your region and price cap · joins if there is one · starts a new bus otherwise so others can hop on. Pool costs are split by rider count · more riders means a lower share each.",
+    "error-generic": "Couldn't hop on · try again shortly",
+    "new-bus-name": "Ride pool",
+    "cancel": "Cancel",
+    "submit-pending": "Matching…",
+    "submit": "Start riding"
+  },
+  "join-invite-modal": {
+    "title": "Join with an invite code",
+    "desc": "Use a friend's invite code to hop on their bus · share the pool, split the tab",
+    "field-label": "Invite code",
+    "placeholder": "AAAA0000",
+    "alert-body": "Codes are case-insensitive · one code is reusable (owners can rotate it any time)",
+    "cancel": "Cancel",
+    "submit-pending": "Joining…",
+    "submit": "Join",
+    "error-too-short": "Invite codes are at least 4 characters",
+    "error-not-found": "Invalid code, or the bus was dissolved",
+    "error-full": "Bus is full · check with the owner or try another"
+  },
+  "start-modal": {
+    "title": "Start a bus",
+    "desc": "Spin up your own bus · first fetch runs right after",
+    "default-bus-name": "My bus",
+    "field-name": "Bus name",
+    "name-placeholder": "Give this bus a name",
+    "field-count": "How many keys",
+    "field-vendor": "Vendor",
+    "vendor-auto": "Let the system pick (best effective cost)",
+    "bargain-alert-title": "Fetch 2+ for a better unit price",
+    "bargain-alert-body": "A single-key pull costs more · try at least 2",
+    "cheap-alert-title": "Better unit price",
+    "cheap-alert-body-prefix": "Fetching ",
+    "cheap-alert-body-suffix": " keys at once · lower per-key cost after splitting",
+    "auto-refill-title": "Turn on auto refill",
+    "auto-refill-desc": "When live keys drop below the keep-alive count, the system fetches a round on its own. Off means you decide when to pull.",
+    "field-watermark": "Keep-alive count (refill when live drops below)",
+    "field-per-round": "Keys per refill",
+    "advanced-title": "Advanced",
+    "advanced-sub": "Max unit price · daily rounds · daily spend",
+    "field-max-price": "Max unit price (credits)",
+    "field-daily-round": "Daily round limit",
+    "field-daily-spend": "Daily spend limit (credits)",
+    "no-limit": "No limit",
+    "tip-prefix": "First round fires automatically after creating · ",
+    "tip-mid": " keys into the pool · adjust strategy, view keys, or pull again from the bus detail page",
+    "cancel": "Cancel",
+    "submit-pending": "Starting…",
+    "submit": "Start bus"
+  },
+  "pull-now-modal": {
+    "title": "Fetch keys now",
+    "field-count": "How many keys",
+    "field-vendor": "Vendor",
+    "hint-cap-prefix": "Cap ",
+    "hint-cap-suffix": " credits / key",
+    "hint-cap-global": " (global)",
+    "vendor-auto": "Let the system pick (best effective cost)",
+    "bargain-alert-title": "Fetch 2+ for a better unit price",
+    "bargain-alert-body": "One-off pulls cost more per key",
+    "cancel": "Cancel",
+    "submit-pending": "Fetching…",
+    "submit": "Fetch {{count}} keys"
+  },
+  "settings-modal": {
+    "title": "Pool settings",
+    "rename": {
+      "label": "Pool name",
+      "placeholder": "Give this pool a name",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Saved ✓"
+    },
+    "danger": {
+      "title": "Danger zone",
+      "dissolve-title": "Dissolve this pool",
+      "dissolve-desc": "Live keys move to your extract log · dead keys archived · spent credits not refunded",
+      "dissolve-button": "Dissolve pool",
+      "confirm-title": "Dissolve pool",
+      "confirm-alert-title": "This action cannot be undone",
+      "confirm-alert-body": "After dissolving, live keys move to your extract log · dead keys archived · spent credits not refunded",
+      "confirm-label-prefix": "Type the pool name",
+      "confirm-label-suffix": "to confirm",
+      "cancel": "Cancel",
+      "confirm-button": "Confirm dissolve",
+      "confirming": "Dissolving…"
+    }
+  },
+  "focal": {
+    "created-ago": "Created {{count}}d ago",
+    "solo-desc": "Solo pool · just you",
+    "solo-members-mock": "you · <a>@wei</a> · <b>@lin</b>",
+    "kpi-alive": "Live",
+    "kpi-dead": "Dead",
+    "kpi-spend": "Spent today",
+    "kpi-lifespan": "Avg life",
+    "kpi-credits-unit": "cr",
+    "action": {
+      "pull": "Fetch a key",
+      "detail": "Details",
+      "invite": "Invite riders"
+    },
+    "refill-next": "· next in <1>{{count}}</1>m"
   },
   "kpi": {
     "alive": {
@@ -263,7 +410,73 @@
     "title": "Remove {{name}}?"
   },
   "stats": {
-    "loading": "Loading charts…"
+    "loading": "Loading charts…",
+    "head": {
+      "title": "Stats",
+      "sub": "This bus over time · keys added / credits spent / how long keys live · 30-day window"
+    },
+    "pull-volume": {
+      "title": "Keys fetched",
+      "sub-prefix": "30 days ·",
+      "sub-suffix": "keys landed in pool · colored by vendor",
+      "empty": "No pulls on this bus in 30 days",
+      "tooltip-unit": "keys",
+      "tooltip-total": "Total"
+    },
+    "daily-spend": {
+      "title": "Daily spend",
+      "sub-prefix": "30 days ·",
+      "sub-suffix": "credits charged",
+      "empty": "No spend on this bus in 30 days",
+      "tooltip-charge": "Charged",
+      "tooltip-credits": "credits"
+    },
+    "lifespan": {
+      "title": "Key lifespan",
+      "sub-count-prefix": "",
+      "sub-count-mid": "keys · avg alive",
+      "sub-empty": "No keys with lifespan data yet",
+      "empty": "Lifespan data appears after pulls or expiries",
+      "tooltip-unit": "keys",
+      "hours-min-suffix": "m",
+      "hours-hour-suffix": "h",
+      "hours-day-suffix": "d",
+      "bucket": {
+        "under-1h": "<1h",
+        "1-6h": "1-6h",
+        "6-24h": "6-24h",
+        "1-3d": "1-3d",
+        "over-3d": ">3d"
+      }
+    },
+    "push-rate": {
+      "title": "Push success rate",
+      "sub-desc": "Success rate for pushing keys to your pool",
+      "sub-attempts-prefix": "30 days ·",
+      "sub-attempts-suffix": "push attempts",
+      "sub-empty": "No push attempts yet",
+      "empty": "No keys pushed to your pool",
+      "warn-prefix": "My pool not configured · set the URL in",
+      "warn-link": "Settings · My pool",
+      "warn-suffix": "to unlock this chart",
+      "tooltip-rate": "Success rate",
+      "tooltip-empty": "No push data"
+    },
+    "member": {
+      "title": "Member usage",
+      "sub-prefix": "Who gets how many keys · how credits split · total",
+      "sub-mid": "keys ·",
+      "sub-suffix": "credits",
+      "role-owner": "Owner",
+      "status-suspended": "Suspended",
+      "count-suffix": "keys",
+      "credits-suffix": "credits",
+      "push-prefix": "· push",
+      "row-prefix": "Joined",
+      "row-mid": "rounds · share",
+      "row-percent": "%",
+      "footnote": "Costs split by the actual keys each member gets per round · may differ from the share ratio when someone's balance is too low to join"
+    }
   },
   "status": {
     "active": "Active",
@@ -276,5 +489,36 @@
     "pushes": "Push log",
     "stats": "Stats",
     "strategy": "Refill strategy"
+  },
+  "strategy-panel": {
+    "title": "Refill strategy",
+    "sub": "Strategy is scoped to this bus · doesn't affect others · changes apply instantly",
+    "action": {
+      "save": "Save strategy",
+      "saving": "Saving…",
+      "saved": "Saved ✓"
+    },
+    "auto": {
+      "on-label": "Auto refill",
+      "on-desc": "When live keys drop below the watermark, we pull a batch automatically",
+      "off-label": "Manual",
+      "off-desc": "Only notify when keys run low · no auto pull · you decide when to fetch"
+    },
+    "field": {
+      "watermark": "Watermark (refill when live keys drop below this)",
+      "per-round": "Keys per refill",
+      "max-price": "Max unit price (credits)",
+      "daily-round": "Daily refill limit",
+      "daily-spend": "Daily spend limit (credits)",
+      "preferred-vendor": "Preferred vendor",
+      "unlimited-placeholder": "no limit"
+    },
+    "preferred": {
+      "auto": "Let us pick the best price"
+    },
+    "tip": {
+      "chip": "Tip",
+      "text": "Changes take effect on save · the next auto refill or manual pull uses the new strategy"
+    }
   }
 }

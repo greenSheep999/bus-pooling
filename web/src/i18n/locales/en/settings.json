@@ -31,7 +31,9 @@
   "head": {
     "crumb": "Pull preferences",
     "desc": "Daily overall limits, plus defaults prefilled for new buses",
-    "title": "Pull preferences"
+    "title": "Pull preferences",
+    "root": "Settings",
+    "breadcrumb-aria": "Breadcrumb"
   },
   "limit": {
     "alert": "Each bus can set its own caps · a pull needs both under the limit (whichever is stricter wins) ·",

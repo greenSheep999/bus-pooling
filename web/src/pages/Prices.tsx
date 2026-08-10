@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { LoadMoreButton } from "@/components/ui/load-more-button";
 import { PriceBoxPlot, RoundsTooltip } from "@/components/PriceBoxPlot";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn, toCredits } from "@/lib/utils";
 import type { Money, VendorPriceTrend, VendorRound } from "@/types";
 
@@ -215,7 +216,22 @@ export default function Prices() {
       <Card className="relative p-7">
         <div className="-mx-7 overflow-x-auto px-7">
         {isLoading ? (
-          <div className="grid h-96 place-items-center text-label text-fg-tertiary">{t("matrix.loading")}</div>
+          <div className="space-y-3">
+            {/* 表头骨架 · 3 段列宽跟真实矩阵一致 */}
+            <div className="flex items-end gap-4 border-b border-hairline pb-2.5">
+              <Skeleton className="h-3 w-32" />
+              <Skeleton className="h-3 min-w-0 flex-1" />
+              <Skeleton className="h-3 w-24 shrink-0" />
+            </div>
+            {/* 6 行占位 · 高度接近真实 VendorRow */}
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 py-3.5">
+                <Skeleton className="h-10 w-[300px] shrink-0" />
+                <Skeleton className="h-10 min-w-0 flex-1" />
+                <Skeleton className="h-10 w-24 shrink-0" />
+              </div>
+            ))}
+          </div>
         ) : sorted.length === 0 ? (
           <div className="grid h-96 place-items-center text-label text-fg-tertiary">{t("matrix.empty")}</div>
         ) : (

@@ -26,10 +26,17 @@ const Register = lazy(() => import("./pages/Register"));
 const JoinByLink = lazy(() => import("./pages/JoinByLink"));
 const Community = lazy(() => import("./pages/Community"));
 const Invite = lazy(() => import("./pages/Invite"));
+const Legal = lazy(() => import("./pages/Legal"));
+const StatusPage = lazy(() => import("./pages/Status"));
 
-// 页级 Suspense fallback · 保持视觉安静（页头 layout 已渲染 · 只 body 区一个薄条即可）
+// 页级 Suspense fallback · 无文案 · 一个轻量 spinner 避免中英不一致
+// （单个页面自己会拿 skeleton 骨架显示 data loading · 这里只是 chunk 加载态）
 function PageFallback() {
-  return <div className="p-6 text-sm text-muted-foreground">加载中…</div>;
+  return (
+    <div className="grid min-h-[40vh] place-items-center" role="status" aria-busy="true">
+      <span className="inline-block size-5 animate-spin rounded-full border-2 border-hairline border-t-brand-strong" />
+    </div>
+  );
 }
 
 function withSuspense(el: React.ReactNode) {
@@ -77,4 +84,9 @@ export const router = createBrowserRouter([
       { path: "/join/:code", element: withSuspense(<JoinByLink />) },
     ],
   },
+  /* 法务页 · 未登录也能看 · 自带 layout（不套 AppLayout） */
+  { path: "/legal", element: withSuspense(<Legal />) },
+  { path: "/legal/:slug", element: withSuspense(<Legal />) },
+  /* 上游状态页 · 公开 · 自带 layout */
+  { path: "/status", element: withSuspense(<StatusPage />) },
 ]);

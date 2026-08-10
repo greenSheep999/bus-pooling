@@ -20,14 +20,13 @@
     "title": "绑定专属邀请码"
   },
   "channel": {
-    "discord": {
-      "desc": "讨论 · 技术支持"
-    },
+    "telegram_channel": { "desc": "公告 · 额度发放 · 只读频道" },
+    "telegram_group": { "desc": "车友讨论 · 技术支持" },
+    "discord": { "desc": "讨论 · 技术支持" },
+    "github": { "desc": "开源仓库 · 提 issue" },
+    "telegram": { "desc": "主频道 · 公告和额度发放" },
     "footnote": "社群链接开放后会在这里更新 · 也会通过顶部公告推送",
-    "soon": "即将开放",
-    "telegram": {
-      "desc": "主频道 · 公告和额度发放"
-    }
+    "soon": "即将开放"
   },
   "chip": {
     "member": "社群成员"

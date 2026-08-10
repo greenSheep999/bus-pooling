@@ -17,7 +17,7 @@ import { lazy, Suspense } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { SkeletonTable } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonCard, SkeletonTable } from "@/components/ui/skeleton";
 import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -57,7 +57,23 @@ export default function BusDetail() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   if (!id) return null;
-  if (!bus) return <div className="py-12 text-center text-fg-tertiary">{t("loading")}</div>;
+  // 骨架跟真实布局对齐：头卡（标题 + 3 段成员/寿命/花费）+ 一个内容卡
+  // 3 秒内没数据回来说明后端要出问题了，那种情况下让骨架顶着也不合适 —— 但那是 network 的事
+  if (!bus) {
+    return (
+      <div className="space-y-section">
+        <div className="space-y-4">
+          <Skeleton className="h-8 w-64" />
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Skeleton className="h-16" />
+            <Skeleton className="h-16" />
+            <Skeleton className="h-16" />
+          </div>
+        </div>
+        <SkeletonCard lines={4} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-section">
@@ -194,7 +210,7 @@ export default function BusDetail() {
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className="space-y-6">
         <TabsList>
           {TABS.map((item) => (
-            <TabsTrigger key={item.value} value={item.value}>{t(item.labelKey)}</TabsTrigger>
+            <TabsTrigger key={item.value} value={item.value}>{item.label}</TabsTrigger>
           ))}
         </TabsList>
 
@@ -206,7 +222,15 @@ export default function BusDetail() {
           <EditStrategyPanel busId={id} strategy={bus.strategy} />
         </TabsContent>
         <TabsContent value="stats">
-          <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">{t("stats.loading")}</div>}>
+          <Suspense
+            fallback={
+              <div className="grid gap-4 sm:grid-cols-3">
+                <SkeletonCard lines={2} />
+                <SkeletonCard lines={2} />
+                <SkeletonCard lines={2} />
+              </div>
+            }
+          >
             <BusStats busId={id} />
           </Suspense>
         </TabsContent>

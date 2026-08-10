@@ -1785,6 +1785,212 @@ card 左下角常驻灰色小字：**「价格受市场波动影响，会有波�
 - handler `webhookDeliveryDTOOf` 里 `d.OK()` 把内部四态收敛成 `ok:bool`
 - 内部保留 `status ∈ {pending, delivered, failed, dropped}` 用于重试调度（`next_retry_at`）· 用户看不到
 
+## §10 `/status` 页规划（公开·未落码）⏸
+
+### 10.1 三个页面职责分开（提议 · 待落码）⏸
+
+跟 landing / prices / overview 都不打架的第 4 个页面：
+
+| 页面 | 谁能看 | 内容 | 用途 |
+|---|---|---|---|
+| **`/status`** ← **新** | 未登录 + 登录 | 上游 vendor 状态 · 库存 · 24h 稳定度 · 产量 · 事件 · 未来还有拼车市场概况 | 对外透明 · 未登录的信任锚点 · footer status → 指到这里 |
+| `/overview` vendor monitor 区块 | 登录 | 我的号池视角 · 个性化 KPI + 我在跑的 vendor 分布 · 已消费 | 登录后工作台 |
+| `/prices` | 登录 | 详细价格 · 趋势 · 箱线矩阵 · 决策工具 | 登录后决策 |
+
+**命名**：nav 短名 `Status` / `状态`；页面标题 `Vendor status` / `上游状态监测`。**不叫** "Vendor monitor" —— 跟 overview 内区块名撞。
+
+### 10.2 页面分层（内容按用户量演进）
+
+**阶段 1（现在）· 只放 Vendor 上游状态**：
+- 每家 vendor 一行：展示名 · 存活状态 🟢🟡🔴 · 库存量档位（"多 / 少 / 缺货"，不给具体数字）· 24h 稳定度百分比 · 最近事件（有 incident 就列出，没就说 "过去 7 天没有 incident"）
+- **不放**：单价 · 平均寿命秒数 · 内部 vendor id · 死亡来源 · 拼车 / 车友数据（那是私人的）
+- 底部 CTA：**想看价格？登录后到 `/prices`**
+
+**阶段 2（用户多了）· 底部加"拼车市场"区**：
+- 我方拼车市场概况 · 匿名聚合数据 · 例如"过去 24h · N 辆拼车在跑 · 覆盖 M 家 vendor · 平均单价降 X%"
+- 一样**只出汇总不出个人** · 车主 / 具体拼车都不露
+- 这一段单独一个 section 加在 vendor 状态下面，Vendor 状态永远在顶
+
+### 10.3 入口
+
+- Footer "Status page →" 从假外链 `https://status.example` 改指 `/status` ✅
+- AppLayout header 新增一个 nav 项 `Status`（登录后能到）
+- PublicHeader（landing / legal）**不加**在锚点里 —— footer 能到就够，避免顶栏过挤
+
+### 10.4 数据采集（"持续订阅"）· 3 个待定问题 ⚠
+
+**背景**：公开 `/status` 请求量不可控，不能每次都实时打上游 · vendor 会 rate-limit · 上线时如果没积累历史，"24h 稳定度 / 缺货率"之类的指标都是空的。
+
+**方案**：后端跑 poller · 用**我方运营的 API key** 持续探测每家 vendor · 结果落表 · 前端从表读，不实时打 vendor。
+
+**Q1 · 探针 credential 存哪** ✅（已定）：**环境变量**，一家 vendor 一个：
+
+| Env var | 说明 |
+|---|---|
+| `BP_VENDOR_PROBE_KEY_KIRO91` | `usr-…` |
+| `BP_VENDOR_PROBE_KEY_KIROCEO` | `usr-…` |
+| `BP_VENDOR_PROBE_KEY_KIROOOO` | `usr-…` |
+| `BP_VENDOR_PROBE_KEY_KIROAPPIO` | `km_…` |
+| `BP_VENDOR_PROBE_KEY_KIROAPPCC` | `sk-…` |
+| `BP_VENDOR_PROBE_KEY_KIRODROP` | `usr-…` |
+
+- **命名对齐** `Vendor id` = env 后缀（`KIRO91` / `KIROCEO` 等），跟 `internal/config/config.go:78-84` 里的 `Vendors` struct 字段一一对应。
+- 开发本地：`.dev.env`（已 `chmod 600` · 已在 `.gitignore` · 见 §.gitignore）。
+- **生产**：走 systemd `EnvironmentFile` 或 secrets manager · 不在 repo 里落文件。
+- **凭据格式异构**（`usr-` / `km_` / `sk-` 混）· 后端读时统一当 opaque bearer token 处理，别做前缀假设。
+- **绝不进 API 响应体** · 前端 `/api/vendors/status` 只出脱敏结果 · 探针 key 只后端 goroutine 用。
+
+**Q2 · 频率** ✅（已定）：
+- **上游探测**（Stock 拨号）→ **每 60 秒** · 走 goroutine · 一家 vendor 一个 ticker · 错峰 5-10s 避免同时打
+- **KeyHealth 存活探测**（我方已持有的号）→ **每 5 分钟** · 采样 max 50 把 · 用于稳定度指标
+- **每日汇总**（价格中位数 / 平均寿命 / incident 天数）→ **UTC 00:00** · 从探测样本聚合，写 daily 表
+
+**Q3 · 表结构** ✅（已定 · 双表）：
+
+**表 1 · `vendor_probe`（分钟级明细 · 保 30 天）**：
+```
+vendor_id           TEXT NOT NULL       -- kiroceo / 91kiro / ...
+probed_at           TEXT NOT NULL       -- ISO-8601 UTC
+alive               INTEGER NOT NULL    -- 0/1 · vendor.Stock 是否成功返回
+latency_ms          INTEGER             -- 探测响应时延
+stock_total         INTEGER             -- StockSnapshot.Available (总可购数)
+stock_by_region     TEXT                -- JSON [{region, available, unit_price_micro}]
+warranty_minutes    INTEGER             -- Capability.WarrantyMinutes (质保分钟数)
+max_per_order       INTEGER             -- Capability.MaxPerOrder (一次最多买几个)
+sample_price_micro  INTEGER             -- 首个 zone 的单价（内部字段 · 不出公开）
+sample_price_region TEXT                -- 采样的 zone id · 内部字段
+error_kind          TEXT                -- 空=成功 · 否则 timeout/auth/http_5xx/http_4xx
+raw_snapshot        BLOB                -- 完整 StockSnapshot JSON · 出问题时排查
+PRIMARY KEY (vendor_id, probed_at)
+```
+- **rollover**：跑 janitor 每天删 `probed_at < now - 30d`
+
+**表 2 · `vendor_daily`（日聚合 · 永久保留）**：
+```
+vendor_id                 TEXT NOT NULL
+date                      TEXT NOT NULL           -- YYYY-MM-DD (UTC)
+uptime_pct                REAL NOT NULL           -- 当天 alive/total 探测占比
+stock_avg                 REAL                    -- 均值 · 库存
+stock_min                 INTEGER                 -- 最低（触发缺货警报的依据）
+stockout_minutes          INTEGER                 -- 库存为 0 的累计分钟数
+median_price_micro        INTEGER                 -- 中位数单价 · **内部字段**
+median_price_by_region    TEXT                    -- JSON {region: median_micro}
+sampled_lifespan_avg_sec  INTEGER                 -- KeyHealth 平均寿命秒数 · **内部字段**
+warranty_minutes          INTEGER                 -- 当天 Capability.WarrantyMinutes（罕见变动）
+incident_flag             INTEGER                 -- 0/1 · uptime<95% 或 stockout>60min
+PRIMARY KEY (vendor_id, date)
+```
+
+---
+
+**观测字段对齐表**（从 `internal/providers/vendor.go` 的 `Capability` / `StockSnapshot` 挑）
+
+| 上游字段 | 内部用途 | 公开 `/status` | 我登录 `/overview` | 我登录 `/prices` |
+|---|---|:---:|:---:|:---:|
+| `VendorID` (kiroceo 等) | 内部路由 id | ❌ 只出 display name | ❌ 只出 display name | ❌ 只出 display name |
+| `DisplayName` (Kiro CEO) | 品牌名 | ✅ | ✅ | ✅ |
+| `Stock.Available` | 总可购数 | ⚪ **档位**（多/少/缺货 · 不给具体数字） | ✅ 具体数字 | ✅ |
+| `Stock.Zones[].Region` | 区域 | ✅ 覆盖区域数（"3 区可用"）· 不列具体区名 | ✅ 具体区名+库存 | ✅ |
+| `Stock.Zones[].UnitPrice` | 分区单价 | ❌ | ❌ | ✅ **只这一处露** |
+| `Capability.WarrantyMinutes` | 质保时长 | ✅ "质保 15 分钟"· 是产品卖点 | ✅ | ✅ |
+| `Capability.MaxPerOrder` | 单次上限 | ✅ "单次最多 5" · 是产品可预期性 | ✅ | ✅ |
+| `Capability.HasWarranty` | 是否质保 | ✅ 用 icon（✓/✗） | ✅ | ✅ |
+| `Capability.SupportsBatchPurchase` | 批采 | ❌（对乘客无意义） | ❌ | ❌ |
+| `Balance.Balance`（我方账户余额） | 我方运维 | ❌ 绝对不能露 | ❌ | ❌ (admin only 未来做) |
+| **`uptime_pct` 24h** | 探测聚合 | ✅ "99.4%" 或稳定度色（🟢🟡🔴） | ✅ | ✅ |
+| **`stockout_minutes` 24h** | 探测聚合 | ✅ "过去 24h 断供 0 分钟" | ✅ | ✅ |
+| **`sampled_lifespan_avg_sec`** | KeyHealth 聚合 | ⚪ "寿命档位"（长/中/短） | ✅ 具体秒数 | ✅ |
+| **`incident_flag` 7d** | 事件标记 | ✅ "过去 7 天无事件" / 列出 incident 日期 | ✅ | ✅ |
+
+**规则** ⚪ = 档位化脱敏；✅ = 具体值；❌ = 完全不出。
+
+---
+
+### 10.5 后端端点（更新 · 3 个端点分工）
+
+- **`GET /api/vendors/status`** · **公开** · 加进 `PUBLIC_PATHS`。
+  - 每家 vendor 一行 · 从 `vendor_daily`（最近一天） + `vendor_probe`（最近 1 次）聚合
+  - 只出：`display_name / has_warranty / warranty_minutes / max_per_order / stock_bucket ("many"|"low"|"out") / region_count / uptime_24h_pct / stockout_24h_minutes / incidents_7d[] / lifespan_bucket`
+  - **不出**：`price / balance / sampled_lifespan_seconds / vendor_id (内部)`
+- **`GET /api/vendors/stock`** · 登录 · 现有 · 返细粒度库存（含具体 region + count）
+- **`GET /api/vendors/prices`** · 登录 · 现有 · 返价格 · 只这一处露
+
+**探针实现**：`internal/vendormonitor/` 新包 · 起 6 个 goroutine · 每 60 秒 `vendor.Stock(ctx, StockOptions{})` · 写 `vendor_probe` · 每天 UTC 00:00 跑 aggregator 生成 `vendor_daily`。
+
+### 10.5 后端端点
+
+- `GET /api/vendors/status` · 公开 · `PUBLIC_PATHS` 加白名单
+- 内部现有 `/api/vendors/stock` 保留（登录）· 现有 `/api/vendors/prices` 保留（登录）
+- 三个端点分工：`status` 公开脱敏 · `stock` 个人视角详细库存 · `prices` 完整价格
+
+### 10.6 前端
+
+- 新页 `web/src/pages/Status.tsx` · 独立 layout（不套 AppLayout · 未登录也能看）
+- 复用 `PublicHeader`（自动按登录态显示"登录 / 免费上车"或"进入控制台"）
+- 复用 `PromoBar / AppFooter / DocumentMeta`
+- Router 加 `/status` 到公开路由段（跟 `/legal` 一起）
+
+## §11 6 家 vendor fleet 端点全量探测 · 结论定稿（2026-08-10）
+
+### 11.1 出发点
+
+`/status` 页要显示**每家 vendor 平台整体的开号节奏**（不是我方账户的 · 是"平台一共发了多少号 / 多久发一批"）。用户明确表达："上游好像很多都有历史数据可以直接拿回来"→"6 个都有数据，你咋都没有" —— 认定所有 6 家应该都能拿到。
+
+### 11.2 端点探测方法（2026-08-10 完整穷举）
+
+用真 API key 打了每家 vendor 共 30+ 候选路径：
+
+```
+/api/gen-logs · /api/my/gen-logs · /api/me/gen-logs · /api/public/gen-logs
+/api/status · /api/public/stats · /api/stats · /api/fleet · /api/public/fleet
+/api/my/stock/regions · /api/me/stock/regions · /api/my/orders · /api/me/orders
+/api/my/purchases · /api/my/recent · /api/my/logs · /api/me/fleet-summary
+/api/timeline · /api/logs · /openapi/orders · /openapi/stock
+```
+
+脚本：`/tmp/probe_all_six.sh`（session 内执行 · 日志 `/tmp/probe_all_six.log`）。
+
+### 11.3 探测结论矩阵 · 定稿
+
+**完整矩阵见 [`docs/vendors/README.md` 底部](vendors/README.md)。摘要：**
+
+| Vendor | FleetLister（历史批） | PublicStatus（fleet 累计） |
+|---|---|---|
+| kirooo | ✅ `/api/my/stock/regions` `.dispatches[]` | ✅ `/api/status` 免 auth · 有 `keys_*` |
+| kiroceo | ✅ `/api/my/gen-logs` 全平台可见 | ❌ |
+| kiroappcc | ✅ 从 `/openapi/orders` 推 | ❌ |
+| kirodrop | ❌ 无 fleet 端点 | ✅ `/api/status` 需 `X-API-Key` |
+| kiroappio | ❌ `/api/me/fleet-summary` 返空 | ⚠️ `/api/status` 只有 `generating/uptime` · **无 keys_***  |
+| kiro91 | ⚠️ `/api/my/gen-logs` 账户视角返 null | ❌ 无 `/api/status` |
+
+### 11.4 决策 · 三档兜底（`internal/vendorview/status_view.go`）
+
+按数据丰度**从强到弱**取 dispatch 数据：
+
+1. **官方 FleetLister**（3 家：kirooo / kiroceo / kiroappcc）· 首选 · 时间/数量/状态最准
+2. **PublicStatus 增量推**（fallback · kirodrop / kiroappio / kirooo 有 PS 数据）· 探针每 60s 采样 · 相邻正向增量 = 一次 batch · `internal/vendorview/dispatch_deriver.go`
+3. **stock_total 增量推**（终极 fallback · kiro91）· 弱信号 · 只反映"我方能买到几个"
+
+**任何一家至少能通过链条中某一档得到 dispatch 数据**——上线首日 6 家都能显示"累计 N 批 · 平均 X 分钟一批"。
+
+### 11.5 已否决方案
+
+- ❌ **登录 vendor web 抓 admin 面板**（曾提议 Playwright 登六家 · 抓 fleet 端点）· admin API 无稳定 auth · 违反"只对上游公开 API 编程"原则
+- ❌ **等 vendor 加端点**· 不受我方控制 · 用户体验会长期缺位
+- ❌ **自建 fleet crawler**· 不属本项目边界 · vendor 侧反爬 / rate limit 无法承担
+- ❌ **假数据占位**· 严重违反"如实展示"原则（CLAUDE.md §12.6）
+- ✅ **探针增量推 batch**（本次选定 · 精度不如官方但真实 · 是"我方观测到"的开号节奏）
+
+### 11.6 副产品修复（本次同步做的）
+
+- **kirodrop / kiroappio Stock 契约变更兼容**：上游把 `stock` 字段从 `{"public_available": N}` 嵌套对象改成了 `stock: N` 数字。旧 adapter 反序列化失败导致 Stock() 全 error · 464 次探针全 `alive=0`。修法：`Stock` 字段改 `json.RawMessage` · mapper 里两种形状都试一遍。
+- **kirodrop PublicStatus 之前 alive=0 时探不到**：Stock 修好后 · PS 端点（`/api/status` + X-API-Key）能正常写入 `vendor_probe.ps_*` 字段。
+
+### 11.7 后续可选（未定）
+
+- ⏸ **vendor 加了 fleet 端点通知机制**：给 vendor 加 webhook `fleet.dispatched` 事件 · 从 push 拿数据不再靠 poll · 需要六家都实现 · 阶段 3+
+- ⏸ **crowd-sourced dispatch**：让登录乘客的 my/order 数据聚合成 fleet 视图 · 数据敏感 · 需要合规评估 · 大概率不做
+
 ## 记录约定（未来加决策时）
 
 - 每条格式：`### N.M 提议 [❌ / ⏸ / ✅]` + 提议 + 状态说明 + 参考（若有）

@@ -99,33 +99,33 @@ export default function Webhook() {
       {/* 端点卡 · focal */}
       <Card focal focalTone="brand" className="p-7">
         <SectionHead
-          title="Webhook 端点"
-          sub="我方 POST 事件到这个地址 · 请求带 HMAC 签名，用下面的密钥验"
+          title={t("webhook.endpoint.title")}
+          sub={t("webhook.endpoint.sub")}
         />
 
         <div className="mt-4 space-y-4">
-          <Field label="接收地址" hint="https://…">
+          <Field label={t("webhook.endpoint.url-label")} hint={t("webhook.endpoint.url-hint")}>
             <Input
               value={url}
               onChange={(e) => { setUrl(e.target.value); setTestResult(null); }}
-              placeholder="https://bot.example.com/kiro-events"
+              placeholder={t("webhook.endpoint.url-placeholder")}
               className="font-mono"
             />
           </Field>
 
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-baseline gap-x-3">
-              <span className="text-label font-semibold text-fg-secondary">签名密钥</span>
+              <span className="text-label font-semibold text-fg-secondary">{t("webhook.endpoint.secret-label")}</span>
               <span className="text-label text-fg-tertiary">
-                {newSecret ? "这是唯一一次可见，请立即复制" : "只存打码版 · 要换就重新生成"}
+                {newSecret ? t("webhook.endpoint.secret-hint-visible") : t("webhook.endpoint.secret-hint-masked")}
               </span>
             </div>
             <SecretField masked={cfg?.secret_masked ?? "-"} plaintext={newSecret} />
           </div>
 
           {newSecret && (
-            <Alert tone="warn" icon={AlertTriangle} title="旧密钥已失效">
-              记得同步更新你机器人那边的验签配置，否则收到的事件会验签失败
+            <Alert tone="warn" icon={AlertTriangle} title={t("webhook.endpoint.old-secret-invalid.title")}>
+              {t("webhook.endpoint.old-secret-invalid.body")}
             </Alert>
           )}
 
@@ -297,7 +297,7 @@ function DeliveriesCard({ items }: { items: WebhookDelivery[] }) {
 
       {failed > 0 && (
         <Alert tone="neutral" icon={Bot} className="mt-4">
-          失败会自动退避重试 3 次（5s / 30s / 5min）· 一直失败先检查你那边能不能被公网访问
+          {t("webhook.deliveries.retry-note")}
         </Alert>
       )}
     </Card>

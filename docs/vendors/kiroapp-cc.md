@@ -264,3 +264,14 @@ curl -X POST "https://kiroapp.cc/openapi/claim" \
 - **兑换码走外部支付**（`pay.ldxp.cn`），非站内自营
 - **错误 envelope 是嵌套的 `error: { type, message }`**，独家结构
 - **发车参数由平台统一管理**（vs kiroapp.io 用户可自选 subscription_tier）—— 车主"控制权"最弱
+
+## 15. Fleet 观测端点（2026-08-10 探测）
+
+| 端点 | 结果 | 备注 |
+|------|------|------|
+| `GET /openapi/orders` | ✅ `[{id, orderNo, kiroApiKey, pointsCost, claimedAt, warranty, probeState, probeTerminalAt, ...}]` | **6 家里唯一"一单一 key"的 vendor** · order 里直接有 key 明文 |
+| `GET /api/my/gen-logs` | 404 | 无此端点 |
+| `GET /api/me/orders` | 404 | 无此端点 |
+| `GET /api/status` | 404 | 无 fleet 自报端点 |
+
+**结论**：kiroappcc 没有独立的 fleet-wide gen-logs 端点 · 但 `/openapi/orders` 直接给到每单每 key 的完整生命周期（probeState / probeTerminalAt）· 我方 adapter `fleet.go` 从 order 数组**推 dispatch**（一单 = 一批 · count=purchased · alive/dead 从 probeState 判定）。

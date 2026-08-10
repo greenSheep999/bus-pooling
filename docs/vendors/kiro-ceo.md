@@ -297,3 +297,14 @@ vendor 文档说：质保退款"在积分明细里记为 `refund`"—— 暗示�
 - **`purchase_order_id` = `event_id`**（示例里两个值一模一样）—— vendor 用同一个 32-hex 值双用，天然幂等去重
 - **`pool_id` 在 `all_keys_dead` 事件里可能是"逗号连接的多母号"**，解析时不能当单一 id
 - **前端能"模拟推送"**：调 webhook 联调不用等真实号入库
+
+## 15. Fleet 观测端点（2026-08-10 探测）
+
+| 端点 | 结果 | 备注 |
+|------|------|------|
+| `GET /api/my/gen-logs` | ✅ `{avg_interval_min, items:[{created_at,count,status}]}` | **全平台可见**——即使账户空也返所有账户的开号批 · 是 kiro91 端点的"全网视图"版本 |
+| `GET /api/me/orders` | 200 `{items:[],total:0}` | 账户视角空 |
+| `GET /api/status` | 200 但返 SPA HTML | 不是 API 端点 |
+| `GET /openapi/orders` | 200 但返 SPA HTML | 不可用 |
+
+**结论**：kiro91 和 kiroceo 用同一个 `/api/my/gen-logs` 契约 · **但 kiroceo 返全平台数据**（区别点）· 我方 adapter `internal/providers/kiro/vendors/kiroceo/fleet.go` 直接用这个当 FleetLister · 是 6 家里数据最新鲜的。

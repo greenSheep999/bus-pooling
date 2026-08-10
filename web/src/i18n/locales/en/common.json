@@ -4,7 +4,11 @@
     "buses": "Pooling",
     "extract": "Extract key",
     "dispatch": "My Dispatch",
-    "docs": "Integration"
+    "docs": "Integration",
+    "status": "Status",
+    "login": "Log in",
+    "signup": "Get on free",
+    "enter_dashboard": "Enter dashboard"
   },
   "header": {
     "credits": "credits",
@@ -43,13 +47,35 @@
     "privacy": "Privacy",
     "compliance": "Compliance",
     "docs": "Integration docs",
-    "brand": "bus-pooling",
+    "brand": "Kiro.bus",
     "tagline": "· beta",
     "slogan": "Pool a bus · pay less per key",
-    "blurb": "Open source pooling tool run at cost. Riders of any size split the vendor key price, keys are watched for death, warranty refunds are automatic, and the ledger is yours to read.",
-    "copyright": "© 2026 bus-pooling · open source, run at cost",
+    "blurb": "Open source, community-built pooling tool. Many vendors, one gateway. Solo or pooled — the cheapest way to run an API key today. Plaintext delivered then deleted, every line on the ledger.",
+    "copyright": "© 2026 Kiro.bus · open source · community-built",
     "status_ok": "All systems normal",
     "status_page": "Status page →"
+  },
+  "meta": {
+    "title": "Kiro.bus — Share the ride, ride cheaper",
+    "description": "Open source, community-built pooling for API keys. Split the cost across many upstream vendors, keep the ledger, automate the boring bits."
+  },
+  "legal": {
+    "title": "Legal",
+    "intro": "Kiro.bus is an open source, community-built pooling tool. We route API keys — we do not manufacture them. These pages describe what that means for you.",
+    "backToIndex": "All legal pages",
+    "notFound": "Page not found.",
+    "pages": {
+      "terms": "Terms of Service",
+      "usage": "Usage Policy",
+      "services": "Service-Specific Terms",
+      "regions": "Supported Regions"
+    },
+    "summary": {
+      "terms": "What you and we agree to when you use Kiro.bus.",
+      "usage": "What you can and cannot do with the Service.",
+      "services": "How specific features work — bus, warranty, handoff, webhooks.",
+      "regions": "Where the platform, payment, and upstream vendors are available."
+    }
   },
   "action": {
     "save": "Save",
@@ -71,5 +97,48 @@
     "empty": "Nothing here yet",
     "error": "Failed to load",
     "error_desc": "Network or service error · click retry"
+  },
+  "status": {
+    "pull-result": {
+      "success": "OK",
+      "partial": "Partial",
+      "failed": "Failed",
+      "refunded": "Refunded"
+    },
+    "push": {
+      "pushed": "Pushed",
+      "partial": "Partial {{ratio}}",
+      "failed": "Push failed",
+      "none": "Not pushed"
+    }
+  },
+  "activity": {
+    "kind": {
+      "into_bus": "Into bus",
+      "extract": "Extract",
+      "refill": "Refill",
+      "dead": "Key expired",
+      "topup": "Top-up",
+      "redeem": "Redeem",
+      "push": "Push"
+    },
+    "verb": {
+      "into_bus": "boarded",
+      "extract": "extracted",
+      "push": "pushed",
+      "fallback": "pulled"
+    },
+    "flow": {
+      "sum-prefix": "{{verb}}",
+      "from": " from",
+      "count-unit-fallback": "keys"
+    },
+    "pull": {
+      "failed": "No keys pulled · tried {{vendor}} · {{reason}}",
+      "count-suffix": "keys",
+      "credits-zero": "0",
+      "credits-suffix": "credits",
+      "amount-suffix": "credits"
+    }
   }
 }

@@ -427,3 +427,14 @@ vendor 文档**未展示独立的质保时长条款**，但购买响应里包含
 - **购买请求可传批次 `order_id` 定向拉某一批**（其他家一般只允许区域粒度）
 - **`count` 也接受 `quantity`**（vendor 兼容处理），但契约里两个字段名都收
 - **购买响应的 `order_id` 是 `store_xxx`（购买订单）**，与 webhook 里的 `order_id`（`batch_xxx` 开号批次）**同名不同物**，写代码时要严格分开
+
+## 15. Fleet 观测端点（2026-08-10 探测）
+
+| 端点 | 结果 | 备注 |
+|------|------|------|
+| `GET /api/status` | ✅ **需 X-API-Key**（不是 Bearer）· `{keys_active, keys_dead, keys_stock, generating, region, community_qr_urls}` | 6 家里唯一要 API key 的 PublicStatus |
+| `GET /api/me/stock` | ✅ `{balance, price, region, stock}` | **注意契约变更**：曾是 `{stock:{public_available:N}}` 嵌套对象 · 2026-08 改成 `stock: N` 数字 · 我方 adapter 已做双形状兼容（`mapper.go`） |
+| `GET /api/my/*` 全系列 | 404 明确 `{"error":{"code":"NOT_FOUND"}}` | vendor 用 `/api/me/*` 不用 `/api/my/*` |
+| `GET /api/me/orders` `GET /api/me/gen-logs` `GET /openapi/orders` | 全 404 | **完全没有 fleet-wide 历史端点** |
+
+**结论**：kirodrop 是 6 家里**最封闭**的 · 只暴露"当下状态"（PublicStatus）· 无任何历史端点 · 我方 `/status` 页从 `vendor_probe.ps_keys_active + ps_keys_dead` 增量推 dispatch。

@@ -1,113 +1,287 @@
 {
   "nav": {
-    "save": "How you save",
-    "pool": "Pooling",
-    "auto": "Automation",
+    "features": "Features",
+    "value": "Value",
+    "uses": "Ways",
+    "pricing": "Pricing",
     "faq": "FAQ",
     "login": "Log in",
-    "signup": "Sign up free"
+    "signup": "Get on free"
   },
   "hero": {
-    "chip": "Open source, run at cost",
-    "title": "Pool one key. Divide the price.",
-    "subtitle": "Key cost splits by headcount with no markup from us. Dead keys refill themselves, warranty cases refund credit.",
-    "cta": "Sign up free",
+    "chip": "Open source · community-built",
+    "title1": "Share the ride,",
+    "title2": "ride cheaper.",
+    "subtitle": "Aggregating and routing across many vendors so your pool always has a live, fair-priced bus. Transparent, auto-failover, ready to automate.",
+    "cta": "Get on free",
     "docs": "Read the docs"
   },
-  "heroCard": {
-    "label": "Cost of one key",
-    "cost": "20",
-    "unit": "credits",
-    "riders": "4 riders pooling",
-    "eachLabel": "Each pays",
-    "each": "5",
-    "note": "Key cost splits by headcount. No markup from us."
-  },
-  "save": {
-    "title": "More riders, lower per head",
-    "body": "Requests inside one window merge into a single batch pull, which reaches the vendor's volume tier.",
-    "per": "credits each",
-    "people": "{{n}} riders",
-    "note": "Example figures. Real numbers follow the vendor price and how full the bus is."
-  },
-  "pool": {
-    "title": "Pooling is the main entrance",
-    "body": "Four things happen at the moment we buy. You just pull.",
-    "batch": {
-      "title": "Batched pulls",
-      "body": "Refill intents in the same window merge into one request, and volume reaches the vendor's cheaper tier.",
-      "tier": "Volume tier"
+  "heroCards": {
+    "vendor": {
+      "title": "Vendors · Live",
+      "live": "Live",
+      "labels": [
+        "01",
+        "02",
+        "03",
+        "04",
+        "05",
+        "06"
+      ],
+      "footL": "Serving Vendor 02",
+      "footR": "↗ Fallback ready"
     },
-    "vendors": {
-      "title": "Six vendors, one account",
-      "body": "One runs dry or goes down, we switch to another. You never watch for it."
+    "bus": {
+      "chip": "Pool · 4 riders",
+      "name": "Kiro daily bus",
+      "count": "12",
+      "countSuf": "keys · dead 3",
+      "spend": "−48 cr",
+      "auto": "Auto refill",
+      "watermark": "· keep 5"
     },
-    "compare": {
-      "title": "Effective cost, not sticker price",
-      "body": "We normalise price over average lifespan, so you compare how long each credit lasts."
-    },
-    "refill": {
-      "title": "Dead keys refill",
-      "body": "A key dies, a fresh one enters the bus. Warranty cases refund credit to your wallet.",
-      "dead": "Key dies",
-      "new": "Refilled",
-      "credit": "Credit back"
+    "kpi": {
+      "label": "Spent today",
+      "n": "128",
+      "unit": "cr",
+      "subL": "32% less than yesterday",
+      "subR": "↓ 60"
     }
   },
-  "auto": {
-    "title": "Keys land, we push",
-    "body": "Point us at a webhook. Pull completions, dead keys and warranty refunds all arrive there.",
-    "events": {
-      "new": "Pull complete",
-      "dead": "All keys dead",
-      "refund": "Warranty refund",
-      "test": "Test delivery"
-    },
-    "payload": "json",
-    "apikey": "Scripts hit /api/me/* with an API key to pull, route keys, and read the ledger."
+  "features": {
+    "eyebrow": "Value",
+    "title": "Three scenes that spell out the value",
+    "items": {
+      "simple": {
+        "title": "Real",
+        "body": "One account bridges many AWS Q vendors · run the real Claude Code, ChatGPT, and other top-tier models"
+      },
+      "saving": {
+        "title": "Cheaper",
+        "body": "Solo and pooled are the cheapest ways to run an API key today · you set what to spend and what to get back"
+      },
+      "safety": {
+        "title": "Safe",
+        "body": "Plaintext delivered then deleted · keys refill on failure · credit back within warranty. Layered protection covering every step."
+      }
+    }
   },
-  "dest": {
-    "title": "Three places a key can go",
-    "bus": {
-      "title": "Into the bus",
-      "body": "The key joins a pool. Everyone on the bus uses it and splits the price."
+  "value": {
+    "one": {
+      "tag": "01 · Multi-vendor · Free · Transparent · Fallback",
+      "title": "Many vendors, one gateway",
+      "body": "One account covers many upstream vendors. The system picks the best by stability and effective cost. No signing up six times, no switching, no rewriting scripts.",
+      "points": [
+        "Many vendors · one account · seamless switch",
+        "Ranked by effective cost · price ÷ average lifespan",
+        "Vendor state live · events pushed by webhook"
+      ],
+      "board": {
+        "title": "Upstream monitor",
+        "live": "Live · 6 vendors",
+        "footL": "Serving Vendor 02",
+        "footR": "Seamless switch, invisible to you",
+        "latency": {
+          "low": "low",
+          "mid": "mid",
+          "high": "high"
+        }
+      }
     },
-    "pool": {
-      "title": "To your own pool",
-      "body": "Syncs to your own pool automatically, with usage data flowing back."
+    "two": {
+      "tag": "02 · Pool · Data · Auto-reconcile",
+      "title": "Pool with others, we do the math",
+      "body": "Price splits by headcount (or by usage share). More riders, lower per head. Daily ledger tracks spend and savings so you never have to.",
+      "points": [
+        "Up to 5 per bus · pool code / auto match",
+        "Daily ledger · pulls · spend · savings",
+        "Dead keys refill · warranty credit returns"
+      ],
+      "pool": {
+        "name": "Kiro daily bus",
+        "chip": "4 riders",
+        "eachL": "Each",
+        "each": "5",
+        "eachU": "cr"
+      },
+      "bill": {
+        "title": "This week",
+        "save": "42% saved",
+        "rows": [
+          {
+            "k": "Pulls",
+            "v": "48 keys"
+          },
+          {
+            "k": "Spent",
+            "v": "236 cr"
+          },
+          {
+            "k": "Saved vs direct",
+            "v": "172 cr"
+          }
+        ]
+      }
     },
-    "handoff": {
-      "title": "Straight to you",
-      "body": "We hand over the plaintext and delete our copy right after."
+    "three": {
+      "tag": "03 · Webhook · API · Wires in",
+      "title": "Wire it up, let it run",
+      "body": "Events push to your webhook. Scripts call /api/me/* with an API key. Anything that reads a usr- prefix key connects — no code changes.",
+      "points": [
+        "4 event types · new / dead / warranty / test",
+        "REST · /api/me/pull · /assign · /ledger",
+        "usr- prefix works with Claude / Cursor / Kiro / curl"
+      ],
+      "cli": {
+        "head": "Talks to your CLI / IDE",
+        "note": "usr- prefix API key",
+        "more": "+ more"
+      },
+      "webhook": {
+        "title": "webhook · new_keys_available",
+        "method": "POST",
+        "body": "{ \"event\": \"new_keys_available\", \"bus_id\": \"01H8...\", \"new_keys\": 5 }"
+      }
+    }
+  },
+  "who": {
+    "title": "Solo riders and heavy users, all covered",
+    "body": "Built for both kinds of pooling at the same time.",
+    "casual": {
+      "chip": "Occasional",
+      "title": "Hop on any time",
+      "body": "Pay per pull, no subscription, no stockpile. Save you from the wasted spend of plans you barely touch."
+    },
+    "power": {
+      "chip": "Heavy",
+      "title": "Runs steady, hands off",
+      "body": "Full API + webhook. Upstream keys refill on failure, warranty credit returns, the dashboard shows what you spent and saved — every record laid out clearly."
+    }
+  },
+  "uses": {
+    "title": "Three ways to get on",
+    "hitch": {
+      "title": "Hitch a ride",
+      "badge": "Cheapest · main",
+      "body": "The system matches you with strangers on a bus. No waiting for friends, no starting your own. Full bus means the lowest price.",
+      "points": [
+        "Auto matching",
+        "Up to 5 riders per bus",
+        "Price splits by head"
+      ]
+    },
+    "friend": {
+      "title": "Join a friend's bus",
+      "badge": "Pool code",
+      "body": "A friend gives you a pool code. Enter it and you're in their bus. Ride with people you know.",
+      "points": [
+        "Pool code / link entry",
+        "Leave any time",
+        "This round stays yours, next round drops off"
+      ]
+    },
+    "extract": {
+      "title": "Extract a key",
+      "badge": "3 destinations",
+      "body": "Skip the bus, pull a key directly. Once it's in hand, pick where it goes: your own pool, into a bus to share, or straight to you as plaintext.",
+      "points": [
+        "Push to your own pool · full data return",
+        "Into a bus · 1:1 credit refund",
+        "Plaintext to you · we delete right after"
+      ]
+    }
+  },
+  "pricing": {
+    "eyebrow": "Pricing",
+    "title": "Transparent pricing, top up and go",
+    "body": "Solo and pooled are the cheapest ways to run an API key today. Spend what you decide, every line is on the wallet page.",
+    "rules": {
+      "clear": {
+        "title": "Peace of mind",
+        "body": "Key price, service fee, payment fee — each line is separately on the wallet page. Nothing hidden."
+      },
+      "pool": {
+        "title": "Pooling is cheapest",
+        "body": "Riders on one bus split by head — more riders, lower per head. Solo skips the pool overhead."
+      },
+      "gateway": {
+        "title": "Payment fee pass-through",
+        "body": "The payment gateway takes 5%. We forward it as-is, in cash, not from your credits."
+      }
+    },
+    "note": "1 credit ≈ $0.14 · billed in USD · every line on the wallet page",
+    "topup": {
+      "title": "Top up credits",
+      "badge": "Instant",
+      "amountLabel": "How many credits",
+      "creditUnit": "cr",
+      "rowLabels": {
+        "credits": "Credits",
+        "fee": "Payment fee (5%)",
+        "arrives": "Arrives"
+      },
+      "totalL": "You pay",
+      "totalU": "USD",
+      "cta": "Top up"
     }
   },
   "faq": {
-    "title": "Common questions",
-    "q1": {
-      "q": "Are you a key reseller?",
-      "a": "No. Vendor key cost passes through untouched. We charge one technical service fee on top."
-    },
-    "q2": {
-      "q": "What happens when a key dies?",
-      "a": "The bus pulls a replacement automatically. If it falls under warranty, the credit goes back to your wallet."
-    },
-    "q3": {
-      "q": "Do I have to pool?",
-      "a": "No. You can pull on your own and route the key yourself. Pooling is simply cheaper."
-    },
-    "q4": {
-      "q": "Can keys sync to my own pool?",
-      "a": "Yes. Add your pool URL and token in settings, and every key we pull gets pushed there."
-    },
-    "q5": {
-      "q": "Is there an API for scripts and bots?",
-      "a": "Yes. Create an API key for /api/me/*, then add a webhook to receive events."
-    }
+    "title": "FAQ",
+    "items": [
+      {
+        "q": "I run a lot. What's the cheapest way?",
+        "a": "Drive a solo bus for maximum speed. If you want to go further, run several solo buses in parallel from scripts using an API key, and read per-bus cost from the dashboard. When headcount matters, pool with others — more riders, lower per head."
+      },
+      {
+        "q": "I only need it once in a while. Can I still hop on?",
+        "a": "Yes. Pay per pull, no stockpile. Keys can stay with you, sync to your own pool, or be handed over as plaintext right after."
+      },
+      {
+        "q": "Pool or solo, how do I decide?",
+        "a": "In a hurry, want a private pool, running batches → solo, throughput isn't shared. Daily use, price sensitive, don't mind waiting → pool, split by head, cheaper per head."
+      },
+      {
+        "q": "How many riders fit on one bus?",
+        "a": "Up to five. You can start one and invite by pool code, or let the system match strangers. The driver can remove riders or adjust shares."
+      },
+      {
+        "q": "Do concurrency / RPM / TPM get contested between riders?",
+        "a": "Concurrency, RPM and TPM are metered per upstream account, and a bus shares one. Our recommendation:\n\n· Very high volume → solo, no one else on the bus, no contention;\n· Splitting across multiple vendors → one solo bus per vendor, quotas are separate between vendors;\n· Light or bursty usage → pool is fine, the scheduler spreads requests, most users never feel it."
+      },
+      {
+        "q": "What happens when I run out of credits?",
+        "a": "This round skips you — the bus keeps running, but you get no key. Three rounds in a row → the bus pauses you and stops billing your share. Top up and the next round auto-resumes. We recommend keeping 5–10 rounds worth in the wallet, or turning on auto top-up."
+      },
+      {
+        "q": "What if I leave mid-round?",
+        "a": "This round's credits aren't refunded — the key has already been pulled. From the next round on, you stop being billed and stop receiving new keys. Keys you already got are yours."
+      },
+      {
+        "q": "Can I share my own key into a bus?",
+        "a": "Yes. Push a key you already have into a bus and other riders can use it. Every use returns 1:1 credit to your wallet — as much credit as they consume, you get back. Idle quota becomes credit, and the bus gets cheaper for everyone."
+      },
+      {
+        "q": "What if a vendor is down, expensive, or out of stock?",
+        "a": "We watch many vendors and rank by stability and effective cost (price ÷ average lifespan). If the chosen one has trouble, we switch to another. No script changes, no watching."
+      },
+      {
+        "q": "If a key dies mid-use, is credit refunded?",
+        "a": "If it dies inside the warranty window, we pull a replacement and refund the used credit pro rata. Every refund and refill fires a webhook."
+      },
+      {
+        "q": "Where does my key data live? Can I take it?",
+        "a": "Three destinations: stay in the bus, push to your own pool (URL + token in settings), or extract plaintext right into your hand — we delete our copy right after. Usage ledger is exportable from your dashboard."
+      },
+      {
+        "q": "How much does it actually cost?",
+        "a": "Vendor key price, one service fee from us, and the payment gateway's own fee (pass-through). Every line is on your wallet page. Billed in USD, 1 credit ≈ $0.14."
+      }
+    ]
   },
   "cta": {
     "title": "Find a bus, start saving",
-    "body": "Sign-up is free. A promo code makes pooling cheaper still.",
-    "primary": "Sign up free",
+    "body": "Getting on is free. A promo code makes pooling cheaper still.",
+    "primary": "Get on free",
     "secondary": "Log in"
   }
 }

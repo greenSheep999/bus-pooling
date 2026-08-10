@@ -1,84 +1,60 @@
 import type { LucideIcon } from "lucide-react";
+import { useState } from "react";
 import {
-  ArrowRight, Boxes, ChevronDown, Database, GitCompareArrows, Layers,
-  RefreshCw, Users, Webhook,
+  Activity, ArrowRight, Boxes, Check, ChevronDown, Code, Download,
+  Ghost, Info, MousePointer2, RadioTower, Receipt, Server, Sparkles,
+  Terminal, Ticket, User, UsersRound, Wallet, Webhook, Zap,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AppFooter } from "@/components/AppFooter";
 import { PromoBar } from "@/components/PromoBar";
-import { PublicControls } from "@/components/PublicControls";
+import { PublicHeader } from "@/components/PublicHeader";
 import { Button } from "@/components/ui/button";
-import { CodeBlock } from "@/components/ui/code-block";
+import { Card, Chip } from "@/components/ui/primitives";
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Card, Chip, Meter } from "@/components/ui/primitives";
 import { Reveal } from "@/components/ui/reveal";
-import LogoMark from "@/assets/logo/mark.svg";
+import { cn, TOPUP_PRESETS, topupUsdBreakdown } from "@/lib/utils";
+import { DocumentMeta } from "@/components/DocumentMeta";
+import busPng from "@/assets/marketing/bus.png";
+import workPng from "@/assets/marketing/work.png";
+import privacyPng from "@/assets/marketing/privacy.png";
 
-/** Landing · 未登录访客首页 · RootGate 判 me 为空时渲染
+/** Landing · 未登录访客首页 (mock v2 · 严格照 design/mockups/05-home.pen 的 "Landing · 落地页 v1")
  *
- *  跟 app 内页共用：PromoBar（顶部活动条）· AppFooter（页脚）· PublicControls（语言 / 主题）
- *  header 结构和 class 抄 AppLayout 的（h-14 · sticky · backdrop-blur）· 两个界面读起来是同一个产品
- *
- *  内容主线（README + docs/00 §2）：号价按人头平分 → 拼车集单吃阶梯价 → webhook / API 自动化
- *  不出现内部术语（housepool / provider / tier 枚举）· CLAUDE.md §12.6 */
+ *  共用件：PromoBar · AppFooter · PublicControls
+ *  节奏（背景灰白 alternate）：
+ *    hero (白) → features (灰) → value (白) → who (灰) → uses (白) → pricing (灰) → faq (白) → cta (品牌淡紫)
+ *  Hero 右侧 3 张透视卡（rotate + 阴影 + 拖影 · hover 时轻回正 + 提升） */
 export default function Landing() {
   const { t } = useTranslation("landing");
 
+  // 锚点 label 走 landing namespace · 显式加前缀，PublicHeader 用 common
+  // namespace 也能取到（i18next 支持 `<ns>:<key>` 语法）
   const anchors = [
-    { id: "save", label: t("nav.save") },
-    { id: "pool", label: t("nav.pool") },
-    { id: "auto", label: t("nav.auto") },
-    { id: "faq", label: t("nav.faq") },
+    { id: "features", labelKey: "landing:nav.features" },
+    { id: "value", labelKey: "landing:nav.value" },
+    { id: "uses", labelKey: "landing:nav.uses" },
+    { id: "pricing", labelKey: "landing:nav.pricing" },
+    { id: "faq", labelKey: "landing:nav.faq" },
   ];
 
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
+      <DocumentMeta />
       <PromoBar />
-
-      {/* header · 跟 AppLayout 同款（h-14 · sticky · blur）· 中间是锚点导航 */}
-      <header className="sticky top-0 z-30 border-b border-hairline bg-bg/85 backdrop-blur-xl">
-        <div className="page-container flex h-14 items-center justify-between gap-4">
-          <Link to="/" className="flex shrink-0 items-center gap-2.5">
-            <img src={LogoMark} alt="" className="size-7 shrink-0 rounded-lg" />
-            <span className="text-body-lg font-semibold tracking-tight">bus-pooling</span>
-          </Link>
-
-          {/* 锚点 · md 起显示（窄屏藏掉，避免挤成两行） */}
-          <nav className="hidden items-center gap-1 md:flex">
-            {anchors.map((a) => (
-              <a
-                key={a.id}
-                href={`#${a.id}`}
-                className="rounded-full px-3 py-1.5 font-medium text-fg-secondary transition-colors hover:bg-bg-elevated hover:text-fg"
-              >
-                {a.label}
-              </a>
-            ))}
-          </nav>
-
-          <div className="flex shrink-0 items-center gap-2">
-            <PublicControls />
-            <div className="mx-1 hidden h-6 w-px bg-hairline sm:block" />
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/login">{t("nav.login")}</Link>
-            </Button>
-            <Button variant="primary" size="sm" asChild>
-              <Link to="/register">{t("nav.signup")}</Link>
-            </Button>
-          </div>
-        </div>
-      </header>
+      <PublicHeader anchors={anchors} />
 
       <main className="flex-1">
         <Hero />
-        <SaveBand />
-        <PoolGrid />
-        <AutoSection />
-        <DestStrip />
-        <Faq />
+        <FeaturesSection />
+        <ValueSection />
+        <WhoSection />
+        <UsesSection />
+        <PricingSection />
+        <FaqSection />
         <FinalCta />
       </main>
 
@@ -87,17 +63,19 @@ export default function Landing() {
   );
 }
 
-/* ─── Hero · 非对称分栏（左文案 / 右分账图）──────────────────── */
+/* ─── Hero ─── */
 
 function Hero() {
   const { t } = useTranslation("landing");
   return (
-    <section className="page-container grid items-center gap-10 pb-12 pt-14 lg:grid-cols-[1.05fr_1fr] lg:gap-16 lg:pb-20 lg:pt-20">
+    <section className="page-container grid items-center gap-10 pb-14 pt-14 lg:grid-cols-[minmax(0,520fr)_minmax(0,720fr)] lg:gap-12 lg:pb-24 lg:pt-20">
       <Reveal>
-        <div className="space-y-5">
+        <div className="space-y-6">
           <Chip tone="brand">{t("hero.chip")}</Chip>
-          <h1 className="text-hero font-semibold tracking-tight sm:text-giant">
-            {t("hero.title")}
+          <h1 className="text-hero font-semibold leading-[1.05] tracking-tight sm:text-giant">
+            {t("hero.title1")}
+            <br />
+            <span className="text-brand-strong">{t("hero.title2")}</span>
           </h1>
           <p className="max-w-[46ch] text-body-lg leading-relaxed text-fg-secondary">
             {t("hero.subtitle")}
@@ -116,264 +94,806 @@ function Hero() {
         </div>
       </Reveal>
 
-      {/* 分账图 · 用产品自己的 Card / Chip 拼，不画假截图 */}
-      <Reveal delay={120}>
-        <SplitDiagram />
+      <Reveal delay={140}>
+        <HeroCards />
       </Reveal>
     </section>
   );
 }
 
-/** 号价分账示意 · 一把 key 的号价 ÷ 人数
- *  数字来自 README 的举例（20 积分 4 人）· 卡里标了「示例」 */
-function SplitDiagram() {
-  const { t } = useTranslation("landing");
-  const riders = ["Z", "L", "W", "C"];
+/** 3 张 hero 卡 · rotate + shadow + 拖影 · hover: 微上浮 + rotate 回正 + trail 更亮
+ *  group + transition · 静态数字（登录后的真数据在 app 里 · 这里是产品语言的示意） */
+/** 拖影公共样式 · 每张卡自带一个 · 跟卡同一个 wrapper · 卡挪到哪影子跟到哪 */
+const HERO_TRAIL_CLASS =
+  "pointer-events-none absolute -bottom-16 left-4 right-4 h-24 rounded-panel " +
+  "bg-gradient-to-b from-brand/40 to-transparent opacity-40 blur-xl " +
+  "transition-opacity duration-500 group-hover:opacity-60";
+
+function HeroCards() {
   return (
-    <Card focal focalTone="brand" className="p-7">
-      <div className="flex items-baseline justify-between gap-4">
-        <span className="text-label font-medium text-fg-tertiary">
-          {t("heroCard.label")}
-        </span>
-        <div className="flex items-end gap-1">
-          <span className="text-num font-semibold tnum">{t("heroCard.cost")}</span>
-          <span className="pb-1 text-label text-fg-tertiary">{t("heroCard.unit")}</span>
-        </div>
-      </div>
-
-      {/* 4 个头像 = 车上的人 · 除号在中间 */}
-      <div className="mt-6 flex items-center gap-3 border-t border-hairline pt-6">
-        <div className="flex -space-x-2">
-          {riders.map((r, i) => (
-            <span
-              key={r}
-              className="grid size-8 place-items-center rounded-full border-2 border-bg bg-brand/15 text-label font-semibold text-brand-strong"
-              style={{ zIndex: riders.length - i }}
-            >
-              {r}
-            </span>
-          ))}
-        </div>
-        <span className="text-label font-medium text-fg-secondary">
-          {t("heroCard.riders")}
-        </span>
-      </div>
-
-      <div className="mt-6 flex items-end justify-between gap-4 rounded-xl bg-bg-elevated px-4 py-3.5">
-        <span className="text-label font-semibold text-fg-secondary">
-          {t("heroCard.eachLabel")}
-        </span>
-        <div className="flex items-end gap-1">
-          <span className="text-stat font-semibold tnum text-brand-strong">
-            {t("heroCard.each")}
-          </span>
-          <span className="pb-0.5 text-label text-fg-tertiary">{t("heroCard.unit")}</span>
-        </div>
-      </div>
-
-      <p className="mt-4 text-label text-fg-tertiary">{t("heroCard.note")}</p>
-    </Card>
+    <div className="relative h-[500px] w-full lg:h-[560px]" style={{ transformStyle: "preserve-3d" }}>
+      <VendorCard />
+      <BusCard />
+      <KpiCard />
+    </div>
   );
 }
 
-/* ─── 省钱曲线 · 递进刻度条（人数越多单价越低）──────────────── */
+function VendorCard() {
+  const { t } = useTranslation("landing");
+  const labels = t("heroCards.vendor.labels", { returnObjects: true }) as string[];
+  const heights = [38, 44, 26, 32, 18, 22];
+  const active = 1;
+  return (
+    <div
+      className="group absolute right-[8px] top-0 w-[260px] origin-center transition-transform duration-300 hover:duration-500"
+      style={{
+        transform: "perspective(1400px) rotateY(-14deg) rotateX(4deg) rotateZ(5deg)",
+        transformStyle: "preserve-3d",
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLDivElement).style.transform =
+          "perspective(1400px) rotateY(-8deg) rotateX(2deg) rotateZ(3deg) translateY(-6px)";
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLDivElement).style.transform =
+          "perspective(1400px) rotateY(-14deg) rotateX(4deg) rotateZ(5deg)";
+      }}
+    >
+      <div className={HERO_TRAIL_CLASS} />
+      <div className="relative rounded-panel border border-hairline bg-bg p-4 shadow-hover">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Boxes className="size-3.5 text-brand-strong" />
+            <span className="text-label font-semibold tracking-wide text-fg-tertiary">
+              {t("heroCards.vendor.title")}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="size-1.5 rounded-full bg-ok-solid" />
+            <span className="font-mono text-[10px] font-semibold text-ok-solid">
+              {t("heroCards.vendor.live")}
+            </span>
+          </div>
+        </div>
 
-const SPLITS = [
-  { n: 1, each: 20 },
-  { n: 2, each: 10 },
-  { n: 4, each: 5 },
-  { n: 8, each: 2.5 },
-];
+        <div className="mt-3 flex items-end gap-1 h-12">
+          {labels.map((_, i) => (
+            <div
+              key={i}
+              className={cn(
+                "flex-1 rounded-sm transition-colors",
+                i === active ? "bg-brand" : "bg-brand/20",
+              )}
+              style={{ height: `${heights[i]}px` }}
+            />
+          ))}
+        </div>
+        <div className="mt-1 flex gap-1">
+          {labels.map((l, i) => (
+            <div key={i} className="flex flex-1 justify-center">
+              <span
+                className={cn(
+                  "font-mono text-[9px] font-semibold",
+                  i === active ? "text-brand-strong" : "text-fg-tertiary",
+                )}
+              >
+                {l}
+              </span>
+            </div>
+          ))}
+        </div>
 
-function SaveBand() {
+        <div className="mt-3 border-t border-hairline pt-2.5 flex items-center justify-between">
+          <span className="text-label font-semibold text-fg">
+            {t("heroCards.vendor.footL")}
+          </span>
+          <span className="font-mono text-[10px] font-semibold text-ok-fg">
+            {t("heroCards.vendor.footR")}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BusCard() {
   const { t } = useTranslation("landing");
   return (
-    <section id="save" className="scroll-mt-20 border-y border-hairline bg-bg-elevated">
+    <div
+      className="group absolute left-0 top-[150px] w-[330px] origin-center transition-transform duration-300 hover:duration-500"
+      style={{
+        transform: "perspective(1400px) rotateY(12deg) rotateX(2deg) rotateZ(-3deg)",
+        transformStyle: "preserve-3d",
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLDivElement).style.transform =
+          "perspective(1400px) rotateY(6deg) rotateX(1deg) rotateZ(-1deg) translateY(-8px)";
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLDivElement).style.transform =
+          "perspective(1400px) rotateY(12deg) rotateX(2deg) rotateZ(-3deg)";
+      }}
+    >
+      <div className={HERO_TRAIL_CLASS} />
+      <div className="relative rounded-panel border border-hairline bg-bg p-5 shadow-hover">
+        <div className="flex items-start justify-between">
+          <Chip tone="brand">
+            <UsersRound className="size-3" />
+            {t("heroCards.bus.chip")}
+          </Chip>
+          <span className="grid size-8 place-items-center rounded-full bg-brand text-body-lg font-semibold text-white">
+            Z
+          </span>
+        </div>
+        <h3 className="mt-3 text-section font-semibold tracking-tight">
+          {t("heroCards.bus.name")}
+        </h3>
+        <div className="mt-3 flex items-baseline justify-between">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-num font-semibold tnum">
+              {t("heroCards.bus.count")}
+            </span>
+            <span className="text-label text-fg-tertiary">
+              {t("heroCards.bus.countSuf")}
+            </span>
+          </div>
+          <span className="font-mono text-label font-semibold text-danger-fg">
+            {t("heroCards.bus.spend")}
+          </span>
+        </div>
+        <div className="mt-2 flex items-center gap-1.5 text-label">
+          <Zap className="size-3.5 text-brand-strong" />
+          <span className="font-semibold text-brand-strong">
+            {t("heroCards.bus.auto")}
+          </span>
+          <span className="text-fg-tertiary">{t("heroCards.bus.watermark")}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KpiCard() {
+  const { t } = useTranslation("landing");
+  const spk = [8, 11, 7, 13, 10, 16, 12, 18, 14, 20, 15, 22];
+  return (
+    <div
+      className="group absolute right-0 top-[290px] w-[220px] origin-center transition-transform duration-300 hover:duration-500"
+      style={{
+        transform: "perspective(1400px) rotateY(-16deg) rotateX(-3deg) rotateZ(-4deg)",
+        transformStyle: "preserve-3d",
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLDivElement).style.transform =
+          "perspective(1400px) rotateY(-10deg) rotateX(-1deg) rotateZ(-2deg) translateY(-8px)";
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLDivElement).style.transform =
+          "perspective(1400px) rotateY(-16deg) rotateX(-3deg) rotateZ(-4deg)";
+      }}
+    >
+      <div className={HERO_TRAIL_CLASS} />
+      <div className="relative rounded-panel border border-hairline bg-bg p-4 shadow-hover">
+        <div className="flex items-center gap-2">
+          <span className="grid size-7 place-items-center rounded-lg bg-credit-bg">
+            <Wallet className="size-3.5 text-credit-fg" />
+          </span>
+          <span className="text-label font-semibold tracking-wide text-fg-tertiary">
+            {t("heroCards.kpi.label")}
+          </span>
+        </div>
+        <div className="mt-2.5 flex items-baseline gap-1">
+          <span className="text-num font-semibold tnum">{t("heroCards.kpi.n")}</span>
+          <span className="text-label text-fg-tertiary">{t("heroCards.kpi.unit")}</span>
+        </div>
+        <div className="mt-2 flex h-6 items-end gap-0.5">
+          {spk.map((h, i) => (
+            <div
+              key={i}
+              className={cn(
+                "flex-1 rounded-sm",
+                i === spk.length - 1 ? "bg-credit-fg" : "bg-credit-bg",
+              )}
+              style={{ height: `${h}px` }}
+            />
+          ))}
+        </div>
+        <div className="mt-2 flex items-baseline justify-between">
+          <span className="text-label font-medium text-fg-secondary">
+            {t("heroCards.kpi.subL")}
+          </span>
+          <span className="font-mono text-[11px] font-semibold text-credit-fg">
+            {t("heroCards.kpi.subR")}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── §2 Features 共性 ─── */
+
+function FeaturesSection() {
+  const { t } = useTranslation("landing");
+  const items = [
+    { key: "simple", img: busPng },
+    { key: "saving", img: workPng },
+    { key: "safety", img: privacyPng },
+  ];
+  return (
+    <section id="features" className="scroll-mt-20 border-y border-hairline bg-bg-elevated">
       <div className="page-container py-14 lg:py-20">
+        <div className="grid gap-4 md:grid-cols-3">
+          {items.map((it) => (
+            <Reveal key={it.key}>
+              <Card className="card-hover group flex h-full flex-col gap-5 p-8">
+                {/* 图片 hover 时轻微上抬 + 放大 · 用 group-hover · overflow-hidden 让阴影残影别溢出 */}
+                <div className="relative size-24 overflow-visible">
+                  <img
+                    src={it.img}
+                    alt=""
+                    className={cn(
+                      "size-24 object-contain transition-transform duration-500 ease-out",
+                      "group-hover:-translate-y-1 group-hover:-rotate-3 group-hover:scale-[1.06]",
+                    )}
+                  />
+                </div>
+                <h3 className="text-stat font-bold tracking-tight">
+                  {t(`features.items.${it.key}.title`)}
+                </h3>
+                <p className="text-body leading-relaxed text-fg-secondary">
+                  {t(`features.items.${it.key}.body`)}
+                </p>
+              </Card>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─── §3 Value · 3 场景卖点 ─── */
+
+function ValueSection() {
+  const { t } = useTranslation("landing");
+  return (
+    <section id="value" className="scroll-mt-20">
+      <div className="page-container space-y-16 py-14 lg:space-y-24 lg:py-24">
         <Reveal>
           <div className="max-w-2xl space-y-2">
-            <h2 className="text-section font-semibold sm:text-hero">{t("save.title")}</h2>
-            <p className="text-fg-secondary">{t("save.body")}</p>
+            <span className="font-mono text-label font-semibold uppercase tracking-widest text-fg-tertiary">
+              {t("features.eyebrow")}
+            </span>
+            <h2 className="text-hero font-semibold tracking-tight">
+              {t("features.title")}
+            </h2>
           </div>
         </Reveal>
 
-        {/* 4 档人数 · 条长 = 每人单价 · 越往下越短
-            **不画背景轨道** —— 带底槽的进度条是仪表盘语言，落地页上只要看出"谁短谁便宜"
-            条形宽度用百分比，不用 Meter（那个自带 bg-hairline 轨道） */}
-        <div className="mt-9 space-y-4">
-          {SPLITS.map((s, i) => {
-            const last = i === SPLITS.length - 1;
+        <ValueBlock kind="one" reverse={false} visual={<VendorBoardVisual />} />
+        <ValueBlock kind="two" reverse={true} visual={<PoolBillVisual />} />
+        <ValueBlock kind="three" reverse={false} visual={<CliWebhookVisual />} />
+      </div>
+    </section>
+  );
+}
+
+function ValueBlock({
+  kind, reverse, visual,
+}: { kind: "one" | "two" | "three"; reverse: boolean; visual: React.ReactNode }) {
+  const { t } = useTranslation("landing");
+  const points = t(`value.${kind}.points`, { returnObjects: true }) as string[];
+  return (
+    <Reveal>
+      <div className={cn(
+        "grid items-center gap-12 lg:grid-cols-2 lg:gap-16",
+        reverse && "lg:[&>*:first-child]:order-2",
+      )}>
+        <div className="rounded-panel bg-brand/5 p-6 sm:p-8">{visual}</div>
+        <div className="space-y-4">
+          <Chip tone="brand">{t(`value.${kind}.tag`)}</Chip>
+          <h3 className="text-section font-semibold tracking-tight sm:text-hero">
+            {t(`value.${kind}.title`)}
+          </h3>
+          <p className="max-w-[52ch] leading-relaxed text-fg-secondary">
+            {t(`value.${kind}.body`)}
+          </p>
+          <ul className="space-y-2 pt-2">
+            {points.map((p) => (
+              <li key={p} className="flex items-center gap-2 text-label">
+                <Check className="size-3.5 shrink-0 text-brand-strong" />
+                <span className="font-medium text-fg">{p}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </Reveal>
+  );
+}
+
+/** §3-01 · vendor 监测卡 · 一张真实的 dashboard 卡 */
+function VendorBoardVisual() {
+  const { t } = useTranslation("landing");
+  const vendors = [
+    { n: "01", life: 82, lat: t("value.one.board.latency.low"), active: false, healthy: true },
+    { n: "02", life: 94, lat: t("value.one.board.latency.low"), active: true, healthy: true },
+    { n: "03", life: 71, lat: t("value.one.board.latency.mid"), active: false, healthy: true },
+    { n: "04", life: 64, lat: t("value.one.board.latency.mid"), active: false, healthy: true },
+    { n: "05", life: 38, lat: t("value.one.board.latency.high"), active: false, healthy: true },
+    { n: "06", life: 22, lat: "—", active: false, healthy: false },
+  ];
+  return (
+    <div className="mx-auto max-w-md rounded-panel border border-hairline bg-bg p-6 shadow-hover">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="grid size-7 place-items-center rounded-lg bg-brand/10">
+            <RadioTower className="size-3.5 text-brand-strong" />
+          </span>
+          <span className="font-semibold">{t("value.one.board.title")}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="size-1.5 rounded-full bg-ok-solid" />
+          <span className="font-mono text-[11px] font-semibold text-ok-solid">
+            {t("value.one.board.live")}
+          </span>
+        </div>
+      </div>
+      <div className="my-3 h-px bg-hairline" />
+      <ul className="space-y-2.5">
+        {vendors.map((v) => (
+          <li
+            key={v.n}
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-2 py-1.5",
+              v.active && "bg-brand/10",
+            )}
+          >
+            <span
+              className={cn(
+                "size-1.5 shrink-0 rounded-full",
+                v.healthy ? "bg-ok-solid" : "bg-danger-solid",
+              )}
+            />
+            <span
+              className={cn(
+                "font-mono text-label font-semibold",
+                v.active ? "text-brand-strong" : "text-fg-secondary",
+              )}
+            >
+              Vendor {v.n}
+            </span>
+            <div className="mx-1 h-1.5 flex-1 rounded-full bg-brand/10">
+              <div
+                className={cn(
+                  "h-full rounded-full",
+                  v.active
+                    ? "bg-brand"
+                    : v.healthy
+                      ? "bg-brand/30"
+                      : "bg-danger-solid",
+                )}
+                style={{ width: `${v.life}%` }}
+              />
+            </div>
+            <span
+              className={cn(
+                "shrink-0 font-mono text-[11px] font-semibold",
+                v.active ? "text-brand-strong" : "text-fg-tertiary",
+              )}
+            >
+              {v.lat}
+            </span>
+            {v.active && <Activity className="size-3 shrink-0 text-brand-strong" />}
+          </li>
+        ))}
+      </ul>
+      <div className="my-3 h-px bg-hairline" />
+      <div className="flex items-center justify-between text-label">
+        <div className="flex items-center gap-1.5">
+          <Activity className="size-3.5 text-brand-strong" />
+          <span className="font-semibold">{t("value.one.board.footL")}</span>
+        </div>
+        <span className="text-fg-tertiary">{t("value.one.board.footR")}</span>
+      </div>
+    </div>
+  );
+}
+
+/** §3-02 · 拼车 mini 卡 + 账单 mini 卡 */
+function PoolBillVisual() {
+  const { t } = useTranslation("landing");
+  const billRows = t("value.two.bill.rows", { returnObjects: true }) as { k: string; v: string }[];
+  return (
+    <div className="mx-auto flex max-w-md flex-col items-center gap-4">
+      <div className="w-full max-w-[280px] rounded-panel border border-hairline bg-bg p-4 shadow-card">
+        <div className="flex items-center justify-between">
+          <span className="font-semibold">{t("value.two.pool.name")}</span>
+          <Chip tone="brand">{t("value.two.pool.chip")}</Chip>
+        </div>
+        <div className="mt-3 flex -space-x-1.5">
+          {["Z", "L", "W", "C"].map((c, i) => (
+            <span
+              key={c}
+              className="grid size-7 place-items-center rounded-full border-2 border-bg text-label font-semibold text-white"
+              style={{
+                background: ["#9147FF", "#6420C7", "#C9A9FF", "#A574FF"][i],
+                zIndex: 4 - i,
+              }}
+            >
+              {c}
+            </span>
+          ))}
+        </div>
+        <div className="mt-3 flex items-end justify-between rounded-lg bg-bg-elevated px-3 py-2.5">
+          <span className="text-label font-medium text-fg-secondary">
+            {t("value.two.pool.eachL")}
+          </span>
+          <div className="flex items-baseline gap-1">
+            <span className="text-stat font-semibold tnum text-brand-strong">
+              {t("value.two.pool.each")}
+            </span>
+            <span className="text-label text-fg-tertiary">
+              {t("value.two.pool.eachU")}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="w-full max-w-[320px] rounded-panel border border-hairline bg-bg p-4 shadow-card">
+        <div className="flex items-center justify-between">
+          <span className="font-semibold">{t("value.two.bill.title")}</span>
+          <span className="font-mono text-[11px] font-semibold text-credit-fg">
+            {t("value.two.bill.save")}
+          </span>
+        </div>
+        <ul className="mt-2 space-y-1">
+          {billRows.map((r) => (
+            <li key={r.k} className="flex items-center justify-between py-1 text-label">
+              <span className="text-fg-tertiary">{r.k}</span>
+              <span className="font-mono font-semibold">{r.v}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+/** §3-03 · curl 终端 · CLI 通吃 · webhook payload */
+function CliWebhookVisual() {
+  const { t } = useTranslation("landing");
+  const clis: { key: string; label: string; icon: LucideIcon; color: string }[] = [
+    { key: "claude", label: "Claude", icon: Sparkles, color: "#D97757" },
+    { key: "cursor", label: "Cursor", icon: MousePointer2, color: "#000000" },
+    { key: "kiro", label: "Kiro", icon: Ghost, color: "#9147FF" },
+    { key: "codex", label: "codex", icon: Code, color: "#10A37F" },
+    { key: "curl", label: "curl", icon: Terminal, color: "#073551" },
+  ];
+  return (
+    <div className="mx-auto max-w-md space-y-3">
+      <div className="rounded-panel bg-fg p-4">
+        <div className="flex items-center gap-1.5">
+          <span className="size-2 rounded-full bg-danger-solid/80" />
+          <span className="size-2 rounded-full bg-warn-solid/80" />
+          <span className="size-2 rounded-full bg-ok-solid/80" />
+          <span className="ml-2 font-mono text-[10px] font-semibold uppercase text-bg/60">
+            curl
+          </span>
+        </div>
+        <pre className="mt-2 whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-brand-light">
+{'$ curl -H "X-API-Key: usr-..." \\\n    /api/me/pull'}
+        </pre>
+        <div className="mt-1 font-mono text-[12px] text-ok-solid">→ 5 keys pulled</div>
+      </div>
+
+      <div className="rounded-panel border border-hairline bg-bg p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Terminal className="size-3.5 text-brand-strong" />
+            <span className="font-mono text-[11px] font-semibold tracking-wide">
+              {t("value.three.cli.head")}
+            </span>
+          </div>
+          <span className="font-mono text-[10px] text-fg-tertiary">
+            {t("value.three.cli.note")}
+          </span>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {clis.map((c) => (
+            <div
+              key={c.key}
+              className="flex items-center gap-1.5 rounded-full bg-bg-elevated px-2.5 py-1"
+            >
+              <span
+                className="grid size-5 place-items-center rounded-full"
+                style={{ background: c.color }}
+              >
+                <c.icon className="size-3 text-white" />
+              </span>
+              <span className="text-[11px] font-semibold">{c.label}</span>
+            </div>
+          ))}
+          <span className="rounded-full border border-hairline px-2.5 py-1 text-[11px] font-medium text-fg-tertiary">
+            {t("value.three.cli.more")}
+          </span>
+        </div>
+      </div>
+
+      <div className="rounded-panel border border-hairline bg-bg p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Webhook className="size-3.5 text-brand-strong" />
+            <span className="font-mono text-[11px] font-semibold">
+              {t("value.three.webhook.title")}
+            </span>
+          </div>
+          <span className="font-mono text-[9px] font-semibold text-credit-fg">
+            {t("value.three.webhook.method")}
+          </span>
+        </div>
+        <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-fg-secondary">
+          {t("value.three.webhook.body")}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+/* ─── §4 两类用户 ─── */
+
+function WhoSection() {
+  const { t } = useTranslation("landing");
+  const cards = [
+    { key: "casual", icon: User },
+    { key: "power", icon: Server },
+  ];
+  return (
+    <section className="scroll-mt-20 border-y border-hairline bg-bg-elevated">
+      <div className="page-container py-14 lg:py-20">
+        <Reveal>
+          <div className="max-w-2xl space-y-2">
+            <h2 className="text-hero font-semibold tracking-tight">
+              {t("who.title")}
+            </h2>
+            <p className="text-fg-secondary">{t("who.body")}</p>
+          </div>
+        </Reveal>
+        <div className="mt-9 grid gap-4 md:grid-cols-2">
+          {cards.map((c) => (
+            <Reveal key={c.key}>
+              <Card className="flex h-full flex-col gap-3 p-7">
+                <div className="flex items-center gap-2">
+                  <span className="grid size-8 place-items-center rounded-lg bg-brand/10">
+                    <c.icon className="size-4 text-brand-strong" />
+                  </span>
+                  <span className="text-label font-semibold text-fg-tertiary">
+                    {t(`who.${c.key}.chip`)}
+                  </span>
+                </div>
+                <h3 className="text-stat font-bold tracking-tight">
+                  {t(`who.${c.key}.title`)}
+                </h3>
+                <p className="text-body leading-relaxed text-fg-secondary">
+                  {t(`who.${c.key}.body`)}
+                </p>
+              </Card>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─── §5 三种使用方式 ─── */
+
+function UsesSection() {
+  const { t } = useTranslation("landing");
+  const cells: { key: string; icon: LucideIcon; focal: boolean }[] = [
+    { key: "hitch", icon: UsersRound, focal: true },
+    { key: "friend", icon: Ticket, focal: false },
+    { key: "extract", icon: Download, focal: false },
+  ];
+  return (
+    <section id="uses" className="scroll-mt-20">
+      <div className="page-container py-14 lg:py-24">
+        <Reveal>
+          <h2 className="text-hero font-semibold tracking-tight">
+            {t("uses.title")}
+          </h2>
+        </Reveal>
+        <div className="mt-9 grid overflow-hidden rounded-panel border border-hairline md:grid-cols-3">
+          {cells.map((c, i) => {
+            const points = t(`uses.${c.key}.points`, { returnObjects: true }) as string[];
             return (
-              <Reveal key={s.n} delay={i * 70}>
-                <div className="flex items-center gap-4 sm:gap-6">
-                  <span className="w-14 shrink-0 text-label font-semibold text-fg-secondary sm:w-20">
-                    {t("save.people", { n: s.n })}
-                  </span>
-                  <span className="flex-1">
+              <Reveal key={c.key}>
+                <div
+                  className={cn(
+                    "flex h-full flex-col gap-3.5 p-7",
+                    c.focal ? "bg-brand/5" : "bg-bg",
+                    i < cells.length - 1 && "md:border-r md:border-hairline",
+                    i < cells.length - 1 && "border-b border-hairline md:border-b-0",
+                  )}
+                >
+                  <div className="flex items-center gap-2">
                     <span
-                      className="block h-2 rounded-full transition-[width] duration-700 ease-out motion-reduce:transition-none"
-                      style={{
-                        width: `${(s.each / SPLITS[0].each) * 100}%`,
-                        backgroundColor: last ? "#9147FF" : "#C9A9FF",
-                      }}
-                    />
-                  </span>
-                  <span className="w-20 shrink-0 text-right sm:w-28">
-                    <span
-                      className={`text-body-lg font-semibold tnum ${last ? "text-brand-strong" : ""}`}
+                      className={cn(
+                        "grid size-10 place-items-center rounded-xl",
+                        c.focal ? "bg-brand" : "bg-bg-elevated",
+                      )}
                     >
-                      {s.each}
+                      <c.icon
+                        className={cn(
+                          "size-5",
+                          c.focal ? "text-white" : "text-fg-secondary",
+                        )}
+                      />
                     </span>
-                    <span className="ml-1 text-label text-fg-tertiary">{t("save.per")}</span>
-                  </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-stat font-bold tracking-tight">
+                      {t(`uses.${c.key}.title`)}
+                    </h3>
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                        c.focal
+                          ? "bg-brand text-white"
+                          : "bg-bg-elevated text-fg-secondary",
+                      )}
+                    >
+                      {t(`uses.${c.key}.badge`)}
+                    </span>
+                  </div>
+                  <p className="text-body leading-relaxed text-fg-secondary">
+                    {t(`uses.${c.key}.body`)}
+                  </p>
+                  <ul className="space-y-1.5 pt-1">
+                    {points.map((p) => (
+                      <li key={p} className="flex items-center gap-2 text-body">
+                        <Check className="size-3.5 shrink-0 text-brand-strong" />
+                        <span className="font-medium text-fg-secondary">{p}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </Reveal>
             );
           })}
         </div>
-
-        <p className="mt-6 text-label text-fg-tertiary">{t("save.note")}</p>
       </div>
     </section>
   );
 }
 
-/* ─── 拼车 · bento（1 大 + 3 小 · 4 内容 4 格）───────────────── */
+/* ─── §5.5 定价 · 充值 ─── */
 
-function PoolGrid() {
+function PricingSection() {
   const { t } = useTranslation("landing");
-  return (
-    <section id="pool" className="page-container scroll-mt-20 py-14 lg:py-20">
-      <Reveal>
-        <div className="max-w-2xl space-y-2">
-          <h2 className="text-section font-semibold sm:text-hero">{t("pool.title")}</h2>
-          <p className="text-fg-secondary">{t("pool.body")}</p>
-        </div>
-      </Reveal>
+  const rules: { key: string; icon: LucideIcon }[] = [
+    { key: "clear", icon: Info },
+    { key: "pool", icon: Receipt },
+    { key: "gateway", icon: Wallet },
+  ];
+  // 默认 100 积分 · TOPUP_PRESETS[1] · 汇率 / 通道费全走 lib/utils.ts
+  const [selected, setSelected] = useState<number>(TOPUP_PRESETS[1]);
+  const unit = t("pricing.topup.creditUnit");
+  const { usdCredits, usdFee, usdTotal } = topupUsdBreakdown(selected);
+  const fmt = (n: number) => `$${n.toFixed(2)}`;
+  const totalDisplay = Number.isInteger(usdTotal) ? `$${usdTotal}` : fmt(usdTotal);
+  const rows: { k: string; v: string }[] = [
+    { k: t("pricing.topup.rowLabels.credits"), v: `${selected} ${unit} · ${fmt(usdCredits)}` },
+    { k: t("pricing.topup.rowLabels.fee"), v: `+${fmt(usdFee)}` },
+    { k: t("pricing.topup.rowLabels.arrives"), v: `${selected} ${unit}` },
+  ];
 
-      <div className="mt-9 grid gap-4 md:grid-cols-3">
-        {/* 大格 · 集单 · 品牌光晕 */}
-        <Reveal className="md:col-span-2">
-          <Card focal focalTone="brand" className="flex h-full flex-col gap-4 p-7">
-            <BentoHead icon={Layers} title={t("pool.batch.title")} />
-            <p className="max-w-[52ch] text-fg-secondary">{t("pool.batch.body")}</p>
-            {/* 合流示意 · 3 个意图 → 1 次请求 */}
-            <div className="mt-auto flex items-center gap-3 pt-2">
-              <div className="flex flex-col gap-1.5">
-                {[0, 1, 2].map((k) => (
-                  <span key={k} className="h-1.5 w-10 rounded-full bg-brand/25" />
-                ))}
-              </div>
-              <ArrowRight className="size-4 shrink-0 text-fg-tertiary" />
-              <span className="h-1.5 w-20 rounded-full bg-brand" />
-              <Chip tone="brand">{t("pool.batch.tier")}</Chip>
+  return (
+    <section id="pricing" className="scroll-mt-20 border-y border-hairline bg-bg-elevated">
+      <div className="page-container grid gap-12 py-14 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-16 lg:py-20">
+        <Reveal>
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <span className="font-mono text-label font-semibold uppercase tracking-widest text-fg-tertiary">
+                {t("pricing.eyebrow")}
+              </span>
+              <h2 className="text-hero font-semibold tracking-tight">
+                {t("pricing.title")}
+              </h2>
+              <p className="max-w-[52ch] leading-relaxed text-fg-secondary">
+                {t("pricing.body")}
+              </p>
             </div>
-          </Card>
+            <ul className="space-y-4">
+              {rules.map((r) => (
+                <li key={r.key} className="flex items-start gap-3">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand/10">
+                    <r.icon className="size-4 text-brand-strong" />
+                  </span>
+                  <div>
+                    <h4 className="font-semibold">
+                      {t(`pricing.rules.${r.key}.title`)}
+                    </h4>
+                    <p className="mt-0.5 max-w-[52ch] text-label leading-relaxed text-fg-secondary">
+                      {t(`pricing.rules.${r.key}.body`)}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="flex items-center gap-2 rounded-lg bg-bg px-3 py-2.5 text-label text-fg-tertiary">
+              <Info className="size-3.5 shrink-0" />
+              <span>{t("pricing.note")}</span>
+            </div>
+          </div>
         </Reveal>
 
-        {/* 小格 · 6 家上游 · 匿名编号（对外不出真名） */}
-        <Reveal delay={70}>
-          <Card className="flex h-full flex-col gap-4 p-7">
-            <BentoHead icon={Boxes} title={t("pool.vendors.title")} />
-            <p className="text-label text-fg-secondary">{t("pool.vendors.body")}</p>
-            <div className="mt-auto flex flex-wrap gap-1.5 pt-2">
-              {[1, 2, 3, 4, 5, 6].map((n) => (
-                <Chip key={n} tone="neutral">{`0${n}`}</Chip>
+        <Reveal delay={80}>
+          <div className="rounded-panel border border-hairline bg-bg p-6 shadow-hover">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="grid size-8 place-items-center rounded-lg bg-credit-bg">
+                  <Wallet className="size-4 text-credit-fg" />
+                </span>
+                <span className="text-body-lg font-semibold">
+                  {t("pricing.topup.title")}
+                </span>
+              </div>
+              <span className="rounded-full bg-credit-bg px-2 py-0.5 text-[10px] font-semibold text-credit-fg">
+                {t("pricing.topup.badge")}
+              </span>
+            </div>
+
+            <div className="mt-5 text-label font-semibold uppercase tracking-widest text-fg-tertiary">
+              {t("pricing.topup.amountLabel")}
+            </div>
+            <div className="mt-2 grid grid-cols-4 gap-2">
+              {TOPUP_PRESETS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setSelected(n)}
+                  className={cn(
+                    "rounded-lg border px-2 py-2 text-label font-semibold transition-colors",
+                    selected === n
+                      ? "border-brand bg-brand/10 text-brand-strong"
+                      : "border-hairline text-fg-secondary hover:bg-bg-elevated",
+                  )}
+                >
+                  {n}
+                </button>
               ))}
             </div>
-          </Card>
-        </Reveal>
 
-        {/* 小格 · 比有效成本 · 两根对比条 */}
-        <Reveal delay={140}>
-          <Card className="flex h-full flex-col gap-4 p-7">
-            <BentoHead icon={GitCompareArrows} title={t("pool.compare.title")} />
-            <p className="text-label text-fg-secondary">{t("pool.compare.body")}</p>
-            {/* 两根对比条 · 同样不画底槽（跟 #save 一致）
-                长的那根 = 有效成本更优的那家 · 只表达"能比出高低"，不给具体数（那是登录后的事） */}
-            <div className="mt-auto space-y-2 pt-2">
-              <span className="block h-1.5 w-[78%] rounded-full bg-brand" />
-              <span className="block h-1.5 w-[41%] rounded-full bg-brand-soft" />
-            </div>
-          </Card>
-        </Reveal>
+            <ul className="mt-5 space-y-2 rounded-xl bg-bg-elevated p-4">
+              {rows.map((r) => (
+                <li key={r.k} className="flex items-center justify-between text-label">
+                  <span className="text-fg-tertiary">{r.k}</span>
+                  <span className="font-mono font-semibold">{r.v}</span>
+                </li>
+              ))}
+              <li className="my-1 h-px bg-hairline" />
+              <li className="flex items-end justify-between">
+                <span className="font-semibold">{t("pricing.topup.totalL")}</span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-stat font-semibold text-brand-strong tnum">
+                    {totalDisplay}
+                  </span>
+                  <span className="font-mono text-[11px] text-fg-tertiary">
+                    {t("pricing.topup.totalU")}
+                  </span>
+                </div>
+              </li>
+            </ul>
 
-        {/* 小格 · 自动补号 · 灰底做视觉变化 */}
-        <Reveal delay={210} className="md:col-span-2">
-          <Card className="flex h-full flex-col gap-4 bg-bg-elevated p-7">
-            <BentoHead icon={RefreshCw} title={t("pool.refill.title")} />
-            <p className="max-w-[52ch] text-fg-secondary">{t("pool.refill.body")}</p>
-            <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
-              <Chip tone="danger">{t("pool.refill.dead")}</Chip>
-              <ArrowRight className="size-4 shrink-0 text-fg-tertiary" />
-              <Chip tone="ok">{t("pool.refill.new")}</Chip>
-              <ArrowRight className="size-4 shrink-0 text-fg-tertiary" />
-              <Chip tone="brand">{t("pool.refill.credit")}</Chip>
-            </div>
-          </Card>
-        </Reveal>
-      </div>
-    </section>
-  );
-}
-
-function BentoHead({ icon: Icon, title }: { icon: LucideIcon; title: string }) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-bg-elevated">
-        <Icon className="size-4 text-fg-secondary" />
-      </span>
-      <h3 className="font-semibold">{title}</h3>
-    </div>
-  );
-}
-
-/* ─── 自动化 · 竖向堆叠（标题 → 事件条 → 代码）───────────────── */
-
-const PAYLOAD = `{
-  "event": "new_keys_available",
-  "bus_id": "01H8...",
-  "new_keys": 5,
-  "timestamp": "2026-08-07T09:12:44Z"
-}`;
-
-function AutoSection() {
-  const { t } = useTranslation("landing");
-  const events = [
-    { key: "new", tone: "ok" as const },
-    { key: "dead", tone: "danger" as const },
-    { key: "refund", tone: "brand" as const },
-    { key: "test", tone: "neutral" as const },
-  ];
-  return (
-    <section id="auto" className="scroll-mt-20 border-y border-hairline bg-bg-elevated">
-      <div className="page-container py-14 lg:py-20">
-        <Reveal>
-          <div className="max-w-2xl space-y-2">
-            <div className="flex items-center gap-2.5">
-              <Webhook className="size-5 text-brand-strong" />
-              <h2 className="text-section font-semibold sm:text-hero">{t("auto.title")}</h2>
-            </div>
-            <p className="text-fg-secondary">{t("auto.body")}</p>
-          </div>
-        </Reveal>
-
-        <Reveal delay={70}>
-          <div className="mt-7 flex flex-wrap gap-2">
-            {events.map((e) => (
-              <Chip key={e.key} tone={e.tone} dot>
-                {t(`auto.events.${e.key}`)}
-              </Chip>
-            ))}
-          </div>
-        </Reveal>
-
-        <Reveal delay={140}>
-          <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-            <CodeBlock code={PAYLOAD} lang={t("auto.payload")} />
-            <p className="max-w-[34ch] text-label leading-relaxed text-fg-secondary">
-              {t("auto.apikey")}
-            </p>
+            <Button size="lg" variant="brand" className="mt-5 w-full" asChild>
+              <Link to="/wallet">
+                {t("pricing.topup.cta")}
+                <ArrowRight />
+              </Link>
+            </Button>
           </div>
         </Reveal>
       </div>
@@ -381,75 +901,30 @@ function AutoSection() {
   );
 }
 
-/* ─── 三种去向 · 一条分栏带（不是三张卡）────────────────────── */
+/* ─── §6 FAQ ─── */
 
-function DestStrip() {
+function FaqSection() {
   const { t } = useTranslation("landing");
-  const dests = [
-    { key: "bus", icon: Users },
-    { key: "pool", icon: Database },
-    { key: "handoff", icon: ArrowRight },
-  ];
+  const items = t("faq.items", { returnObjects: true }) as { q: string; a: string; open?: boolean }[];
   return (
-    <section className="page-container py-14 lg:py-20">
-      <Reveal>
-        <h2 className="max-w-2xl text-section font-semibold sm:text-hero">
-          {t("dest.title")}
-        </h2>
-      </Reveal>
-
-      <Reveal delay={70}>
-        <div className="mt-7 overflow-hidden rounded-panel border border-hairline">
-          <div className="grid divide-y divide-hairline sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-            {dests.map((d, i) => (
-              <div
-                key={d.key}
-                /* 第一格是主入口 · 给灰底做非对称强调 */
-                className={i === 0 ? "space-y-2 bg-bg-elevated p-7" : "space-y-2 p-7"}
-              >
-                <d.icon className="size-4 text-fg-tertiary" />
-                <h3 className="font-semibold">{t(`dest.${d.key}.title`)}</h3>
-                <p className="text-label leading-relaxed text-fg-tertiary">
-                  {t(`dest.${d.key}.body`)}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </Reveal>
-    </section>
-  );
-}
-
-/* ─── FAQ · 手风琴（5 条 · 不用裸 ul）───────────────────────── */
-
-function Faq() {
-  const { t } = useTranslation("landing");
-  const qs = ["q1", "q2", "q3", "q4", "q5"];
-  return (
-    <section id="faq" className="scroll-mt-20 border-t border-hairline">
+    <section id="faq" className="scroll-mt-20">
       <div className="page-container py-14 lg:py-20">
         <Reveal>
-          <h2 className="max-w-2xl text-section font-semibold sm:text-hero">
+          <h2 className="text-hero font-semibold tracking-tight">
             {t("faq.title")}
           </h2>
         </Reveal>
-
-        <div className="mt-7 max-w-3xl divide-y divide-hairline border-t border-hairline">
-          {qs.map((q, i) => (
-            <Reveal key={q} delay={i * 50}>
-              <Collapsible>
-                {/* chevron 旋转跟项目 CollapsiblePanel 一个套路（group-data-[state=open]）
-                    这里不用 Panel 本体 —— 它自带 border + rounded 卡壳，FAQ 要的是通栏 divide-y */}
+        <div className="mt-9 max-w-3xl divide-y divide-hairline border-t border-hairline">
+          {items.map((it, i) => (
+            <Reveal key={i} delay={i * 40}>
+              <Collapsible defaultOpen={i === 0}>
                 <CollapsibleTrigger className="group flex w-full items-center justify-between gap-4 py-4 text-left font-semibold transition-colors hover:text-fg-secondary focus:outline-none focus-visible:text-fg-secondary">
-                  <span>{t(`faq.${q}.q`)}</span>
+                  <span>{it.q}</span>
                   <ChevronDown className="size-4 shrink-0 text-fg-tertiary transition-transform group-data-[state=open]:rotate-180" />
                 </CollapsibleTrigger>
-                <CollapsibleContent
-                  className="overflow-hidden data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-2"
-                >
-                  <p className="max-w-[62ch] pb-4 leading-relaxed text-fg-secondary">
-                    {t(`faq.${q}.a`)}
+                <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-2">
+                  <p className="max-w-[62ch] whitespace-pre-line pb-4 leading-relaxed text-fg-secondary">
+                    {it.a}
                   </p>
                 </CollapsibleContent>
               </Collapsible>
@@ -461,16 +936,18 @@ function Faq() {
   );
 }
 
-/* ─── 收尾 CTA · 居中 focal 卡（整页唯一一次居中）─────────────── */
+/* ─── §7 最终 CTA ─── */
 
 function FinalCta() {
   const { t } = useTranslation("landing");
   return (
-    <section className="page-container pb-16 lg:pb-24">
+    <section className="page-container pb-16 lg:pb-24 pt-14">
       <Reveal>
         <Card focal focalTone="brand" className="p-10 text-center sm:p-14">
-          <div className="mx-auto max-w-[46ch] space-y-4">
-            <h2 className="text-section font-semibold sm:text-hero">{t("cta.title")}</h2>
+          <div className="mx-auto max-w-[52ch] space-y-4">
+            <h2 className="text-hero font-semibold tracking-tight sm:text-giant">
+              {t("cta.title")}
+            </h2>
             <p className="text-fg-secondary">{t("cta.body")}</p>
             <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
               <Button size="lg" variant="brand" asChild>
@@ -489,3 +966,7 @@ function FinalCta() {
     </section>
   );
 }
+
+
+
+

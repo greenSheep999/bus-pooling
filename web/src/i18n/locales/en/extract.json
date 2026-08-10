@@ -87,10 +87,171 @@
     "refunded": "Refunded",
     "success": "Success"
   },
+  "assign-modal": {
+    "title-into-bus": "Confirm add to bus",
+    "title-push-pool": "Confirm push to my pool",
+    "title-handoff": "Confirm download & take",
+    "title-default": "Dispatch destination",
+    "sub-preset-prefix": "",
+    "sub-preset-suffix": " keys · double-check and confirm",
+    "sub-select-prefix": "Selected ",
+    "sub-select-suffix": " keys · pick a destination",
+    "handoff-alert-title": "One-time reveal — copy and save now",
+    "handoff-alert-body": "Once you confirm we delete them immediately · you won't see the plaintext again",
+    "handoff-copy-aria": "Copy",
+    "handoff-copy-all": "Copy all",
+    "handoff-back": "Back",
+    "handoff-confirm-pending": "Processing…",
+    "handoff-confirm": "I've saved them · confirm take",
+    "preset-into-bus-desc": "The bus manages these keys after boarding · shared across riders · we keep monitoring liveness",
+    "preset-push-pool-desc": "Dual-write to your configured pool · we still monitor liveness",
+    "preset-handoff-desc": "After downloading, the keys leave our system · we stop monitoring and can't re-download",
+    "field-target-bus": "Which bus",
+    "field-target-bus-alt": "Pick a bus",
+    "select-placeholder": "Select⋯",
+    "keys-title": "These keys",
+    "kind-into-bus-title": "Into a bus",
+    "kind-into-bus-desc": "Board an existing bus · the bus manages the pool",
+    "kind-push-pool-title": "Push to my pool",
+    "kind-push-pool-desc": "Dual-write to your passengerpool · we still monitor liveness",
+    "kind-push-pool-disabled-reason": "Not configured",
+    "kind-handoff-title": "Take the keys",
+    "kind-handoff-desc": "Download plaintext keys · they leave our system · we stop monitoring",
+    "chip-fire-and-forget": "fire-and-forget",
+    "footer-handoff-hint": "⚠️ Take-away is a one-time reveal",
+    "cancel": "Cancel",
+    "submit-pending": "Processing…",
+    "submit": "Confirm",
+    "settlement-solo": "Solo bus · no split",
+    "settlement-skipped-suspended": " (suspended)",
+    "settlement-skipped-short": " (short on credits)",
+    "settlement-none-title": "No rider can chip in this time",
+    "settlement-none-body-suffix": " · dispatching now is a giveaway · wait for top-ups or unsuspend them first",
+    "settlement-payers-prefix": "Riders chip in — you'll collect ",
+    "settlement-payers-suffix": " credits",
+    "settlement-skipped-title-suffix": " · skipped this round",
+    "settlement-skipped-body-prefix": "They aren't charged and don't get keys · you collect ",
+    "settlement-skipped-body-suffix": " credits less"
+  },
+  "confirm-modal": {
+    "title": "Confirm extract",
+    "info-title": "Extract details",
+    "info-source": "Source",
+    "info-auto-suffix": "system-picked",
+    "info-zone": "Region",
+    "info-zone-all": "All regions",
+    "info-count": "Count",
+    "info-count-unit": "keys",
+    "info-unit-price": "Unit price",
+    "info-unit-price-suffix": "credits / key",
+    "info-warranty": "Warranty",
+    "info-warranty-prefix": "min · dead within refunds",
+    "info-warranty-none": "No warranty",
+    "info-dash": "—",
+    "coupon-label": "Coupon code",
+    "coupon-hint-applied": "Applied",
+    "coupon-hint-optional": "Optional",
+    "coupon-placeholder": "Enter a coupon code to save",
+    "coupon-btn-applied": "Applied",
+    "coupon-btn-apply": "Apply",
+    "fee-unit-label": "Unit price",
+    "fee-service": "Service fee",
+    "fee-total": "Total charge",
+    "fee-credits": "credits",
+    "cap-alert-title": "Above your unit-price cap",
+    "cap-alert-prefix": "Now ",
+    "cap-alert-mid1": " credits / key · your cap is ",
+    "cap-alert-mid2": " · over by ",
+    "cap-alert-tail": "Wait for the price to drop · or head to",
+    "cap-alert-link": "Fetch preferences",
+    "cap-alert-tail-suffix": "to raise the cap",
+    "warn-alert": "Prices move with the market · the final charge follows the actual buy · double-check the info above before confirming",
+    "cancel": "Cancel",
+    "confirm-over-cap": "Above cap · can't fetch",
+    "confirm-pending": "Fetching…",
+    "confirm-submit": "Confirm · fetch {{count}}"
+  },
   "form": {
     "card": {
       "sub": "Pick a vendor to see supply · set count and region · pull a batch",
       "title": "Pull new keys"
+    }
+  },
+  "upstream-panel": {
+    "loading-auto": "Picking the best vendor…",
+    "loading-vendor": "Loading vendor status…",
+    "auto-title": "Auto-assign",
+    "auto-arrow": "→",
+    "vendor-title": "Live upstream status",
+    "default-zone-prefix": "Default region · ",
+    "stat": {
+      "stock": "Stock",
+      "unit-price": "Unit price",
+      "warranty": "Warranty",
+      "max-per-order": "Per-order cap",
+      "history": "Historical uptime"
+    },
+    "stock": {
+      "out-of-stock": "0 · out of stock",
+      "available": "keys",
+      "available-suffix": "available"
+    },
+    "unit-price-value": "credits / key",
+    "warranty": {
+      "none": "No warranty",
+      "minutes-suffix": "min · dead within refunds"
+    },
+    "max-per-order-value": "per order",
+    "history-line": {
+      "avg-prefix": "Avg",
+      "sep": " · ",
+      "alive-rate-30d": "30-day uptime",
+      "percent": "%",
+      "empty": "No data yet",
+      "empty-recent": "No pulls in the last 30 days"
+    },
+    "note": {
+      "hold-cap-prefix": "This vendor's remaining hold cap is only",
+      "hold-cap-suffix": "keys · larger pulls will be rejected",
+      "currency": "This vendor prices in USD · charges convert to credits at the day's rate",
+      "no-region": "This vendor doesn't split by region · one tier only"
+    }
+  },
+  "pull-form": {
+    "field": {
+      "vendor": "Vendor",
+      "zone": "Region",
+      "count": "Count",
+      "count-hint": "{{min}} – {{max}}"
+    },
+    "vendor": {
+      "auto": "Auto-assign (recommended)",
+      "auto-fallback": "Auto-assign"
+    },
+    "zone": {
+      "auto": "Let us pick",
+      "us": "US",
+      "eu": "EU"
+    },
+    "estimate": {
+      "title": "Estimated cost",
+      "unit-line": "Unit price · {{count}} key(s)",
+      "unit-value": "{{unit}} × {{count}} credits",
+      "service-fee": "Service fee",
+      "service-fee-value": "{{value}} credits",
+      "total-label": "Total",
+      "total-value": "{{value}} credits",
+      "loading": "Estimating…"
+    },
+    "bargain": {
+      "title": "Pull 2+ for a better unit price",
+      "body": "A single-key pull costs more per key"
+    },
+    "history-link": "See price history",
+    "history-note": "Prices fluctuate with the market — please double-check before pulling.",
+    "submit": {
+      "out-of-stock": "Out of stock here",
+      "text": "Pull {{count}} key(s)"
     }
   },
   "hero": {

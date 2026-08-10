@@ -1,5 +1,7 @@
 package kirodrop
 
+import "encoding/json"
+
 // wire types — vendor 私有，不外暴。
 
 type profileResp struct {
@@ -13,16 +15,28 @@ type profileResp struct {
 	} `json:"profile"`
 }
 
+// stockResp kirodrop /api/me/stock 响应。
+//
+// **注意 vendor 侧曾变更过 stock 字段类型**：
+//   - 旧形状：{"stock": {"public_available": N, "my_private": M}, "zones": [...]}
+//   - 新形状：{"balance": "...", "price": "...", "region": "...", "stock": N}
+//
+// 用 json.RawMessage 接住 stock 字段 · toStockSnapshot 里两种都解一遍 · 兼容双形状。
 type stockResp struct {
-	Stock struct {
-		PublicAvailable int `json:"public_available"`
-		MyPrivate       int `json:"my_private"`
-	} `json:"stock"`
-	Zones []zoneItem `json:"zones"`
-	Max   int        `json:"max"`
-	Min   int        `json:"min_per_order"`
-	MaxPO int        `json:"max_per_order"`
-	WM    int        `json:"warranty_minutes"`
+	Stock  json.RawMessage `json:"stock"`
+	Region string          `json:"region"`
+	Price  string          `json:"price"` // 新形状是字符串（例 "7.35"）· 旧无此字段
+	Zones  []zoneItem      `json:"zones"`
+	Max    int             `json:"max"`
+	Min    int             `json:"min_per_order"`
+	MaxPO  int             `json:"max_per_order"`
+	WM     int             `json:"warranty_minutes"`
+}
+
+// stockNested 旧形状里 stock 是嵌套对象。
+type stockNested struct {
+	PublicAvailable int `json:"public_available"`
+	MyPrivate       int `json:"my_private"`
 }
 
 type zoneItem struct {

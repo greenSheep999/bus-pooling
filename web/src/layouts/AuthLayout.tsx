@@ -1,16 +1,17 @@
 import { Link, Outlet } from "react-router-dom";
 import { PublicControls } from "@/components/PublicControls";
-import LogoMark from "@/assets/logo/mark.svg";
+import { BrandLogo } from "@/components/BrandLogo";
+import { DocumentMeta } from "@/components/DocumentMeta";
 
 export default function AuthLayout() {
   return (
     <div className="relative min-h-dvh bg-bg bg-glow-t">
+      <DocumentMeta />
       <Link
         to="/"
-        className="absolute left-6 top-6 flex items-center gap-2.5 sm:left-8"
+        className="absolute left-6 top-6 flex items-center sm:left-8"
       >
-        <img src={LogoMark} alt="" className="size-7 rounded-lg" />
-        <span className="text-body-lg font-semibold tracking-tight">bus-pooling</span>
+        <BrandLogo />
       </Link>
 
       {/* 主题 + 语言切换 · 未登录也能用（车主要求） */}

@@ -1,3 +1,4 @@
+import { Trans, useTranslation } from "react-i18next";
 import { ArrowUpRight, Bus as BusIcon, Zap, ZapOff } from "lucide-react";
 import type { Bus } from "@/types";
 import {
@@ -16,6 +17,7 @@ import {
     - 号池分布区（vendor 段条 + 明细）
     - 策略区（分区隔离，不跟 vendor 混）· 自动补车 · 单价 · 日限 */
 export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) {
+  const { t, i18n } = useTranslation("buses");
   const { data: me } = useMe();
   const { data: creds } = useBusCredentials(bus.id);
   const s = bus.strategy;
@@ -24,10 +26,10 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
   // - 用户建的车（team/single 遗留）· 1 人显示"独享"·多人显示"N 人拼车"
   const kindLabel =
     bus.kind === "anon"
-      ? `搭车 · ${bus.member_count} 车友`
+      ? t("kind.anon-with-count", { count: bus.member_count })
       : bus.member_count > 1
-        ? `拼车 · ${bus.member_count} 车友`
-        : "独享";
+        ? t("kind.multi-card", { count: bus.member_count })
+        : t("kind.solo");
 
   const seed = bus.name;
   const { bg, fg } = avatarColor(seed);
@@ -41,7 +43,7 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
             <BusIcon className="size-3" />
             {kindLabel}
           </Chip>
-          {bus.status === "active" && <Chip tone="ok" dot>活跃</Chip>}
+          {bus.status === "active" && <Chip tone="ok" dot>{t("card.chip-active")}</Chip>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span
@@ -64,7 +66,7 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
           </div>
         </div>
         <span className="flex shrink-0 items-center gap-1 text-label font-semibold text-brand-strong">
-          查看 <ArrowUpRight className="size-3.5" />
+          {t("card.view")} <ArrowUpRight className="size-3.5" />
         </span>
       </div>
 
@@ -74,12 +76,17 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
           <div className="flex items-baseline gap-1.5">
             <span className="text-num font-semibold tnum">{bus.alive_count}</span>
             <span className="text-label text-fg-tertiary">
-              个 · 已失效 <Em>{bus.dead_count}</Em>
+              <Trans
+                t={t}
+                i18nKey="card.alive-suffix"
+                values={{ dead: bus.dead_count }}
+                components={{ 1: <Em /> }}
+              />
             </span>
           </div>
           <div className="flex items-center gap-1.5 text-label font-medium text-fg-tertiary">
             <span className="size-1.5 rounded-full bg-ok-solid" />
-            号在池
+            {t("card.alive-status")}
           </div>
         </div>
         <div className="space-y-0.5 text-right">
@@ -92,13 +99,13 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
             {bus.spend_today > 0 ? `-${fmtCredits(bus.spend_today)}` : "0"}
           </div>
           <div className="text-label font-medium text-fg-tertiary">
-            今日消费 · 积分
+            {t("card.spend-today-label")}
           </div>
         </div>
       </div>
 
       {/* 号池分布区 · 按 vendor · 独立分区 */}
-      <PoolDistribution credentials={creds} label="号池分布 · 按 vendor" variant="compact" />
+      <PoolDistribution credentials={creds} label={t("card.distribution-label")} variant="compact" />
 
       {/* 策略区 · mt-auto 沉底贴分隔线 · 号池行数不同时中间空档自然变化 */}
       <div className="mt-auto space-y-1.5 rounded-xl bg-bg-elevated p-3">
@@ -106,38 +113,63 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
           {s.auto_refill_enabled ? (
             <>
               <Zap className="size-3.5 text-brand-strong" />
-              <span className="font-semibold text-brand-strong">自动补车</span>
+              <span className="font-semibold text-brand-strong">{t("card.refill.auto")}</span>
               <span className="text-fg-tertiary">
-                · 保活 <Em>{s.refill_watermark}</Em>
+                <Trans
+                  t={t}
+                  i18nKey="card.refill.watermark"
+                  values={{ count: s.refill_watermark }}
+                  components={{ 1: <Em /> }}
+                />
                 {s.per_round_count && (
-                  <> · 每轮 <Em>{s.per_round_count}</Em></>
+                  <>
+                    {" "}
+                    <Trans
+                      t={t}
+                      i18nKey="card.refill.per-round"
+                      values={{ count: s.per_round_count }}
+                      components={{ 1: <Em /> }}
+                    />
+                  </>
                 )}
               </span>
             </>
           ) : (
             <>
               <ZapOff className="size-3.5 text-fg-tertiary" />
-              <Em plain>手动模式</Em>
-              <span className="text-fg-tertiary">· 号少时提醒</span>
+              <Em plain>{t("card.refill.manual")}</Em>
+              <span className="text-fg-tertiary">{t("card.refill.manual-hint")}</span>
             </>
           )}
         </div>
         {(s.max_unit_price || s.daily_spend_limit || s.preferred_vendor) && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-label text-fg-tertiary">
             {s.max_unit_price && (
-              <span>
-                单价 ≤ <Em>{toCredits(s.max_unit_price)}</Em>
-              </span>
+              <Trans
+                t={t}
+                i18nKey="card.strategy.max-price"
+                values={{ value: toCredits(s.max_unit_price) }}
+                components={{ 1: <Em /> }}
+                parent="span"
+              />
             )}
             {s.daily_spend_limit && (
-              <span>
-                日限 <Em>{toCredits(s.daily_spend_limit)}</Em>
-              </span>
+              <Trans
+                t={t}
+                i18nKey="card.strategy.daily-limit"
+                values={{ value: toCredits(s.daily_spend_limit) }}
+                components={{ 1: <Em /> }}
+                parent="span"
+              />
             )}
             {s.preferred_vendor && (
-              <span>
-                首选 <Em plain>{vendorLabel(s.preferred_vendor, !!me?.invited)}</Em>
-              </span>
+              <Trans
+                t={t}
+                i18nKey="card.strategy.preferred"
+                values={{ vendor: vendorLabel(s.preferred_vendor, !!me?.invited) }}
+                components={{ 1: <Em plain /> }}
+                parent="span"
+              />
             )}
           </div>
         )}
@@ -146,11 +178,11 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
       {/* 底行 · 平均寿命 · 紧跟策略 pill · 分隔线区分 */}
       <div className="flex items-center justify-between border-t border-hairline pt-3 text-label">
         <span className="text-fg-tertiary">
-          平均寿命{" "}
+          {t("card.lifespan-prefix")}{" "}
           <Em>{fmtLifespan(bus.avg_lifespan_seconds)}</Em>
         </span>
         <span className="text-fg-tertiary">
-          创建于 {new Date(bus.created_at).toLocaleDateString("zh-CN")}
+          {t("card.created-at", { date: new Date(bus.created_at).toLocaleDateString(i18n.language) })}
         </span>
       </div>
     </Card>

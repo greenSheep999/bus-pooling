@@ -60,6 +60,8 @@ type Server struct {
 	secureCookie bool
 	// promos 顶部跑马灯活动位（config.promo.items）· 空 = 不显示跑马灯
 	promos []config.PromoItem
+	// communityChannels 社群渠道链接（config.community.channels）· 空 = 前端展示占位
+	communityChannels []config.CommunityChannel
 }
 
 // ServerDeps 装配 Server 需要的依赖。decider 允许为 nil（migrate 之类的
@@ -86,6 +88,8 @@ type ServerDeps struct {
 	SecureCookie        bool
 	// Promos 跑马灯配置（config.promo.items）
 	Promos []config.PromoItem
+	// CommunityChannels 社群渠道配置（config.community.channels）
+	CommunityChannels []config.CommunityChannel
 }
 
 func NewServer(d ServerDeps) *Server {
@@ -115,6 +119,7 @@ func NewServer(d ServerDeps) *Server {
 		paymentGWSuccessURL: d.PaymentGWSuccessURL,
 		secureCookie:        d.SecureCookie,
 		promos:              d.Promos,
+		communityChannels:   d.CommunityChannels,
 	}
 }
 
@@ -185,6 +190,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/topup/channels", handler(s.handleListTopupChannels))
 	// 跑马灯活动位 · **公开**（landing / 登录页也要显示）
 	mux.Handle("GET /api/promos", handler(s.handleListPromos))
+	mux.Handle("GET /api/community/channels", handler(s.handleListCommunityChannels))
 	mux.Handle("POST /api/me/topup", handler(s.RequireAuth(s.handleCreateTopup)))
 	mux.Handle("GET /api/me/topup/{order_id}", handler(s.RequireAuth(s.handleGetTopupOrder)))
 	mux.Handle("GET /api/me/topup-orders", handler(s.RequireAuth(s.handleListTopupOrders)))
@@ -210,6 +216,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/webhooks/vendor/{vendor_id}", handler(s.handleVendorWebhook))
 
 	// vendors 只读（05-api-contract §9）· 全部要鉴权
+	mux.Handle("GET /api/vendors/status", handler(s.handleVendorsStatus)) // 公开
+	mux.Handle("GET /api/vendors/status/{anon_id}/trend", handler(s.handleVendorStatusTrend)) // 公开
 	mux.Handle("GET /api/vendors/stock", handler(s.RequireAuth(s.handleVendorsStock)))
 	mux.Handle("GET /api/vendors/prices", handler(s.RequireAuth(s.handleVendorsPrices)))
 	mux.Handle("GET /api/vendors/stats", handler(s.RequireAuth(s.handleVendorsStats)))

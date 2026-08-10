@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { AlertTriangle, Clock, Coins, Package, ShieldCheck, Sparkles, TrendingUp } from "lucide-react";
 import { useAutoPick, useVendorHistory, useVendorStock } from "@/api/hooks";
 import { Muted } from "@/components/ui/primitives";
@@ -17,6 +18,7 @@ export function UpstreamStatusPanel({
   /** 消费邀请码 · 填了本次按优惠价 */
   inviteCode?: string;
 }) {
+  const { t } = useTranslation("extract");
   const isAuto = vendorId === "auto";
   const { data: pick, isLoading: pickLoading } = useAutoPick(zone, inviteCode);
   const { data: stock, isLoading: stockLoading } = useVendorStock(
@@ -28,7 +30,7 @@ export function UpstreamStatusPanel({
   /* ── auto：系统派号推荐 ── */
   if (isAuto) {
     if (pickLoading || !pick) {
-      return <PanelShell><Muted>正在挑最优 vendor…</Muted></PanelShell>;
+      return <PanelShell><Muted>{t("upstream-panel.loading-auto")}</Muted></PanelShell>;
     }
     const outOfStock = pick.available === 0;
     return (
@@ -38,10 +40,10 @@ export function UpstreamStatusPanel({
           <Sparkles className="mt-0.5 size-4 shrink-0 text-brand-strong" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline gap-x-2 text-label">
-              <span className="font-semibold text-fg">系统派号</span>
+              <span className="font-semibold text-fg">{t("upstream-panel.auto-title")}</span>
               {!outOfStock && (
                 <>
-                  <span className="text-fg-tertiary">→</span>
+                  <span className="text-fg-tertiary">{t("upstream-panel.auto-arrow")}</span>
                   <span className="font-semibold text-brand-strong">{pick.vendor_label}</span>
                   {pick.zone && <span className="text-fg-tertiary">· {pick.zone}</span>}
                 </>
@@ -54,51 +56,51 @@ export function UpstreamStatusPanel({
         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-label">
           <StatRow
             icon={Package}
-            label="库存"
+            label={t("upstream-panel.stat.stock")}
             value={
               outOfStock ? (
-                <span className="text-danger-fg">0 · 缺货</span>
+                <span className="text-danger-fg">{t("upstream-panel.stock.out-of-stock")}</span>
               ) : (
-                <><strong className="tnum">{pick.available}</strong> 个 <Muted>可提</Muted></>
+                <><strong className="tnum">{pick.available}</strong> {t("upstream-panel.stock.available")} <Muted>{t("upstream-panel.stock.available-suffix")}</Muted></>
               )
             }
           />
           <StatRow
             icon={Coins}
-            label="单价"
-            value={<><strong className="tnum">{toCredits(pick.unit_price)}</strong> 积分 / 个</>}
+            label={t("upstream-panel.stat.unit-price")}
+            value={<><strong className="tnum">{toCredits(pick.unit_price)}</strong> {t("upstream-panel.unit-price-value")}</>}
           />
           <StatRow
             icon={ShieldCheck}
-            label="质保"
+            label={t("upstream-panel.stat.warranty")}
             value={
               pick.warranty_minutes === 0 ? (
-                <span className="text-warn-fg">无质保</span>
+                <span className="text-warn-fg">{t("upstream-panel.warranty.none")}</span>
               ) : (
-                <><strong className="tnum">{pick.warranty_minutes}</strong> 分钟内失效可退</>
+                <><strong className="tnum">{pick.warranty_minutes}</strong> {t("upstream-panel.warranty.minutes-suffix")}</>
               )
             }
           />
           <StatRow
             icon={Clock}
-            label="单次上限"
-            value={<><strong className="tnum">{pick.max_per_order}</strong> 个 / 单</>}
+            label={t("upstream-panel.stat.max-per-order")}
+            value={<><strong className="tnum">{pick.max_per_order}</strong> {t("upstream-panel.max-per-order-value")}</>}
           />
           <StatRow
             icon={TrendingUp}
-            label="历史存活"
+            label={t("upstream-panel.stat.history")}
             value={
               pick.alive_rate_30d > 0 ? (
                 <>
-                  平均 <strong className="tnum">{fmtLifespan(pick.avg_lifespan_seconds)}</strong>
-                  {" · "}
-                  <Muted>30 天成活率</Muted>{" "}
+                  {t("upstream-panel.history-line.avg-prefix")} <strong className="tnum">{fmtLifespan(pick.avg_lifespan_seconds)}</strong>
+                  {t("upstream-panel.history-line.sep")}
+                  <Muted>{t("upstream-panel.history-line.alive-rate-30d")}</Muted>{" "}
                   <strong className={cn("tnum", pick.alive_rate_30d >= 80 ? "text-ok-fg" : "text-warn-fg")}>
-                    {pick.alive_rate_30d}%
+                    {pick.alive_rate_30d}{t("upstream-panel.history-line.percent")}
                   </strong>
                 </>
               ) : (
-                <Muted>暂无数据</Muted>
+                <Muted>{t("upstream-panel.history-line.empty")}</Muted>
               )
             }
             wide
@@ -110,7 +112,7 @@ export function UpstreamStatusPanel({
 
   /* ── 具体 vendor ── */
   if (stockLoading || !stock) {
-    return <PanelShell><Muted>加载 vendor 状态…</Muted></PanelShell>;
+    return <PanelShell><Muted>{t("upstream-panel.loading-vendor")}</Muted></PanelShell>;
   }
 
   /* 找该 zone 对应库存 · 无区域 vendor 用 zones[0]（label="全区"） */
@@ -128,61 +130,61 @@ export function UpstreamStatusPanel({
   return (
     <PanelShell>
       <div className="mb-3 flex items-center justify-between text-label">
-        <div className="font-semibold text-fg">上游即时状态</div>
+        <div className="font-semibold text-fg">{t("upstream-panel.vendor-title")}</div>
         {!noRegion && zone === "auto" && (
-          <span className="text-fg-tertiary">默认区 · {activeZone.label}</span>
+          <span className="text-fg-tertiary">{t("upstream-panel.default-zone-prefix")}{activeZone.label}</span>
         )}
       </div>
 
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-label">
         <StatRow
           icon={Package}
-          label="库存"
+          label={t("upstream-panel.stat.stock")}
           value={
             outOfStock ? (
-              <span className="text-danger-fg">0 · 缺货</span>
+              <span className="text-danger-fg">{t("upstream-panel.stock.out-of-stock")}</span>
             ) : (
-              <><strong className="tnum">{activeZone.available}</strong> 个 <Muted>可提</Muted></>
+              <><strong className="tnum">{activeZone.available}</strong> {t("upstream-panel.stock.available")} <Muted>{t("upstream-panel.stock.available-suffix")}</Muted></>
             )
           }
         />
         <StatRow
           icon={Coins}
-          label="单价"
-          value={<><strong className="tnum">{toCredits(activeZone.unit_price)}</strong> 积分 / 个</>}
+          label={t("upstream-panel.stat.unit-price")}
+          value={<><strong className="tnum">{toCredits(activeZone.unit_price)}</strong> {t("upstream-panel.unit-price-value")}</>}
         />
         <StatRow
           icon={ShieldCheck}
-          label="质保"
+          label={t("upstream-panel.stat.warranty")}
           value={
             noWarranty ? (
-              <span className="text-warn-fg">无质保</span>
+              <span className="text-warn-fg">{t("upstream-panel.warranty.none")}</span>
             ) : (
-              <><strong className="tnum">{stock.warranty_minutes}</strong> 分钟内失效可退</>
+              <><strong className="tnum">{stock.warranty_minutes}</strong> {t("upstream-panel.warranty.minutes-suffix")}</>
             )
           }
         />
         <StatRow
           icon={Clock}
-          label="单次上限"
-          value={<><strong className="tnum">{stock.max_per_order}</strong> 个 / 单</>}
+          label={t("upstream-panel.stat.max-per-order")}
+          value={<><strong className="tnum">{stock.max_per_order}</strong> {t("upstream-panel.max-per-order-value")}</>}
         />
         {history && (
           <StatRow
             icon={TrendingUp}
-            label="历史存活"
+            label={t("upstream-panel.stat.history")}
             value={
               history.total_pulled_30d > 0 ? (
                 <>
-                  平均 <strong className="tnum">{fmtLifespan(history.avg_lifespan_seconds)}</strong>
-                  {" · "}
-                  <Muted>30 天成活率</Muted>{" "}
+                  {t("upstream-panel.history-line.avg-prefix")} <strong className="tnum">{fmtLifespan(history.avg_lifespan_seconds)}</strong>
+                  {t("upstream-panel.history-line.sep")}
+                  <Muted>{t("upstream-panel.history-line.alive-rate-30d")}</Muted>{" "}
                   <strong className={cn("tnum", history.alive_rate_30d >= 80 ? "text-ok-fg" : "text-warn-fg")}>
-                    {history.alive_rate_30d}%
+                    {history.alive_rate_30d}{t("upstream-panel.history-line.percent")}
                   </strong>
                 </>
               ) : (
-                <Muted>近 30 天没拉过</Muted>
+                <Muted>{t("upstream-panel.history-line.empty-recent")}</Muted>
               )
             }
             wide
@@ -194,17 +196,17 @@ export function UpstreamStatusPanel({
         <div className="mt-3 space-y-2">
           {holdCapWarn && stock.hold_cap_remaining !== null && (
             <VendorNote tone="warn">
-              这家 vendor 名下持有额度只剩{" "}
-              <strong className="tnum">{stock.hold_cap_remaining}</strong> 个 · 拉多了会被拒
+              {t("upstream-panel.note.hold-cap-prefix")}{" "}
+              <strong className="tnum">{stock.hold_cap_remaining}</strong> {t("upstream-panel.note.hold-cap-suffix")}
             </VendorNote>
           )}
           {stock.currency === "cny_usd" && (
             <VendorNote tone="warn">
-              这家 vendor 按美元定价 · 实扣按当日汇率折算成积分
+              {t("upstream-panel.note.currency")}
             </VendorNote>
           )}
           {noRegion && (
-            <VendorNote tone="neutral">这家 vendor 不分区域 · 一档到底</VendorNote>
+            <VendorNote tone="neutral">{t("upstream-panel.note.no-region")}</VendorNote>
           )}
         </div>
       )}

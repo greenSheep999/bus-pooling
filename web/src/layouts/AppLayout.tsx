@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
-  BookOpen, Bell, Check, ChevronDown, ChevronRight, Gift, Globe,
+  Activity, BookOpen, Bell, Check, ChevronDown, ChevronRight, Gift, Globe,
   KeyRound, LayoutDashboard, LogOut, Moon, Send, Settings,
   User, Users, Wallet,
 } from "lucide-react";
@@ -13,8 +13,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { avatarColor, avatarLetter, cn, fmtCredits } from "@/lib/utils";
 import { useTheme, type ThemeMode } from "@/lib/theme";
 import { useTranslation } from "react-i18next";
-import { LANGUAGES } from "@/i18n";
-import LogoMark from "@/assets/logo/mark.svg";
+import { LANGUAGES, resolveLang } from "@/i18n";
+import { BrandLogo } from "@/components/BrandLogo";
+import { DocumentMeta } from "@/components/DocumentMeta";
 
 /** 5 个 tab · label 走 i18n key（nav.*）· 不 hardcode 文案 */
 const TABS = [
@@ -22,6 +23,7 @@ const TABS = [
   { to: "/buses", labelKey: "nav.buses", icon: Users },
   { to: "/extract", labelKey: "nav.extract", icon: KeyRound },
   { to: "/dispatch", labelKey: "nav.dispatch", icon: Send },
+  { to: "/status", labelKey: "nav.status", icon: Activity },
   { to: "/docs", labelKey: "nav.docs", icon: BookOpen },
 ];
 
@@ -153,7 +155,8 @@ function AvatarMenu() {
   const seed = me?.email ?? me?.username ?? "?";
   const { bg, fg } = avatarColor(seed);
 
-  const lang = i18n.language;
+  // i18n.language 可能是 "en-US" / "zh"，resolveLang 规整到 LANGUAGES 里的 code
+  const lang = resolveLang(i18n.language);
   const setLang = (code: string) => { void i18n.changeLanguage(code); };
 
   /* 「我的」= 账号本身（/me）· 「设置」= 设置主入口（/settings 索引页）
@@ -384,6 +387,7 @@ export default function AppLayout() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
+      <DocumentMeta />
       <PromoBar />
 
       <header className="sticky top-0 z-30 border-b border-hairline bg-bg/85 backdrop-blur-xl">
@@ -391,11 +395,9 @@ export default function AppLayout() {
             relative 让 MobileNav 的 top-full 面板定位到此 header 下沿 */}
         <div className="page-container relative flex h-14 items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            <Link to="/" className="flex min-w-0 items-center gap-2.5">
-              <img src={LogoMark} alt="" className="size-7 shrink-0 rounded-lg" />
-              <span className="hidden text-body-lg font-semibold tracking-tight sm:inline">
-                bus-pooling
-              </span>
+            <Link to="/" className="flex min-w-0 items-center">
+              <BrandLogo mark className="sm:hidden" />
+              <BrandLogo className="hidden sm:inline-flex" />
             </Link>
             <MobileNav />
           </div>

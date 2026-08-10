@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, KeyRound, Sparkles, TrendingUp } from "lucide-react";
 import { useAutoPick, useExtract, useMe, useVendorStats, useVendorStock } from "@/api/hooks";
@@ -28,6 +29,7 @@ export function PullExtractForm({
   submitVariant?: "brand" | "primary";
   submitClassName?: string;
 }) {
+  const { t } = useTranslation("extract");
   const pull = useExtract();
   const { data: me } = useMe();
   const { data: vendors } = useVendorStats();
@@ -65,7 +67,7 @@ export function PullExtractForm({
   const available = isAuto ? pick?.available ?? null : activeZone?.available ?? null;
   /** 实际会派到的 vendor 显示名（auto 时来自推荐结果） */
   const effectiveVendorLabel = isAuto
-    ? pick?.vendor_label ?? "系统派号"
+    ? pick?.vendor_label ?? t("pull-form.vendor.auto-fallback")
     : vendorLabel(vendorId, invited);
   const effectiveZone = isAuto ? pick?.zone ?? null : activeZone ? (stock!.zones.length === 1 ? null : activeZone.zone) : null;
 
@@ -122,12 +124,12 @@ export function PullExtractForm({
       >
         {/* vendor 第一（决定单价/库存/质保）· 区域 第二 · 数量 第三 · 一行 md+ · 窄屏堆叠 */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
-          <Field label="vendor">
+          <Field label={t("pull-form.field.vendor")}>
             <Select value={vendorId} onValueChange={setVendorId}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {/* 默认项 = 系统派号 · 面板里展示推荐结果和价格（decisions §8.20） */}
-                <SelectItem value="auto">系统派号（推荐）</SelectItem>
+                <SelectItem value="auto">{t("pull-form.vendor.auto")}</SelectItem>
                 {availableVendors.map((v) => (
                   <SelectItem key={v.vendor_id} value={v.vendor_id}>
                     {vendorLabel(v.vendor_id, invited)}
@@ -136,17 +138,17 @@ export function PullExtractForm({
               </SelectContent>
             </Select>
           </Field>
-          <Field label="区域">
+          <Field label={t("pull-form.field.zone")}>
             <Select value={zone} onValueChange={(v) => setZone(v as Zone | "auto")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">让系统选</SelectItem>
-                <SelectItem value="us">美国区 (us)</SelectItem>
-                <SelectItem value="eu">欧洲区 (eu)</SelectItem>
+                <SelectItem value="auto">{t("pull-form.zone.auto")}</SelectItem>
+                <SelectItem value="us">{t("pull-form.zone.us")}</SelectItem>
+                <SelectItem value="eu">{t("pull-form.zone.eu")}</SelectItem>
               </SelectContent>
             </Select>
           </Field>
-          <Field label="数量" hint={`${minCount} - ${maxCount}`}>
+          <Field label={t("pull-form.field.count")} hint={t("pull-form.field.count-hint", { min: minCount, max: maxCount })}>
             <Input
               type="number"
               min={1}
@@ -165,37 +167,45 @@ export function PullExtractForm({
             /* 预估费用卡 · 对外只显示单价 / 服务费 / 小计（decisions §8.20 · 不展示计费分项） */
             <div className="flex flex-col justify-between rounded-xl border border-hairline bg-bg-elevated/40 p-4 text-label">
               <div>
-                <div className="mb-3 font-semibold text-fg">预估费用</div>
+                <div className="mb-3 font-semibold text-fg">{t("pull-form.estimate.title")}</div>
                 <div className="space-y-1.5">
                   <FeeRow
-                    label={`单价 · ${count} 个`}
-                    value={`${toCredits(estimate.unit_price)} × ${count} 积分`}
+                    label={t("pull-form.estimate.unit-line", { count })}
+                    value={t("pull-form.estimate.unit-value", { unit: toCredits(estimate.unit_price), count })}
                   />
                   {estimate.service_fee > 0 && (
-                    <FeeRow label="服务费" value={`${fmtCredits(estimate.service_fee)} 积分`} muted />
+                    <FeeRow
+                      label={t("pull-form.estimate.service-fee")}
+                      value={t("pull-form.estimate.service-fee-value", { value: fmtCredits(estimate.service_fee) })}
+                      muted
+                    />
                   )}
                   {/* 通道费只在充值积分时收 · 拉号/提取都是抵扣积分 · decisions §8.21 · 不显示 */}
                 </div>
               </div>
               <div className="mt-3 border-t border-hairline pt-2">
                 <FeeRow
-                  label="小计"
-                  value={<strong className="tnum text-fg">{fmtCredits(estimate.total)} 积分</strong>}
+                  label={t("pull-form.estimate.total-label")}
+                  value={
+                    <strong className="tnum text-fg">
+                      {t("pull-form.estimate.total-value", { value: fmtCredits(estimate.total) })}
+                    </strong>
+                  }
                   strong
                 />
               </div>
             </div>
           ) : (
             <div className="grid place-items-center rounded-xl border border-hairline bg-bg-elevated/40 p-4 text-label text-fg-tertiary">
-              正在算价…
+              {t("pull-form.estimate.loading")}
             </div>
           )}
         </div>
 
         {/* count=1 提示 */}
         {bargain && (
-          <Alert tone="neutral" icon={Sparkles} title="拉 2 个及以上单价更低">
-            一次只拉 1 个成本偏高
+          <Alert tone="neutral" icon={Sparkles} title={t("pull-form.bargain.title")}>
+            {t("pull-form.bargain.body")}
           </Alert>
         )}
 
@@ -208,11 +218,11 @@ export function PullExtractForm({
               className="inline-flex items-center gap-1 text-label font-medium text-brand-strong transition-colors hover:text-brand"
             >
               <TrendingUp className="size-3.5" />
-              查看历史价格趋势
+              {t("pull-form.history-link")}
               <ArrowUpRight className="size-3" />
             </Link>
             <p className="text-label leading-relaxed text-fg-tertiary">
-              价格受市场波动影响，会有波动，提取前请仔细核对提取信息。
+              {t("pull-form.history-note")}
             </p>
           </div>
           <Button
@@ -223,7 +233,7 @@ export function PullExtractForm({
             className={submitClassName}
           >
             <KeyRound />
-            {outOfStock ? "该区缺货" : `提取 ${count} 个 key`}
+            {outOfStock ? t("pull-form.submit.out-of-stock") : t("pull-form.submit.text", { count })}
           </Button>
         </div>
       </form>

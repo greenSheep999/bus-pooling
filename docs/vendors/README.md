@@ -35,3 +35,35 @@
 - 旧项目 `kiro-auto/docs/vendors/vendor-api-inventory-2026-08-05.md`（954 行的六家契约对照）
 - 旧项目 `kiro-auto/internal/vendors/{kiroappio,kiromanager,kiroceo,kirodrop,kiroapp,...}/` 里的 adapter 代码
 - 官方前端 bundle（页面/资源 URL 在每份文档的第 1 节列出）
+
+---
+
+## Fleet 可观测端点矩阵（2026-08-10 全量探测）
+
+**目的**：`/status` 页需要每家 vendor 的**平台整体开号节奏**（不是我方账户的）。这张表是六家全量探测（30+ 个候选路径 · 见 [`decisions.md` §11.x`](../decisions.md)）后的可用性矩阵，决定 `providers.PublicStatuser` / `FleetLister` / `OrderHistoryLister` / `KeyHistoryLister` 接口在哪家实现、哪家兜底。
+
+**读法**：✅ 直接实现 · ⚠️ 有端点但账户视角返空 · ❌ 上游不提供
+
+| Vendor | Stock（我方） | PublicStatus（fleet 自报） | FleetLister（历史开号批） | OrderHistory / KeyHistory |
+|--------|---------------|----------------------------|---------------------------|----------------------------|
+| **kiro91** | `/api/my/stock` ✅ | ❌ 无 `/api/status` | `/api/my/gen-logs` ⚠️ 账户空返 `{logs:null}` | `/api/my/orders`（空） · 无 keys 端点 |
+| **kiroceo** | `/api/my/stock` ✅ | ❌ `/api/status` 返 SPA HTML | `/api/my/gen-logs` ✅ **全平台可见** `{avg_interval_min, items[]}` | `/api/me/orders` ✅ · keys 从 order 展开 |
+| **kirooo** | `/api/my/stock` ⚠️ 网络偶尔超时 | `/api/status` ✅ **免 auth** · 含 `keys_active/dead/suspect/total/stock` | `/api/my/stock/regions` ✅ 含 `dispatches[]` (alive/dead/dead_at/delivered/time) | 无独立 orders 端点 |
+| **kiroappio** | `/api/me/stock` ✅ | `/api/status` ✅ **免 auth** · 只含 `generating/uptime_seconds/started_at`（**无 keys_*）| ❌ `/api/me/fleet-summary` 返 `{mine:[], public:[]}` · `/api/public/stats` 只有 `stock/price` | `/api/me/orders`（分页） · 无 keys |
+| **kiroappcc** | `/openapi/stock` ✅ | ❌ | 从 `/openapi/orders` 推 · 一单一批 · 有 `probeState` | `/openapi/orders` ✅ · key 直接在 order 里 |
+| **kirodrop** | `/api/me/stock` ✅（stock 字段是数字，不是嵌套对象——见 `internal/providers/kiro/vendors/kirodrop/mapper.go` 双形状兼容） | `/api/status` ✅ **需 X-API-Key** · 含 `keys_active/dead/stock/generating` | ❌ 无 `gen-logs` / `orders` / `timeline` 类端点 · 全 404 | 无独立 orders · 无 keys |
+
+### 三档兜底策略（`internal/vendorview/status_view.go`）
+
+按数据丰度**由强到弱**：
+
+1. **FleetLister 官方 gen-logs**（kirooo · kiroceo · kiroappcc）· 时间/数量/状态最准 · 首选
+2. **PublicStatus 累计**（kirodrop · kiroappio · kirooo）· 只有当下值 · 无历史 · 落到 `vendor_probe.ps_*` 字段用于**探针增量推 batch**（`internal/vendorview/dispatch_deriver.go`）
+3. **stock_total 增量推**（kiro91）· 弱信号 · 只反映"我方能买到几个"· 有配额时会低估
+
+**任何一家至少能通过链条中某一档得到 dispatch 数据**——上线首日 `/status` 页所有 6 家都能显示"累计 N 批 · 平均 X 分钟一批"，没有"数据采集中"占位。
+
+### 已否决的方向
+
+- **不做 web session 抓包代替 API**（曾提议登录 kirodrop web 看 admin 面板）· 无稳定 auth · 违反"上游 API 之外不动"原则
+- **不做自建 fleet 反爬 crawler**· 不属于本项目边界 · 见 `../decisions.md §11.x`
