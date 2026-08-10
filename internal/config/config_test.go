@@ -34,6 +34,9 @@ func TestLoadMissingFileIsError(t *testing.T) {
 }
 
 func TestLoadFromYAML(t *testing.T) {
+	// CI 里全局 DRY_RUN=1 · 会覆盖 yaml 的 dry_run: false · 这里明确清掉验证 yaml 生效
+	t.Setenv("DRY_RUN", "")
+
 	path := filepath.Join(t.TempDir(), "c.yaml")
 	yaml := `
 server:

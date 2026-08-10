@@ -9,7 +9,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// kiroceo /api/my/gen-logs 返 fleet-wide "最近开号"（简约版）：
+// 本 vendor /api/my/gen-logs 返 fleet-wide "最近开号"（简约版）：
 //
 //   {"avg_interval_min":15.73,
 //    "items":[
@@ -41,11 +41,11 @@ func (a *Adapter) ListDispatches(ctx context.Context, limit int) ([]providers.Ve
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kiroceo dispatches: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("kiroceo: dispatches: http %d", resp.StatusCode)
 	}
 	var gr genLogsResp
 	if err := json.Unmarshal(resp.Body, &gr); err != nil {
-		return nil, fmt.Errorf("kiroceo dispatches 解析: %w", err)
+		return nil, fmt.Errorf("kiroceo: dispatches 解析: %w", err)
 	}
 
 	out := make([]providers.VendorDispatch, 0, len(gr.Items))

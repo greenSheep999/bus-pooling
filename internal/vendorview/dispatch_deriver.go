@@ -8,7 +8,7 @@ import (
 
 // DerivedDispatchSummary 从 vendor_probe 里推出来的"合成"发货节奏。
 //
-// 用途：3 家 vendor（kiro91 / kiroappio / kirodrop）上游没暴露 fleet-wide
+// 用途：3 家 vendor（多家 vendor）上游没暴露 fleet-wide
 // gen-logs / orders 端点（穷举过所有 /api/*、/api/my/*、/api/public/* 无果），
 // FleetLister 抓不到数据。但我方每 60s 打一次探针，PS 字段（keys_active +
 // keys_dead + keys_stock 或 stock_total）会随 vendor 持续发号累计上涨。
@@ -30,7 +30,7 @@ type DerivedDispatchSummary struct {
 //
 // 信号源优先级：
 //  1. PS 字段总和（ps_keys_active + ps_keys_dead + ps_keys_stock） · 最准 ·
-//     kirodrop / kirooo 有；kirooo 我们已经有 FleetLister 数据，走不到这里。
+//     多家 vendor 有；本 vendor 我们已经有 FleetLister 数据，走不到这里。
 //  2. stock_total（我方账户视角） · 弱信号 · 只反映"我方能买到几个"·
 //     vendor 有配额时会低估——但至少能捕获库存补货动作。
 //

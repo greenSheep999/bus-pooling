@@ -10,7 +10,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// kirooo /api/my/stock/regions 返 regions[].dispatches[] 结构 · 用来当 fleet-wide 开号历史。
+// 本 vendor /api/my/stock/regions 返 regions[].dispatches[] 结构 · 用来当 fleet-wide 开号历史。
 //
 // 观察到的响应：
 //   {
@@ -67,11 +67,11 @@ func (a *Adapter) ListDispatches(ctx context.Context, limit int) ([]providers.Ve
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kirooo dispatches: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("kirooo: dispatches: http %d", resp.StatusCode)
 	}
 	var rr regionsResp
 	if err := json.Unmarshal(resp.Body, &rr); err != nil {
-		return nil, fmt.Errorf("kirooo dispatches 解析: %w", err)
+		return nil, fmt.Errorf("kirooo: dispatches 解析: %w", err)
 	}
 
 	var out []providers.VendorDispatch

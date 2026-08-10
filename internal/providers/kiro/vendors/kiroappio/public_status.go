@@ -10,7 +10,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// publicStatusResp kiroappio /api/status（**免 auth** · 公开）真实响应。
+// publicStatusResp 本 vendor /api/status（**免 auth** · 公开）真实响应。
 //
 // 观察到的字段（curl 采样 2026-08-10）：
 //   {
@@ -26,7 +26,7 @@ import (
 //   }
 //
 // 注意：字段是 fleet-wide 视图（跟 /api/me/stock 类似结构但去掉 balance/max）。
-// 没有 keys_active/keys_dead —— kiroappio 平台不暴露这些。
+// 没有 keys_active/keys_dead —— 本 vendor 平台不暴露这些。
 type publicStatusResp struct {
 	Generating    bool   `json:"generating"`
 	Stock         int    `json:"stock"`
@@ -45,12 +45,12 @@ func (a *Adapter) PublicStatus(ctx context.Context) (*providers.PublicStatusSnap
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kiroappio public_status: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("kiroappio: public_status: http %d", resp.StatusCode)
 	}
 
 	var sr publicStatusResp
 	if err := json.Unmarshal(resp.Body, &sr); err != nil {
-		return nil, fmt.Errorf("kiroappio public_status: 解析: %w", err)
+		return nil, fmt.Errorf("kiroappio: public_status: 解析: %w", err)
 	}
 
 	out := &providers.PublicStatusSnapshot{

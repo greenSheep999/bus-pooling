@@ -7,7 +7,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// kiroappcc 没独立"最近开号"端点 · 直接从 /openapi/orders 里抽 · 一单 = 一批
+// 本 vendor 没独立"最近开号"端点 · 直接从 /openapi/orders 里抽 · 一单 = 一批
 // orders 已经在 ListOrders() 拉过 · 复用同一份 vendor 请求。
 func (a *Adapter) ListDispatches(ctx context.Context, limit int) ([]providers.VendorDispatch, error) {
 	page, err := a.ListOrders(ctx, "")
@@ -22,7 +22,7 @@ func (a *Adapter) ListDispatches(ctx context.Context, limit int) ([]providers.Ve
 		if o.CreatedAt.IsZero() {
 			continue
 		}
-		// 从 Raw 里挖 dead 状态（kiroappcc 一单一 key · 用 order 的 probeState / probeTerminalAt 判定）
+		// 从 Raw 里挖 dead 状态（本 vendor 一单一 key · 用 order 的 probeState / probeTerminalAt 判定）
 		alive, dead := 0, 0
 		status := "done"
 		if len(o.Raw) > 0 {

@@ -43,10 +43,10 @@ type ProbeSample struct {
 	// PublicStatus 相关字段 · vendor 自报的 fleet 累计数据（可选 · vendor 不支持时全 nil）
 	// 独立于 Alive/StockTotal —— 探针会同时打 Stock 和 PublicStatus 两个端点
 	PSKeysActive    *int    // vendor 侧当前活跃 key
-	PSKeysAlive     *int    // kirooo 特有 · active + suspect
+	PSKeysAlive     *int    // 部分 vendor 才有 · active + suspect
 	PSKeysDead      *int    // vendor 侧当前失效 key
 	PSKeysStock     *int    // vendor 侧当前可购买库存
-	PSKeysSuspect   *int    // kirooo 特有
+	PSKeysSuspect   *int    // 部分 vendor 才有
 	PSKeysTotal     *int    // 历史累计
 	PSGenerating    *bool   // vendor 是否正在生成新 key
 	PSStartedAt     *time.Time

@@ -36,7 +36,7 @@ type VendorStatusRow struct {
 	AnonLabel string `json:"anon_label"`
 
 	// PublicStatus 出 vendor 自报的 fleet 累计数据（keys_active / keys_dead 等）
-	// 支持的 vendor（kirooo / kirodrop / kiroappio）才有 · 其他 vendor 这个字段 nil
+	// 支持的 vendor（多家 vendor）才有 · 其他 vendor 这个字段 nil
 	PublicStatus *PublicStatusOut `json:"public_status,omitempty"`
 
 	// Alive 最后一次探测是否活着（vendor.Stock 返回没报错即活）
@@ -225,8 +225,8 @@ func (s *Service) rowFor(ctx context.Context, v providers.Vendor) VendorStatusRo
 	// Dispatch · vendor 平台"最近开号"节奏（fleet-wide · 6 家都能有）
 	//
 	// 数据源优先级：
-	//  1. FleetLister 拉的官方 gen-logs（kirooo / kiroceo / kiroappcc 有 · 最准）
-	//  2. 从 vendor_probe 的 PS 字段增量推（kiro91 / kiroappio / kirodrop · 兜底）
+	//  1. FleetLister 拉的官方 gen-logs（多家 vendor 有 · 最准）
+	//  2. 从 vendor_probe 的 PS 字段增量推（多家 vendor · 兜底）
 	//
 	// 3 家没 FleetLister 的 vendor 上游穷举过所有 gen-logs / stats / timeline 端点
 	// 都是 404 · 只能用 60s 探针跨采样对比推 batch · 精度差 · 但比"数据采集中"强。

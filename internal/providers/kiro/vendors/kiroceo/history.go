@@ -10,7 +10,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// kiroceo 跟 kirooo 端点格式几乎一样（vendor 是同一家的 fork） · 复用相同解析。
+// 本 vendor 跟 本 vendor 端点格式几乎一样（vendor 是同一家的 fork） · 复用相同解析。
 
 type orderRow struct {
 	ClientOrderID string `json:"client_order_id"`
@@ -72,11 +72,11 @@ func (a *Adapter) ListOrders(ctx context.Context, cursor string) (*providers.His
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kiroceo purchase-orders: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("kiroceo: purchase-orders: http %d", resp.StatusCode)
 	}
 	var rows []orderRow
 	if err := json.Unmarshal(resp.Body, &rows); err != nil {
-		return nil, fmt.Errorf("kiroceo orders 解析: %w", err)
+		return nil, fmt.Errorf("kiroceo: orders 解析: %w", err)
 	}
 	out := make([]providers.VendorOrder, 0, len(rows))
 	for _, r := range rows {
@@ -103,11 +103,11 @@ func (a *Adapter) ListKeys(ctx context.Context, cursor string) (*providers.Histo
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kiroceo keys: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("kiroceo: keys: http %d", resp.StatusCode)
 	}
 	var wrap keysWrap
 	if err := json.Unmarshal(resp.Body, &wrap); err != nil {
-		return nil, fmt.Errorf("kiroceo keys 解析: %w", err)
+		return nil, fmt.Errorf("kiroceo: keys 解析: %w", err)
 	}
 	out := make([]providers.VendorKey, 0, len(wrap.Keys))
 	for _, k := range wrap.Keys {

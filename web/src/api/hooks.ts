@@ -67,7 +67,7 @@ export interface CommunityChannel {
  *  展示层严格脱敏 · 匿名 label（"AWS-Q Kiro Vendor 01"）· 无真名 · 无价格
  *  真名只有登录后 wholesale 档才能看到（走别的端点）· 见 decisions §10.4 */
 /** Vendor 自报的 fleet 累计数据（走 vendor 的 /api/status 端点）
- *  支持的 vendor（kirooo / kirodrop / kiroappio）才有值 · 其他 vendor 这个字段整个 undefined
+ *  支持的 vendor（多家 vendor）才有值 · 其他 vendor 这个字段整个 undefined
  *  这是 vendor 侧的**真实历史累计**（不是我方探针积累的）· 上线首日就有数据 */
 export interface VendorPublicStatus {
   keys_active?: number;
@@ -83,7 +83,7 @@ export interface VendorPublicStatus {
 }
 
 /** Backfill 汇总（vendor 侧真历史 · 上线一秒到手）
- *  vendor 支持 order + key history 端点才有 · kirodrop 这种没端点的字段 undefined */
+ *  vendor 支持 order + key history 端点才有 · 本 vendor 这种没端点的字段 undefined */
 export interface VendorHistoryOut {
   total_orders: number;
   total_keys: number;

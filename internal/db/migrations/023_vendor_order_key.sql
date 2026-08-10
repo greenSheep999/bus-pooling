@@ -16,7 +16,7 @@
 -- 前端 status 画"新发 keys 数量随时间"、"平均寿命"曲线用这两张表 JOIN 即可。
 
 CREATE TABLE IF NOT EXISTS vendor_order (
-    vendor_id           TEXT NOT NULL,       -- kirooo / kiroceo / 91kiro / kiroappio / kiroappcc / kirodrop
+    vendor_id           TEXT NOT NULL,       -- vendor slug（见 术语铁律 §1.1）
     vendor_order_id     TEXT NOT NULL,       -- vendor 侧的 order_id / orderNo / id · 稳定唯一（同 vendor 内）
     created_at          TEXT NOT NULL,       -- 单在 vendor 侧的创建时间 · RFC3339 UTC
     purchased           INTEGER NOT NULL,    -- 这一批实际拿到的 key 数

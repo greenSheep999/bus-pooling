@@ -24,9 +24,9 @@ type PublicStatusSnapshot struct {
 	KeysDead int
 	// KeysStock vendor 侧当前可购买库存（跟 StockSnapshot.Available 类似但脱敏）
 	KeysStock int
-	// KeysAlive kirooo 特有 · vendor 平台全部活跃 key（含 suspect + active）
+	// KeysAlive 本 vendor 特有 · vendor 平台全部活跃 key（含 suspect + active）
 	KeysAlive int
-	// KeysSuspect kirooo 特有 · 探测异常但还没判死的 key
+	// KeysSuspect 本 vendor 特有 · 探测异常但还没判死的 key
 	KeysSuspect int
 	// KeysTotal 平台历史累计发过的 key 总数
 	KeysTotal int

@@ -67,7 +67,7 @@ func (a *Adapter) Capability() providers.Capability {
 }
 
 func (a *Adapter) Stock(ctx context.Context, opts providers.StockOptions) (*providers.StockSnapshot, error) {
-	// kirodrop 特殊：stock 走 /api/me/stock（同其他 vendor 惯用 /api/my/* 不一致）
+	// 本 vendor 特殊：stock 走 /api/me/stock（同其他 vendor 惯用 /api/my/* 不一致）
 	// profile / purchase 仍然走 /api/my/* — 见 vendor 档案 §7
 	req, err := a.newReq(ctx, http.MethodGet, "/api/me/stock", nil)
 	if err != nil {

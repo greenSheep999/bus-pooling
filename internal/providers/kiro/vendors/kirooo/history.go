@@ -10,7 +10,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// kirooo 的 /api/my/purchase-orders 返数组 · /api/my/keys?history=1 返 {count, keys[], active, suspect}
+// 本 vendor 的 /api/my/purchase-orders 返数组 · /api/my/keys?history=1 返 {count, keys[], active, suspect}
 // 全量拉 · 无分页 · 每次都从头拿完整历史（vendor 侧量不大）
 
 type orderRow struct {
@@ -79,12 +79,12 @@ func (a *Adapter) ListOrders(ctx context.Context, cursor string) (*providers.His
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kirooo purchase-orders: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("kirooo: purchase-orders: http %d", resp.StatusCode)
 	}
 
 	var rows []orderRow
 	if err := json.Unmarshal(resp.Body, &rows); err != nil {
-		return nil, fmt.Errorf("kirooo purchase-orders 解析: %w", err)
+		return nil, fmt.Errorf("kirooo: purchase-orders 解析: %w", err)
 	}
 
 	out := make([]providers.VendorOrder, 0, len(rows))
@@ -113,12 +113,12 @@ func (a *Adapter) ListKeys(ctx context.Context, cursor string) (*providers.Histo
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kirooo keys: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("kirooo: keys: http %d", resp.StatusCode)
 	}
 
 	var wrap keysWrap
 	if err := json.Unmarshal(resp.Body, &wrap); err != nil {
-		return nil, fmt.Errorf("kirooo keys 解析: %w", err)
+		return nil, fmt.Errorf("kirooo: keys 解析: %w", err)
 	}
 
 	out := make([]providers.VendorKey, 0, len(wrap.Keys))
@@ -138,7 +138,7 @@ func (a *Adapter) ListKeys(ctx context.Context, cursor string) (*providers.Histo
 			UsageLimit:    k.UsageLimit,
 			Raw:           raw,
 		}
-		// 挂的：kirooo 用 status=dead + dead_reason 表达 · 没单独 dead_at 字段
+		// 挂的：本 vendor 用 status=dead + dead_reason 表达 · 没单独 dead_at 字段
 		// 用 last_probe 当近似 dead_at（vendor 最后一次探测发现挂了的时刻）
 		if k.Status == "dead" {
 			vk.DeadAt = parseKiroooTime(k.LastProbe)

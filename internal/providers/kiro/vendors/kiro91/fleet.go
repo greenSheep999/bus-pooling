@@ -11,7 +11,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// kiro91 `/api/my/rounds` 是**平台整轮开号视图**（不是账户视角）·
+// 本 vendor `/api/my/rounds` 是**平台整轮开号视图**（不是账户视角）·
 // 每条 `visibility:"public", scope:"platform", is_mine:false` · 全网可见。
 //
 // 观察样本（2026-08-10）：
@@ -64,11 +64,11 @@ func (a *Adapter) ListDispatches(ctx context.Context, limit int) ([]providers.Ve
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kiro91 rounds: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("kiro91: rounds: http %d", resp.StatusCode)
 	}
 	var rr roundsResp
 	if err := json.Unmarshal(resp.Body, &rr); err != nil {
-		return nil, fmt.Errorf("kiro91 rounds 解析: %w", err)
+		return nil, fmt.Errorf("kiro91: rounds 解析: %w", err)
 	}
 
 	out := make([]providers.VendorDispatch, 0, len(rr.Rounds))

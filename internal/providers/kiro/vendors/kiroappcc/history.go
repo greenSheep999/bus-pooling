@@ -10,7 +10,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// kiroappcc /openapi/orders 结构跟其他 vendor 完全不同 · 一条 order 内嵌 key 信息 ·
+// 本 vendor /openapi/orders 结构跟其他 vendor 完全不同 · 一条 order 内嵌 key 信息 ·
 // 我方拆成 vendor_order（订单元数据）+ vendor_key（内嵌的 key） 两条记录。
 //
 // 观察到的真实结构（curl 采样）：
@@ -82,7 +82,7 @@ func maskKey(k string) string {
 	return k[:8] + "****"
 }
 
-// ListOrders kiroappcc 一次全量返 · 没分页
+// ListOrders 本 vendor 一次全量返 · 没分页
 func (a *Adapter) ListOrders(ctx context.Context, cursor string) (*providers.HistoryPage[providers.VendorOrder], error) {
 	req, err := a.newReq(ctx, http.MethodGet, "/openapi/orders", nil)
 	if err != nil {
@@ -93,11 +93,11 @@ func (a *Adapter) ListOrders(ctx context.Context, cursor string) (*providers.His
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kiroappcc orders: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("kiroappcc: orders: http %d", resp.StatusCode)
 	}
 	var rows []ccOrder
 	if err := json.Unmarshal(resp.Body, &rows); err != nil {
-		return nil, fmt.Errorf("kiroappcc orders 解析: %w", err)
+		return nil, fmt.Errorf("kiroappcc: orders 解析: %w", err)
 	}
 
 	out := make([]providers.VendorOrder, 0, len(rows))
@@ -106,7 +106,7 @@ func (a *Adapter) ListOrders(ctx context.Context, cursor string) (*providers.His
 		out = append(out, providers.VendorOrder{
 			VendorOrderID: r.OrderNo, // 用 OrderNo 而非 ID · 可读性好
 			CreatedAt:     parseTime(r.ClaimedAt),
-			Purchased:     1, // kiroappcc 一单一 key · 恒为 1
+			Purchased:     1, // 该 vendor 一单一 key · 恒为 1
 			Requested:     1,
 			UnitPrice: providers.Money{
 				Amount: r.PointsCost * 1_000_000, // pointsCost 是整数 · 转成 microunit（跟其他 vendor 对齐）
@@ -119,7 +119,7 @@ func (a *Adapter) ListOrders(ctx context.Context, cursor string) (*providers.His
 	return &providers.HistoryPage[providers.VendorOrder]{Items: out}, nil
 }
 
-// ListKeys kiroappcc 没独立 keys 端点 · 从 orders 里抽 key
+// ListKeys 本 vendor 没独立 keys 端点 · 从 orders 里抽 key
 func (a *Adapter) ListKeys(ctx context.Context, cursor string) (*providers.HistoryPage[providers.VendorKey], error) {
 	req, err := a.newReq(ctx, http.MethodGet, "/openapi/orders", nil)
 	if err != nil {
@@ -130,11 +130,11 @@ func (a *Adapter) ListKeys(ctx context.Context, cursor string) (*providers.Histo
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kiroappcc keys: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("kiroappcc: keys: http %d", resp.StatusCode)
 	}
 	var rows []ccOrder
 	if err := json.Unmarshal(resp.Body, &rows); err != nil {
-		return nil, fmt.Errorf("kiroappcc keys 解析: %w", err)
+		return nil, fmt.Errorf("kiroappcc: keys 解析: %w", err)
 	}
 
 	out := make([]providers.VendorKey, 0, len(rows))

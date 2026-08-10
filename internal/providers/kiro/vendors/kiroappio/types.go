@@ -15,7 +15,7 @@ type profileResp struct {
 	} `json:"profile"`
 }
 
-// stockResp kiroappio /api/me/stock 响应。
+// stockResp 本 vendor /api/me/stock 响应。
 //
 // **注意 vendor 侧曾变更过 stock 字段类型**：
 //   - 旧形状：{"stock": {"public_available": N, "my_private": M}, "zones": [...]}

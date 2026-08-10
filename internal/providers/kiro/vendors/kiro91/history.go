@@ -10,7 +10,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// 91kiro 返 {"orders":[...] | null, "total":N} · 跟 kiroceo/kirooo 略不同（外层包装）
+// 本 vendor 返 {"orders":[...] | null, "total":N} · 跟 多家 vendor 略不同（外层包装）
 
 type ordersWrap struct {
 	Orders []orderRow `json:"orders"`
@@ -76,11 +76,11 @@ func (a *Adapter) ListOrders(ctx context.Context, cursor string) (*providers.His
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kiro91 orders: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("kiro91: orders: http %d", resp.StatusCode)
 	}
 	var wrap ordersWrap
 	if err := json.Unmarshal(resp.Body, &wrap); err != nil {
-		return nil, fmt.Errorf("kiro91 orders 解析: %w", err)
+		return nil, fmt.Errorf("kiro91: orders 解析: %w", err)
 	}
 	out := make([]providers.VendorOrder, 0, len(wrap.Orders))
 	for _, r := range wrap.Orders {
@@ -107,11 +107,11 @@ func (a *Adapter) ListKeys(ctx context.Context, cursor string) (*providers.Histo
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kiro91 keys: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("kiro91: keys: http %d", resp.StatusCode)
 	}
 	var wrap keysWrap
 	if err := json.Unmarshal(resp.Body, &wrap); err != nil {
-		return nil, fmt.Errorf("kiro91 keys 解析: %w", err)
+		return nil, fmt.Errorf("kiro91: keys 解析: %w", err)
 	}
 	out := make([]providers.VendorKey, 0, len(wrap.Keys))
 	for _, k := range wrap.Keys {

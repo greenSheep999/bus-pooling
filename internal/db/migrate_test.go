@@ -35,6 +35,12 @@ var wantTables = []string{
 	"system_invite_code",   // 我方发给社群的码 · 只有它能置 invited=1
 	"personal_invite_code", // 每人一个 · 只给手续费减免额度·不改身份
 	"invite_referral",      // 谁邀请了谁 · 防刷 + 溯源
+	// migration 021-024 · vendor 观测 / backfill · 前端 /status 页数据源
+	"vendor_probe",    // 021 · 60s 探针样本 · 我方账户视角
+	"vendor_daily",    // 021 · 24h 聚合 · incident_flag · uptime%
+	"vendor_order",    // 023 · vendor 侧历史订单 backfill
+	"vendor_key",      // 023 · vendor 侧 key 生命周期 backfill
+	"vendor_dispatch", // 024 · vendor 侧平台开号批次（fleet-wide）
 }
 
 func openTestDB(t *testing.T) *DB {

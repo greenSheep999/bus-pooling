@@ -7,14 +7,14 @@
 --   - vendor_dispatch 是"**vendor 平台整体**发过的每批 key"· 全网可见 · 每家都有量
 --
 -- 从各家 vendor 拉：
---   - kirooo: /api/my/stock/regions → regions[].dispatches[]（含 alive/dead/dead_at）
---   - kiroceo: /api/my/gen-logs → items[] （time/count/status · 简约版）
+--   - 本 vendor: /api/my/stock/regions → regions[].dispatches[]（含 alive/dead/dead_at）
+--   - 本 vendor: /api/my/gen-logs → items[] （time/count/status · 简约版）
 --   - 其他 vendor: 各自的端点
 --
 -- 用于 /api/vendors/status 每张 vendor 卡的"最近开号"曲线 · 6 家都有数据。
 
 CREATE TABLE IF NOT EXISTS vendor_dispatch (
-    vendor_id       TEXT NOT NULL,      -- 91kiro / kiroceo / …
+    vendor_id       TEXT NOT NULL,      -- vendor slug（见 术语铁律 §1.1）
     dispatch_key    TEXT NOT NULL,      -- vendor_id 内稳定的批次标识（time 字符串就够）
     region          TEXT,               -- us-east-1 / eu-central-1 · 单区 vendor 为空
     dispatched_at   TEXT NOT NULL,      -- 这批发出时刻 · RFC3339 UTC

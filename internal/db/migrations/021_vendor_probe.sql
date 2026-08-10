@@ -18,7 +18,7 @@
 --   - vendor_daily：永久保留（每天一行 · 每 vendor 一年 365 行，无所谓）
 
 CREATE TABLE IF NOT EXISTS vendor_probe (
-    vendor_id            TEXT    NOT NULL,   -- 91kiro / kiroceo / kirooo / kiroappio / kiroappcc / kirodrop
+    vendor_id            TEXT    NOT NULL,   -- vendor slug（见 术语铁律 §1.1）
     probed_at            TEXT    NOT NULL,   -- RFC3339 UTC · 前端不看它，内部 range 查询用
     alive                INTEGER NOT NULL,   -- 0/1 · vendor.Stock 成功返回即 1
     latency_ms           INTEGER,            -- 探测响应时延（成功时才有意义）

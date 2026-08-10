@@ -66,7 +66,7 @@ type HistoryPage[T any] struct {
 }
 
 // OrderHistoryLister 可选接口 · vendor adapter 实现了它，backfill 就会调 ListOrders。
-// 不实现的 vendor 该 backfill 跳过（比如 kirodrop 没这个端点）。
+// 不实现的 vendor 该 backfill 跳过（比如 本 vendor 没这个端点）。
 type OrderHistoryLister interface {
 	// ListOrders 拉一页订单历史 · cursor 空 = 从头拉 · 返 NextCursor="" 表示到底。
 	// vendor 侧全量少的话可以一次返完（Items 是所有 · NextCursor 空）。
@@ -74,7 +74,7 @@ type OrderHistoryLister interface {
 }
 
 // KeyHistoryLister 可选接口 · 拉 key 生命周期。
-// kiroappcc 这类 order 里内嵌 key 的 vendor 可以只实现 OrderHistoryLister ·
+// 本 vendor 这类 order 里内嵌 key 的 vendor 可以只实现 OrderHistoryLister ·
 // backfill 从 VendorOrder.Raw 里再抽 key 出来。
 type KeyHistoryLister interface {
 	ListKeys(ctx context.Context, cursor string) (*HistoryPage[VendorKey], error)

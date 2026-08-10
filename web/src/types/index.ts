@@ -16,9 +16,9 @@ export interface Paged<T> {
 
 // ── 乘客 / 钱包
 /** 用户档次 · decisions §8.39 · 每档"多减一层"
- *   retail    = 零售 · 无系统邀请码 · Vendor 0N + 全套加价
- *   wholesale = 批发 · 社群码（TG/Discord）· vendor 真名 + 免区域附加费
- *   insider   = 同行 · 同行码（同行群邀请制）· vendor 真名 + 免 vendor + 区域附加费 */
+ *   retail    = 零售 · 无系统邀请码 · Vendor 0N + 全套分项
+ *   wholesale = 批发 · 社群码（TG/Discord）· vendor 真名 + 免区域分项
+ *   insider   = 同行 · 同行码（同行群邀请制）· vendor 真名 + 免 vendor + 区域分项 */
 export type PassengerTier = "retail" | "wholesale" | "insider";
 
 export interface Passenger {
@@ -27,7 +27,7 @@ export interface Passenger {
   email: string;
   email_verified: boolean;
   created_at: ISOTime;
-  /** 用户档次（decisions §8.39）· 决定加价链和 vendor 显示名 */
+  /** 用户档次（decisions §8.39）· 决定分项链和 vendor 显示名 */
   tier: PassengerTier;
   /** 兼容字段（下版删）· 等同 tier != "retail" · 新代码一律用 tier */
   invited: boolean;

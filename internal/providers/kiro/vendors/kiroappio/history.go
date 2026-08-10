@@ -11,7 +11,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// kiroappio 用 /api/me/orders + /api/me/keys · 分页格式 {items[], page, page_size, pages, total}
+// 本 vendor 用 /api/me/orders + /api/me/keys · 分页格式 {items[], page, page_size, pages, total}
 // cursor 用 page number 字符串 · 空 = page=1
 
 type paged[T any] struct {
@@ -90,11 +90,11 @@ func (a *Adapter) ListOrders(ctx context.Context, cursor string) (*providers.His
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kiroappio orders: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("kiroappio: orders: http %d", resp.StatusCode)
 	}
 	var p paged[ioOrder]
 	if err := json.Unmarshal(resp.Body, &p); err != nil {
-		return nil, fmt.Errorf("kiroappio orders 解析: %w", err)
+		return nil, fmt.Errorf("kiroappio: orders 解析: %w", err)
 	}
 
 	out := make([]providers.VendorOrder, 0, len(p.Items))
@@ -142,11 +142,11 @@ func (a *Adapter) ListKeys(ctx context.Context, cursor string) (*providers.Histo
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kiroappio keys: http %d", resp.StatusCode)
+		return nil, fmt.Errorf("kiroappio: keys: http %d", resp.StatusCode)
 	}
 	var p paged[ioKey]
 	if err := json.Unmarshal(resp.Body, &p); err != nil {
-		return nil, fmt.Errorf("kiroappio keys 解析: %w", err)
+		return nil, fmt.Errorf("kiroappio: keys 解析: %w", err)
 	}
 
 	out := make([]providers.VendorKey, 0, len(p.Items))
