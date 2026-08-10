@@ -304,6 +304,7 @@ func (a *Adapter) Parse(rawBody []byte, _ http.Header) (*providers.WebhookEvent,
 	evt := &providers.WebhookEvent{
 		VendorID:        providers.VendorKiroAppCC,
 		EventID:         wp.EventID,
+		OrderID:         wp.OrderID,
 		PurchaseOrderID: wp.PurchaseOrderID,
 		NewKeys:         wp.NewKeys,
 		Zone:            providers.ZoneGeneral,

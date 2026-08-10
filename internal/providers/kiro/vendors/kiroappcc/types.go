@@ -64,6 +64,7 @@ type webhookPayload struct {
 	Event           string `json:"event"`
 	EventID         string `json:"event_id"`
 	NewKeys         int    `json:"new_keys"`
+	OrderID         string `json:"order_id"`
 	PurchaseOrderID string `json:"purchase_order_id"`
 	Timestamp       int64  `json:"timestamp"`
 }

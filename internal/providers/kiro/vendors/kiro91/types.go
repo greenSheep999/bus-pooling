@@ -100,6 +100,7 @@ type webhookPayload struct {
 	NewKeys         int    `json:"new_keys"`
 	Dead            int    `json:"dead"`
 	Zone            string `json:"zone"`
+	OrderID         string `json:"order_id"`
 	PurchaseOrderID string `json:"purchase_order_id"`
 	PoolID          string `json:"pool_id"`
 	RoundID         string `json:"round_id"`
