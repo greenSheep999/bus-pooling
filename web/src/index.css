@@ -104,6 +104,14 @@
   .tnum {
     font-variant-numeric: tabular-nums;
   }
+
+  /* 锚点跳转平滑滚动（landing 的 #save / #pool / #auto / #faq）
+     只在用户没要求减少动效时开 · reduce 下瞬间跳过去 */
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
 }
 
 @layer components {

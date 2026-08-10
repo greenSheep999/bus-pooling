@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Check, Copy } from "lucide-react";
 import { Button } from "./button";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,7 @@ export function SecretField({
   className?: string;
 }) {
   const [copied, setCopied] = useState(false);
+  const { t } = useTranslation();
   const shown = plaintext ?? masked ?? "-";
 
   return (
@@ -39,7 +41,7 @@ export function SecretField({
         <Button
           variant="ghost"
           size="icon"
-          aria-label="复制"
+          aria-label={t("action.copy_aria")}
           onClick={() => {
             navigator.clipboard.writeText(plaintext);
             setCopied(true);

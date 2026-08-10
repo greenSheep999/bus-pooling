@@ -45,7 +45,11 @@
     "docs": "Integration docs",
     "brand": "bus-pooling",
     "tagline": "· beta",
-    "slogan": "Pool a bus · pay less per key"
+    "slogan": "Pool a bus · pay less per key",
+    "blurb": "Open source pooling tool run at cost. Riders of any size split the vendor key price, keys are watched for death, warranty refunds are automatic, and the ledger is yours to read.",
+    "copyright": "© 2026 bus-pooling · open source, run at cost",
+    "status_ok": "All systems normal",
+    "status_page": "Status page →"
   },
   "action": {
     "save": "Save",
@@ -59,7 +63,9 @@
     "retry": "Retry",
     "loading": "Loading…",
     "copy": "Copy",
-    "copied": "Copied"
+    "copied": "Copied",
+    "copy_code": "Copy code",
+    "copy_aria": "Copy"
   },
   "state": {
     "empty": "Nothing here yet",

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +16,7 @@ export function CodeBlock({
   className?: string;
 }) {
   const [copied, setCopied] = useState(false);
+  const { t } = useTranslation();
 
   return (
     <div className={cn("relative rounded-xl border border-hairline bg-bg-elevated", className)}>
@@ -29,11 +31,11 @@ export function CodeBlock({
             setCopied(true);
             setTimeout(() => setCopied(false), 1600);
           }}
-          aria-label="复制代码"
+          aria-label={t("action.copy_code")}
           className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-label font-medium text-fg-tertiary transition-colors hover:bg-bg hover:text-fg-secondary"
         >
           {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-          {copied ? "已复制" : "复制"}
+          {copied ? t("action.copied") : t("action.copy")}
         </button>
       </div>
       <pre className="overflow-x-auto p-3 font-mono text-label leading-relaxed text-fg-secondary">

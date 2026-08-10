@@ -1,70 +1,113 @@
 {
+  "nav": {
+    "save": "How you save",
+    "pool": "Pooling",
+    "auto": "Automation",
+    "faq": "FAQ",
+    "login": "Log in",
+    "signup": "Sign up free"
+  },
   "hero": {
-    "badge": "Public beta",
-    "title": "Kiro at full power · pool a bus with us",
-    "desc": "One bus, split the cost. Full Claude Opus 5, GPT-5.6, AWS-Q native and full-fat Kiro — no throttled model, no cut context.",
-    "desc-2": "Zero rate cap · zero context trim · zero nested wrapping — hop on and it just works.",
-    "cta-primary": "Hop on",
-    "cta-secondary": "Already have an account"
+    "chip": "Open source, run at cost",
+    "title": "Pool one key. Divide the price.",
+    "subtitle": "Key cost splits by headcount with no markup from us. Dead keys refill themselves, warranty cases refund credit.",
+    "cta": "Sign up free",
+    "docs": "Read the docs"
   },
-  "features": {
-    "heading": "Supported models & experience",
-    "item-1": "Claude Opus 5",
-    "item-2": "GPT-5.6",
-    "item-3": "AWS-Q native",
-    "item-4": "Full-fat Kiro",
-    "item-5": "No wrapping · no nesting"
+  "heroCard": {
+    "label": "Cost of one key",
+    "cost": "20",
+    "unit": "credits",
+    "riders": "4 riders pooling",
+    "eachLabel": "Each pays",
+    "each": "5",
+    "note": "Key cost splits by headcount. No markup from us."
   },
-  "explainer": {
-    "what": {
-      "title": "Why it's cheaper",
-      "body": "One bus, split by riders — more riders, less per head."
+  "save": {
+    "title": "More riders, lower per head",
+    "body": "Requests inside one window merge into a single batch pull, which reaches the vendor's volume tier.",
+    "per": "credits each",
+    "people": "{{n}} riders",
+    "note": "Example figures. Real numbers follow the vendor price and how full the bus is."
+  },
+  "pool": {
+    "title": "Pooling is the main entrance",
+    "body": "Four things happen at the moment we buy. You just pull.",
+    "batch": {
+      "title": "Batched pulls",
+      "body": "Refill intents in the same window merge into one request, and volume reaches the vendor's cheaper tier.",
+      "tier": "Volume tier"
     },
-    "how": {
-      "title": "What you get",
-      "body": "Every model, no rate limit, no cut context. The savings come out of the price, not the experience."
+    "vendors": {
+      "title": "Six vendors, one account",
+      "body": "One runs dry or goes down, we switch to another. You never watch for it."
     },
-    "trust": {
-      "title": "Everyone their own",
-      "body": "Riders on the same bus have independent quotas and traffic — no visibility into each other."
+    "compare": {
+      "title": "Effective cost, not sticker price",
+      "body": "We normalise price over average lifespan, so you compare how long each credit lasts."
+    },
+    "refill": {
+      "title": "Dead keys refill",
+      "body": "A key dies, a fresh one enters the bus. Warranty cases refund credit to your wallet.",
+      "dead": "Key dies",
+      "new": "Refilled",
+      "credit": "Credit back"
     }
   },
-  "values": {
-    "eyebrow": "Why bus-pooling",
-    "heading": "One bus solves it all",
-    "subheading": "We babysit the pool, the refills and the ledger · you just pull"
+  "auto": {
+    "title": "Keys land, we push",
+    "body": "Point us at a webhook. Pull completions, dead keys and warranty refunds all arrive there.",
+    "events": {
+      "new": "Pull complete",
+      "dead": "All keys dead",
+      "refund": "Warranty refund",
+      "test": "Test delivery"
+    },
+    "payload": "json",
+    "apikey": "Scripts hit /api/me/* with an API key to pull, route keys, and read the ledger."
   },
-  "value": {
-    "pool": { "title": "Split the price", "desc": "Multiple riders pull together · unit price divides directly · more riders, cheaper" },
-    "refill": { "title": "Auto-refill on death", "desc": "Dead key gone? A new one lands in the bus at once · your pool stays alive" },
-    "push": { "title": "Push to your own pool", "desc": "Every pulled key syncs to your kiro.rs · full data round-trip" },
-    "transparent": { "title": "Transparent ledger", "desc": "Every debit itemized · warranty covers survival rate" }
+  "dest": {
+    "title": "Three places a key can go",
+    "bus": {
+      "title": "Into the bus",
+      "body": "The key joins a pool. Everyone on the bus uses it and splits the price."
+    },
+    "pool": {
+      "title": "To your own pool",
+      "body": "Syncs to your own pool automatically, with usage data flowing back."
+    },
+    "handoff": {
+      "title": "Straight to you",
+      "body": "We hand over the plaintext and delete our copy right after."
+    }
   },
-  "steps": {
-    "eyebrow": "How to use",
-    "heading": "3 steps to board",
-    "subheading": "30-second sign-up · top up · hop on"
-  },
-  "step": {
-    "register": { "title": "Sign up", "desc": "Email + password · 30 seconds" },
-    "topup": { "title": "Top up", "desc": "Multi-channel payment · fee passes through to the gateway · no markup" },
-    "pull": { "title": "Hop on & pull", "desc": "Start your own bus / join someone's / let us match — pick one" }
-  },
-  "community": {
-    "eyebrow": "Community",
-    "heading": "Talk to other riders",
-    "subheading": "Announcements, Q&A, voice rooms — join the way you prefer.",
-    "telegram-desc": "Channel · updates and credit drops",
-    "discord-desc": "Server · discussion and support",
-    "coming-soon": "Coming soon"
+  "faq": {
+    "title": "Common questions",
+    "q1": {
+      "q": "Are you a key reseller?",
+      "a": "No. Vendor key cost passes through untouched. We charge one technical service fee on top."
+    },
+    "q2": {
+      "q": "What happens when a key dies?",
+      "a": "The bus pulls a replacement automatically. If it falls under warranty, the credit goes back to your wallet."
+    },
+    "q3": {
+      "q": "Do I have to pool?",
+      "a": "No. You can pull on your own and route the key yourself. Pooling is simply cheaper."
+    },
+    "q4": {
+      "q": "Can keys sync to my own pool?",
+      "a": "Yes. Add your pool URL and token in settings, and every key we pull gets pushed there."
+    },
+    "q5": {
+      "q": "Is there an API for scripts and bots?",
+      "a": "Yes. Create an API key for /api/me/*, then add a webhook to receive events."
+    }
   },
   "cta": {
-    "heading": "Ready to hop on?",
-    "subheading": "Sign-up is free · promo code makes it cheaper still",
-    "primary": "Hop on",
+    "title": "Find a bus, start saving",
+    "body": "Sign-up is free. A promo code makes pooling cheaper still.",
+    "primary": "Sign up free",
     "secondary": "Log in"
-  },
-  "promo": { "eyebrow": "Going on" },
-  "footer": { "beta": "Public beta", "tagline": "Kiro at full power · pool a bus with us" },
-  "nav": { "login": "Log in", "register": "Sign up" }
+  }
 }

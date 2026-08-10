@@ -45,7 +45,11 @@
     "docs": "对接文档",
     "brand": "bus-pooling",
     "tagline": "· 公测中",
-    "slogan": "一起拼车 · 号更便宜"
+    "slogan": "一起拼车 · 号更便宜",
+    "blurb": "开源公益拼车工具 · 让不同规模的用户一起摊 vendor 号价 · 监控号存活 · 号死自动质保 · 数据透明可查",
+    "copyright": "© 2026 bus-pooling · 开源公益项目",
+    "status_ok": "系统正常",
+    "status_page": "状态页 →"
   },
   "action": {
     "save": "保存",
@@ -59,7 +63,9 @@
     "retry": "重试",
     "loading": "加载中…",
     "copy": "复制",
-    "copied": "已复制"
+    "copied": "已复制",
+    "copy_code": "复制代码",
+    "copy_aria": "复制"
   },
   "state": {
     "empty": "暂无数据",
