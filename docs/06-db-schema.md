@@ -773,6 +773,20 @@ grants_tier TEXT NOT NULL CHECK(grants_tier IN ('wholesale','insider'))
 
 **3+**：管理端 / 市场相关表另写
 
+### vendor 观测系列（migration 021-026）· `/status` 页数据源
+
+**021 · `vendor_probe` + `vendor_daily`**：Prober 每 60s 拨号 `vendor.Stock` 落样本 · `vendor_daily` 24h 聚合 uptime/incident_flag。**stock-delta 推算 restock** 也走这层（`decisions §11.9`）· probe 落库前跟上一轮同 region stock 对比 · 正 delta 落 `vendor_dispatch`。
+
+**022 · `vendor_public_status`**：vendor 自报的 fleet 累计（keys_active / keys_total / ps_uptime）· 从 `vendor.PublicStatus` 端点拉 · 落 `vendor_probe.ps_*` 列。
+
+**023 · `vendor_order` + `vendor_key`**：Backfiller 每 5min 全量拉 vendor 侧历史订单 + key 生命周期 · 用于 `/prices` 页价格分析 + `/status` 页寿命数据。
+
+**024 · `vendor_dispatch`**：vendor 平台**全网**开号批次（fleet-wide 时序）· 是 `/status` 页"过去 X 时间发几批"曲线的硬数据源。
+
+**026 · `vendor_dispatch` 加 `source` 列**（`decisions §11.11`）：主键改成 `(vendor_id, dispatch_key, source)` · `source ∈ {vendor_self, xi8}` · xi8 是内部聚合数据源（**非 vendor** · 不出前端 · `CLAUDE.md §0.1`）· 前端读路径全部只查 `source='vendor_self'` · xi8 行只做后端对账 + 历史空窗填。
+
+**025 · `inbound_webhook_event`**：vendor 推给我方的事件日志 + 幂等去重（`new_keys_available` / `all_keys_dead` / `warranty_refund`）。
+
 ## 19. HTTP 幂等 · `idempotency_record`
 
 见 `09-transactions.md § 7` 完整说明。

@@ -1991,6 +1991,70 @@ PRIMARY KEY (vendor_id, date)
 - ⏸ **vendor 加了 fleet 端点通知机制**：给 vendor 加 webhook `fleet.dispatched` 事件 · 从 push 拿数据不再靠 poll · 需要六家都实现 · 阶段 3+
 - ⏸ **crowd-sourced dispatch**：让登录乘客的 my/order 数据聚合成 fleet 视图 · 数据敏感 · 需要合规评估 · 大概率不做
 
+### 11.8 vendor 质量标签（Score 内部 + Tags 对外）✅
+
+**背景**：Status 卡片要让乘客"一眼看出高质量家" · 但直接暴露 A/B/C 或分数会让乘客困惑（`§0.1` 内部量化不出前端）。
+
+**决策**：**多维标签制**（`internal/vendorview/quality.go`）。
+
+- **Score 只做内部排序**（0-100 · 加权：Uptime 30% + Volume 35% + Freshness 20% + Stock 15%）· `json:"-"` 不出接口
+- **Tags 对外显示**（前端 `web/src/components/VendorQualityTags.tsx`）·
+  - `stable` · 24h uptime ≥ 95%（绿）
+  - `high-volume` · 窗口内批次 ≥ 20（紫）
+  - `active` · 最新一次 ≤ 24h（灰蓝）
+  - `in-stock` · 当下 stock=many（绿）
+  - `warranty` · has_warranty=true（紫）
+  - `watching` · 数据不足 / uptime<50%（黄）
+- **数据不足**（uptime 无样本 且 dispatchBatches=0）→ 只挂 watching · Score=0 排最后
+
+**为什么不 A/B/C**：单字母吞掉多维信号（一家可能"高产但不稳"·A/B/C 表达不出来）· 标签叠加更直观。
+
+### 11.9 stock-delta 推算 restock 事件流 ✅
+
+**背景**：探针每 60s 打 `vendor.Stock` 拿快照 · 但号上架几分钟就被抢空 · 探针只看到"stock=0"· `vendor_dispatch` 表拿不到批次 · Status 图 4 家全空。同类聚合站（xi8.cc）30s 轮 + prev_stock delta 推算 · 数据完整。
+
+**决策**：**Prober 落库前跟上一轮 stock 对比 · 正 delta 落 `vendor_dispatch`**（`internal/vendorview/prober.go:deriveStockDelta`）。
+
+- source=`vendor_self` · dispatch_key=`delta-{region}-{ts}`
+- **零额外 API 调用** · 完全复用现有 Stock 端点响应
+- 时间窗保护：相邻两轮 > 2×interval 视作重启 · 不算 delta
+- alive 保护：上一轮挂了不算（避免从挂到活首次读数误当 restock）
+- fleet 端点有的 vendor · fleet 为主 · delta 只补漏
+
+**已知局限**（跟 xi8 同类）：vendor 侧发号 → 抢空 < 2×interval 的短命批漏 · prev=0, cur=0 但期间有一波来又走漏（探针间隙盲区 · 只有事件源能救 · §11.7）。
+
+**跟提频挂钩**：探针间隔从 60s 缩到 30s 后 · 漏批率减半 · 但成本翻倍。**自适应频次**（`§11.11`）解决这个 tradeoff。
+
+### 11.10 时区 bug fix + 数据洗（2026-08-11）✅
+
+**根因**：本 vendor 群里有两家返 `"2026-08-12 10:25:00"` 这种**北京墙钟无 tz** 字符串 · `time.Parse` 把它当 UTC 处理 · `.UTC()` 只改标签不移时钟 · 存进 db 的 `dispatched_at` 超前真时刻 8 小时。
+
+**实证**：xi8 restock-log 记同一批次的时间戳跟我方 db 对比 · 差 8 小时。库里最新 dispatched_at > `datetime('now')` 的行全部集中在这两家。
+
+**修法**（`internal/providers/kiro/vendors/{kirooo,kiroceo}/history.go`）：
+- 从 `time.Parse(layout, s)` 换成 `time.ParseInLocation(layout, s, chinaTZ)` · chinaTZ = `time.FixedZone("CST", 8*3600)`
+- 出向 `.UTC()` 才真的移 8 小时
+- kirooo 的 `public_status.go` `ps_started_at` 字段同源问题·一并修
+- 其他 4 家不动（实证格式正确 · kiro91 是真 UTC · kiroappio/kiroappcc/kirodrop 用 RFC3339 带 tz）
+
+**数据洗**：一次性 SQL 只针对这两家 · `UPDATE ... SET dispatched_at = datetime(dispatched_at, '-8 hours')` · 共洗 129 条 vendor_dispatch + 1148 条 vendor_probe.ps_started_at。备份 `data/dev.db.bak.<ts>`。
+
+**教训**：Go `time.Parse` 无 tz 字符串**默认 UTC** · 用 `ParseInLocation` 显式绑 tz 才对。写 vendor adapter 时**必须先实证 vendor 返的是墙钟还是 UTC** · 别信文档。
+
+### 11.11 vendor_dispatch 加 source 列 · xi8 内部数据源 ✅
+
+**背景**：xi8.cc 是聚合站 · 我们要它做**内部对账 + 历史空窗填**（`CLAUDE.md §0.1` · 不出前端 · 不注册为 vendor）· 但要跟 vendor_self 数据共表并存。
+
+**决策**（`internal/db/migrations/026_vendor_dispatch_source.sql`）：
+
+- 主键从 `(vendor_id, dispatch_key)` 改成 `(vendor_id, dispatch_key, source)`
+- `source ∈ {vendor_self, xi8}` · 默认 `vendor_self`
+- 前端读路径**全部**只查 `source='vendor_self'`（`OrderKeyStore.DispatchSummary` / `DispatchesSince`）
+- xi8 行只做内部 · 用户永不感知
+- 分时段合并（vendor_self 有 gap 时用 xi8 补）由 API 层归一 · 不加 `source` 字段到 JSON 响应
+
+**xi8 credentials**：走 `vendor_account` 表加密存储 · `seed-vendor xi8 --api-key=<key>` · 白名单加了 xi8 但注释"非 vendor · 内部数据源"（`cmd/bus-pooling/seed_vendor.go`）。
+
 ## 记录约定（未来加决策时）
 
 - 每条格式：`### N.M 提议 [❌ / ⏸ / ✅]` + 提议 + 状态说明 + 参考（若有）
