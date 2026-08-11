@@ -105,8 +105,12 @@ func run(cmd, cfgPath string, args []string) error {
 		return runSeedVendor(ctx, cfg, args)
 	case "list-vendors":
 		return runListVendors(ctx, cfg)
+	case "xi8-backfill":
+		return runXi8Backfill(ctx, cfg, args)
+	case "xi8-audit":
+		return runXi8Audit(ctx, cfg, args)
 	default:
-		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem | seed-vendor | list-vendors）", cmd)
+		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem | seed-vendor | list-vendors | xi8-backfill | xi8-audit）", cmd)
 	}
 }
 

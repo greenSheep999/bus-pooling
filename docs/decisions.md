@@ -2041,6 +2041,39 @@ PRIMARY KEY (vendor_id, date)
 
 **教训**：Go `time.Parse` 无 tz 字符串**默认 UTC** · 用 `ParseInLocation` 显式绑 tz 才对。写 vendor adapter 时**必须先实证 vendor 返的是墙钟还是 UTC** · 别信文档。
 
+### 11.13 xi8 client + backfiller + 对账 CLI ✅
+
+**背景**：xi8 是聚合平台 · 拉 vendor 库存 30s 一轮 · prev_stock delta 推算 restock · 数据覆盖 5 家 vendor（**kiroappcc 不在 xi8**）· 用它做**后端对账 + 历史空窗填**。
+
+**决策**（`internal/xi8/`）：
+
+- `xi8.Client`：GET `/api/restock-log` + `/api/signals` + `/api/vendors` · X-API-Key 鉴权
+- `xi8.Backfiller`：拉两个端点 · 落 `vendor_dispatch` source='xi8' · 幂等 upsert
+  - signals 优先（有 vendor_order_id · 最准）· dispatch_key = `xi8-sig-{order_id}`
+  - restock-log 兜底（推算 · 覆盖广）· dispatch_key = `xi8-log-{region}-{ts}`
+- CLI `bus-pooling xi8-backfill --limit=500` · 手动跑一次
+- CLI `bus-pooling xi8-audit --window=48` · 对账 vendor_self vs xi8 · 输出漏采嫌疑
+- credentials 三级 fallback：`BP_XI8_API_KEY` env → vendor_account 表（seed-vendor xi8）→ 空
+
+**匿名映射**（实证 2026-08-11 · 5 家实锤）：
+
+| xi8 vendor_id | 昵称 | 我方 slug | 证据 |
+|---|---|---|---|
+| 1 | 脆脆 | kiroceo | 价 101/70.70 匹配 · 无质保 |
+| 2 | 羽毛 | kiroappio | 价 80.80/40.40 · warranty 10min |
+| 3 | 南南 | kirodrop | USD 计价 36.34/51.97 · 无质保 |
+| 4 | 小鸡 | kirooo | 价 101/70.70 · 时间戳吻合 |
+| 5 | 饭饭 | kiro91 | warranty 10min · 时间戳吻合 |
+
+**xi8 数据边界**（`CLAUDE.md §0.1`）：
+- 前端读路径**只查 source='vendor_self'** · xi8 行不出前端 · 用户永不感知
+- xi8 行留后端对账 CLI + 历史空窗填 · 内部 log 里可见
+
+**首次 backfill 结果**（8-12 · 500 条上限）：signals 1 条 · restock-log 200 条 · 洗完 dev.db 后跑 `xi8-audit --window=48` 输出：
+- kiroappio + kirodrop · vendor_self=0 vs xi8 = 42 批 · **确认这两家漏采严重**（无 fleet 端点 · stock-delta 未部署时期无覆盖）· 部署后应自愈
+- kiroceo + kirooo · vendor_self > xi8 · 正常
+- kiro91 · vendor_self=18 vs xi8=33 · 轻微漏采 · 后续可深挖
+
 ### 11.12 探针自适应频次（hot / baseline 两档）✅
 
 **背景**：60s 探针 · 短命批（几分钟被抢空）漏 50%。提到 30s 漏批减半但 API 成本翻倍 · vendor 侧可能触发 rate limit / 反爬。要"稳态省钱 · 热点期快"。
