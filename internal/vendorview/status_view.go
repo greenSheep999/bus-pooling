@@ -76,6 +76,9 @@ type VendorStatusRow struct {
 	// Dispatch vendor **平台全网**最近开号节奏（fleet-wide）· 6 家只要有 FleetLister 都能填
 	// 这是每张卡上"过去 X 时间 vendor 发了多少批 · 平均多久一批 · 累计多少 key"的硬数据
 	Dispatch *DispatchOut `json:"dispatch,omitempty"`
+
+	// Quality 综合质量 · 排序 + 标签（Score 不出 · Tags 出）· 见 quality.go
+	Quality VendorQuality `json:"quality"`
 }
 
 // DispatchOut vendor 平台的发货节奏 · 上线一秒到手
@@ -128,11 +131,20 @@ type PublicStatusOut struct {
 //   - 最近一次 vendor_probe（当前是否活、库存、质保）
 //   - 24h 聚合（vendor_probe 过滤 last-24h · 存活率 + stockout 分钟）
 //   - 7d incident 日期（vendor_daily.incident_flag=1）
+//   - windowHours 窗口的 dispatch 批次（决定 Volume/Freshness 标签评估窗口）
+//
+// windowHours <=0 默认 168（7d）· 上限 720（30d）· 保持跟 DispatchEvents 一致。
 //
 // 探针未启动 / db 为 nil 时返回空 · 前端展示"数据采集中"占位。
-func (s *Service) StatusOverview(ctx context.Context) StatusOverview {
+func (s *Service) StatusOverview(ctx context.Context, windowHours int) StatusOverview {
 	if s.probeStore == nil || s.registry == nil {
 		return StatusOverview{}
+	}
+	if windowHours <= 0 {
+		windowHours = 168
+	}
+	if windowHours > 720 {
+		windowHours = 720
 	}
 
 	entries := s.registry.Enabled()
@@ -140,24 +152,18 @@ func (s *Service) StatusOverview(ctx context.Context) StatusOverview {
 	var latestProbe time.Time
 
 	for _, e := range entries {
-		row := s.rowFor(ctx, e.Vendor)
+		row := s.rowFor(ctx, e.Vendor, windowHours)
 		rows = append(rows, row)
 	}
 
-	// 排序：alive 优先 · 然后按 uptime% 降序 · anon_label（Vendor 01 → 06）兜底
+	// 排序：Quality.Score 降序 · alive 优先兜底 · anon_label 稳定序
+	// **不再按 uptime 单维度排** —— 高产 + 稳定的家会被 quality 综合分抬到前面
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i].Alive != rows[j].Alive {
 			return rows[i].Alive
 		}
-		iup, jup := -1, -1
-		if rows[i].Uptime24hPct != nil {
-			iup = *rows[i].Uptime24hPct
-		}
-		if rows[j].Uptime24hPct != nil {
-			jup = *rows[j].Uptime24hPct
-		}
-		if iup != jup {
-			return iup > jup
+		if rows[i].Quality.Score != rows[j].Quality.Score {
+			return rows[i].Quality.Score > rows[j].Quality.Score
 		}
 		return rows[i].AnonLabel < rows[j].AnonLabel
 	})
@@ -172,7 +178,9 @@ func (s *Service) StatusOverview(ctx context.Context) StatusOverview {
 // rowFor 构造单家 vendor 的行 · 静默处理错误（探针数据缺失是正常状态）
 //
 // **不出 v.DisplayName() 真名** —— 走 anonLabelOf 编号 + anonIDOf 短哈希
-func (s *Service) rowFor(ctx context.Context, v providers.Vendor) VendorStatusRow {
+//
+// windowHours 影响 Quality 里 Volume / Freshness 的评估窗口 · 与前端时间 tab 联动
+func (s *Service) rowFor(ctx context.Context, v providers.Vendor, windowHours int) VendorStatusRow {
 	vid := string(v.ID())
 	cap := v.Capability()
 
@@ -310,6 +318,50 @@ func (s *Service) rowFor(ctx context.Context, v providers.Vendor) VendorStatusRo
 	if err == nil {
 		row.Incidents7d = incidents
 	}
+
+	// ─── Quality · 综合分 + 标签 ─────────────────────────────
+	//
+	// 需要窗口内的 dispatch 数据来算 Volume/Freshness · 复用已有 DispatchesSince
+	// （已优先从 vendor_dispatch 表拿 · 表空 fallback 探针 deriver · 跟 events 端点同源）
+	qi := qualityInput{
+		alive:        row.Alive,
+		uptime24hPct: row.Uptime24hPct,
+		stockBucket:  row.StockBucket,
+		hasWarranty:  row.HasWarranty,
+		now:          time.Now(),
+	}
+
+	// 窗口内 dispatch 批次 · 优先 vendor 自报 · 兜底探针 deriver（跟 DispatchEvents 同源）
+	var windowBatches int
+	var latestDispatch time.Time
+	if s.orderKeyStore != nil {
+		if ds, err := s.orderKeyStore.DispatchesSince(ctx, vid, windowHours, 500); err == nil {
+			windowBatches = len(ds)
+			for _, d := range ds {
+				if d.DispatchedAt.After(latestDispatch) {
+					latestDispatch = d.DispatchedAt
+				}
+			}
+		}
+	}
+	// 没自报 · 探针推
+	if windowBatches == 0 && s.probeStore != nil {
+		if derived, err := s.probeStore.DeriveDispatchEvents(ctx, vid, windowHours, 500); err == nil {
+			windowBatches = len(derived)
+			for _, d := range derived {
+				if d.At.After(latestDispatch) {
+					latestDispatch = d.At
+				}
+			}
+		}
+	}
+	qi.dispatchBatches = windowBatches
+	qi.lastDispatch = latestDispatch
+
+	// 数据是否足够 · uptime 有样本 或 有任何 dispatch 都算够
+	qi.dataSufficient = row.Uptime24hPct != nil || windowBatches > 0
+
+	row.Quality = computeQuality(qi)
 
 	return row
 }

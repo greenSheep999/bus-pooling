@@ -118,6 +118,20 @@ export interface VendorStatusRow {
   history?: VendorHistoryOut;
   /** Vendor 平台开号节奏 · 6 家都能有（有 FleetLister 就走真数据 · 否则从探针增量推） */
   dispatch?: VendorDispatchOut;
+  /** 质量综合评估 · 后端算好 · 前端排序按 Score 降序（Score 不下发）· 显示 Tags */
+  quality: VendorQuality;
+}
+
+/** Vendor 质量综合 · 后端 computeQuality 算完下发 · Score 内部用不给前端
+ *  Tags 多维叠加 · 前端按 kind 映射颜色 */
+export interface VendorQuality {
+  tags: VendorQualityTag[];
+}
+
+export interface VendorQualityTag {
+  /** 前端按 kind 映射色调 · 文案走 i18n status:tags-quality.<kind>
+   *   stable / high-volume / active / in-stock / warranty / watching */
+  kind: "stable" | "high-volume" | "active" | "in-stock" | "warranty" | "watching";
 }
 
 /** Vendor 平台 fleet-wide 发货节奏 · 上线一秒到手（后端从 vendor 侧真历史或探针增量推） */
@@ -159,10 +173,14 @@ export interface VendorStatusTrend {
   points: VendorStatusTrendPoint[];
 }
 
-export const useVendorStatus = () =>
+/** Status 页时间窗口 · "24h" / "168h" / "720h"
+ *  影响后端 Quality 里 Volume/Freshness 的评估窗口 + 排序结果 */
+export type StatusWindow = "24h" | "168h" | "720h";
+
+export const useVendorStatus = (window: StatusWindow = "168h") =>
   useQuery({
-    queryKey: ["vendor-status"],
-    queryFn: () => api<VendorStatusOverview>("/vendors/status"),
+    queryKey: ["vendor-status", window],
+    queryFn: () => api<VendorStatusOverview>(`/vendors/status?window=${window}`),
     staleTime: 30_000,      // 探针 60s 采样 · 30s 缓存合理
     refetchInterval: 60_000, // 挂着看的话每分钟刷一次
     retry: false,           // 公开端点 · 401 不重试

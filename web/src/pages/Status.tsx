@@ -1,4 +1,4 @@
-import { useId, useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
@@ -10,12 +10,12 @@ import { AppFooter } from "@/components/AppFooter";
 import { PromoBar } from "@/components/PromoBar";
 import { PublicHeader } from "@/components/PublicHeader";
 import { DocumentMeta } from "@/components/DocumentMeta";
-import { Button } from "@/components/ui/button";
+import { QualityTags } from "@/components/VendorQualityTags";
 import { Card, Chip } from "@/components/ui/primitives";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useVendorStatus, useVendorDispatchEvents,
-  type VendorStatusRow, type VendorDispatchEvent,
+  type StatusWindow, type VendorStatusRow, type VendorDispatchEvent,
 } from "@/api/hooks";
 import { cn } from "@/lib/utils";
 
@@ -41,7 +41,10 @@ export default function StatusPage() {
 
 function StatusOverview() {
   const { t } = useTranslation("status");
-  const { data, isLoading } = useVendorStatus();
+  // 时间窗口 · 影响后端 Quality 计算（Volume/Freshness 窗口）+ 卡片图窗口
+  const [window, setWindow] = useState<StatusWindow>("168h");
+  const { data, isLoading } = useVendorStatus(window);
+  // **不做前端二次排序** —— 后端已按 Quality.Score 排好
   const vendors = data?.vendors ?? [];
 
   return (
@@ -51,60 +54,65 @@ function StatusOverview() {
       <PublicHeader />
 
       <main className="flex-1">
-        <section className="page-container py-10 lg:py-12">
-          <div className="mx-auto max-w-5xl space-y-8">
+        <section className="page-container space-y-8 py-10 lg:py-12">
 
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <PingDot tone="ok" />
-                <span className="font-mono text-label font-medium uppercase tracking-wider text-fg-tertiary">
-                  {t("hero.eyebrow")}
-                </span>
-              </div>
-              <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-                {t("hero.title")}
-              </h1>
-              <p className="max-w-[65ch] text-label leading-relaxed text-fg-secondary">
-                {t("hero.subtitle")}
-              </p>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <PingDot tone="ok" />
+              <span className="font-mono text-label font-medium uppercase tracking-wider text-fg-tertiary">
+                {t("hero.eyebrow")}
+              </span>
             </div>
+            <h1 className="text-hero font-semibold tracking-tight">
+              {t("hero.title")}
+            </h1>
+            <p className="max-w-[65ch] text-label leading-relaxed text-fg-secondary">
+              {t("hero.subtitle")}
+            </p>
+          </div>
 
-            {isLoading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-[132px] w-full" />
-                ))}
-              </div>
-            ) : vendors.length === 0 ? (
-              <Card className="p-8 text-center">
-                <p className="text-fg-secondary">{t("hero.no-data")}</p>
-              </Card>
-            ) : (
-              <div className="space-y-3">
-                {vendors.map((v) => <VendorCard key={v.anon_id} vendor={v} />)}
-              </div>
-            )}
+          {/* 时间窗口 tab · 影响后端 Quality 评估窗口 + 图表窗口 · 决定排序 */}
+          <WindowTabs value={window} onChange={setWindow} />
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <Card className="flex flex-col justify-between gap-3 p-5">
-                <div className="space-y-1">
-                  <h3 className="font-semibold">{t("cta.prices.title")}</h3>
-                  <p className="text-label leading-relaxed text-fg-secondary">{t("cta.prices.body")}</p>
-                </div>
-                <Button asChild variant="ghost" className="self-start">
-                  <Link to="/prices">{t("cta.prices.action")}<ArrowRight /></Link>
-                </Button>
-              </Card>
-              <Card className="flex flex-col justify-between gap-3 p-5 border-brand-hairline bg-brand-subtle/30">
-                <div className="space-y-1">
-                  <h3 className="font-semibold">{t("cta.join.title")}</h3>
-                  <p className="text-label leading-relaxed text-fg-secondary">{t("cta.join.body")}</p>
-                </div>
-                <Button asChild variant="brand" className="self-start">
-                  <Link to="/register">{t("cta.join.action")}<ArrowRight /></Link>
-                </Button>
-              </Card>
+          {isLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-[132px] w-full" />
+              ))}
             </div>
+          ) : vendors.length === 0 ? (
+            <Card className="p-8 text-center">
+              <p className="text-fg-secondary">{t("hero.no-data")}</p>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {vendors.map((v) => <VendorCard key={v.anon_id} vendor={v} window={window} />)}
+            </div>
+          )}
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card to="/prices" className="flex flex-col justify-between gap-3 p-5">
+              <div className="space-y-1">
+                <h3 className="font-semibold">{t("cta.prices.title")}</h3>
+                <p className="text-label leading-relaxed text-fg-secondary">{t("cta.prices.body")}</p>
+              </div>
+              <span className="inline-flex items-center gap-1 self-start text-label font-semibold text-brand-strong">
+                {t("cta.prices.action")}<ArrowRight className="size-3.5" />
+              </span>
+            </Card>
+            <Card
+              to="/register"
+              focal
+              className="flex flex-col justify-between gap-3 p-5"
+            >
+              <div className="space-y-1">
+                <h3 className="font-semibold">{t("cta.join.title")}</h3>
+                <p className="text-label leading-relaxed text-fg-secondary">{t("cta.join.body")}</p>
+              </div>
+              <span className="inline-flex items-center gap-1 self-start text-label font-semibold text-brand-strong">
+                {t("cta.join.action")}<ArrowRight className="size-3.5" />
+              </span>
+            </Card>
           </div>
         </section>
       </main>
@@ -117,10 +125,13 @@ function StatusOverview() {
 /** 单家 vendor 卡 · 主页一行一家
  *
  *  布局：左（名字 + 标签）· 中（24h 柱图）· 右（3 个数字）
- *  所有 6 家同一种图 —— 数据来源不同只在图下角标一句说明。 */
-function VendorCard({ vendor }: { vendor: VendorStatusRow }) {
+ *  所有 6 家同一种图 —— 数据来源不同只在图下角标一句说明。
+ *
+ *  用 Card{to} · 拿到全站统一的 card-hover 动画（-translate-y-1 + shadow-hover）·
+ *  跟 BusCard / Landing feature 卡等一致 · 不再手写 hover 样式。 */
+function VendorCard({ vendor, window }: { vendor: VendorStatusRow; window: StatusWindow }) {
   const { t, i18n } = useTranslation("status");
-  const { data, isLoading } = useVendorDispatchEvents(vendor.anon_id, "168h");
+  const { data, isLoading } = useVendorDispatchEvents(vendor.anon_id, window);
   const events = data?.events ?? [];
   const summary = data?.summary;
   const derived = data?.source === "observed";
@@ -128,21 +139,18 @@ function VendorCard({ vendor }: { vendor: VendorStatusRow }) {
   const last = events[0];
 
   return (
-    <Link
-      to={`/status/${vendor.anon_id}`}
-      className="group block rounded-2xl border border-hairline bg-surface p-5 transition-all hover:border-fg-tertiary hover:shadow-md"
-    >
-      {/* 头行 · 名字 + 标签 + 详情箭头 */}
+    <Card to={`/status/${vendor.anon_id}`} className="group block p-5">
+      {/* 头行 · 名字 + 质量标签 + 详情箭头 */}
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-2">
           <div className="flex items-center gap-2">
             <PingDot tone={vendor.alive ? "ok" : "danger"} />
             <span className="font-semibold">{vendor.anon_label}</span>
           </div>
-          <QualityTags vendor={vendor} />
+          <QualityTags tags={vendor.quality?.tags} />
         </div>
-        <span className="shrink-0 text-label text-fg-tertiary transition-colors group-hover:text-fg">
-          {t("card.detail")} →
+        <span className="inline-flex shrink-0 items-center gap-1 text-label font-semibold text-brand-strong">
+          {t("card.detail")} <ArrowRight className="size-3.5" />
         </span>
       </div>
 
@@ -178,7 +186,7 @@ function VendorCard({ vendor }: { vendor: VendorStatusRow }) {
             label={t("card.last-open")} />
         </div>
       </div>
-    </Link>
+    </Card>
   );
 }
 
@@ -221,35 +229,35 @@ function PingDot({ tone }: { tone: "ok" | "warn" | "danger" }) {
   );
 }
 
-function QualityTags({ vendor }: { vendor: VendorStatusRow }) {
+/** 时间窗口 tab · 24h / 7天 / 30天 · 影响后端 Quality 评估窗口 + 图表窗口 */
+function WindowTabs({
+  value, onChange,
+}: {
+  value: StatusWindow;
+  onChange: (v: StatusWindow) => void;
+}) {
   const { t } = useTranslation("status");
-  const tags: { label: string; tone: "ok" | "warn" | "danger" | "neutral" | "brand" }[] = [];
-
-  if (vendor.stock_bucket === "many") tags.push({ label: t("tags.stock-many"), tone: "ok" });
-  else if (vendor.stock_bucket === "low") tags.push({ label: t("tags.stock-low"), tone: "warn" });
-  else if (vendor.stock_bucket === "out") tags.push({ label: t("tags.stock-out"), tone: "danger" });
-
-  if (vendor.lifespan_bucket === "long") tags.push({ label: t("tags.lifespan-long"), tone: "ok" });
-  else if (vendor.lifespan_bucket === "mid") tags.push({ label: t("tags.lifespan-mid"), tone: "neutral" });
-  else if (vendor.lifespan_bucket === "short") tags.push({ label: t("tags.lifespan-short"), tone: "warn" });
-
-  if (vendor.has_warranty && vendor.warranty_minutes) {
-    tags.push({ label: t("tags.warranty-min", { minutes: vendor.warranty_minutes }), tone: "brand" });
-  }
-  if (vendor.uptime_24h_pct !== undefined) {
-    tags.push({
-      label: t("tags.uptime", { pct: vendor.uptime_24h_pct }),
-      tone: vendor.uptime_24h_pct >= 99 ? "ok" : vendor.uptime_24h_pct >= 95 ? "neutral" : "warn",
-    });
-  }
-  if (vendor.incidents_7d && vendor.incidents_7d.length > 0) {
-    tags.push({ label: t("tags.incidents", { count: vendor.incidents_7d.length }), tone: "warn" });
-  }
-
-  if (tags.length === 0) return null;
+  const opts: { key: StatusWindow; label: string }[] = [
+    { key: "24h",  label: t("window.24h") },
+    { key: "168h", label: t("window.7d") },
+    { key: "720h", label: t("window.30d") },
+  ];
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {tags.map((tag, i) => <Chip key={i} tone={tag.tone}>{tag.label}</Chip>)}
+    <div className="inline-flex items-center gap-1 rounded-xl border border-hairline bg-surface p-1">
+      {opts.map(o => (
+        <button
+          key={o.key}
+          onClick={() => onChange(o.key)}
+          className={cn(
+            "rounded-lg px-3 py-1.5 text-label font-medium transition-colors",
+            value === o.key
+              ? "bg-brand-subtle text-brand-strong"
+              : "text-fg-secondary hover:text-fg",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -299,6 +307,11 @@ function DispatchChart({
     ? nonZero.reduce((s, b) => s + b.keys, 0) / nonZero.length
     : 0;
 
+  // 渐变 id 必须每个实例唯一 —— 同页 6 张图共用一个 id 时 · <defs> 会互相覆盖。
+  // useId 保证稳定（不随 render 变）· 且 SSR/CSR 一致。冒号在 CSS url() 里非法 · 去掉。
+  // hooks 必须无条件调用 · 提到早 return 之前
+  const gradID = `dispatchGrad-${useId().replace(/:/g, "")}`;
+
   const hasAny = buckets.some(b => b.keys > 0);
   if (!hasAny) {
     // 窗口 > 48h 时说"天"更好读（"近 30 天无开号记录" 比 "近 720 小时" 清楚）
@@ -311,10 +324,6 @@ function DispatchChart({
       </div>
     );
   }
-
-  // 渐变 id 必须每个实例唯一 —— 同页 6 张图共用一个 id 时 · <defs> 会互相覆盖。
-  // useId 保证稳定（不随 render 变）· 且 SSR/CSR 一致。冒号在 CSS url() 里非法 · 去掉。
-  const gradID = `dispatchGrad-${useId().replace(/:/g, "")}`;
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -421,10 +430,10 @@ function DispatchChart({
   );
 }
 
-/** 柱子形状 · 自定义原因：**0 值也要留一个浅灰小墩**。
- *
- *  为什么要：连续时间轴里"这个时段没开号"和"图表这块没渲染"看起来一样（都是空白）·
- *  用户会以为前面的空白是 bug。留 2px 浅灰墩 = 明确告诉你"这个格子存在 · 只是没数据"。
+/** 柱子形状 · 自定义两件事：
+ *   1. **0 值留一个浅灰小墩** · 空白格 vs 没渲染 视觉区分
+ *   2. **只顶部圆角 · 底部直角** · 柱子"站在地上"该是硬边（用 SVG path 画 · rect 的
+ *      rx/ry 是四角对称的 · 只能靠 path 实现单边圆角）
  *
  *  recharts 的 minPointSize 只对非 0 值生效 · 所以只能自定义 shape。 */
 function DispatchBarShape(props: {
@@ -444,14 +453,25 @@ function DispatchBarShape(props: {
         y={baseY}
         width={width}
         height={stubH}
-        rx={1}
         className="fill-fg-tertiary"
         opacity={0.28}
       />
     );
   }
 
-  return <rect x={x} y={y} width={width} height={height} rx={3} ry={3} fill={fill} />;
+  // 顶部圆角 · 底部直角 · SVG path 手画
+  // 半径最多 3px · 太窄的柱（≤6px）按一半宽避免过度弯
+  const r = Math.min(3, width / 2, height);
+  const path = [
+    `M ${x} ${y + r}`,               // 起点在左上圆角起点
+    `Q ${x} ${y} ${x + r} ${y}`,     // 左上圆角
+    `L ${x + width - r} ${y}`,       // 顶边
+    `Q ${x + width} ${y} ${x + width} ${y + r}`, // 右上圆角
+    `L ${x + width} ${y + height}`,  // 右直边
+    `L ${x} ${y + height}`,          // 底直边（无圆角）
+    "Z",
+  ].join(" ");
+  return <path d={path} fill={fill} />;
 }
 
 
@@ -461,8 +481,9 @@ function DispatchBarShape(props: {
 
 function VendorDetail({ anonID }: { anonID: string }) {
   const { t } = useTranslation("status");
-  const { data: overview } = useVendorStatus();
-  const { data, isLoading } = useVendorDispatchEvents(anonID, "168h");
+  const [window, setWindow] = useState<StatusWindow>("168h");
+  const { data: overview } = useVendorStatus(window);
+  const { data, isLoading } = useVendorDispatchEvents(anonID, window);
 
   const vendor = overview?.vendors.find(v => v.anon_id === anonID);
   const notFound = !!overview && !vendor;
@@ -477,8 +498,7 @@ function VendorDetail({ anonID }: { anonID: string }) {
       <PublicHeader />
 
       <main className="flex-1">
-        <section className="page-container py-10">
-          <div className="mx-auto max-w-5xl space-y-6">
+        <section className="page-container space-y-6 py-10">
             <Link to="/status" className="inline-flex items-center gap-1 text-label text-fg-tertiary hover:text-fg">
               ← {t("detail.back")}
             </Link>
@@ -499,8 +519,10 @@ function VendorDetail({ anonID }: { anonID: string }) {
                     <PingDot tone={vendor.alive ? "ok" : "danger"} />
                     <h1 className="text-2xl font-semibold">{vendor.anon_label}</h1>
                   </div>
-                  <QualityTags vendor={vendor} />
+                  <QualityTags tags={vendor.quality?.tags} />
                 </div>
+
+                <WindowTabs value={window} onChange={setWindow} />
 
                 {/* 指标 · 单位写清楚 */}
                 <div className="grid grid-cols-2 gap-5 rounded-2xl border border-hairline bg-surface p-5 md:grid-cols-4">
@@ -543,7 +565,6 @@ function VendorDetail({ anonID }: { anonID: string }) {
                 <EventLog events={events} derived={derived} loading={isLoading} />
               </>
             )}
-          </div>
         </section>
       </main>
 

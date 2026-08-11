@@ -1,13 +1,26 @@
 {
   "meta": {
     "title": "上游状态 · Kiro.bus",
-    "description": "6 家上游平台的开号记录 · 每批多少 API key · 存活情况 · 公开可查"
+    "description": "6 家上游平台实时状态 · 稳定度 · 产量 · 活跃度 · 质保 · 公开可查"
   },
   "hero": {
     "eyebrow": "全线运行中",
-    "title": "上游开号记录",
-    "subtitle": "系统持续记录每家上游平台每次放出的 API key —— 什么时候放的、放了几个、还活着几个。全部公开。",
+    "title": "上游状态",
+    "subtitle": "6 家上游平台每分钟一次探测 · 综合稳定度 / 产量 / 活跃度 / 质保打质量标签 · 按综合质量从高到低排序。",
     "no-data": "数据采集中"
+  },
+  "window": {
+    "24h": "24 小时",
+    "7d": "7 天",
+    "30d": "30 天"
+  },
+  "tags-quality": {
+    "stable": "稳定",
+    "high-volume": "高产",
+    "active": "活跃",
+    "in-stock": "有货",
+    "warranty": "保质",
+    "watching": "观察中"
   },
   "unit": {
     "keys": "个 key",
@@ -60,6 +73,19 @@
     "status-done": "已发完",
     "status-dead": "已全挂",
     "derived-note": "本家上游没有开放批次查询接口，以上记录由我方每分钟观测库存变化推算得出：时间为观测到的时刻（比实际放出晚 0~60 秒），数量为该时段净增量。存活情况上游未提供。"
+  },
+  "table": {
+    "title": "质量对比",
+    "hint": "按质量从高到低排序",
+    "col-vendor": "上游",
+    "col-stock": "库存",
+    "col-uptime": "稳定度",
+    "col-lifespan": "寿命",
+    "col-warranty": "质保",
+    "col-incidents": "近 7 天",
+    "warranty-min": "{{minutes}} 分钟",
+    "incidents-days": "{{count}} 天异常",
+    "incidents-none": "无异常"
   },
   "cta": {
     "prices": {

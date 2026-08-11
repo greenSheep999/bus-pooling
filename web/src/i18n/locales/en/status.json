@@ -1,13 +1,26 @@
 {
   "meta": {
     "title": "Upstream status · Kiro.bus",
-    "description": "Dispatch records from 6 upstream platforms · keys per batch · survival · open to everyone"
+    "description": "6 upstream platforms · stability · volume · activity · warranty · all public"
   },
   "hero": {
     "eyebrow": "All systems running",
-    "title": "Upstream dispatch log",
-    "subtitle": "We continuously record every batch of API keys each upstream platform releases — when, how many, and how many are still alive. All public.",
+    "title": "Upstream status",
+    "subtitle": "We probe 6 upstream platforms every minute and score them on stability, volume, activity, and warranty. Ranked by quality, best first.",
     "no-data": "Collecting data"
+  },
+  "window": {
+    "24h": "24h",
+    "7d": "7 days",
+    "30d": "30 days"
+  },
+  "tags-quality": {
+    "stable": "Stable",
+    "high-volume": "High volume",
+    "active": "Active",
+    "in-stock": "In stock",
+    "warranty": "Warranty",
+    "watching": "Watching"
   },
   "unit": {
     "keys": "keys",
@@ -60,6 +73,19 @@
     "status-done": "Sold out",
     "status-dead": "All dead",
     "derived-note": "This upstream exposes no batch query API. Records above are inferred from our per-minute stock probing: timestamps are when we observed the change (0–60s after the actual release), counts are the net increase. Survival data is not provided by upstream."
+  },
+  "table": {
+    "title": "Quality comparison",
+    "hint": "Sorted best-first",
+    "col-vendor": "Upstream",
+    "col-stock": "Stock",
+    "col-uptime": "Uptime",
+    "col-lifespan": "Lifespan",
+    "col-warranty": "Warranty",
+    "col-incidents": "Last 7 days",
+    "warranty-min": "{{minutes}} min",
+    "incidents-days": "{{count}} incident days",
+    "incidents-none": "No incidents"
   },
   "cta": {
     "prices": {

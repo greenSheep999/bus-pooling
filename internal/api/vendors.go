@@ -37,7 +37,16 @@ func (s *Server) handleVendorsStatus(w http.ResponseWriter, r *http.Request) err
 		writeJSON(w, http.StatusOK, map[string]any{"vendors": []any{}})
 		return nil
 	}
-	out := s.vendorView.StatusOverview(r.Context())
+	// window 参数决定 Quality 里 Volume/Freshness 的评估窗口 + 排序
+	// 默认 168h（7d）· 上限 720h（30d）· 跟 events 端点一致
+	windowHours := atoiDefault(strings.TrimSuffix(r.URL.Query().Get("window"), "h"), 168)
+	if windowHours < 1 {
+		windowHours = 168
+	}
+	if windowHours > 720 {
+		windowHours = 720
+	}
+	out := s.vendorView.StatusOverview(r.Context(), windowHours)
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }
