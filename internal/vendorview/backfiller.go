@@ -160,7 +160,8 @@ func (b *Backfiller) backfillVendor(ctx context.Context, v providers.Vendor) {
 				"vendor", vid, "err", err,
 			)
 		} else if len(dispatches) > 0 {
-			if err := b.store.UpsertDispatches(ctx, vid, dispatches); err != nil {
+			// source="vendor_self" · vendor 自家 fleet 端点是权威源
+			if err := b.store.UpsertDispatches(ctx, vid, "vendor_self", dispatches); err != nil {
 				b.logger.Warn("upsert dispatches 失败", "vendor", vid, "err", err)
 			}
 		}

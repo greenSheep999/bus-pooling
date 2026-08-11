@@ -7,7 +7,9 @@ package main
 //   bus-pooling seed-vendor <vendor_id> --api-key=X  # 一次性 · 从 flag 读（部署脚本用）
 //   bus-pooling seed-vendor <vendor_id> --api-key=X --webhook-secret=Y --label=aux
 //
-// vendor_id：术语铁律 §1.1 的 6 家 vendor slug 之一
+// vendor_id：
+//   - 术语铁律 §1.1 的 6 家 vendor slug 之一 · 或
+//   - 特殊值 "xi8" · 内部聚合数据源（**不是 vendor** · 不出前端 · 见 `CLAUDE.md §0.1`）
 //
 // 部署流程：
 //   1. env 里放 BP_MASTER_KEY（AES 主密钥 · 用 bus-pooling genkey 生成）
@@ -31,7 +33,11 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/vendoraccount"
 )
 
-// 6 家 vendor slug 白名单 · 拒绝 seed 错拼写
+// 6 家 vendor slug 白名单 + 1 个内部数据源 xi8 · 拒绝 seed 错拼写
+//
+// **xi8 特殊**：不是 vendor（术语铁律 §1.1 6 家硬清单）· 是聚合站 · 我们拿它做**内部**
+// 校对 / backfill · 前端 / 用户 / API 永不感知（`CLAUDE.md §0.1`）。放这个白名单只是
+// 复用 vendor_account 加密存储 · 不代表 xi8 是 vendor。
 var knownVendorSlugs = map[string]bool{
 	"kiro91":    true,
 	"kiroceo":   true,
@@ -39,6 +45,7 @@ var knownVendorSlugs = map[string]bool{
 	"kiroappio": true,
 	"kiroappcc": true,
 	"kirodrop":  true,
+	"xi8":       true, // 内部数据源 · 非 vendor
 }
 
 func runSeedVendor(ctx context.Context, cfg config.Config, args []string) error {

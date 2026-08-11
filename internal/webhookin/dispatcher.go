@@ -52,8 +52,11 @@ type RefundReport struct {
 
 // DispatchStore · vendor_dispatch 表写入接口（避免包依赖循环）。
 // 只需要 UpsertDispatches · 从 vendorview.OrderKeyStore 传进来。
+//
+// source 参数 · 一律传 "vendor_self"（webhook 来自 vendor 自己 · 是权威源 ·
+// 跟 backfiller 从 fleet 端点拉的走同一源 · xi8 是内部专用不走这里）。
 type DispatchStore interface {
-	UpsertDispatches(ctx context.Context, vendorID string, ds []providers.VendorDispatch) error
+	UpsertDispatches(ctx context.Context, vendorID, source string, ds []providers.VendorDispatch) error
 }
 
 // Dispatcher 分派器 · 各字段允许 nil（老装配 / 测试兼容）。
@@ -190,7 +193,7 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 		Raw:          e.RawPayload,
 	}
 	if err := d.dispatchStore.UpsertDispatches(ctx, string(e.VendorID),
-		[]providers.VendorDispatch{dispatch}); err != nil {
+		"vendor_self", []providers.VendorDispatch{dispatch}); err != nil {
 		return "error", fmt.Errorf("upsert vendor_dispatch: %w", err)
 	}
 	d.logger.Info("webhookin: 新开号事件 · 已落 vendor_dispatch",

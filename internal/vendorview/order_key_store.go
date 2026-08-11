@@ -130,11 +130,27 @@ func (s *OrderKeyStore) UpsertKeys(ctx context.Context, vendorID string, keys []
 	return tx.Commit()
 }
 
-// UpsertDispatches 幂等写入"最近开号"批次 · 同 (vendor_id, dispatch_key) 存在则覆盖
-// alive/dead 是变动字段 · 每次 backfill 覆盖到最新（vendor 侧探测更新了 alive/dead 数）
-func (s *OrderKeyStore) UpsertDispatches(ctx context.Context, vendorID string, ds []providers.VendorDispatch) error {
+// DispatchSource · 一条 vendor_dispatch 记录的来源
+//
+//   - SourceVendorSelf · vendor 自己的 fleet 端点（前端可见 · 权威）
+//   - SourceXi8 · xi8.cc 聚合站 backfill（**内部专用**·不出前端 · `CLAUDE.md §0.1`）
+//
+// 主键含 source · 两个源可以并存不冲突 · Status 查询默认只读 vendor_self
+const (
+	SourceVendorSelf = "vendor_self"
+	SourceXi8        = "xi8"
+)
+
+// UpsertDispatches 幂等写入"最近开号"批次 · 同 (vendor_id, dispatch_key, source) 存在则覆盖。
+//
+// source 决定这批数据的**信任级**：vendor_self 是权威 · xi8 是后端 fallback / 校对数据。
+// alive/dead 是变动字段 · 每次 backfill 覆盖到最新（vendor 侧探测更新了 alive/dead 数）。
+func (s *OrderKeyStore) UpsertDispatches(ctx context.Context, vendorID, source string, ds []providers.VendorDispatch) error {
 	if s.db == nil || len(ds) == 0 {
 		return nil
+	}
+	if source == "" {
+		source = SourceVendorSelf
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -144,10 +160,10 @@ func (s *OrderKeyStore) UpsertDispatches(ctx context.Context, vendorID string, d
 
 	stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO vendor_dispatch (
-			vendor_id, dispatch_key, region, dispatched_at,
+			vendor_id, dispatch_key, source, region, dispatched_at,
 			count, alive, dead, dead_at, status, fetched_at, raw
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(vendor_id, dispatch_key) DO UPDATE SET
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(vendor_id, dispatch_key, source) DO UPDATE SET
 			region        = excluded.region,
 			dispatched_at = excluded.dispatched_at,
 			count         = excluded.count,
@@ -166,7 +182,7 @@ func (s *OrderKeyStore) UpsertDispatches(ctx context.Context, vendorID string, d
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, d := range ds {
 		_, err := stmt.ExecContext(ctx,
-			vendorID, d.DispatchKey,
+			vendorID, d.DispatchKey, source,
 			nullIfEmpty(d.Region),
 			d.DispatchedAt.UTC().Format(time.RFC3339),
 			d.Count, nullIfZero(d.Alive), nullIfZero(d.Dead),
@@ -195,6 +211,9 @@ type DispatchSummary struct {
 }
 
 // DispatchSummary 汇总。
+//
+// **只读 vendor_self 源** —— xi8 只做后端校对/backfill · 不参与前端展示（`CLAUDE.md §0.1`）。
+// vendor_self 有 gap 时 · 用 pickDispatchSource（低层调用方）显式指定 xi8 才能读到。
 func (s *OrderKeyStore) DispatchSummary(ctx context.Context, vendorID string, recentN int) (*DispatchSummary, error) {
 	if s.db == nil {
 		return nil, nil
@@ -208,8 +227,8 @@ func (s *OrderKeyStore) DispatchSummary(ctx context.Context, vendorID string, re
 	var lastStr sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(SUM(count), 0), COALESCE(MAX(dispatched_at), '')
-		  FROM vendor_dispatch WHERE vendor_id = ?
-	`, vendorID).Scan(&out.TotalBatches, &out.TotalKeysDispatched, &lastStr)
+		  FROM vendor_dispatch WHERE vendor_id = ? AND source = ?
+	`, vendorID, SourceVendorSelf).Scan(&out.TotalBatches, &out.TotalKeysDispatched, &lastStr)
 	if err != nil {
 		return nil, err
 	}
@@ -228,10 +247,10 @@ func (s *OrderKeyStore) DispatchSummary(ctx context.Context, vendorID string, re
 		       COALESCE(alive, 0), COALESCE(dead, 0), COALESCE(dead_at, ''),
 		       COALESCE(status, '')
 		  FROM vendor_dispatch
-		 WHERE vendor_id = ?
+		 WHERE vendor_id = ? AND source = ?
 		 ORDER BY dispatched_at DESC
 		 LIMIT ?
-	`, vendorID, recentN)
+	`, vendorID, SourceVendorSelf, recentN)
 	if err != nil {
 		return nil, err
 	}
@@ -283,6 +302,8 @@ func (s *OrderKeyStore) DispatchSummary(ctx context.Context, vendorID string, re
 //
 // 跟 DispatchSummary 的区别：这个返**逐条**（前端画图 + log 列表都要每条）·
 // DispatchSummary 只返最近 N 条 + 汇总数字。
+//
+// **只读 vendor_self 源** —— xi8 是内部数据源 · 不出前端（`CLAUDE.md §0.1`）。
 func (s *OrderKeyStore) DispatchesSince(
 	ctx context.Context, vendorID string, windowHours, limit int,
 ) ([]providers.VendorDispatch, error) {
@@ -302,10 +323,10 @@ func (s *OrderKeyStore) DispatchesSince(
 		       COALESCE(alive, 0), COALESCE(dead, 0), COALESCE(dead_at, ''),
 		       COALESCE(status, '')
 		  FROM vendor_dispatch
-		 WHERE vendor_id = ? AND dispatched_at >= ?
+		 WHERE vendor_id = ? AND source = ? AND dispatched_at >= ?
 		 ORDER BY dispatched_at DESC
 		 LIMIT ?
-	`, vendorID, cutoff, limit)
+	`, vendorID, SourceVendorSelf, cutoff, limit)
 	if err != nil {
 		return nil, err
 	}
