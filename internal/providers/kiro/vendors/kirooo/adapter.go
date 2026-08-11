@@ -70,7 +70,14 @@ func (a *Adapter) Capability() providers.Capability {
 }
 
 func (a *Adapter) Stock(ctx context.Context, opts providers.StockOptions) (*providers.StockSnapshot, error) {
-	req, err := a.newReq(ctx, http.MethodGet, "/api/my/stock", nil)
+	// 优先打 /api/my/stock/regions（fleet 视角 · 有 regions[].stock 分区 + dispatches）
+	// 失败降级 /api/my/stock（我方账户视角 · 只单值 · 无 region 拆分）
+	//
+	// 为什么优先 fleet 端点（诊断报告 2026-08-11-kirooo-collection.md）：
+	//   - 单值 stock 端点 stock-delta 推算路径下 region 信息全缺 · 落 vendor_dispatch.region=''
+	//   - fleet 端点同一次请求既有 stock 又有 region 拆分 · 探针 60s 频次直接够画分区图
+	//   - 响应体大不了多少 · 无额外成本
+	req, err := a.newReq(ctx, http.MethodGet, "/api/my/stock/regions", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -82,6 +89,12 @@ func (a *Adapter) Stock(ctx context.Context, opts providers.StockOptions) (*prov
 		return nil, a.parseError(resp)
 	}
 
+	// 先试 regions 形状
+	var rr regionsResp
+	if err := json.Unmarshal(resp.Body, &rr); err == nil && len(rr.Regions) > 0 {
+		return toStockSnapshotFromRegions(&rr, resp.Body), nil
+	}
+	// 降级 · 老 stock 形状
 	var sr stockResp
 	if err := json.Unmarshal(resp.Body, &sr); err != nil {
 		return nil, fmt.Errorf("kirooo: 解析 stock: %w", err)

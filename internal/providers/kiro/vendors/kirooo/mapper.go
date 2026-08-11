@@ -77,6 +77,34 @@ func toPurchaseResult(pr *purchaseResp, requested int, replayed bool, raw json.R
 	}
 }
 
+// toStockSnapshotFromRegions · 从 /api/my/stock/regions 响应构造 snapshot。
+//
+// 优点（跟单值 /api/my/stock 比）：
+//   - 有 region 拆分 · stock-delta 推算路径下能按区落 vendor_dispatch
+//   - 同一次请求还带当前 fleet_session 的 dispatches[] · 后端 mapper 层不用另拉
+//   - 库存端点跟 fleet 端点合一 · 60s 探针频次直接够画分区图
+//
+// 单价按 region 单独填 · Available 用总和（跨区总可购数 · 跟 stock 老口径一致）。
+func toStockSnapshotFromRegions(rr *regionsResp, raw json.RawMessage) *providers.StockSnapshot {
+	snap := &providers.StockSnapshot{
+		VendorID:   providers.VendorKiroOOO,
+		ObservedAt: time.Now().UTC(),
+		Raw:        raw,
+	}
+	total := 0
+	for _, r := range rr.Regions {
+		snap.Zones = append(snap.Zones, providers.ZoneStock{
+			Zone:      providers.Zone(r.Region),
+			Region:    r.Region,
+			Available: r.Stock,
+			UnitPrice: credits(r.UnitPrice),
+		})
+		total += r.Stock
+	}
+	snap.Available = total
+	return snap
+}
+
 // toStockSnapshot 翻译 stock 响应。
 //
 // 本 vendor 的 stock 主字段是 `claimable`（档案 §6），优先取；
