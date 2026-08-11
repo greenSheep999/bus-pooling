@@ -536,21 +536,24 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	// vendor 状态探针 · 每 vendor 一个 goroutine · 每 60s 拨号 vendor.Stock
 	// 结果写 vendor_probe · /api/vendors/status 从表读，不实时打上游
 	// 探测 timeout 10s（vendor 侧偶尔慢·比原 3s 更宽松·避免误报 timeout）
+	// **stock-delta 推算 restock** · 拿 OrderKeyStore 落 vendor_dispatch · 无额外 API 调用
+	// 补上 4 家无 fleet 端点的 vendor 的开号事件流（decisions §11.9）
+	// 复用 vendorSvc 那份 orderKeyStoreForView · 一处装配多处用
 	prober := vendorview.NewProber(vendorview.ProberConfig{
-		Registry: vendorRegistry,
-		Store:    probeStore,
-		Interval: probeInterval,
-		Timeout:  10 * time.Second,
+		Registry:      vendorRegistry,
+		Store:         probeStore,
+		OrderKeyStore: orderKeyStoreForView,
+		Interval:      probeInterval,
+		Timeout:       10 * time.Second,
 	})
 	prober.Start(ctx)
 	defer prober.Stop(3 * time.Second)
 
 	// Backfiller · 每 5 分钟拉一次 vendor 侧全量订单 + key 历史
 	// 落 vendor_order + vendor_key · 是 /api/vendors/status + /api/vendors/prices 共同数据源
-	orderKeyStore := vendorview.NewOrderKeyStore(database.DB)
 	backfiller := vendorview.NewBackfiller(vendorview.BackfillerConfig{
 		Registry: vendorRegistry,
-		Store:    orderKeyStore,
+		Store:    orderKeyStoreForView,
 		Interval: 5 * time.Minute,
 		Timeout:  20 * time.Second,
 	})
@@ -596,7 +599,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	}
 	webhookDispatcher := webhookin.New(webhookin.Config{
 		DB:            database.DB,
-		DispatchStore: orderKeyStore, // 复用 backfiller 的 store（同一张 vendor_dispatch 表）
+		DispatchStore: orderKeyStoreForView, // 复用同一份 store（同一张 vendor_dispatch 表）
 		Deathwatch:    deathwatchTrigger,
 	})
 	slog.Info("webhookin 分派器已装配")
