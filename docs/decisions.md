@@ -2041,6 +2041,23 @@ PRIMARY KEY (vendor_id, date)
 
 **教训**：Go `time.Parse` 无 tz 字符串**默认 UTC** · 用 `ParseInLocation` 显式绑 tz 才对。写 vendor adapter 时**必须先实证 vendor 返的是墙钟还是 UTC** · 别信文档。
 
+### 11.14 Status UI 时间轴热力图（6 家共享 x 轴）✅
+
+**背景**：目前每张 vendor 卡有自己的 24h 柱图 · 单看很好 · 但**6 家横向比较难**（要在脑子里对齐时间轴）· 用户诉求"一眼看谁的缺口在哪"。
+
+**决策**（`web/src/components/VendorHeatmap.tsx`）：
+
+- 在 vendor 卡列表**上方**加 `VendorHeatmapSection` · 6 家一行一条
+- **共享 x 时间轴** · 同窗口内 6 家用**同一个桶宽 · 同一个起止**
+- 颜色深浅 encoding count（每家自己归一化 · 因为量级差异大）
+- **空桶用浅灰墩填** · 不留空白（缺口 vs "根本没开号"分不清 · 都是浅色）
+- **单位统一**：≤48h 桶宽=1h · ≤336h=6h · 更长=1d（跟单卡柱图对齐）
+- 时间轴文案：≤48h 用 hours · 更长用 days
+
+**为什么不做一张大图**：6 家的绝对 count 量级不同（kiroceo 800+ vs kirodrop 100）· 一张图共用 y 轴时小家全被压平。**每行独立归一 + 共享 x 轴**是折中：横向对齐节奏 · 纵向让每家自己脉冲清晰。
+
+**已知局限**：hover tooltip 只有 title 属性（浏览器默认）· 未来可换 recharts Tooltip · 但暂够用。
+
 ### 11.13 xi8 client + backfiller + 对账 CLI ✅
 
 **背景**：xi8 是聚合平台 · 拉 vendor 库存 30s 一轮 · prev_stock delta 推算 restock · 数据覆盖 5 家 vendor（**kiroappcc 不在 xi8**）· 用它做**后端对账 + 历史空窗填**。

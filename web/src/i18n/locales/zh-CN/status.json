@@ -87,6 +87,12 @@
     "incidents-days": "{{count}} 天异常",
     "incidents-none": "无异常"
   },
+  "heatmap": {
+    "title": "开号时间轴",
+    "subtitle": "过去 {{hours}} 小时 · 6 家共享 x 轴",
+    "hours-ago": "{{hours}}h",
+    "days-ago": "{{days}}d"
+  },
   "cta": {
     "prices": {
       "title": "想看单价？",

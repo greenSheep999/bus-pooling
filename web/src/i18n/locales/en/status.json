@@ -87,6 +87,12 @@
     "incidents-days": "{{count}} incident days",
     "incidents-none": "No incidents"
   },
+  "heatmap": {
+    "title": "Dispatch timeline",
+    "subtitle": "Last {{hours}}h · 6 upstreams share x-axis",
+    "hours-ago": "{{hours}}h",
+    "days-ago": "{{days}}d"
+  },
   "cta": {
     "prices": {
       "title": "Want prices?",
