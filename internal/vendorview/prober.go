@@ -23,19 +23,26 @@ import (
 //  5. **stock-delta 推算 restock** · 每次探完跟上一轮同 region 比 · 正增量落
 //     vendor_dispatch source='vendor_self' dispatch_key='delta-{region}-{ts}' · 覆盖无 fleet
 //     端点的多家 vendor · 无额外 API 调用（完全复用 Stock 端点响应）
+//  6. **自适应频次**（decisions §11.12）· baseline 60s 省 API · 探到 delta 或 fleet_active
+//     切 hot 10s · 6min 无事件退回 baseline · 稳态省钱热点期快
 //
 // 关闭：Stop() context cancel · 所有 goroutine 优雅退出。
 type Prober struct {
 	registry      *providers.Registry
 	store         *ProbeStore
 	orderKeyStore *OrderKeyStore // 用于 stock-delta 落 vendor_dispatch · 可 nil（测试）
-	interval      time.Duration  // 每 vendor 的探测间隔（默认 60s）
+	interval      time.Duration  // baseline 探测间隔（默认 60s）
+	hotInterval   time.Duration  // hot 模式间隔（默认 10s · 探到 delta / fleet_active 后启用）
+	hotDuration   time.Duration  // hot 持续时长（默认 6min · 无事件后退回 baseline）
 	timeout       time.Duration  // 单次 Stock 调用超时（默认 3s）
 	logger        *slog.Logger
 
 	// 运行时 · Start 后填
 	cancel context.CancelFunc
 	done   chan struct{}
+
+	// hot 状态跟踪（每 vendor 一份）· sync.Map 避免加锁
+	hotUntil sync.Map // vendor_id → time.Time · 到这个时刻前用 hotInterval
 }
 
 // ProberConfig 装配 Prober。
@@ -44,8 +51,12 @@ type ProberConfig struct {
 	Store    *ProbeStore
 	// OrderKeyStore 用于 stock-delta 推算路径落 vendor_dispatch · nil 时 delta 关闭（测试）
 	OrderKeyStore *OrderKeyStore
-	// Interval 探测间隔 · 默认 60s（decisions §10.4 Q2）
+	// Interval baseline 探测间隔 · 默认 60s（decisions §10.4 Q2）
 	Interval time.Duration
+	// HotInterval hot 模式间隔 · 默认 10s（探到 restock 事件后 6min 内提频）
+	HotInterval time.Duration
+	// HotDuration hot 持续时长 · 默认 6min · 无新事件退回 baseline
+	HotDuration time.Duration
 	// Timeout 单次 Stock 调用超时 · 默认 3s
 	Timeout time.Duration
 	Logger  *slog.Logger
@@ -56,6 +67,14 @@ func NewProber(cfg ProberConfig) *Prober {
 	interval := cfg.Interval
 	if interval <= 0 {
 		interval = 60 * time.Second
+	}
+	hotInterval := cfg.HotInterval
+	if hotInterval <= 0 {
+		hotInterval = 10 * time.Second
+	}
+	hotDuration := cfg.HotDuration
+	if hotDuration <= 0 {
+		hotDuration = 6 * time.Minute
 	}
 	timeout := cfg.Timeout
 	if timeout <= 0 {
@@ -70,6 +89,8 @@ func NewProber(cfg ProberConfig) *Prober {
 		store:         cfg.Store,
 		orderKeyStore: cfg.OrderKeyStore,
 		interval:      interval,
+		hotInterval:   hotInterval,
+		hotDuration:   hotDuration,
 		timeout:       timeout,
 		logger:        logger,
 	}
@@ -111,23 +132,44 @@ func (p *Prober) Start(ctx context.Context) {
 				case <-runCtx.Done():
 					return
 				}
-				// 立即探一次（不等 ticker 第一次 tick）
+				// 立即探一次（不等 timer 第一次 fire）
 				p.probeOnce(runCtx, vendor)
-				// 之后按 interval 走
-				ticker := time.NewTicker(p.interval)
-				defer ticker.Stop()
+				// 自适应循环：每次探完根据 hot 状态选下一轮间隔
+				timer := time.NewTimer(p.nextInterval(string(vendor.ID())))
+				defer timer.Stop()
 				for {
 					select {
 					case <-runCtx.Done():
 						return
-					case <-ticker.C:
+					case <-timer.C:
 						p.probeOnce(runCtx, vendor)
+						timer.Reset(p.nextInterval(string(vendor.ID())))
 					}
 				}
 			}(e.Vendor, offset)
 		}
 		wg.Wait()
 	}()
+}
+
+// nextInterval · 决定单 vendor 下一轮探测间隔。
+//
+// 逻辑：hotUntil[vendor] > now → 用 hotInterval · 否则 baseline interval。
+// hot 状态由 deriveStockDelta 里检测到 delta > 0 时 bump（延到 now + hotDuration）。
+func (p *Prober) nextInterval(vendorID string) time.Duration {
+	if v, ok := p.hotUntil.Load(vendorID); ok {
+		if until, ok := v.(time.Time); ok && time.Now().Before(until) {
+			return p.hotInterval
+		}
+	}
+	return p.interval
+}
+
+// bumpHot · 把某 vendor 拉进 hot 状态 · 下一轮就用 hotInterval。
+// 有 delta / fleet_active / pending_on_stock 事件时调用。
+func (p *Prober) bumpHot(vendorID string) {
+	until := time.Now().Add(p.hotDuration)
+	p.hotUntil.Store(vendorID, until)
 }
 
 // Stop 停探针 · 等所有 goroutine 退出（有 timeout 兜底避免卡死 shutdown）。
@@ -319,16 +361,20 @@ func (p *Prober) deriveStockDelta(ctx context.Context, cur ProbeSample) {
 	if len(dispatches) == 0 {
 		return
 	}
-	// source='vendor_self' —— 这是我们自己的探针推算 · 权威源 · 不是 xi8
+	// source='vendor_self' —— 这是我们自己的探针推算 · 权威源 · 不是聚合站
 	if err := p.orderKeyStore.UpsertDispatches(ctx, cur.VendorID, SourceVendorSelf, dispatches); err != nil {
 		p.logger.Warn("vendorview.Prober: stock-delta 落 vendor_dispatch 失败",
 			"vendor", cur.VendorID, "err", err)
 		return
 	}
-	p.logger.Info("vendorview.Prober: stock-delta 推算 restock",
+	// 检测到 restock 事件 · 拉进 hot 模式（10s 频次 · 持续 6min）
+	// 逻辑：一旦有新批次说明 vendor 正在开号 · 短期内很可能再来一波 · 提频抓准
+	p.bumpHot(cur.VendorID)
+	p.logger.Info("vendorview.Prober: stock-delta 推算 restock · 进入 hot 模式",
 		"vendor", cur.VendorID,
 		"batches", len(dispatches),
-		"gap_seconds", int(gap.Seconds()))
+		"gap_seconds", int(gap.Seconds()),
+		"hot_until", time.Now().Add(p.hotDuration).Format(time.RFC3339))
 }
 
 // classifyError 把 vendor.Stock 返回的错误分类成短标签。

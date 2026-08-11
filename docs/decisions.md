@@ -2041,6 +2041,27 @@ PRIMARY KEY (vendor_id, date)
 
 **教训**：Go `time.Parse` 无 tz 字符串**默认 UTC** · 用 `ParseInLocation` 显式绑 tz 才对。写 vendor adapter 时**必须先实证 vendor 返的是墙钟还是 UTC** · 别信文档。
 
+### 11.12 探针自适应频次（hot / baseline 两档）✅
+
+**背景**：60s 探针 · 短命批（几分钟被抢空）漏 50%。提到 30s 漏批减半但 API 成本翻倍 · vendor 侧可能触发 rate limit / 反爬。要"稳态省钱 · 热点期快"。
+
+**决策**（`internal/vendorview/prober.go`）：
+
+- **baseline 60s** · 常态省 API
+- **hot 10s** · 6min 内 stock-delta 推算发现 restock → 拉进 hot 状态
+- **6min 无事件** → 退回 baseline
+- 每 vendor 独立热度（`sync.Map` vendor_id → hotUntil）· 一家开号不影响其他家
+- **触发条件**：目前只有 stock-delta 检测到 delta > 0 · 未来加 pending_on_stock 意向也 bump
+
+**估算 API 打上游成本**（6 家 vendor）：
+- 稳态：60s 一轮 · 6 家/min = **360/hour**
+- vendor 开号 6min 窗内：10s 一轮 · 6 家 · 6min = 216 次 vs baseline 36 次 · **多 180 次**
+- 假设一天每家开 3 次号 · 一天多 3×6×18 = **324 次** · 微不足道
+
+**已知局限**：
+- vendor 每次开号后 6min 内没再补货 · 那 6min 白多打 API（但换来"下一批立即抓到"的能力）
+- 冷启动第一批必漏（没历史数据触发不了 hot）· 只有事件源（vendor webhook）能救 · §11.7 长期方向
+
 ### 11.11 vendor_dispatch 加 source 列 · xi8 内部数据源 ✅
 
 **背景**：xi8.cc 是聚合站 · 我们要它做**内部对账 + 历史空窗填**（`CLAUDE.md §0.1` · 不出前端 · 不注册为 vendor）· 但要跟 vendor_self 数据共表并存。
