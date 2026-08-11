@@ -71,10 +71,11 @@ func (a *Adapter) PublicStatus(ctx context.Context) (*providers.PublicStatusSnap
 		UptimeSeconds: sr.UptimeSeconds,
 		Raw:           resp.Body,
 	}
-	// started_at 格式 "2006-01-02 15:04:05" · 部分场景可能是 UTC 部分本地 · 尽力 parse
+	// started_at 格式 "2006-01-02 15:04:05"（北京墙钟无 tz · 见 history.go 说明）
 	if sr.StartedAt != "" {
-		if t, err := time.Parse("2006-01-02 15:04:05", sr.StartedAt); err == nil {
-			out.StartedAt = &t
+		if t, err := time.ParseInLocation("2006-01-02 15:04:05", sr.StartedAt, chinaTZ); err == nil {
+			u := t.UTC()
+			out.StartedAt = &u
 		}
 	}
 	return out, nil

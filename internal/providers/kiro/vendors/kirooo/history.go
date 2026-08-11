@@ -48,13 +48,20 @@ type keyRow struct {
 
 const kiroooTimeLayout = "2006-01-02 15:04:05"
 
+// chinaTZ · 本 vendor 返 "2026-08-12 10:25:00" 这种**北京墙钟**无 tz 字符串 ·
+// time.Parse 会当 UTC 处理导致存进去比真时刻早 8 小时 · 用 ParseInLocation 显式绑 tz 才对。
+// 实证对账过 · 差 8 小时（存进去的时刻超前真时刻）。
+var chinaTZ = time.FixedZone("CST", 8*3600)
+
 func parseKiroooTime(s string) time.Time {
 	if s == "" {
 		return time.Time{}
 	}
-	if t, err := time.Parse(kiroooTimeLayout, s); err == nil {
+	// 无 tz 字符串 · 按北京时区解释 · 再转 UTC
+	if t, err := time.ParseInLocation(kiroooTimeLayout, s, chinaTZ); err == nil {
 		return t.UTC()
 	}
+	// 带 tz 的 RFC3339 直接解 · 天然正确
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t.UTC()
 	}
