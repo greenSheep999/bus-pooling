@@ -190,13 +190,22 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 	if d.dispatchStore == nil {
 		return "skipped", nil
 	}
-	if e.OrderID == "" {
-		d.logger.Warn("webhookin: new_keys_available 缺 order_id · 跳过",
+	// 幂等主键选择（2026-08-12 生产实测踩坑修）：
+	//   - 部分 vendor（kirooo）webhook 只发 client_order_id 不发独立 order_id ·
+	//     vendor 档明说 purchase_order_id / client_order_id 就是幂等主键 · 值稳定 · 每批唯一
+	//   - 部分 vendor（kiroappio）发 order_id 是"开号批次 id" · 跟 client_order_id 不同
+	// 我方 fallback：优先 OrderID · 空则用 PurchaseOrderID · 都空才 skip
+	dispatchKey := e.OrderID
+	if dispatchKey == "" {
+		dispatchKey = e.PurchaseOrderID
+	}
+	if dispatchKey == "" {
+		d.logger.Warn("webhookin: new_keys_available 缺 order_id 与 purchase_order_id · 跳过",
 			"vendor", e.VendorID, "event_id", e.EventID)
 		return "skipped", nil
 	}
 	dispatch := providers.VendorDispatch{
-		DispatchKey:  e.OrderID,    // vendor 侧稳定 · 幂等主键
+		DispatchKey:  dispatchKey, // vendor 侧稳定 · 幂等主键（order_id 优先 · fallback purchase_order_id）
 		DispatchedAt: e.ReceivedAt, // 精度到我方收到时刻 · vendor finished_at 不同家不一样
 		Count:        e.NewKeys,
 		Alive:        e.NewKeys, // 刚开号 · 假设全 alive
