@@ -74,19 +74,52 @@ CREATE TABLE vendor_price_tier (
 );
 ```
 
-### 1.3 换算规则（代码里定死 · 不进表 · 6 家不需要动态）
+### 1.3 换算规则（走 `vendor_pricing` + `exchange_rate` 表 · 系统配置 · 6 家都走）
+
+**vendor_pricing** · 每家一行 · 换算规则表（可后台配 · 应对波动）：
+
+```sql
+CREATE TABLE vendor_pricing (
+  vendor_id           TEXT PRIMARY KEY,
+  quote_currency      TEXT NOT NULL,     -- credit / CNY / USD
+  credits_per_unit    INTEGER NOT NULL,  -- microunit · 1 单位 vendor 报价 = N microunit 积分
+  vendor_surcharge_bp INTEGER DEFAULT 0, -- 该家 vendor 附加费的率（bp · 100 = 1%）· 覆盖全局
+  updated_at          TEXT NOT NULL
+);
+-- 5 家（credit / CNY）：credits_per_unit = 1_000_000（1 vendor 积分 = 1 我方积分 = 1 RMB）
+-- kirodrop（USD）：credits_per_unit = exchange_rate × 1_000_000（当前 6_800_000）
+```
+
+**exchange_rate** · 汇率是系统配置字段 · 有历史（应对波动）：
+
+```sql
+CREATE TABLE exchange_rate (
+  currency        TEXT NOT NULL,       -- USD 等
+  rate_to_credits INTEGER NOT NULL,    -- microunit · 1 USD = N microunit 积分
+  effective_from  TEXT NOT NULL,       -- 生效时刻
+  effective_to    TEXT,                -- 失效时刻（当前汇率 NULL）
+  source          TEXT NOT NULL,       -- system_config / vendor_ref（对齐上游）/ external_api
+  PRIMARY KEY (currency, effective_from)
+);
+```
+
+**换算路径**（6 家统一 · 入库时一次 · 之后不再算）：
 
 ```
-5 家（kiro91 / kiroceo / kirooo / kiroappio / kiroappcc）:
-  vendor 侧就是积分 · our_unit_credits = vendor_unit_raw · source=vendor_native
-
-kirodrop（USD 双币展示）:
-  优先 · our_unit_credits = vendor_price_cny_raw · source=cny_direct
-  fallback · vendor 只给 USD 时 · our_unit_credits = vendor_price_usd_raw × vendor_exchange_rate · source=computed_from_usd
-  兜底 · 汇率也没 · 用上一次成功的 exchange_rate · source=fallback_last_rate · 打 WARN
+Prober 拿到 vendor stock 响应
+  ↓
+读 vendor_pricing[vendor_id] · 拿 quote_currency + credits_per_unit
+  ↓
+按 quote_currency 分派：
+  credit / CNY · our_unit_credits = vendor_unit_raw × credits_per_unit / 1_000_000
+  USD          · our_unit_credits = vendor_unit_raw × credits_per_unit / 1_000_000（credits_per_unit 已含汇率）
+  ↓
+落 vendor_probe · 打时间戳
 ```
 
-**为什么不建 vendor_pricing 表**：就 6 家 · 一个 switch case 就完事 · 建表反而多一份漂移风险。
+**汇率变了怎么办** · 后台改 `exchange_rate` 加一行新 effective_from · 定时任务 / 手动触发**重算 vendor_pricing.credits_per_unit** · 后续 Prober 落库自动用新值。历史 vendor_probe 行**不回填**（那是快照 · 保留当时汇率下的值）。
+
+**对齐上游** · Prober 探到 vendor 返的 `exchange_rate` 值 · **跟我方系统配置比对** · 差 > 5% 打 WARN 到日志 · 提醒运维评估调整。
 
 ### 1.4 出口
 
@@ -283,13 +316,15 @@ func (s *Service) PricedFor(ctx, vendorID, region, count, viewer) (*PricedView, 
 
 ---
 
-## 6 · 明确不做
+## 6 · 明确不做 · 明确要做（用户 2026-08-12 纠正）
 
-- ❌ **`vendor_pricing` 表** —— 6 家硬编换算 · 表反而多漂移
-- ❌ **hot path 换算** —— `convertToMicroCredits` / `vendorMaxTotal` 全删
-- ❌ **反推 / 等比映射** —— 都靠数据入库标准化
-- ❌ **USD 家 / CNY 家分类** —— 只 kirodrop 特殊 · switch case
-- ❌ **多引一份汇率数据源** —— 用 vendor 给的 · 没给就上一次已知 · 打 WARN
+### 明确不做
+- ❌ **hot path 换算 / 反推 / 等比映射** —— `convertToMicroCredits` / `vendorMaxTotal` 全删 · 一律读入库后的结果积分列 `our_unit_credits`
+
+### 明确要做（我之前误判 · 用户纠正）
+- ✅ **`vendor_pricing` 表保留** —— 根据业务需要评估 · 存换算规则和历史（未来波动 / 下游议价基准都要用）· 每家一行 · 不是只 kirodrop
+- ✅ **6 家都走换算** —— 不是"只 kirodrop 特殊 switch case" · 5 家哪怕 1:1 也走 `vendor_pricing.credits_per_unit=1_000_000` · **入库时我方程序自动补齐 our_unit_credits** · 统一路径
+- ✅ **汇率是系统配置字段** —— 不是"用 vendor 给的" · 我方独立存 · vendor 给的值作参考对齐 · 我方下游议价 / 换算也用这份配置 · 字段设计要考虑**未来波动**（历史汇率快照 · 生效时段）
 
 ---
 

@@ -183,6 +183,18 @@ _ALLOWLIST = [
     # migration 010 的 header 注释：channel 属性对照表·是数据契约文档·允许
     (r"/migrations/010_topup_multichannel\.sql$",
      r"^--.*(waffo|epusdt|bybit|binance)"),
+    # migration 028 · pricing 标准化 · seed vendor_pricing 6 家 · vendor id 是
+    # 数据契约字面量（跟 providers.VendorXxx 常量绑定）· 允许
+    (r"/migrations/028_pricing_normalize\.sql$",
+     r"'(kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)'"),
+    (r"/migrations/028_pricing_normalize\.sql$",
+     r"^--.*(kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)"),
+    # migration 注释 · 表说明里提到 vendor 真名（是数据契约文档 · 允许）
+    (r"/migrations/028_pricing_normalize\.sql$",
+     r"kirodrop"),
+    # migrate_test.go 白名单表列表里的行注释 · 提到 kirodrop 分档说明
+    (r"/db/migrate_test\.go$",
+     r"^\s*\"[a-z_]+\",\s*//.*(kirodrop|kiro91|kiroceo|kirooo|kiroappio|kiroappcc)"),
     # ── config·底层校验 err message 里的 yaml path ─
     # 例：errors.New("vendors.kiro91.enabled=true 但 base_url 为空")
     # 这是**面向运维的 yaml 路径**·不是面向乘客的·允许
