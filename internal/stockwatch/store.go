@@ -52,6 +52,10 @@ type Watcher struct {
 	// tight 抢。场景：上游连续几天缺货 · 自动判断可能算成 cool（supply 长期 0 · demand
 	// 也不高）· 但运营者知道"还要用 · 有货就抢" · 手工按住。
 	turbo *FileFlag
+
+	// 后台 sweeper 运行时 · StartSweeper 后填
+	sweepCancel context.CancelFunc
+	sweepDone   chan struct{}
 }
 
 // Firer · fire 时打这个 · 拿挂单上下文触发一次真拉号
@@ -424,8 +428,60 @@ type SweepResult struct {
 	Errors  int
 }
 
-// Sweep · TTL 扫过期未 fire 的行 · 标 expired · janitor 每分钟调
-// 后续 pull_intent 层的 janitor 会看到 stock_watcher.status=expired · 退款关单
+// StartSweeper · 起后台 goroutine 定期跑 Sweep（TTL 扫过期挂单）。
+//
+// **为什么必须有**：不扫的话过期挂单永远停在 watching ·
+//  1. 队列越堆越长 · 每次 restock 事件都去 fire 一堆早该失效的
+//  2. **ModeMgr 把 watching 计入 demand** → 过期单堆着会让 demand 虚高 →
+//     mode 永远判 tight → 探针一直 fire · 白打上游 API
+//
+// interval <= 0 用默认 60s（TTL 是分钟级 · 秒级扫没意义）。
+func (w *Watcher) StartSweeper(ctx context.Context, interval time.Duration) {
+	if w == nil || w.db == nil {
+		return
+	}
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	w.sweepCancel = cancel
+	w.sweepDone = make(chan struct{})
+
+	go func() {
+		defer close(w.sweepDone)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-ticker.C:
+				w.Sweep(runCtx)
+			}
+		}
+	}()
+}
+
+// StopSweeper · 停后台 sweeper · timeout 兜底
+func (w *Watcher) StopSweeper(timeout time.Duration) {
+	if w == nil || w.sweepCancel == nil {
+		return
+	}
+	w.sweepCancel()
+	select {
+	case <-w.sweepDone:
+	case <-time.After(timeout):
+		w.logger.Warn("stockwatch: StopSweeper 超时 · 强行返回")
+	}
+}
+
+// Sweep · TTL 扫过期未 fire 的行 · 标 expired。
+//
+// 标 expired 之后：
+//   - 不再进 Notify 的 fire 队列（WHERE status='watching' 过滤掉）
+//   - 不再计入 ModeMgr 的 demand
+//   - 若挂单时预冻结过（当前不冻 · reserved_amount 恒 0）· 由
+//     ListExpiredNeedingRelease + MarkReleased 走释放
 func (w *Watcher) Sweep(ctx context.Context) SweepResult {
 	if w == nil || w.db == nil {
 		return SweepResult{}

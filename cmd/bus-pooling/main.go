@@ -555,6 +555,9 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		Turbo:  turboFlag,
 		// Firer 稍后 SetFirer 补 —— 构造环
 	})
+	// TTL sweeper · 不扫的话过期挂单会让 demand 虚高 · mode 永远判 tight
+	stockWatcher.StartSweeper(ctx, time.Minute)
+	defer stockWatcher.StopSweeper(2 * time.Second)
 	slog.Info("抢号链已装配",
 		"turbo_flag", turboFlag.Path(),
 		"kill_flag", killFlag.Path(),

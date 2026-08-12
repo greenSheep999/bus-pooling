@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/db"
 )
@@ -75,6 +76,81 @@ func TestModeMgr_Sample_CountsWatchingAsDemand(t *testing.T) {
 	if got := m.Current(); got != ModeTight {
 		t.Fatalf("3 条 watching 应算需求 → tight · 得 %s", got)
 	}
+}
+
+// **回归哨兵**：过期挂单被扫掉后 · 不该再计入 demand。
+//
+// 不扫的后果：过期单一直算需求 → demand 虚高 → mode 永远 tight → 探针一直 fire ·
+// 白打上游 API。StartSweeper 就是防这个。
+func TestModeMgr_Sample_ExpiredNotCountedAsDemand(t *testing.T) {
+	database := openTestDB(t)
+	seedPassenger(t, database)
+	ctx := context.Background()
+
+	w := New(Config{DB: database.DB, Firer: &mockFirer{}, Logger: slog.Default()})
+	m := NewModeMgr(database.DB)
+
+	// 挂 3 条 · TTL 极短
+	for i, oid := range []string{"e1", "e2", "e3"} {
+		_ = i
+		if _, err := w.Enqueue(ctx, EnqueueParams{
+			PassengerID: "p1", TargetGroup: "record-p1",
+			VendorID: "kiroceo", ClientOrderID: oid, Count: 1,
+			TTL: time.Millisecond,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 还没扫 · 3 条 watching 算需求 → tight
+	m.sample(ctx)
+	if got := m.Current(); got != ModeTight {
+		t.Fatalf("未扫时 3 条 watching 应算 tight · 得 %s", got)
+	}
+
+	// 扫掉过期的
+	time.Sleep(10 * time.Millisecond)
+	if res := w.Sweep(ctx); res.Expired != 3 {
+		t.Fatalf("应扫掉 3 条 · 得 %d", res.Expired)
+	}
+
+	// 扫完不再算需求 → 回 cool
+	m.sample(ctx)
+	if got := m.Current(); got != ModeCool {
+		t.Fatalf("扫掉过期单后应回 cool（否则 mode 永远 tight 白打 API）· 得 %s", got)
+	}
+}
+
+// StartSweeper 后台真的会扫
+func TestStartSweeper_RunsInBackground(t *testing.T) {
+	database := openTestDB(t)
+	seedPassenger(t, database)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	w := New(Config{DB: database.DB, Firer: &mockFirer{}, Logger: slog.Default()})
+	if _, err := w.Enqueue(ctx, EnqueueParams{
+		PassengerID: "p1", TargetGroup: "record-p1",
+		VendorID: "kiroceo", ClientOrderID: "sweep-bg", Count: 1,
+		TTL: time.Millisecond,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 20ms 一轮 · 起来后很快就该扫到
+	w.StartSweeper(ctx, 20*time.Millisecond)
+	defer w.StopSweeper(time.Second)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var status string
+		_ = database.QueryRowContext(ctx,
+			`SELECT status FROM stock_watcher WHERE client_order_id = 'sweep-bg'`).Scan(&status)
+		if status == "expired" {
+			return // 后台扫到了
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("后台 sweeper 2 秒内没扫到过期挂单")
 }
 
 // 有充足库存样本时 · 同样的需求量应落到更松的档
