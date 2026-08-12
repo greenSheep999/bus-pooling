@@ -584,6 +584,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		ProbeStore:    probeStore,
 		ProbeInterval: probeInterval,
 		OrderKeyStore: orderKeyStoreForView,
+		// 展示价换算 · USD 家不换会把展示价算成实际的 1/6.8（docs/18 §1.3）
+		Pricing: pricing.NewVendorViewLookup(pricing.NewStore(database.DB)),
 	})
 	if err != nil {
 		return err

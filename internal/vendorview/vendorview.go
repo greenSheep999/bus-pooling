@@ -40,6 +40,10 @@ type Service struct {
 	// nil 时 backfill 数据字段返空 · 前端展示"数据采集中"
 	orderKeyStore *OrderKeyStore
 
+	// pricing · vendor_pricing 换算规则（docs/18 §1.3）·
+	// 展示价换算的兜底路径用（库里 our_unit_credits 还没落时）· nil 走 1:1
+	pricing PricingLookup
+
 	// now / newCtx 可注入 · 测试时控时钟和取消
 	now func() time.Time
 }
@@ -54,6 +58,8 @@ type Config struct {
 	ProbeInterval time.Duration
 	// OrderKeyStore 供 status/prices 读 backfill 数据 · 传 nil = 不启用
 	OrderKeyStore *OrderKeyStore
+	// Pricing · vendor_pricing 换算规则 · 传 nil = 展示价兜底按 1:1 算
+	Pricing PricingLookup
 }
 
 // New 建 Service。rates 为零值时零费率（真实环境从后台配置注入）。
@@ -76,6 +82,7 @@ func New(cfg Config) (*Service, error) {
 		probeStore:    cfg.ProbeStore,
 		probeInterval: probeInterval,
 		orderKeyStore: cfg.OrderKeyStore,
+		pricing:       cfg.Pricing,
 		now:           func() time.Time { return time.Now().UTC() },
 	}, nil
 }
@@ -328,7 +335,8 @@ func (s *Service) VendorStock(ctx context.Context, vendorID string, v Viewer) (*
 			Label:     zoneLabel(z.Zone),
 			Enabled:   true,
 			Available: z.Available,
-			UnitPrice: s.finalUnitPrice(z.UnitPrice.Amount, v),
+			// 先按 vendor_pricing 换成积分 · 再进计费栈（USD 家不换会少算 6.8 倍）
+			UnitPrice: s.finalUnitPrice(s.baseCredits(ctx, e.VendorID, z.UnitPrice), v),
 		})
 	}
 	return view, nil
@@ -347,7 +355,11 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 		// pickedZone 当前 vendor 里得分最高的那个 zone；无区 vendor 则用 general
 		pickedZone providers.ZoneStock
 		hasZone    bool
-		score      float64
+		// credits · pickedZone 单价换成我方积分后的值。
+		// **跨 vendor 比价必须用它** —— UnitPrice.Amount 的语义随 Currency 变 ·
+		// 拿 raw 直接比会让 USD 家的 "7.35" 跟 credit 家的 "30" 比 · USD 家永远赢
+		credits int64
+		score   float64
 	}
 
 	// 并发拿每家 stock（同样 3s 超时兜底）
@@ -380,6 +392,7 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 			cands = append(cands, cand{
 				entry: e, snap: snap,
 				pickedZone: z, hasZone: len(snap.Zones) > 1 || z.Zone != "",
+				credits:    s.baseCredits(ctx, e.VendorID, z.UnitPrice),
 			})
 		}
 	}
@@ -399,10 +412,10 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 		return &AutoPickView{Reason: "全网暂时缺货"}
 	}
 
-	// 打分：以候选中最高单价做分母做相对价
+	// 打分：以候选中最高单价做分母做相对价（**用换算后的积分** · 见 cand.credits）
 	maxPrice := int64(0)
 	for _, c := range cands {
-		if p := c.pickedZone.UnitPrice.Amount; p > maxPrice {
+		if p := c.credits; p > maxPrice {
 			maxPrice = p
 		}
 	}
@@ -410,7 +423,7 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 		maxPrice = 1
 	}
 	for i := range cands {
-		p := cands[i].pickedZone.UnitPrice.Amount
+		p := cands[i].credits
 		// 成活率 1a 无数据 → 50 常数，等价于纯价格排序
 		aliveRate := 50.0
 		cands[i].score = aliveRate/100*0.6 + (1-float64(p)/float64(maxPrice))*0.4
@@ -428,7 +441,7 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 	cheapest := cands[0]
 	mostStock := cands[0]
 	for _, c := range cands {
-		if c.pickedZone.UnitPrice.Amount < cheapest.pickedZone.UnitPrice.Amount {
+		if c.credits < cheapest.credits {
 			cheapest = c
 		}
 		if c.pickedZone.Available > mostStock.pickedZone.Available {
@@ -450,12 +463,13 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 	}
 
 	return &AutoPickView{
-		VendorLabel:     label,
-		VendorID:        string(best.entry.VendorID),
-		AnonID:          anon,
-		Zone:            zonePtr,
-		Available:       best.pickedZone.Available,
-		UnitPrice:       s.finalUnitPrice(best.pickedZone.UnitPrice.Amount, v),
+		VendorLabel: label,
+		// 走 visibleVendorID · 非 wholesale 档返 anon_id（原来这里直接返真 id · 漏名）
+		VendorID:  visibleVendorID(best.entry.VendorID, v),
+		AnonID:    anon,
+		Zone:      zonePtr,
+		Available: best.pickedZone.Available,
+		UnitPrice: s.finalUnitPrice(best.credits, v),
 		WarrantyMinutes: best.snap.WarrantyMinutes,
 		MaxPerOrder:     best.snap.MaxPerOrder,
 		MinPerOrder:     best.snap.MinPerOrder,
@@ -572,6 +586,34 @@ func (s *Service) lookupAny(id string) (providers.VendorEntry, bool) {
 		}
 	}
 	return providers.VendorEntry{}, false
+}
+
+// baseCredits · 把 vendor 快照单价换成我方积分 microunit（计费栈的 base）。
+//
+// **必须先换算再进计费栈** —— `Money.Amount` 的语义由 `Money.Currency` 决定：
+// USD 家的 7_350_000 是 7.35 USD 不是 7.35 积分 · 直接当积分喂给 finalUnitPrice
+// 会把展示价算成实际的 1/6.8（用户看到的比真实扣费低几倍）。
+//
+// 换算式跟 Prober 落库 our_unit_credits 时**同一条**（docs/18 §1.3）：
+//
+//	credits = Amount × credits_per_unit / 1_000_000
+//
+// credit / CNY 家 credits_per_unit = 1_000_000 · 退化成恒等（pass-through）。
+//
+// **为什么这里现算而不是读库**：库里 `our_unit_credits` 只有**首个 zone** 的采样值
+// （vendor_probe 无 region 列）· 而这里要逐 zone 出价。用同一条换算规则保证跟库里
+// 那个值口径一致 · 又能覆盖到其他 zone。
+func (s *Service) baseCredits(ctx context.Context, vendorID providers.VendorID, m providers.Money) int64 {
+	if m.Amount == 0 {
+		return 0
+	}
+	perUnit := int64(1_000_000)
+	if s.pricing != nil {
+		if _, cpu := s.pricing.QuoteFor(ctx, string(vendorID)); cpu > 0 {
+			perUnit = cpu
+		}
+	}
+	return m.Amount * perUnit / 1_000_000
 }
 
 // finalUnitPrice 应用当前 rates 和身份差异。
