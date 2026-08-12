@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -28,7 +29,6 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/config"
 	"github.com/bus-pooling/bus-pooling/internal/db"
 	"github.com/bus-pooling/bus-pooling/internal/deathwatch"
-	"github.com/bus-pooling/bus-pooling/internal/web"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
 	"github.com/bus-pooling/bus-pooling/internal/delivery/handoff"
 	"github.com/bus-pooling/bus-pooling/internal/downstream"
@@ -44,12 +44,14 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/pullrecord"
 	"github.com/bus-pooling/bus-pooling/internal/redeem"
 	"github.com/bus-pooling/bus-pooling/internal/secrets"
+	"github.com/bus-pooling/bus-pooling/internal/stockwatch"
 	"github.com/bus-pooling/bus-pooling/internal/strategy"
 	"github.com/bus-pooling/bus-pooling/internal/topup"
 	"github.com/bus-pooling/bus-pooling/internal/topupchannel"
 	"github.com/bus-pooling/bus-pooling/internal/vendoraccount"
 	"github.com/bus-pooling/bus-pooling/internal/vendorview"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
+	"github.com/bus-pooling/bus-pooling/internal/web"
 	"github.com/bus-pooling/bus-pooling/internal/webhookin"
 	"github.com/bus-pooling/bus-pooling/internal/xi8"
 )
@@ -187,8 +189,8 @@ func runMigrate(ctx context.Context, cfg config.Config, args []string) error {
 //  2. env `BP_VENDOR_<slug>_API_KEY / _WEBHOOK_SECRET` · **仅本地 dev 兜底**
 //
 // 表里存在 (vendor_id, status=active) 就用表 · 否则回落 env。这样：
-//  - 生产：init 时跑 `seed-vendor` 一次 · env 里只留 `BP_MASTER_KEY`
-//  - dev：`.dev.env` 里塞明文继续能用 · 不必先 seed
+//   - 生产：init 时跑 `seed-vendor` 一次 · env 里只留 `BP_MASTER_KEY`
+//   - dev：`.dev.env` 里塞明文继续能用 · 不必先 seed
 //
 // 密钥从 db/env 走到这里就是明文了 —— 落库前 secrets 加密 · 运行期内存是明文
 // （要拿它发 HTTP 头）。**别把 registry / cfg.Secrets 打进日志**。
@@ -322,7 +324,10 @@ func ratesFromEnv() decider.Rates {
 // housepool.HousePool 两个接口）；mock 模式下 pool 是 nil（deathwatch / handoff
 // 都会防 nil），api handler 用的 housepool.HousePool 也是 nil，vendorview
 // 只用 registry 不用 pool。
-func buildDecider(cfg config.Config, sqldb *db.DB, reg *providers.Registry) (*decider.Orchestrator, housepool.HousePool, decider.Rates, error) {
+func buildDecider(
+	cfg config.Config, sqldb *db.DB, reg *providers.Registry,
+	enqueuer decider.StockEnqueuer,
+) (*decider.Orchestrator, housepool.HousePool, decider.Rates, error) {
 	live := !cfg.DryRun && os.Getenv("BP_ALLOW_LIVE_PULL") == "1"
 
 	var vendor decider.VendorClient
@@ -450,6 +455,8 @@ func buildDecider(cfg config.Config, sqldb *db.DB, reg *providers.Registry) (*de
 			MinCount:                  cfg.Pull.MinCount,
 			MaxCount:                  cfg.Pull.MaxCount,
 		},
+		// 抢号链 · auto 模式缺货时挂单等补货（decisions §11.15）
+		Enqueuer: enqueuer,
 	}), pubPool, rates, nil
 }
 
@@ -517,10 +524,48 @@ func runServe(ctx context.Context, cfg config.Config) error {
 
 	// secureCookie：生产走 HTTPS 要 true；本地 http 调试必须 false，否则浏览器不存 cookie
 	secureCookie := os.Getenv("BP_INSECURE_COOKIE") == ""
-	orch, poolClient, rates, err := buildDecider(cfg, database, vendorRegistry)
+
+	// ── 抢号链装配（decisions §11.15）─────────────────────────
+	//
+	// 构造顺序解环：Watcher{Firer:nil} → decider{Enqueuer:watcher} → SetFirer(decider)
+	// （Watcher 要 decider 当 Firer · decider 要 Watcher 当 Enqueuer · 互相依赖）
+	//
+	// 两个开关都是**文件哨兵** · 运维 SSH 一条命令即时生效 · 不重启：
+	//   touch <data>/TURBO_ON     → 人工强制抢（无视运营态自动判断）
+	//   touch <data>/KILL_PULLS   → 急停 · 一切 Purchase 停
+	dataDir := filepath.Dir(cfg.DB.Path)
+	turboFlag := stockwatch.NewFileFlag(
+		filepath.Join(dataDir, "TURBO_ON"), "turbo", slog.Default())
+	killFlag := stockwatch.NewFileFlag(
+		filepath.Join(dataDir, "KILL_PULLS"), "kill_pulls", slog.Default())
+	turboFlag.Start(ctx, 5*time.Second)
+	defer turboFlag.Stop(2 * time.Second)
+	killFlag.Start(ctx, 5*time.Second)
+	defer killFlag.Stop(2 * time.Second)
+
+	modeMgr := stockwatch.NewModeMgr(database.DB)
+	modeMgr.Start(ctx)
+	defer modeMgr.Stop(2 * time.Second)
+
+	stockWatcher := stockwatch.New(stockwatch.Config{
+		DB:     database.DB,
+		Logger: slog.Default(),
+		Mode:   modeMgr,
+		Kill:   killFlag,
+		Turbo:  turboFlag,
+		// Firer 稍后 SetFirer 补 —— 构造环
+	})
+	slog.Info("抢号链已装配",
+		"turbo_flag", turboFlag.Path(),
+		"kill_flag", killFlag.Path(),
+		"mode", modeMgr.Current().String())
+
+	orch, poolClient, rates, err := buildDecider(cfg, database, vendorRegistry, stockWatcher)
 	if err != nil {
 		return err
 	}
+	// 补上反向依赖 · 抢号链闭环（此时 Notify 才会真 fire）
+	stockWatcher.SetFirer(orch)
 
 	// vendorview 用同一份 rates（费率不进代码，走 decider.Rates 唯一入口）
 	// 加上 probeStore + probeInterval · 让 StatusOverview 有历史数据可读
@@ -548,8 +593,10 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		Registry:      vendorRegistry,
 		Store:         probeStore,
 		OrderKeyStore: orderKeyStoreForView,
-		Interval:      probeInterval,
-		Timeout:       10 * time.Second,
+		// 抢号链：stock-delta 推出 restock 时唤醒挂单（只在 tight / turbo 时真 fire）
+		Notifier: stockWatcher,
+		Interval: probeInterval,
+		Timeout:  10 * time.Second,
 	})
 	prober.Start(ctx)
 	defer prober.Stop(3 * time.Second)
@@ -624,6 +671,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		DB:            database.DB,
 		DispatchStore: orderKeyStoreForView, // 复用同一份 store（同一张 vendor_dispatch 表）
 		Deathwatch:    deathwatchTrigger,
+		// 抢号链：**最快的信号**（vendor push 200ms-2s · 抢到号主要靠这条）
+		Notifier: stockWatcher,
 	})
 	slog.Info("webhookin 分派器已装配")
 

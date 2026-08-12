@@ -118,6 +118,21 @@ func New(cfg Config) *Watcher {
 	}
 }
 
+// SetFirer · 装配后补设 Firer · 解决构造环。
+//
+// **为什么需要**：Watcher 要 decider 当 Firer（fire 时走拉号）· decider 要 Watcher
+// 当 Enqueuer（缺货时挂单）· 互相依赖没法一次构造完。装配顺序：
+//
+//	Watcher{Firer: nil} → decider{Enqueuer: watcher} → watcher.SetFirer(decider)
+//
+// 只在 main.go 装配时调一次 · 之后不再变（不加锁 —— Start 之前调完）。
+func (w *Watcher) SetFirer(f Firer) {
+	if w == nil {
+		return
+	}
+	w.firer = f
+}
+
 // EnqueueParams · Enqueue 的入参
 type EnqueueParams struct {
 	ID             string        // 挂单 id · 空则自动生成 uuid v7

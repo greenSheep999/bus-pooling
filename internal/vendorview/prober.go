@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/providers"
+	"github.com/bus-pooling/bus-pooling/internal/stockwatch"
 )
 
 // Prober 后台跑的 vendor 探针 · 每家 vendor 一个 ticker。
@@ -30,11 +31,12 @@ import (
 type Prober struct {
 	registry      *providers.Registry
 	store         *ProbeStore
-	orderKeyStore *OrderKeyStore // 用于 stock-delta 落 vendor_dispatch · 可 nil（测试）
-	interval      time.Duration  // baseline 探测间隔（默认 60s）
-	hotInterval   time.Duration  // hot 模式间隔（默认 10s · 探到 delta / fleet_active 后启用）
-	hotDuration   time.Duration  // hot 持续时长（默认 6min · 无事件后退回 baseline）
-	timeout       time.Duration  // 单次 Stock 调用超时（默认 3s）
+	orderKeyStore *OrderKeyStore  // 用于 stock-delta 落 vendor_dispatch · 可 nil（测试）
+	notifier      RestockNotifier // 抢号链通知口 · nil = 不通知（老装配 / 测试）
+	interval      time.Duration   // baseline 探测间隔（默认 60s）
+	hotInterval   time.Duration   // hot 模式间隔（默认 10s · 探到 delta / fleet_active 后启用）
+	hotDuration   time.Duration   // hot 持续时长（默认 6min · 无事件后退回 baseline）
+	timeout       time.Duration   // 单次 Stock 调用超时（默认 3s）
 	logger        *slog.Logger
 
 	// 运行时 · Start 后填
@@ -45,12 +47,21 @@ type Prober struct {
 	hotUntil sync.Map // vendor_id → time.Time · 到这个时刻前用 hotInterval
 }
 
+// RestockNotifier · 抢号链通知口的抽象（实现方 stockwatch.Watcher）。
+//
+// 定在消费侧（vendorview）· 避免 vendorview → stockwatch 硬依赖 · 也便于测试 mock。
+type RestockNotifier interface {
+	Notify(ctx context.Context, p stockwatch.NotifyParams) error
+}
+
 // ProberConfig 装配 Prober。
 type ProberConfig struct {
 	Registry *providers.Registry
 	Store    *ProbeStore
 	// OrderKeyStore 用于 stock-delta 推算路径落 vendor_dispatch · nil 时 delta 关闭（测试）
 	OrderKeyStore *OrderKeyStore
+	// Notifier 抢号链通知口 · stock-delta 推出 restock 时唤醒挂单 · nil = 不通知
+	Notifier RestockNotifier
 	// Interval baseline 探测间隔 · 默认 60s（decisions §10.4 Q2）
 	Interval time.Duration
 	// HotInterval hot 模式间隔 · 默认 10s（探到 restock 事件后 6min 内提频）
@@ -88,6 +99,7 @@ func NewProber(cfg ProberConfig) *Prober {
 		registry:      cfg.Registry,
 		store:         cfg.Store,
 		orderKeyStore: cfg.OrderKeyStore,
+		notifier:      cfg.Notifier,
 		interval:      interval,
 		hotInterval:   hotInterval,
 		hotDuration:   hotDuration,
@@ -188,8 +200,9 @@ func (p *Prober) Stop(timeout time.Duration) {
 // probeOnce 探一次单 vendor · 结果落 store。
 //
 // 一次探测打两个端点：
-//   1. Stock（我方账户视角 · 所有 vendor 都有）
-//   2. PublicStatus（vendor fleet 视角 · 只有实现 PublicStatuser 接口的 vendor 才有）
+//  1. Stock（我方账户视角 · 所有 vendor 都有）
+//  2. PublicStatus（vendor fleet 视角 · 只有实现 PublicStatuser 接口的 vendor 才有）
+//
 // 两个端点串行调用（一次探测 timeout 内共 2×timeout 上限） · 错误独立记录。
 // 错误分类：timeout / auth / http_5xx / http_4xx / other。
 func (p *Prober) probeOnce(ctx context.Context, v providers.Vendor) {
@@ -375,6 +388,27 @@ func (p *Prober) deriveStockDelta(ctx context.Context, cur ProbeSample) {
 		"batches", len(dispatches),
 		"gap_seconds", int(gap.Seconds()),
 		"hot_until", time.Now().Add(p.hotDuration).Format(time.RFC3339))
+
+	// 通知抢号链 · 唤醒等这家补货的挂单（decisions §11.15）。
+	//
+	// source="stock_delta" —— stockwatch 侧只在 ModeTight（或 turbo 强制）时才真 fire ·
+	// 均衡 / 冷态只观测。这条路径最慢（60s baseline 平均延迟 30s）· 真抢靠 webhook ·
+	// 它的价值是"没 webhook 的 vendor 也有兜底" + "缺货期一直盯着"。
+	//
+	// 逐 region 通知 · 让挂了特定 region 的挂单能精确匹配。
+	if p.notifier != nil {
+		for _, d := range dispatches {
+			if err := p.notifier.Notify(ctx, stockwatch.NotifyParams{
+				VendorID: cur.VendorID,
+				Region:   d.Region,
+				Count:    d.Count,
+				Source:   "stock_delta",
+			}); err != nil {
+				p.logger.Warn("vendorview.Prober: 通知抢号链失败",
+					"vendor", cur.VendorID, "region", d.Region, "err", err)
+			}
+		}
+	}
 }
 
 // classifyError 把 vendor.Stock 返回的错误分类成短标签。

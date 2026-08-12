@@ -64,8 +64,8 @@ type PricingLookup interface {
 
 // VendorQuote · 换算规则的最小视图（跟 internal/pricing.VendorQuote 对齐但避免包循环）
 type VendorQuote struct {
-	QuoteCurrency    string // CNY | USD | credit
-	CreditsPerUnit   int64  // microunit · 1 单位 vendor 报价 = X microunit 我方积分
+	QuoteCurrency     string // CNY | USD | credit
+	CreditsPerUnit    int64  // microunit · 1 单位 vendor 报价 = X microunit 我方积分
 	VendorSurchargeBp int64
 }
 

@@ -20,7 +20,7 @@ func TestDecideMode_Thresholds(t *testing.T) {
 		{"零需求", 0, 100, ModeCool},
 		{"零供应零需求", 0, 0, ModeCool},
 		{"零供应有需求", 5, 0, ModeTight}, // supply < 1 补 1 · ratio = 5 > 2
-		{"低压", 1, 10, ModeCool},        // 0.1 ≤ 0.3
+		{"低压", 1, 10, ModeCool},     // 0.1 ≤ 0.3
 		{"cool 边界 ratio=0.3", 3, 10, ModeCool},
 		{"进 balance ratio=0.31", 31, 100, ModeBalance},
 		{"balance 中段", 100, 100, ModeBalance},

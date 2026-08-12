@@ -6,11 +6,11 @@
 // **职责边界**：
 //   - 幂等去重（(vendor_id, event_id) 是主键 · vendor retry 同 id 会 UPSERT 不重投）
 //   - 按 EventType 分派：
-//       new_keys_available → 落 vendor_dispatch（fleet 视图）
-//       all_keys_dead      → 触发 deathwatch.SweepOnce 提前号死处理
-//       warranty_refund    → 直接调 deathwatch.RefundOnce · 走已有的 bus_member 分摊
-//       webhook_test       → 只落 event log · 不动业务
-//       其他               → 记 event log 兜底 · 未来 EventType 扩了不用改这里
+//     new_keys_available → 落 vendor_dispatch（fleet 视图）
+//     all_keys_dead      → 触发 deathwatch.SweepOnce 提前号死处理
+//     warranty_refund    → 直接调 deathwatch.RefundOnce · 走已有的 bus_member 分摊
+//     webhook_test       → 只落 event log · 不动业务
+//     其他               → 记 event log 兜底 · 未来 EventType 扩了不用改这里
 //
 // **不做**：
 //   - 不解析原始 body（那是 vendor adapter 的 Parse() 干的活）
@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/providers"
+	"github.com/bus-pooling/bus-pooling/internal/stockwatch"
 )
 
 // SweepTrigger · deathwatch 的对外接口（避免包依赖循环）。
@@ -59,11 +60,19 @@ type DispatchStore interface {
 	UpsertDispatches(ctx context.Context, vendorID, source string, ds []providers.VendorDispatch) error
 }
 
+// RestockNotifier · 抢号链通知口（实现方 stockwatch.Watcher）· nil = 不通知。
+//
+// 定在消费侧避免 webhookin → stockwatch 硬依赖 · 也便于测试 mock。
+type RestockNotifier interface {
+	Notify(ctx context.Context, p stockwatch.NotifyParams) error
+}
+
 // Dispatcher 分派器 · 各字段允许 nil（老装配 / 测试兼容）。
 type Dispatcher struct {
 	db            *sql.DB
 	dispatchStore DispatchStore
 	deathwatch    SweepTrigger
+	notifier      RestockNotifier
 	logger        *slog.Logger
 }
 
@@ -71,7 +80,9 @@ type Config struct {
 	DB            *sql.DB
 	DispatchStore DispatchStore
 	Deathwatch    SweepTrigger
-	Logger        *slog.Logger
+	// Notifier 抢号链通知口 · new_keys 到时唤醒挂单 · nil = 不通知
+	Notifier RestockNotifier
+	Logger   *slog.Logger
 }
 
 func New(cfg Config) *Dispatcher {
@@ -83,6 +94,7 @@ func New(cfg Config) *Dispatcher {
 		db:            cfg.DB,
 		dispatchStore: cfg.DispatchStore,
 		deathwatch:    cfg.Deathwatch,
+		notifier:      cfg.Notifier,
 		logger:        logger,
 	}
 }
@@ -184,10 +196,10 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 		return "skipped", nil
 	}
 	dispatch := providers.VendorDispatch{
-		DispatchKey:  e.OrderID,             // vendor 侧稳定 · 幂等主键
-		DispatchedAt: e.ReceivedAt,          // 精度到我方收到时刻 · vendor finished_at 不同家不一样
+		DispatchKey:  e.OrderID,    // vendor 侧稳定 · 幂等主键
+		DispatchedAt: e.ReceivedAt, // 精度到我方收到时刻 · vendor finished_at 不同家不一样
 		Count:        e.NewKeys,
-		Alive:        e.NewKeys,             // 刚开号 · 假设全 alive
+		Alive:        e.NewKeys, // 刚开号 · 假设全 alive
 		Region:       string(e.Zone),
 		Status:       "running",
 		Raw:          e.RawPayload,
@@ -198,6 +210,24 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 	}
 	d.logger.Info("webhookin: 新开号事件 · 已落 vendor_dispatch",
 		"vendor", e.VendorID, "order_id", e.OrderID, "count", e.NewKeys)
+
+	// 唤醒抢号链 · **这是最快的信号**（vendor push 到我方 200ms-2s · 探针 60s 才轮到）
+	// 抢号能不能抢到主要靠这条路径（decisions §11.15）。
+	//
+	// 通知失败只 log · 不影响 webhook 返 200 —— vendor 侧看到非 2xx 会重推 ·
+	// 而 dispatch 已经落库了 · 重推会走幂等 upsert 但也会重复 Notify（可接受 ·
+	// 挂单侧有 conditional UPDATE 保证只 fire 一次）。
+	if d.notifier != nil {
+		if err := d.notifier.Notify(ctx, stockwatch.NotifyParams{
+			VendorID: string(e.VendorID),
+			Region:   string(e.Zone),
+			Count:    e.NewKeys,
+			Source:   "webhook",
+		}); err != nil {
+			d.logger.Warn("webhookin: 唤醒抢号链失败",
+				"vendor", e.VendorID, "order_id", e.OrderID, "err", err)
+		}
+	}
 	return "ok", nil
 }
 
