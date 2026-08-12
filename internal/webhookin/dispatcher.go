@@ -218,7 +218,7 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 		return "error", fmt.Errorf("upsert vendor_dispatch: %w", err)
 	}
 	d.logger.Info("webhookin: 新开号事件 · 已落 vendor_dispatch",
-		"vendor", e.VendorID, "order_id", e.OrderID, "count", e.NewKeys)
+		"vendor", e.VendorID, "dispatch_key", dispatchKey, "count", e.NewKeys)
 
 	// 唤醒抢号链 · **这是最快的信号**（vendor push 到我方 200ms-2s · 探针 60s 才轮到）
 	// 抢号能不能抢到主要靠这条路径（decisions §11.15）。
@@ -234,7 +234,7 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 			Source:   "webhook",
 		}); err != nil {
 			d.logger.Warn("webhookin: 唤醒抢号链失败",
-				"vendor", e.VendorID, "order_id", e.OrderID, "err", err)
+				"vendor", e.VendorID, "dispatch_key", dispatchKey, "err", err)
 		}
 	}
 	return "ok", nil

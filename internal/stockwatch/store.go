@@ -253,10 +253,15 @@ func (w *Watcher) Notify(ctx context.Context, p NotifyParams) error {
 		return nil
 	}
 	// 运营态 check · 决定这个 source 要不要 fire
+	//
+	// **用 INFO 不用 Debug**：生产默认 INFO 级 · 这条是"为什么没 fire"的唯一线索。
+	// 打 Debug 的话运维看到"webhook 收到了但没抢"会完全不知道是被 mode 挡了还是代码断了。
+	// 频率可控：只有真有 restock 事件时才走到这里（不是每秒轮询）。
 	if !w.sourceShouldFire(p.Source) {
-		w.logger.Debug("stockwatch: 运营态跳过 · 只观测",
+		w.logger.Info("stockwatch: 运营态跳过 · 只观测不抢",
 			"vendor", p.VendorID, "source", p.Source,
-			"mode", w.currentMode())
+			"mode", w.currentMode(),
+			"hint", "cool=无排队需求 · balance=只 webhook 抢 · tight=都抢")
 		return nil
 	}
 	// 查 watching 队列 · 按 started_at 顺序（先挂先抢 · 公平）
