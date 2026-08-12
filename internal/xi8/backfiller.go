@@ -16,6 +16,23 @@ type DispatchStore interface {
 	UpsertDispatches(ctx context.Context, vendorID, source string, ds []providers.VendorDispatch) error
 }
 
+// ZoneStore · vendor_probe_zone 落库接口（xi8 作为第二价格源写入 · docs/decisions §11.11）
+type ZoneStore interface {
+	InsertZoneBatch(ctx context.Context, samples []ZoneSample) error
+}
+
+// ZoneSample · xi8 侧的一个 zone 快照 · 上层适配到 vendorview.ProbeZoneSample
+type ZoneSample struct {
+	VendorID       string
+	ProbedAt       time.Time
+	Zone           string // us / eu · 归一后
+	Region         string // xi8 原文
+	Available      int
+	VendorCurrency string // xi8 都是 CNY
+	VendorUnitRaw  int64  // microunit · 分 → microunit 时 × 10000
+	OurUnitCredits int64  // xi8 是 CNY 计价 · 1 CNY = 1 积分 · pass-through
+}
+
 // Backfiller · xi8 一次性回填 · 只做后端对账 + 历史空窗填。
 //
 // 跟 vendorview.Backfiller 分工：
@@ -24,9 +41,10 @@ type DispatchStore interface {
 //
 // 前端读路径全部只查 source=vendor_self · xi8 行只做**内部对账 + 历史空窗填**（CLAUDE.md §0.1）。
 type Backfiller struct {
-	client *Client
-	store  DispatchStore
-	logger *slog.Logger
+	client    *Client
+	store     DispatchStore
+	zoneStore ZoneStore // xi8 逐 zone 价格落库 · nil 时不写侧表（老装配 / 未 seed）
+	logger    *slog.Logger
 
 	// 后台 tick 用（Start 后填）
 	cancel context.CancelFunc
@@ -40,6 +58,10 @@ func NewBackfiller(client *Client, store DispatchStore, logger *slog.Logger) *Ba
 	}
 	return &Backfiller{client: client, store: store, logger: logger}
 }
+
+// SetZoneStore · 装配 xi8 → vendor_probe_zone 侧表 · main.go 起动时调
+// （避免改 NewBackfiller 签名 · 老调用点无痛升级）
+func (b *Backfiller) SetZoneStore(zs ZoneStore) { b.zoneStore = zs }
 
 // Start · 起后台 goroutine · 每 tickInterval 拉一次 signals（增量小·省流量）·
 // 每 fullInterval 拉一次 restock-log 全量（500 条 · 覆盖 2 天）。
@@ -229,8 +251,62 @@ func (b *Backfiller) RunOnce(ctx context.Context, limit int) (int, int, error) {
 			b.logger.Warn("xi8: upsert restock-log 失败", "vendor", slug, "err", err)
 		}
 	}
-	b.logger.Info("xi8: backfill 完成", "signals", sigCount, "restocks", rsCount)
+	// 3. vendors · 5 家实时逐 zone 单价 · 落 vendor_probe_zone 做第二源交叉核对
+	//    （只补漏 · 权威值仍是 vendor_self · 见 PricedFor / decider 的 LatestZoneCredits 顺序）
+	zoneCount := 0
+	if b.zoneStore != nil {
+		if vs, err := b.client.ListVendors(ctx); err == nil {
+			zoneCount = b.pushVendorsToZone(ctx, vs)
+		} else {
+			b.logger.Warn("xi8: 拉 /api/vendors 失败 · 侧表这轮不更新", "err", err)
+		}
+	}
+	b.logger.Info("xi8: backfill 完成",
+		"signals", sigCount, "restocks", rsCount, "vendor_zones", zoneCount)
 	return sigCount, rsCount, nil
+}
+
+// pushVendorsToZone · 把 xi8 逐 zone 单价 → vendor_probe_zone（source='xi8'）
+//
+// xi8 定价一律 CNY 计价（分 → microunit 换算：×10000）· pass-through 到我方积分
+// （1 CNY = 1 积分 · docs/18 §1.4）· 不做 vendor_pricing 换算（那条是给 USD 家的）。
+func (b *Backfiller) pushVendorsToZone(ctx context.Context, resp *VendorsResp) int {
+	if resp == nil || len(resp.Vendors) == 0 {
+		return 0
+	}
+	now := time.Now().UTC()
+	samples := make([]ZoneSample, 0, len(resp.Vendors)*2)
+	for _, v := range resp.Vendors {
+		slug := VendorSlugForXi8ID(v.VendorID)
+		if slug == "" {
+			continue
+		}
+		for _, r := range v.Regions {
+			if r.PriceFen == 0 {
+				continue // 该 zone 无价 · 不落
+			}
+			// 分（10^-2 CNY）→ microunit（10^-6 CNY）· ×10000
+			rawMicro := int64(r.PriceFen) * 10_000
+			samples = append(samples, ZoneSample{
+				VendorID:       slug,
+				ProbedAt:       now,
+				Zone:           xi8RegionToOurs(r.Region),
+				Region:         r.Region,
+				Available:      r.Stock,
+				VendorCurrency: "CNY",
+				VendorUnitRaw:  rawMicro,
+				OurUnitCredits: rawMicro, // CNY 1:1 到积分
+			})
+		}
+	}
+	if len(samples) == 0 {
+		return 0
+	}
+	if err := b.zoneStore.InsertZoneBatch(ctx, samples); err != nil {
+		b.logger.Warn("xi8: 写 vendor_probe_zone 失败", "err", err)
+		return 0
+	}
+	return len(samples)
 }
 
 // parseXi8Time · xi8 iso 字段带 +08:00 · Parse 后 .UTC() 才对。

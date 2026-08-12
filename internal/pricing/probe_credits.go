@@ -38,38 +38,44 @@ func (p *ProbeCredits) LatestCredits(
 		return 0, time.Time{}, false
 	}
 
-	// ① 侧表按 zone 精确匹配（migration 029）
+	// ① 侧表按 zone 精确匹配 · 优先 vendor_self（migration 030）
 	if zone != "" {
-		if c, at, ok := p.lookupZone(ctx, vendorID, zone); ok {
+		if c, at, ok := p.lookupZone(ctx, vendorID, zone, "vendor_self"); ok {
+			return c, at, true
+		}
+		if c, at, ok := p.lookupZone(ctx, vendorID, zone, "xi8"); ok {
 			return c, at, true
 		}
 	}
-	// ② 侧表跨 zone 最近一条
-	if c, at, ok := p.lookupZone(ctx, vendorID, ""); ok {
+	// ② 侧表跨 zone 最近一条（vendor_self 优先 · 再 xi8）
+	if c, at, ok := p.lookupZone(ctx, vendorID, "", "vendor_self"); ok {
 		return c, at, true
 	}
-	// ③ 主表首 zone 采样（029 刚上 · 探针还没跑完一轮 · 或历史行侧表未回填）
+	if c, at, ok := p.lookupZone(ctx, vendorID, "", "xi8"); ok {
+		return c, at, true
+	}
+	// ③ 侧表无 source 过滤（migration 030 前老数据）
+	if c, at, ok := p.lookupZone(ctx, vendorID, "", ""); ok {
+		return c, at, true
+	}
+	// ④ 主表首 zone 采样（029 刚上 · 探针还没跑完一轮 · 或历史行侧表未回填）
 	return p.lookupMain(ctx, vendorID)
 }
 
-// lookupZone · 侧表 · zone 空表示不加 zone 过滤
-func (p *ProbeCredits) lookupZone(ctx context.Context, vendorID, zone string) (int64, time.Time, bool) {
-	var (
-		q    string
-		args []any
-	)
-	if zone == "" {
-		q = `SELECT our_unit_credits, probed_at FROM vendor_probe_zone
-		      WHERE vendor_id = ? AND our_unit_credits IS NOT NULL AND our_unit_credits > 0
-		      ORDER BY probed_at DESC LIMIT 1`
-		args = []any{vendorID}
-	} else {
-		q = `SELECT our_unit_credits, probed_at FROM vendor_probe_zone
-		      WHERE vendor_id = ? AND zone = ?
-		        AND our_unit_credits IS NOT NULL AND our_unit_credits > 0
-		      ORDER BY probed_at DESC LIMIT 1`
-		args = []any{vendorID, zone}
+// lookupZone · 侧表 · zone 空表示不加 zone 过滤 · source 空表示不加 source 过滤
+func (p *ProbeCredits) lookupZone(ctx context.Context, vendorID, zone, source string) (int64, time.Time, bool) {
+	q := `SELECT our_unit_credits, probed_at FROM vendor_probe_zone
+	       WHERE vendor_id = ? AND our_unit_credits IS NOT NULL AND our_unit_credits > 0`
+	args := []any{vendorID}
+	if zone != "" {
+		q += ` AND zone = ?`
+		args = append(args, zone)
 	}
+	if source != "" {
+		q += ` AND source = ?`
+		args = append(args, source)
+	}
+	q += ` ORDER BY probed_at DESC LIMIT 1`
 	var c sql.NullInt64
 	var at string
 	err := p.db.QueryRowContext(ctx, q, args...).Scan(&c, &at)

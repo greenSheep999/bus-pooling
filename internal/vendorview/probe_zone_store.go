@@ -24,6 +24,8 @@ type ProbeZoneSample struct {
 	VendorUnitRaw  int64
 	OurUnitCredits int64
 	OurUnitSource  string
+	// Source · 数据源（migration 030）· 'vendor_self' | 'xi8' · 空按 vendor_self 处理
+	Source string
 }
 
 // ProbeZoneStore
@@ -48,8 +50,8 @@ func (s *ProbeZoneStore) InsertBatch(ctx context.Context, zones []ProbeZoneSampl
 		INSERT OR REPLACE INTO vendor_probe_zone
 		  (vendor_id, probed_at, zone, region,
 		   available, vendor_currency, vendor_unit_raw,
-		   our_unit_credits, our_unit_source)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		   our_unit_credits, our_unit_source, source)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return err
@@ -57,6 +59,10 @@ func (s *ProbeZoneStore) InsertBatch(ctx context.Context, zones []ProbeZoneSampl
 	defer stmt.Close()
 
 	for _, z := range zones {
+		src := z.Source
+		if src == "" {
+			src = "vendor_self"
+		}
 		if _, err := stmt.ExecContext(ctx,
 			z.VendorID,
 			z.ProbedAt.UTC().Format(time.RFC3339Nano),
@@ -67,6 +73,7 @@ func (s *ProbeZoneStore) InsertBatch(ctx context.Context, zones []ProbeZoneSampl
 			nullIfZeroInt64(z.VendorUnitRaw),
 			nullIfZeroInt64(z.OurUnitCredits),
 			nullIfEmpty(z.OurUnitSource),
+			src,
 		); err != nil {
 			return err
 		}
@@ -78,28 +85,45 @@ func (s *ProbeZoneStore) InsertBatch(ctx context.Context, zones []ProbeZoneSampl
 //
 // **zone 参数是归一后的**（"us" / "eu" / ""）· 上游要先过 providers.ZoneOf。
 // zone 空表示"任意" —— 找该 vendor 最近一条有价的（跨 zone · 保 PricedFor 老兼容）。
+// LatestZoneCredits · 优先 vendor_self · fallback 到 xi8（second source · 补 vendor 单端只给一区的空缺）
 func (s *ProbeZoneStore) LatestZoneCredits(
 	ctx context.Context, vendorID string, zone providers.Zone,
 ) (credits int64, probedAt time.Time, found bool) {
 	if s == nil || s.db == nil {
 		return 0, time.Time{}, false
 	}
+	// 先 vendor_self
+	if c, at, ok := s.querySource(ctx, vendorID, zone, "vendor_self"); ok {
+		return c, at, true
+	}
+	// fallback · xi8（部分 vendor EU 定价我方官端拿不到 · xi8 有）
+	if c, at, ok := s.querySource(ctx, vendorID, zone, "xi8"); ok {
+		return c, at, true
+	}
+	// 老数据 · source 未填的行（migration 030 前）· 兜底最后一次
+	return s.querySource(ctx, vendorID, zone, "")
+}
+
+// querySource · source 空表示不加 source 过滤（兜底 · 命中老数据）
+func (s *ProbeZoneStore) querySource(
+	ctx context.Context, vendorID string, zone providers.Zone, source string,
+) (int64, time.Time, bool) {
 	var (
 		q    string
 		args []any
 	)
-	if zone == "" {
-		q = `SELECT our_unit_credits, probed_at FROM vendor_probe_zone
-		      WHERE vendor_id = ? AND our_unit_credits IS NOT NULL AND our_unit_credits > 0
-		      ORDER BY probed_at DESC LIMIT 1`
-		args = []any{vendorID}
-	} else {
-		q = `SELECT our_unit_credits, probed_at FROM vendor_probe_zone
-		      WHERE vendor_id = ? AND zone = ?
-		        AND our_unit_credits IS NOT NULL AND our_unit_credits > 0
-		      ORDER BY probed_at DESC LIMIT 1`
-		args = []any{vendorID, string(zone)}
+	base := `SELECT our_unit_credits, probed_at FROM vendor_probe_zone
+	          WHERE vendor_id = ? AND our_unit_credits IS NOT NULL AND our_unit_credits > 0`
+	args = []any{vendorID}
+	if zone != "" {
+		base += ` AND zone = ?`
+		args = append(args, string(zone))
 	}
+	if source != "" {
+		base += ` AND source = ?`
+		args = append(args, source)
+	}
+	q = base + ` ORDER BY probed_at DESC LIMIT 1`
 
 	var c sql.NullInt64
 	var at string

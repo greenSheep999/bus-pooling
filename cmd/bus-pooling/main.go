@@ -636,6 +636,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		} else {
 			xi8Client := xi8.New(xi8Key, xi8HTTP)
 			xi8Backfiller := xi8.NewBackfiller(xi8Client, orderKeyStoreForView, slog.Default())
+			xi8Backfiller.SetZoneStore(probeZoneStore) // 逐 zone 单价 → 侧表 · docs/decisions §11.11
 			xi8Backfiller.Start(ctx, 30*time.Second, 5*time.Minute)
 			defer xi8Backfiller.Stop(5 * time.Second)
 			slog.Info("xi8 backfiller 已启动 · 30s signals + 5min full")
