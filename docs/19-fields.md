@@ -457,15 +457,15 @@ our_unit_credits = UnitPrice.Amount × vendor_pricing.credits_per_unit / 1_000_0
 | 3 | **`ZoneStock.Region` 死冗余** | `providers/vendor.go` + 侧表 | 删字段 + migration 031 停写 |
 | 4 | **kiroappcc 质保只判时间** · 缺 7000 积分维度 | 我方质保逻辑 | 加用量维度 |
 
-### 19.2 待查（可能已经是 bug）
+### 19.2 待查项的结论（**2026-08-13 查完 · 全是真问题**）
 
-| # | 要查什么 | 为什么 |
-|---|---|---|
-| 5 | `internal/webhookin/` 是否处理 **kiro91 `reserved_keys_delivered`** | 漏了会丢号（钱扣了拿不到 key）|
-| 6 | `internal/webhookin/` 是否处理 **kiroappio `key_revoked_abuse`** | 漏了用户拿废号 |
-| 7 | **kirodrop 双区通知**是否按区取 `purchase_order_ids_by_region` | 用错幂等键 → 拉错区 / 重复扣费 |
-| 8 | **kirodrop `TotalCost`** 字段名 credits 但 CNY 计价 · adapter 处理对吗 | 可能币种搞错 |
-| 9 | **kirodrop `partially_refunded`** 状态是否处理 | 部分退款订单可能状态卡住 |
+| # | 查什么 | 结论 | 严重度 |
+|---|---|---|---|
+| 5 | `reserved_keys_delivered`（kiro91）| ❌ **`providers.EventType` 枚举里都没定义** · 走 dispatcher `default` 分支只 log | **高** —— 包量协议交付的号 · 钱扣了但程序永远拿不到 key（vendor 明说这条通知里的 `order_id` 是取正文唯一入口）。**当前无包量协议 · 签了就会丢号** |
+| 6 | `key_revoked_abuse`（kiroappio）| ⚠️ 枚举**有** `EventKeyRevokedAbuse` · 但 `dispatcher.dispatchByType()` **无 case 分支** · 走 `default` 只 log | **高** —— vendor 收回已售号 · 我方 credential 还是 alive → **用户拿到废号** |
+| 7 | kirodrop 双区通知字段 | ❌ **`webhookPayload` struct 是从 kiro91 抄的** · kirodrop 官方的双区字段**一个都没定义**：`regions[]` / `new_keys_by_region` / `purchase_order_ids_by_region` / `batch_ids_by_region` / `notification_scope` / `dispatch_id` / `created_at` 全缺。反过来它解析的 `pool_id` / `round_id` / `mother_id` / `timestamp` **kirodrop 根本不发** | **高** —— 双区到货只拿到顶级 `purchase_order_id` · 拿不到按区的幂等键 → **可能拉错区** |
+| 8 | kirodrop `TotalCost` 币种 | ❌ **`mapper.go:74` `credits(pr.TotalCredits)`** 把它标成 `Currency=credit` · 但这家**余额是 CNY** · 单价是 USD · 字段名 `total_credits` 骗人 | **高** —— 实扣金额币种标错 · 下游按积分处理 |
+| 9 | kirodrop `partially_refunded` | ❌ `types.go` 里**无 `Status` 字段** · 订单状态完全没解析（vendor 文档明说状态可能是 `completed` / `partially_refunded` / `refunded`）| **中** —— 部分退款订单我方不知情 |
 
 ### 19.3 待接端点（按价值排序）
 
