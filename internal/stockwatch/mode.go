@@ -110,13 +110,35 @@ func (m *ModeMgr) Stop(timeout time.Duration) {
 }
 
 // sample · 采一次 demand/supply · 算 ratio 更新 mode
+//
+// **demand 查 pending_purchase 不查 pull_intent** —— 实际拉号链路走
+// pending_purchase 状态机（decider/state.go）· pull_intent 是 001 建表时的规划
+// 但生产代码从没写过它（coalescer 的 Anon/Team 还是 stub）。查 pull_intent 会恒得 0 ·
+// 让 mode 永远锁在 cool · 抢号链一次都不 fire。
+//
+// 算 demand 的状态口径：
+//   - initial / reserved · 已冻结钱等着买 · 算需求
+//   - purchasing · 请求已发 vendor 未确认 · 算需求（还没拿到号）
+//   - need_recover_vendor / need_manual · 卡住待人工 · 算需求（钱还冻着）
+//   - purchased / imported / completed · 已拿到号 · 不算
+//   - cancelled_reserve · 已释放冻结 · 不算
+//
+// 另外加 stock_watcher 里 watching 的条数 —— 那些是已经在等补货的真实需求 ·
+// 它们不在 pending_purchase 的活跃状态里（缺货时已经退出主流程）。
 func (m *ModeMgr) sample(ctx context.Context) {
-	var demand int
+	var pendingDemand int
 	if err := m.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM pull_intent
-		 WHERE status IN ('pending','in_flight')`).Scan(&demand); err != nil {
+		SELECT COUNT(*) FROM pending_purchase
+		 WHERE status IN ('initial','reserved','purchasing',
+		                  'need_recover_vendor','need_manual')`).Scan(&pendingDemand); err != nil {
 		return // 库查错 · 保持当前 mode
 	}
+	var watchingDemand int
+	if err := m.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM stock_watcher WHERE status = 'watching'`).Scan(&watchingDemand); err != nil {
+		return
+	}
+	demand := pendingDemand + watchingDemand
 
 	// vendor_probe 过去 5min stock 均值 · 累加 6 家
 	cutoff := time.Now().UTC().Add(-m.stockWindow).Format(time.RFC3339)

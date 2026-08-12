@@ -24,6 +24,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Watcher · stockwatch 包对外门面。
@@ -52,15 +54,32 @@ type Watcher struct {
 	turbo *FileFlag
 }
 
-// Firer · fire 时打这个 · 拿 intent_id 触发 decider 走一次拉号
+// Firer · fire 时打这个 · 拿挂单上下文触发一次真拉号
 //
 // 独立接口避免循环依赖（stockwatch → decider → stockwatch 会环）·
-// decider 提供实现（PullByWatcher method）· main.go 装配时注入。
+// decider 提供实现（FireWatcher method）· main.go 装配时注入。
 type Firer interface {
-	// FireByIntent · 用 intent_id 找 pull_intent 记录 · 走一次 decider.Purchase
+	// FireWatcher · 用挂单上下文走一次 vendor Purchase
 	// 返 nil = 抢到（fulfilled）· ErrStillNoStock = 又抢空（继续 watching）·
-	// 其他 err = 硬失败（expired）
-	FireByIntent(ctx context.Context, intentID string) error
+	// 其他 err = 硬失败（expired · 释放冻结）
+	FireWatcher(ctx context.Context, w WatcherRow) error
+}
+
+// WatcherRow · 一条挂单的完整上下文 · fire 时 decider 靠它重建拉号请求。
+//
+// **自包含** —— 不依赖任何前置表行存在。这样 fire 时不用回查 · 也不会因为
+// 前置行被清理导致 fire 失败。
+type WatcherRow struct {
+	ID             string
+	PassengerID    string
+	BusID          string // 空 = 提取（record group）
+	TargetGroup    string // bus-<id> | record-<pid>
+	VendorID       string
+	Region         string
+	ClientOrderID  string // vendor 幂等键 · 重放不重复扣
+	MaxUnitPrice   int64  // 0 = 不限
+	Count          int
+	ReservedAmount int64
 }
 
 // ErrStillNoStock · Firer 返这个说明 vendor 又缺货了 · Watcher 保持 watching 等下次
@@ -101,23 +120,40 @@ func New(cfg Config) *Watcher {
 
 // EnqueueParams · Enqueue 的入参
 type EnqueueParams struct {
-	IntentID     string        // pull_intent(id) · 必填
-	VendorID     string        // auto-pick 选中的 vendor · 必填
-	Region       string        // 特定 region · 空 = 任意
-	Count        int           // 要几个 · 必填
-	MaxUnitPrice int64         // 涨价保护 · microunit · 0 = 不限
-	TTL          time.Duration // 存活时长 · 0 用 defaultTTL
+	ID             string        // 挂单 id · 空则自动生成 uuid v7
+	PassengerID    string        // 谁在等 · 必填
+	BusID          string        // 进哪辆车 · 空 = 提取（record group）
+	TargetGroup    string        // bus-<id> | record-<pid> · 必填
+	VendorID       string        // auto-pick 选中的 vendor · 必填
+	Region         string        // 特定 region · 空 = 任意
+	ClientOrderID  string        // vendor 幂等键 · 必填 · fire 时复用
+	Count          int           // 要几个 · 必填
+	MaxUnitPrice   int64         // 涨价保护 · microunit · 0 = 不限
+	ReservedAmount int64         // 挂单时已冻结的钱 · expired 时释放
+	TTL            time.Duration // 存活时长 · 0 用 defaultTTL
 }
 
-// Enqueue · 挂单 · decider 缺货时 auto 模式调。
-// 幂等：intent_id 冲突时 UPDATE 覆盖（同一 intent 重挂视为 refresh · 常见于 retry）。
-func (w *Watcher) Enqueue(ctx context.Context, p EnqueueParams) error {
+// Enqueue · 挂单 · decider 缺货时 auto 模式调 · 返挂单 id。
+//
+// 幂等：(vendor_id, client_order_id) 有 UNIQUE · 同一 client_order_id 重挂视为
+// refresh（更新 TTL 和参数 · 保留 fire_count 防 spam retry）。
+func (w *Watcher) Enqueue(ctx context.Context, p EnqueueParams) (string, error) {
 	if w == nil || w.db == nil {
-		return errors.New("stockwatch: Watcher 未装配")
+		return "", errors.New("stockwatch: Watcher 未装配")
 	}
-	if p.IntentID == "" || p.VendorID == "" || p.Count < 1 {
-		return fmt.Errorf("stockwatch: 参数非法 intent=%q vendor=%q count=%d",
-			p.IntentID, p.VendorID, p.Count)
+	if p.PassengerID == "" || p.VendorID == "" || p.TargetGroup == "" ||
+		p.ClientOrderID == "" || p.Count < 1 {
+		return "", fmt.Errorf(
+			"stockwatch: 参数非法 passenger=%q vendor=%q group=%q order=%q count=%d",
+			p.PassengerID, p.VendorID, p.TargetGroup, p.ClientOrderID, p.Count)
+	}
+	id := p.ID
+	if id == "" {
+		u, err := uuid.NewV7()
+		if err != nil {
+			return "", fmt.Errorf("stockwatch: 生成 id: %w", err)
+		}
+		id = u.String()
 	}
 	ttl := p.TTL
 	if ttl <= 0 {
@@ -126,40 +162,40 @@ func (w *Watcher) Enqueue(ctx context.Context, p EnqueueParams) error {
 	now := time.Now().UTC()
 	expires := now.Add(ttl)
 
-	// 幂等：同 intent 重挂 · 更新过期时刻和参数 · 但保留 fire_count（防 spam retry）
 	_, err := w.db.ExecContext(ctx, `
 		INSERT INTO stock_watcher
-			(intent_id, vendor_id, region, count, max_unit_price,
+			(id, passenger_id, bus_id, target_group, vendor_id, region,
+			 client_order_id, max_unit_price, count, reserved_amount,
 			 started_at, expires_at, status, fire_count)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 'watching', 0)
-		ON CONFLICT(intent_id) DO UPDATE SET
-			vendor_id      = excluded.vendor_id,
-			region         = excluded.region,
-			count          = excluded.count,
-			max_unit_price = excluded.max_unit_price,
-			expires_at     = excluded.expires_at,
-			status         = 'watching'
-	`, p.IntentID, p.VendorID, nullIfEmpty(p.Region), p.Count,
-		nullIfZeroInt64(p.MaxUnitPrice),
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'watching', 0)
+		ON CONFLICT(vendor_id, client_order_id) DO UPDATE SET
+			region          = excluded.region,
+			count           = excluded.count,
+			max_unit_price  = excluded.max_unit_price,
+			reserved_amount = excluded.reserved_amount,
+			expires_at      = excluded.expires_at,
+			status          = 'watching'
+	`, id, p.PassengerID, nullIfEmpty(p.BusID), p.TargetGroup,
+		p.VendorID, nullIfEmpty(p.Region), p.ClientOrderID,
+		nullIfZeroInt64(p.MaxUnitPrice), p.Count, p.ReservedAmount,
 		now.Format(time.RFC3339), expires.Format(time.RFC3339))
 	if err != nil {
-		return fmt.Errorf("stockwatch: enqueue: %w", err)
+		return "", fmt.Errorf("stockwatch: enqueue: %w", err)
 	}
 	w.logger.Info("stockwatch: 缺货挂单",
-		"intent_id", p.IntentID, "vendor", p.VendorID,
-		"count", p.Count, "ttl", ttl,
-		"max_unit_price", p.MaxUnitPrice)
-	return nil
+		"id", id, "passenger", p.PassengerID, "vendor", p.VendorID,
+		"count", p.Count, "ttl", ttl, "max_unit_price", p.MaxUnitPrice)
+	return id, nil
 }
 
-// Cancel · 撤单 · 用户主动取消 pull_intent 时调 · 幂等
-func (w *Watcher) Cancel(ctx context.Context, intentID string) error {
+// Cancel · 撤单 · 用户主动取消时调 · 幂等
+func (w *Watcher) Cancel(ctx context.Context, id string) error {
 	if w == nil || w.db == nil {
 		return nil
 	}
 	_, err := w.db.ExecContext(ctx, `
 		UPDATE stock_watcher SET status = 'cancelled'
-		 WHERE intent_id = ? AND status = 'watching'`, intentID)
+		 WHERE id = ? AND status = 'watching'`, id)
 	return err
 }
 
@@ -204,12 +240,14 @@ func (w *Watcher) Notify(ctx context.Context, p NotifyParams) error {
 			"mode", w.currentMode())
 		return nil
 	}
-	// 查 watching 队列 · 按队列顺序
+	// 查 watching 队列 · 按 started_at 顺序（先挂先抢 · 公平）
 	rows, err := w.db.QueryContext(ctx, `
-		SELECT intent_id, count, max_unit_price
+		SELECT id, passenger_id, COALESCE(bus_id, ''), target_group,
+		       vendor_id, COALESCE(region, ''), client_order_id,
+		       COALESCE(max_unit_price, 0), count, reserved_amount
 		  FROM stock_watcher
 		 WHERE vendor_id = ? AND status = 'watching'
-		   AND (region IS NULL OR region = ? OR ? = '')
+		   AND (region IS NULL OR ? = '' OR region = ?)
 		   AND expires_at > ?
 		 ORDER BY started_at ASC`,
 		p.VendorID, p.Region, p.Region,
@@ -217,21 +255,23 @@ func (w *Watcher) Notify(ctx context.Context, p NotifyParams) error {
 	if err != nil {
 		return fmt.Errorf("stockwatch: 查 watching: %w", err)
 	}
-	type candidate struct {
-		intentID     string
-		count        int
-		maxUnitPrice sql.NullInt64
-	}
-	var cands []candidate
+	var cands []WatcherRow
 	for rows.Next() {
-		var c candidate
-		if err := rows.Scan(&c.intentID, &c.count, &c.maxUnitPrice); err != nil {
+		var c WatcherRow
+		if err := rows.Scan(
+			&c.ID, &c.PassengerID, &c.BusID, &c.TargetGroup,
+			&c.VendorID, &c.Region, &c.ClientOrderID,
+			&c.MaxUnitPrice, &c.Count, &c.ReservedAmount,
+		); err != nil {
 			rows.Close()
 			return err
 		}
 		cands = append(cands, c)
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
 
 	if len(cands) == 0 {
 		return nil
@@ -251,34 +291,32 @@ func (w *Watcher) Notify(ctx context.Context, p NotifyParams) error {
 			       fired_at = ?,
 			       fired_reason = ?,
 			       fire_count = fire_count + 1
-			 WHERE intent_id = ? AND status = 'watching'`,
-			time.Now().UTC().Format(time.RFC3339), p.Source, c.intentID)
+			 WHERE id = ? AND status = 'watching'`,
+			time.Now().UTC().Format(time.RFC3339), p.Source, c.ID)
 		if err != nil {
-			w.logger.Warn("stockwatch: 抢 fired 状态失败", "intent_id", c.intentID, "err", err)
+			w.logger.Warn("stockwatch: 抢 fired 状态失败", "id", c.ID, "err", err)
 			continue
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
 			continue // 别的 goroutine 已经抢了
 		}
 
-		fireErr := w.firer.FireByIntent(ctx, c.intentID)
+		fireErr := w.firer.FireWatcher(ctx, c)
 		switch {
 		case fireErr == nil:
-			// 抢到号 · 标 fulfilled（decider 里已经推进 pull_intent 状态 · 这里只标 watcher）
-			w.markFulfilled(ctx, c.intentID)
+			// 抢到号 · 标 fulfilled（decider 里已经把号导进 group + 结算）
+			w.markFulfilled(ctx, c.ID)
 			fired++
 		case errors.Is(fireErr, ErrStillNoStock):
-			// 又空了 · 回退 watching 等下次事件 · 计入 fire_count 便于观察
-			w.rewindToWatching(ctx, c.intentID)
-			w.logger.Info("stockwatch: fire 后仍缺货 · 回退等下次",
-				"intent_id", c.intentID)
-			// 停 · vendor 已经又空 · 后面 intent 不用试
+			// 又空了 · 回退 watching 等下次事件 · fire_count 已 +1 便于观察
+			w.rewindToWatching(ctx, c.ID)
+			w.logger.Info("stockwatch: fire 后仍缺货 · 回退等下次", "id", c.ID)
+			// 停 · vendor 已经又空 · 后面的不用试
 			return nil
 		default:
-			// 硬失败（涨价超上限 / vendor 错 / 余额不足等）· 标 expired 让 janitor 退款
-			w.markExpired(ctx, c.intentID, fireErr.Error())
-			w.logger.Warn("stockwatch: fire 失败 · 标 expired",
-				"intent_id", c.intentID, "err", fireErr)
+			// 硬失败（涨价超上限 / vendor 错 / 余额不足等）· 标 expired 让 janitor 释放冻结
+			w.markExpired(ctx, c.ID, fireErr.Error())
+			w.logger.Warn("stockwatch: fire 失败 · 标 expired", "id", c.ID, "err", fireErr)
 		}
 	}
 	w.logger.Info("stockwatch: 本轮 fire 完成",
@@ -286,32 +324,82 @@ func (w *Watcher) Notify(ctx context.Context, p NotifyParams) error {
 	return nil
 }
 
-func (w *Watcher) markFulfilled(ctx context.Context, intentID string) {
+func (w *Watcher) markFulfilled(ctx context.Context, id string) {
 	_, err := w.db.ExecContext(ctx, `
 		UPDATE stock_watcher SET status = 'fulfilled'
-		 WHERE intent_id = ? AND status = 'fired'`, intentID)
+		 WHERE id = ? AND status = 'fired'`, id)
 	if err != nil {
-		w.logger.Warn("stockwatch: 标 fulfilled 失败", "intent_id", intentID, "err", err)
+		w.logger.Warn("stockwatch: 标 fulfilled 失败", "id", id, "err", err)
 	}
 }
 
-func (w *Watcher) rewindToWatching(ctx context.Context, intentID string) {
+func (w *Watcher) rewindToWatching(ctx context.Context, id string) {
 	_, err := w.db.ExecContext(ctx, `
 		UPDATE stock_watcher SET status = 'watching', fired_at = NULL, fired_reason = NULL
-		 WHERE intent_id = ? AND status = 'fired'`, intentID)
+		 WHERE id = ? AND status = 'fired'`, id)
 	if err != nil {
-		w.logger.Warn("stockwatch: 回退 watching 失败", "intent_id", intentID, "err", err)
+		w.logger.Warn("stockwatch: 回退 watching 失败", "id", id, "err", err)
 	}
 }
 
-func (w *Watcher) markExpired(ctx context.Context, intentID, reason string) {
+func (w *Watcher) markExpired(ctx context.Context, id, reason string) {
 	_, err := w.db.ExecContext(ctx, `
 		UPDATE stock_watcher SET status = 'expired', fired_reason = ?
-		 WHERE intent_id = ? AND status IN ('fired','watching')`,
-		"fire_err:"+reason, intentID)
+		 WHERE id = ? AND status IN ('fired','watching')`,
+		"fire_err:"+reason, id)
 	if err != nil {
-		w.logger.Warn("stockwatch: 标 expired 失败", "intent_id", intentID, "err", err)
+		w.logger.Warn("stockwatch: 标 expired 失败", "id", id, "err", err)
 	}
+}
+
+// ListExpiredNeedingRelease · 找已 expired 但冻结还没释放的挂单 · janitor 用。
+//
+// 返回后由调用方（decider janitor）走 wallet 释放冻结 · 释放完调 MarkReleased。
+// 分两步是因为 stockwatch 不该依赖 wallet（层次：wallet 是底层 · 但 stockwatch
+// 是抢号链 · 让 janitor 做编排更清晰）。
+func (w *Watcher) ListExpiredNeedingRelease(ctx context.Context, limit int) ([]WatcherRow, error) {
+	if w == nil || w.db == nil {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := w.db.QueryContext(ctx, `
+		SELECT id, passenger_id, COALESCE(bus_id, ''), target_group,
+		       vendor_id, COALESCE(region, ''), client_order_id,
+		       COALESCE(max_unit_price, 0), count, reserved_amount
+		  FROM stock_watcher
+		 WHERE status = 'expired' AND reserved_amount > 0
+		 ORDER BY expires_at ASC
+		 LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WatcherRow
+	for rows.Next() {
+		var c WatcherRow
+		if err := rows.Scan(
+			&c.ID, &c.PassengerID, &c.BusID, &c.TargetGroup,
+			&c.VendorID, &c.Region, &c.ClientOrderID,
+			&c.MaxUnitPrice, &c.Count, &c.ReservedAmount,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// MarkReleased · 冻结已释放 · 清零 reserved_amount 防重复释放（幂等）
+func (w *Watcher) MarkReleased(ctx context.Context, id string) error {
+	if w == nil || w.db == nil {
+		return nil
+	}
+	_, err := w.db.ExecContext(ctx, `
+		UPDATE stock_watcher SET reserved_amount = 0
+		 WHERE id = ? AND status = 'expired'`, id)
+	return err
 }
 
 // SweepResult · Sweep 一轮的统计

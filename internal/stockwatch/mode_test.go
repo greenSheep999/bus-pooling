@@ -143,7 +143,7 @@ func TestFileFlag_NilSafe(t *testing.T) {
 // Notify · 急停开关开着 · 全 skip · firer 不被调用
 func TestNotify_KillSwitch_Skips(t *testing.T) {
 	database := openTestDB(t)
-	seedIntent(t, database, "int-kill")
+	seedPassenger(t, database)
 
 	dir := t.TempDir()
 	kill := NewFileFlag(filepath.Join(dir, "KILL_PULLS"), "kill", slog.Default())
@@ -153,7 +153,7 @@ func TestNotify_KillSwitch_Skips(t *testing.T) {
 	w := New(Config{DB: database.DB, Firer: firer, Logger: slog.Default(), Kill: kill})
 
 	ctx := context.Background()
-	_ = w.Enqueue(ctx, EnqueueParams{IntentID: "int-kill", VendorID: "kiroceo", Count: 1})
+	id := enqueueOne(t, w, "kiroceo", "order-int-kill")
 	_ = w.Notify(ctx, NotifyParams{VendorID: "kiroceo", Count: 5, Source: "webhook"})
 
 	if len(firer.firedIDs()) != 0 {
@@ -162,7 +162,7 @@ func TestNotify_KillSwitch_Skips(t *testing.T) {
 	// 挂单状态保留 · 没被推进
 	var status string
 	_ = database.QueryRowContext(ctx,
-		`SELECT status FROM stock_watcher WHERE intent_id = ?`, "int-kill").Scan(&status)
+		`SELECT status FROM stock_watcher WHERE id = ?`, id).Scan(&status)
 	if status != "watching" {
 		t.Fatalf("急停时挂单应保持 watching · 得 %q", status)
 	}
@@ -171,7 +171,7 @@ func TestNotify_KillSwitch_Skips(t *testing.T) {
 // Notify · turbo 开着 · 无视 mode=cool · 强制 fire（人工干预场景）
 func TestNotify_Turbo_OverridesCoolMode(t *testing.T) {
 	database := openTestDB(t)
-	seedIntent(t, database, "int-turbo")
+	seedPassenger(t, database)
 
 	dir := t.TempDir()
 	turbo := NewFileFlag(filepath.Join(dir, "TURBO_ON"), "turbo", slog.Default())
@@ -187,7 +187,7 @@ func TestNotify_Turbo_OverridesCoolMode(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	_ = w.Enqueue(ctx, EnqueueParams{IntentID: "int-turbo", VendorID: "kiroceo", Count: 1})
+	enqueueOne(t, w, "kiroceo", "order-int-turbo")
 
 	// stock_delta 源 · mode=cool 平时会 skip · 但 turbo 开着应强制 fire
 	_ = w.Notify(ctx, NotifyParams{VendorID: "kiroceo", Source: "stock_delta"})
@@ -199,7 +199,7 @@ func TestNotify_Turbo_OverridesCoolMode(t *testing.T) {
 // Notify · 急停优先级高于 turbo（两个都开 · 急停胜）
 func TestNotify_KillBeatsTurbo(t *testing.T) {
 	database := openTestDB(t)
-	seedIntent(t, database, "int-both")
+	seedPassenger(t, database)
 
 	dir := t.TempDir()
 	kill := NewFileFlag(filepath.Join(dir, "KILL_PULLS"), "kill", slog.Default())
@@ -214,7 +214,7 @@ func TestNotify_KillBeatsTurbo(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	_ = w.Enqueue(ctx, EnqueueParams{IntentID: "int-both", VendorID: "kiroceo", Count: 1})
+	enqueueOne(t, w, "kiroceo", "order-int-both")
 	_ = w.Notify(ctx, NotifyParams{VendorID: "kiroceo", Source: "stock_delta"})
 
 	if len(firer.firedIDs()) != 0 {
@@ -225,7 +225,7 @@ func TestNotify_KillBeatsTurbo(t *testing.T) {
 // Notify · mode=cool 时 stock_delta / webhook 都 skip
 func TestNotify_ModeCool_Skips(t *testing.T) {
 	database := openTestDB(t)
-	seedIntent(t, database, "int-cool")
+	seedPassenger(t, database)
 
 	firer := &mockFirer{}
 	mode := &ModeMgr{}
@@ -233,7 +233,7 @@ func TestNotify_ModeCool_Skips(t *testing.T) {
 	w := New(Config{DB: database.DB, Firer: firer, Logger: slog.Default(), Mode: mode})
 
 	ctx := context.Background()
-	_ = w.Enqueue(ctx, EnqueueParams{IntentID: "int-cool", VendorID: "kiroceo", Count: 1})
+	enqueueOne(t, w, "kiroceo", "order-int-cool")
 
 	// stock_delta 源 · cool 应 skip
 	_ = w.Notify(ctx, NotifyParams{VendorID: "kiroceo", Source: "stock_delta"})
@@ -250,7 +250,7 @@ func TestNotify_ModeCool_Skips(t *testing.T) {
 // Notify · mode=balance 时 webhook fire · stock_delta skip
 func TestNotify_ModeBalance_OnlyWebhookFires(t *testing.T) {
 	database := openTestDB(t)
-	seedIntent(t, database, "int-bal")
+	seedPassenger(t, database)
 
 	firer := &mockFirer{}
 	mode := &ModeMgr{}
@@ -258,7 +258,7 @@ func TestNotify_ModeBalance_OnlyWebhookFires(t *testing.T) {
 	w := New(Config{DB: database.DB, Firer: firer, Logger: slog.Default(), Mode: mode})
 
 	ctx := context.Background()
-	_ = w.Enqueue(ctx, EnqueueParams{IntentID: "int-bal", VendorID: "kiroceo", Count: 1})
+	enqueueOne(t, w, "kiroceo", "order-int-bal")
 
 	// stock_delta 应 skip
 	_ = w.Notify(ctx, NotifyParams{VendorID: "kiroceo", Source: "stock_delta"})
@@ -275,8 +275,8 @@ func TestNotify_ModeBalance_OnlyWebhookFires(t *testing.T) {
 // Notify · mode=tight 时探针 + webhook 都 fire
 func TestNotify_ModeTight_BothFire(t *testing.T) {
 	database := openTestDB(t)
-	seedIntent(t, database, "int-tight-a")
-	seedIntent(t, database, "int-tight-b")
+	seedPassenger(t, database)
+	seedPassenger(t, database)
 
 	firer := &mockFirer{}
 	mode := &ModeMgr{}
@@ -284,8 +284,8 @@ func TestNotify_ModeTight_BothFire(t *testing.T) {
 	w := New(Config{DB: database.DB, Firer: firer, Logger: slog.Default(), Mode: mode})
 
 	ctx := context.Background()
-	_ = w.Enqueue(ctx, EnqueueParams{IntentID: "int-tight-a", VendorID: "kiroceo", Count: 1})
-	_ = w.Enqueue(ctx, EnqueueParams{IntentID: "int-tight-b", VendorID: "kiroceo", Count: 1})
+	enqueueOne(t, w, "kiroceo", "order-int-tight-a")
+	enqueueOne(t, w, "kiroceo", "order-int-tight-b")
 
 	// stock_delta 应 fire 队列（fire 完 a 就试 b · a 成功 fulfilled · 继续 b）
 	_ = w.Notify(ctx, NotifyParams{VendorID: "kiroceo", Source: "stock_delta"})
