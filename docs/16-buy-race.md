@@ -282,7 +282,18 @@ warranty 只有 10 分钟 · 而且不是所有 vendor 都给退
 - 分配用**轮询公平** · 不按 tier
 - 阶段 1a 先**只给自己（运营账号）开** · 观察实际抢到率和吃单率 · 再放给用户
 
-## 缺口 3 · 车配置 vs 全局配置的优先级
+## 缺口 3 · 车配置 vs 全局配置的优先级 ✅（2026-08-12 定 · 走 C）
+
+**定稿**：
+- 每日限额 `DailyRoundLimit` / `DailySpendLimit` · **只有全局生效** · 车级字段保留（SQLite 不支持 DROP COLUMN · 强删要 rebuild 表）· UI **不给车级设置入口** · 已在 `bus.Strategy` 上标注 DEPRECATED
+- 提取（BusID 空）绕过车级上限 · 这个行为对（见 `canpull.go:127-135`）· 补写进 §8.27
+- **优先级总原则**（写死进 canpull.go 注释）：
+  - **护栏类** · MaxUnitPrice / DailyRound / DailySpend → **AND 取更严** · 任一层拦住就拦
+  - **偏好类** · PerRoundCount / PreferredVendor / Zone → **就近优先** · 车级 > 全局 > 系统默认
+
+---
+
+**下面是讨论时的分析（保留 · 便于回顾）**：
 
 **现状**（`internal/strategy/canpull.go:127-143` · 已实现）：
 

@@ -54,15 +54,23 @@ type Bus struct {
 
 // Strategy 每车一策略（decisions §8.6）· 落 bus 表同名列。
 // 指针字段 nil = 不限 / 未设。
+//
+// **策略字段口径**（docs/16 缺口 3）：
+//   - **护栏类** · `MaxUnitPrice` —— 全局 + 车级 AND 取更严 · 任一层拦住就拦
+//   - **偏好类** · `PerRoundCount` / `PreferredVendor` —— 车级 > 全局 · 就近优先
+//   - **DailyRoundLimit / DailySpendLimit** —— **车级不生效**（strategy.decide 只判全局）·
+//     字段保留是因为 SQLite 不支持 DROP COLUMN · 别在 UI 上暴露车级设置入口 ·
+//     每日限额的意义是"人的预算"不是"车的预算"
 type Strategy struct {
 	AutoRefillEnabled bool
 	RefillWatermark   int
 	RefillMinCount    *int
 	PerRoundCount     *int
 	MaxUnitPrice      *int64
-	DailyRoundLimit   *int
-	DailySpendLimit   *int64
-	PreferredVendor   *string
+	// DailyRoundLimit / DailySpendLimit · **DEPRECATED · 车级不生效** · 见 struct 注释
+	DailyRoundLimit *int
+	DailySpendLimit *int64
+	PreferredVendor *string
 }
 
 // Member 是车里一个成员的行。

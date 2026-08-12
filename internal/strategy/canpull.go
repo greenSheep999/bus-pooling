@@ -126,6 +126,10 @@ func decide(st Strategy, passengerID string, in CheckInput) (*Intent, error) {
 
 	// ② 单价上限 —— 全局跟车级取更严的（AND）。
 	//
+	// **策略字段口径**（docs/16 缺口 3）：
+	//   - 护栏类（拦操作 · MaxUnitPrice / DailyRound / DailySpend）→ AND 取更严
+	//   - 偏好类（默认选择 · PerRoundCount / PreferredVendor / Zone）→ 就近优先
+	//
 	// **提取（BusID 空）只受全局管** —— record group 没有车级限额（decisions §8.27）。
 	// 这里主动忽略车级上限而不是信任调用方：调用方多传一个字段就会让提取被
 	// 一个本不该管它的上限拦住，而那种 bug 从现象上看像"上限算错了"，极难查。

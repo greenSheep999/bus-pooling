@@ -1409,6 +1409,19 @@ CREATE TABLE invite_reward (
 
 **文档修正**：`14-extract-page-plan §5.4` 说这条记到 `decisions §8.21`，但 §8.21 后来被"通道费只在充值展示"占用了 —— 三层策略分工的记录当时**丢了**，本条补回。
 
+**优先级总原则**（`docs/16 缺口 3` 定 · 2026-08-12）：把"全局 vs 车级"的关系收敛成两条 · 覆盖所有策略字段：
+
+- **护栏类**（会拦下操作）· `MaxUnitPrice` / `DailyRoundLimit` / `DailySpendLimit` → **AND · 取更严** · 任一层拦住就拦
+- **偏好类**（只影响默认选择）· `PerRoundCount` / `PreferredVendor` / `DefaultZone` → **就近优先** · 车级 > 全局 > 系统默认
+
+**发现的两个不一致**（读代码时挖出来的 · 本条一并处理）：
+
+**① `bus.daily_round_limit` / `bus.daily_spend_limit` 是死字段**（`internal/bus/bus.go`）：schema 里有 · `bus.Strategy` struct 读了 · 但 `strategy.decide()` **只判全局的** · 车级那两个从来没生效过。
+
+**定稿**：走 **C 方案** —— 字段保留（SQLite 不支持 DROP COLUMN · 强删要 rebuild 表 · 不值当）· **UI 不给车级设置入口** · `bus.Strategy` 加 DEPRECATED 注释。理由：每日限额的意义是"人的预算"不是"车的预算" · 用户维护 N 辆车 × 2 个限额认知爆炸。
+
+**② 提取（BusID 空）绕过车级上限**（`internal/strategy/canpull.go:127-135`）：行为正确 —— record group 没有车级限额 · 但 §8.27 原表格没写明。本条补上。
+
 **参考**：`web/src/pages/Preferences.tsx` · `web/src/pages/Settings.tsx` · `06-db-schema §16` · `14-extract-page-plan §5` · §8.6
 
 ### 8.26 成员欠费 · 挂起而不停车 + 成员管理 tab ✅（前端已做 · 后端阶段 2a）
