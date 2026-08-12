@@ -191,9 +191,9 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 		return "skipped", nil
 	}
 	// 幂等主键选择（2026-08-12 生产实测踩坑修）：
-	//   - 部分 vendor（kirooo）webhook 只发 client_order_id 不发独立 order_id ·
-	//     vendor 档明说 purchase_order_id / client_order_id 就是幂等主键 · 值稳定 · 每批唯一
-	//   - 部分 vendor（kiroappio）发 order_id 是"开号批次 id" · 跟 client_order_id 不同
+	//   - 部分 vendor webhook 只发 client_order_id / purchase_order_id 不发独立 order_id ·
+	//     档明说这就是幂等主键 · 值稳定 · 每批唯一
+	//   - 部分 vendor 发 order_id 是"开号批次 id" · 跟 client_order_id 不同语义
 	// 我方 fallback：优先 OrderID · 空则用 PurchaseOrderID · 都空才 skip
 	dispatchKey := e.OrderID
 	if dispatchKey == "" {
