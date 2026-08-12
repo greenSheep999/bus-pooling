@@ -82,11 +82,32 @@ func New(cfg Config) (*Service, error) {
 
 // Viewer 描述调用者身份，用来做**匿名化** + **是否减免**决策。
 //
-// Invited 有注册邀请码 = 看真名 + 减免（decisions §8.20）。
-// WaiveMarkup 单次减免（阶段 1a 简化：暂不支持 coupon_code，永远 false）。
+// Viewer · 请求者视角（docs/18 §2.1 三档定价）
+//
+// Tier + PassengerID 决定 PricedFor 返啥：
+//   - retail    · 匿名 label · 全套分项
+//   - community · 匿名 label · 免区域层
+//   - wholesale · **真名** · 免 vendor 层 + 免区域层（几乎 pass-through）
+//
+// **老字段 Invited/WaiveMarkup 保留**做兼容 · 现有 Aggregate/AutoPick 那些路径未切
+// PricedFor · 老 view 里的匿名判断仍走 Invited。切完 Step 10 后 Invited 可删。
 type Viewer struct {
-	Invited     bool
-	WaiveMarkup bool
+	Tier        string // retail / community / wholesale · 空视为 retail
+	PassengerID string // 查 user_subsidy 减免用
+	Invited     bool   // **DEPRECATED** · migration 028 落码前的老开关
+	WaiveMarkup bool   // **DEPRECATED**
+}
+
+// 三档常量（对齐 passenger.tier CHECK · docs/18 §2.1）
+const (
+	TierRetail    = "retail"
+	TierCommunity = "community"
+	TierWholesale = "wholesale"
+)
+
+// canSeeVendorName · 只 wholesale 看真名
+func (v Viewer) canSeeVendorName() bool {
+	return v.Tier == TierWholesale
 }
 
 // ── 对外形状 · 独立 struct 不给 registry 的内部 struct 直接出去 ──
