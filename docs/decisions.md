@@ -2098,11 +2098,46 @@ ssh vps22 'touch /opt/bus-pooling/data/KILL_PULLS' # 急停
 - **跟 §2.3 长效号预留池的区别**：§2.3 是"预付 + 议价"商业模型（号老 · 已否决）· 这个是"看到就抢的短时缓冲"（号新 · 5min TTL · 纯抢号动作）· CLAUDE.md §5 已加提示行防未来 AI 混淆
 
 **当前进度**：
-- ✅ migration 027 `stock_watcher` 表
-- ✅ `stockwatch` 包 · Enqueue / Notify / Sweep / ModeMgr / FileFlag · 17 个单测
-- ⏳ decider 缺货挂单 + Firer 实现（下一 commit）
-- ⏳ Prober delta / webhook onNewKeys 接 Notify（下一 commit）
-- ⏳ 加速预存池 · kiro.rs `prebuy-pool` group（单独一轮）
+- ✅ migration 027 `stock_watcher` 表（**自包含** · 见下方修正）
+- ✅ `stockwatch` 包 · Enqueue / Notify / Sweep / ModeMgr / FileFlag / StartSweeper
+- ✅ decider `FireWatcher`（走完整 Pull · 不绕过状态机）+ `maybeEnqueueOnNoStock`
+- ✅ 两个信号源接上：`webhookin.onNewKeys`（最快）+ `prober.deriveStockDelta`（兜底）
+- ✅ main.go 装配闭环（`SetFirer` 解构造环）+ TTL sweeper
+- ⏳ 加速预存池 · housepool `prebuy-pool` group（单独一轮 · 未开始）
+- ⏳ 三个待讨论缺口见 `docs/16-buy-race.md` 尾部（时段上限 / 预留分摊 / 两层优先级）
+
+**落码时修正的两个设计错**（初稿踩的坑 · 记下来防重犯）：
+
+**① `stock_watcher` 不能引 `pull_intent`** —— 初稿把 `intent_id` 设成主键 + 外键指
+`pull_intent(id)`。但**生产代码从没写过 `pull_intent`**：实际拉号走 `pending_purchase`
+状态机（`decider/state.go`）· `pull_intent` 是 001 建表时的规划 · coalescer 的
+Anon/Team 至今是 stub。连带 `ModeMgr.sample` 查 `pull_intent` 算 demand → **恒得 0**
+→ mode 永远锁 `cool` → 抢号链一次都不会 fire（装配看着好 · 功能全死）。
+
+修法：`stock_watcher` 改成**自包含** —— 自己的 `id`（uuid v7）+ 重建拉号所需全部上下文
+（`passenger_id` / `bus_id` / `target_group` / `vendor_id` / `client_order_id` / `count` /
+`max_unit_price`）· fire 时不回查任何前置行。`ModeMgr` 改查 `pending_purchase` 活跃状态
++ `stock_watcher` 里 `watching` 的条数。加回归哨兵测试
+`TestModeMgr_Sample_ReadsPendingPurchase` 锁死这件事。
+
+**② TTL sweeper 不是"清垃圾"· 是 mode 正确性的一部分** —— `watching` 计入 demand ·
+过期挂单不扫会让 demand 虚高 → mode 永远 tight → 探针一直 fire 白打上游 API。
+`StartSweeper` 60s 一轮 · 哨兵测试 `TestModeMgr_Sample_ExpiredNotCountedAsDemand`。
+
+**幂等的三层保障**（落码后确认）：
+1. `stock_watcher.status` conditional UPDATE（`WHERE status='watching'`）· 三源竞争只一个中
+2. `client_order_id` 挂单时定 · fire 时**复用**（`PullInput.ClientOrderID` 覆盖内部生成）
+   —— 防"上次 fire 其实买到了但返超时 · 回退 watching 后再 fire"在 vendor 侧变两单
+3. `pending_purchase UNIQUE(vendor_id, client_order_id)` · DB 层兜底
+
+**死循环哨兵**：`maybeEnqueueOnNoStock` 第三道门是 `in.ClientOrderID == ""` ——
+fire 触发的那轮缺货**不能再挂单**（否则刚 fire 的挂单被复位成 watching · 下次事件
+又 fire · 无限循环）。测试 `TestMaybeEnqueue_FromFire_NoReEnqueue`。
+
+**不预冻结**（落码时的取舍）：挂单时不冻钱 · fire 时走完整 Pull 现冻现扣。理由：缺货时
+拿不到真单价（stock=0 的 zone 没 unit_price）· 冻多少无依据；且冻 10min 可能白占款。
+代价：fire 时余额可能已被花掉 → 那轮标 expired · 用户重挂。`reserved_amount` 列和
+`ListExpiredNeedingRelease` / `MarkReleased` 已就位 · 当前恒 0 · 未来若改成预冻结直接用。
 
 ### 11.14 Status UI 时间轴热力图（6 家共享 x 轴）✅
 
