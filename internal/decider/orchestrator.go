@@ -65,10 +65,12 @@ type PricingLookup interface {
 	QuoteFor(ctx context.Context, vendorID providers.VendorID) VendorQuote
 }
 
-// CreditsLookup · 读 vendor_probe.our_unit_credits（docs/18 §1.4）·
+// CreditsLookup · 读 vendor_probe / vendor_probe_zone 的积分（docs/18 §1.4）·
 // 实现方 pricing.ProbeCredits · 装配层注入 · nil = 退回按快照现算（冷启动 / 测试）
+//
+// zone 参数：内部已归一（"us" / "eu" / ""）· 空 = 跨 zone 找该 vendor 最近一条。
 type CreditsLookup interface {
-	LatestCredits(ctx context.Context, vendorID string) (int64, time.Time, bool)
+	LatestCredits(ctx context.Context, vendorID string, zone string) (int64, time.Time, bool)
 }
 
 // VendorQuote · 换算规则的最小视图（跟 internal/pricing.VendorQuote 对齐但避免包循环）
@@ -160,10 +162,12 @@ func (o *Orchestrator) quoteFor(ctx context.Context, vendorID providers.VendorID
 //
 // 返回的 fromDB 只用于打点区分来源。
 func (o *Orchestrator) unitCreditsFor(
-	ctx context.Context, vendorID providers.VendorID, snapshotPrice providers.Money,
+	ctx context.Context, vendorID providers.VendorID, zone providers.Zone, snapshotPrice providers.Money,
 ) (credits int64, fromDB bool) {
 	if o.credits != nil {
-		if c, _, ok := o.credits.LatestCredits(ctx, string(vendorID)); ok && c > 0 {
+		// 归一 · 上游传的可能是 "us-east-1" 或 "美国区" · 侧表存的是 zone 名（"us"/"eu"）
+		z := string(providers.ZoneOf(string(zone)))
+		if c, _, ok := o.credits.LatestCredits(ctx, string(vendorID), z); ok && c > 0 {
 			return c, true
 		}
 	}
@@ -321,9 +325,9 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 		o.maybeEnqueueOnNoStock(ctx, in, vendor.ID())
 		return nil, ErrNoStock
 	}
-	// 估价基准 · 优先读 vendor_probe.our_unit_credits（入库时换算好的权威积分 · docs/18 §1.4）·
+	// 估价基准 · 优先按 zone 读 vendor_probe_zone.our_unit_credits · 精确到区（docs/18 §1.4）·
 	// 读不到才按本轮快照现算（冷启动兜底）。实扣不看这个值 —— 走 settle 里 vendor 的 TotalCost。
-	unitCostHint, _ := o.unitCreditsFor(ctx, vendor.ID(), rawUnitPrice)
+	unitCostHint, _ := o.unitCreditsFor(ctx, vendor.ID(), in.Zone, rawUnitPrice)
 
 	// 冻结按估价的上限；实扣多退少补
 	// 1b P1-2B · 按本次拉号上下文实时求 Rates（surcharge_rule 表） · nil resolver 走 env

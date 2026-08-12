@@ -31,6 +31,7 @@ import (
 type Prober struct {
 	registry      *providers.Registry
 	store         *ProbeStore
+	zoneStore     *ProbeZoneStore // migration 029 · 每探针每 zone 一行 · 精确定价的权威源
 	orderKeyStore *OrderKeyStore  // 用于 stock-delta 落 vendor_dispatch · 可 nil（测试）
 	notifier      RestockNotifier // 抢号链通知口 · nil = 不通知（老装配 / 测试）
 	pricing       PricingLookup   // vendor 报价换算入口（migration 028 · docs/18 §1.3）· nil 时走 fallback
@@ -71,6 +72,8 @@ type RestockNotifier interface {
 type ProberConfig struct {
 	Registry *providers.Registry
 	Store    *ProbeStore
+	// ZoneStore migration 029 · 每探针每 zone 一行 · nil 时不写侧表（测试 / 老装配）
+	ZoneStore *ProbeZoneStore
 	// OrderKeyStore 用于 stock-delta 推算路径落 vendor_dispatch · nil 时 delta 关闭（测试）
 	OrderKeyStore *OrderKeyStore
 	// Notifier 抢号链通知口 · stock-delta 推出 restock 时唤醒挂单 · nil = 不通知
@@ -113,6 +116,7 @@ func NewProber(cfg ProberConfig) *Prober {
 	return &Prober{
 		registry:      cfg.Registry,
 		store:         cfg.Store,
+		zoneStore:     cfg.ZoneStore,
 		orderKeyStore: cfg.OrderKeyStore,
 		notifier:      cfg.Notifier,
 		pricing:       cfg.Pricing,
@@ -187,7 +191,8 @@ func (p *Prober) Start(ctx context.Context) {
 // computeCreditsFromMoney · 把 vendor 原始报价换成我方积分 microunit（docs/18 §1.3）
 //
 // 规则：
-//   Money.Amount × credits_per_unit / 1_000_000
+//
+//	Money.Amount × credits_per_unit / 1_000_000
 //
 // 找不到 pricing 或 pricing 是 nil：走 credit / 1_000_000 fallback（1:1）· 老行为兼容。
 // Money.Amount == 0（vendor 没货 · 常见）：返 0 · 上层用 nullIfZeroInt64 转 NULL。
@@ -374,6 +379,34 @@ func (p *Prober) probeOnce(ctx context.Context, v providers.Vendor) {
 			"vendor", sample.VendorID,
 			"err", err,
 		)
+	}
+
+	// 侧表 · 逐 zone 落权威积分（docs/18 §5 未收口补齐 · migration 029）
+	if p.zoneStore != nil && sample.Alive && snap != nil && len(snap.Zones) > 0 {
+		zones := make([]ProbeZoneSample, 0, len(snap.Zones))
+		for _, z := range snap.Zones {
+			// zone 归一 · 优先用 z.Zone（部分 vendor 空）· 空则用 z.Region 归一
+			zoneKey := providers.ZoneOf(string(z.Zone))
+			if zoneKey == "" {
+				zoneKey = providers.ZoneOf(z.Region)
+			}
+			credits := p.computeCreditsFromMoney(ctx, sample.VendorID, z.UnitPrice)
+			zones = append(zones, ProbeZoneSample{
+				VendorID:       sample.VendorID,
+				ProbedAt:       sample.ProbedAt,
+				Zone:           string(zoneKey),
+				Region:         z.Region,
+				Available:      z.Available,
+				VendorCurrency: string(z.UnitPrice.Currency),
+				VendorUnitRaw:  z.UnitPrice.Amount,
+				OurUnitCredits: credits,
+				OurUnitSource:  p.classifyPriceSource(string(z.UnitPrice.Currency)),
+			})
+		}
+		if err := p.zoneStore.InsertBatch(ctx, zones); err != nil {
+			p.logger.Warn("vendorview.Prober: 写 vendor_probe_zone 失败",
+				"vendor", sample.VendorID, "err", err)
+		}
 	}
 }
 

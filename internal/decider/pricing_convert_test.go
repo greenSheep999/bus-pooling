@@ -26,7 +26,7 @@ type mockCredits struct {
 	byVendor map[string]int64
 }
 
-func (m *mockCredits) LatestCredits(_ context.Context, vendorID string) (int64, time.Time, bool) {
+func (m *mockCredits) LatestCredits(_ context.Context, vendorID string, _ string) (int64, time.Time, bool) {
 	if c, ok := m.byVendor[vendorID]; ok && c > 0 {
 		return c, time.Now(), true
 	}
@@ -44,7 +44,7 @@ func TestUnitCreditsFor_PrefersDB(t *testing.T) {
 		}},
 	}
 	// 快照给个完全不同的数 · 应该被忽略
-	got, fromDB := o.unitCreditsFor(context.Background(), providers.VendorKiroDrop,
+	got, fromDB := o.unitCreditsFor(context.Background(), providers.VendorKiroDrop, providers.ZoneUS,
 		providers.Money{Amount: 999_000_000, Currency: providers.CurrencyUSD})
 	if !fromDB {
 		t.Error("库里有数据时应标 fromDB=true")
@@ -62,7 +62,7 @@ func TestUnitCreditsFor_FallsBackToSnapshot(t *testing.T) {
 		}},
 		credits: &mockCredits{byVendor: map[string]int64{}}, // 空库
 	}
-	got, fromDB := o.unitCreditsFor(context.Background(), providers.VendorKiroDrop,
+	got, fromDB := o.unitCreditsFor(context.Background(), providers.VendorKiroDrop, providers.ZoneUS,
 		providers.Money{Amount: 7_350_000, Currency: providers.CurrencyUSD})
 	if fromDB {
 		t.Error("空库时应标 fromDB=false")
@@ -76,7 +76,7 @@ func TestUnitCreditsFor_FallsBackToSnapshot(t *testing.T) {
 // credits = nil（老装配 / 测试）· 也走快照兜底
 func TestUnitCreditsFor_NilLookupFallsBack(t *testing.T) {
 	o := &Orchestrator{pricing: &mockPricing{}, credits: nil}
-	got, fromDB := o.unitCreditsFor(context.Background(), providers.Vendor91Kiro,
+	got, fromDB := o.unitCreditsFor(context.Background(), providers.Vendor91Kiro, providers.ZoneUS,
 		providers.Money{Amount: 30_000_000, Currency: providers.CurrencyCredit})
 	if fromDB {
 		t.Error("nil lookup 应标 fromDB=false")

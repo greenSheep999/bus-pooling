@@ -112,8 +112,10 @@ func run(cmd, cfgPath string, args []string) error {
 		return runXi8Backfill(ctx, cfg, args)
 	case "xi8-audit":
 		return runXi8Audit(ctx, cfg, args)
+	case "backfill-probe-zone":
+		return runBackfillProbeZone(ctx, cfg, args)
 	default:
-		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem | seed-vendor | list-vendors | xi8-backfill | xi8-audit）", cmd)
+		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem | seed-vendor | list-vendors | xi8-backfill | xi8-audit | backfill-probe-zone）", cmd)
 	}
 }
 
@@ -576,6 +578,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	// vendorview 用同一份 rates（费率不进代码，走 decider.Rates 唯一入口）
 	// 加上 probeStore + probeInterval · 让 StatusOverview 有历史数据可读
 	probeStore := vendorview.NewProbeStore(database.DB)
+	probeZoneStore := vendorview.NewProbeZoneStore(database.DB)
 	const probeInterval = 60 * time.Second
 	orderKeyStoreForView := vendorview.NewOrderKeyStore(database.DB)
 	vendorSvc, err := vendorview.New(vendorview.Config{
@@ -600,6 +603,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	prober := vendorview.NewProber(vendorview.ProberConfig{
 		Registry:      vendorRegistry,
 		Store:         probeStore,
+		ZoneStore:     probeZoneStore, // migration 029 · 每 zone 一行 · 精确定价的权威源
 		OrderKeyStore: orderKeyStoreForView,
 		// 抢号链：stock-delta 推出 restock 时唤醒挂单（只在 tight / turbo 时真 fire）
 		Notifier: stockWatcher,

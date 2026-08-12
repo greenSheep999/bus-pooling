@@ -36,16 +36,17 @@ var wantTables = []string{
 	"personal_invite_code", // 每人一个 · 只给手续费减免额度·不改身份
 	"invite_referral",      // 谁邀请了谁 · 防刷 + 溯源
 	// migration 021-024 · vendor 观测 / backfill · 前端 /status 页数据源
-	"vendor_probe",    // 021 · 60s 探针样本 · 我方账户视角
-	"vendor_daily",    // 021 · 24h 聚合 · incident_flag · uptime%
-	"vendor_order",    // 023 · vendor 侧历史订单 backfill
-	"vendor_key",      // 023 · vendor 侧 key 生命周期 backfill
-	"vendor_dispatch",        // 024 · vendor 侧平台开号批次（fleet-wide）
-	"inbound_webhook_event",  // 025 · vendor 推给我方的事件日志 + 幂等去重
-	"stock_watcher",          // 027 · 抢号链缺货挂单 · restock 事件唤醒 fire
-	"exchange_rate",          // 028 · 系统汇率配置 · 应对波动 · 有历史
-	"vendor_price_tier",      // 028 · kirodrop 分档 schedule
-	"user_subsidy",           // 028 · 减免栈（个人邀请码/邀请奖励/优惠码）
+	"vendor_probe",          // 021 · 60s 探针样本 · 我方账户视角
+	"vendor_daily",          // 021 · 24h 聚合 · incident_flag · uptime%
+	"vendor_order",          // 023 · vendor 侧历史订单 backfill
+	"vendor_key",            // 023 · vendor 侧 key 生命周期 backfill
+	"vendor_dispatch",       // 024 · vendor 侧平台开号批次（fleet-wide）
+	"inbound_webhook_event", // 025 · vendor 推给我方的事件日志 + 幂等去重
+	"stock_watcher",         // 027 · 抢号链缺货挂单 · restock 事件唤醒 fire
+	"exchange_rate",         // 028 · 系统汇率配置 · 应对波动 · 有历史
+	"vendor_price_tier",     // 028 · kirodrop 分档 schedule
+	"user_subsidy",          // 028 · 减免栈（个人邀请码/邀请奖励/优惠码）
+	"vendor_probe_zone",     // 029 · 每探针每 zone 一行 · 精确定价的权威源
 }
 
 func openTestDB(t *testing.T) *DB {

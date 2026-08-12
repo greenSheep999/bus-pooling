@@ -117,27 +117,22 @@ func (s *Service) PricedFor(ctx context.Context, in PricedForInput) (*PricedView
 	}, nil
 }
 
-// latestCredits · 读 vendor_probe.our_unit_credits（机制 A 的出口）
+// latestCredits · 读该 vendor + zone 最近一条积分（机制 A 的出口 · migration 029）
 //
-// **region 参数当前不生效** —— `vendor_probe` 没有 region 列 · `our_unit_credits` 是
-// 首个 zone 的采样值（`sample_price_region` 记了是哪个 zone）· 一条探针行只有一个积分值。
-// 要精确到区得先给 vendor_probe 加 region 维度（当前多 region 差价不大 · 不值当）。
-// 签名保留 region 是为了将来加维度时调用方不用改。
+// **优先按 zone 精确匹配**（US / EU 差价能几十个百分点 · 部分 vendor 定价分区）·
+// zone 匹配不到时退回"该 vendor 最近一条有价的"（跨 zone · 兼容单 zone vendor）·
+// 侧表还没数据时退回主表首 zone 采样。三级 fallback 全在 pricing.ProbeCredits 里。
+// region 参数由调用方传原文（"us" / "us-east-1" / "美国区"）· 内部走 providers.ZoneOf 归一。
 func (s *Service) latestCredits(ctx context.Context, vendorID, region string) (int64, time.Time, error) {
-	_ = region // 见上方说明
 	if s.probeStore == nil {
 		return 0, time.Time{}, ErrPriceMissing
 	}
-	credits, probedAt, ok := s.probeCredits().LatestCredits(ctx, vendorID)
+	zone := string(providers.ZoneOf(region))
+	credits, at, ok := pricing.NewProbeCredits(s.probeStore.db).LatestCredits(ctx, vendorID, zone)
 	if !ok {
 		return 0, time.Time{}, ErrPriceMissing
 	}
-	return credits, probedAt, nil
-}
-
-// probeCredits · 复用 pricing 那份读取器 · 保证跟 decider 估价读的是同一列同一条 SQL
-func (s *Service) probeCredits() *pricing.ProbeCredits {
-	return pricing.NewProbeCredits(s.probeStore.db)
+	return credits, at, nil
 }
 
 // tierLabel · docs/18 §2.1 · 只 wholesale 看真名
