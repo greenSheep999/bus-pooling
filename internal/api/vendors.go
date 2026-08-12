@@ -171,6 +171,40 @@ func (s *Server) handleVendorStock(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 
+// GET /api/vendors/{vendor_id}/prices/daily?days=30
+//
+// 返 vendor 过去 days 天每日单价 min/max/avg + 样本数 · 用于 /prices 页动态曲线。
+// 数据源：vendor_probe.sample_price_micro（Prober 60s 一条 · 24h 约 1440 条 / 家）·
+// 前端可画蜡烛图（min-max 区间 + avg 点）。
+func (s *Server) handleVendorPricesDaily(w http.ResponseWriter, r *http.Request) error {
+	if s.vendorView == nil {
+		return vendorViewUnavailable()
+	}
+	if _, err := mustCaller(r); err != nil {
+		return err
+	}
+	id := r.PathValue("vendor_id")
+	if id == "" {
+		return ErrBadRequest("缺少 vendor_id")
+	}
+	days := atoiDefault(r.URL.Query().Get("days"), 30)
+	// 从 anon_id 还原 vendor_id · vendorView 有这个能力
+	realVendorID, ok := s.vendorView.ResolveAnonID(id)
+	if !ok {
+		return ErrNotFound("找不到这家 vendor")
+	}
+	points, err := s.vendorView.DailyPrices(r.Context(), realVendorID, days)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"vendor_id":  id, // 对外返 anon_id · 不下发真名
+		"days":       days,
+		"points":     points,
+	})
+	return nil
+}
+
 // GET /api/vendors/{vendor_id}/history
 func (s *Server) handleVendorHistory(w http.ResponseWriter, r *http.Request) error {
 	if s.vendorView == nil {

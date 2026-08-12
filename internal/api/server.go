@@ -240,6 +240,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/vendors/auto-pick", handler(s.RequireAuth(s.handleVendorsAutoPick)))
 	mux.Handle("GET /api/vendors/{vendor_id}/stock", handler(s.RequireAuth(s.handleVendorStock)))
 	mux.Handle("GET /api/vendors/{vendor_id}/history", handler(s.RequireAuth(s.handleVendorHistory)))
+	mux.Handle("GET /api/vendors/{vendor_id}/prices/daily", handler(s.RequireAuth(s.handleVendorPricesDaily)))
 
 	// 首页 / 数据 tab / 活动流（05-api-contract §9b）
 	mux.Handle("GET /api/me/overview", handler(s.RequireAuth(handleOverviewWith(s.insights))))
