@@ -249,6 +249,7 @@ pullrecord · bus · housepool · delivery
 - ❌ 指定 vendor 议价（没实质价值）
 - ❌ 寿命 SLA 议价（没数据）
 - ❌ 地区议价（无法识别，等多通道再说）
+- ❌ **长效号预留池**（预付 + 议价商业模型 · 号老）· ✅ **加速预存池**（抢号缓冲 · 5min TTL · 号新 · 落 housepool `prebuy-pool` group · 见 `decisions §11.15`）—— 两回事别混
 - ❌ Solo bus / pooled bus 概念（简化成 1 人 bus / 多人 bus）
 - ❌ 混合上车 / allocation 组件
 - ❌ 拉号记录 = 数据库表（应是 housepool group）

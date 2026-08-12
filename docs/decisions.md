@@ -2041,6 +2041,69 @@ PRIMARY KEY (vendor_id, date)
 
 **教训**：Go `time.Parse` 无 tz 字符串**默认 UTC** · 用 `ParseInLocation` 显式绑 tz 才对。写 vendor adapter 时**必须先实证 vendor 返的是墙钟还是 UTC** · 别信文档。
 
+### 11.15 抢号链 · 运营态自动切 + 人工强制 + 急停（`internal/stockwatch/`）✅ 部分落码
+
+**问题**：市场号短命（几分钟抢空）· 拉号时 vendor 缺货直接失败退款 · 用户体验差 · 也没利用后续 restock 事件。且"该不该抢"是**动态判断** —— 车多 key 少要抢 · 库存充足没排队白抢浪费 API。
+
+**决策 · 三层优先级**：
+
+```
+① 急停（KILL_PULLS 文件哨兵）  → 一切 Purchase 停 · 最高优先
+② turbo（TURBO_ON 文件哨兵）   → 人工强制 · 无视 mode 自动判断 · 一律抢
+③ ModeMgr 自动                 → 平时自动切 tight / balance / cool
+```
+
+**运营态自动判**（每 30s 采样 · `ModeMgr.sample`）：
+
+```
+demand = pending + in_flight 的 pull_intent 总数
+supply = 6 家 vendor 过去 5min stock 均值累加
+ratio  = demand / max(1, supply)
+
+ratio > 2       → tight   紧张 · 探针 + webhook 都 fire
+0.3 < ratio ≤ 2 → balance 均衡 · 只 webhook fire · 探针只观测
+ratio ≤ 0.3     → cool    冷 · 都不 fire · 用户来了现打 vendor
+```
+
+**source × mode 决策表**（`Watcher.sourceShouldFire`）：
+
+| source | tight | balance | cool | turbo 开 |
+|---|---|---|---|---|
+| `webhook`（vendor push · 最快 200ms-2s） | ✅ | ✅ | ❌ | ✅ |
+| `xi8_signal`（xi8 转推 · 3s） | ✅ | ✅ | ❌ | ✅ |
+| `stock_delta`（探针推算 · 60s） | ✅ | ❌ | ❌ | ✅ |
+| `manual`（CLI 手工） | ✅ | ✅ | ✅ | ✅ |
+
+**为什么 turbo 是文件哨兵不是 env**：env 改了要重启 · 人工干预要**即时生效**。
+
+```bash
+ssh vps22 'touch /opt/bus-pooling/data/TURBO_ON'   # 5 秒内生效 · 强制抢
+ssh vps22 'rm    /opt/bus-pooling/data/TURBO_ON'   # 关
+ssh vps22 'touch /opt/bus-pooling/data/KILL_PULLS' # 急停
+```
+
+开销：每 5s 两次 `os.Stat` · 读走 `atomic.Load`（5ns）· 相对 vendor HTTP 200ms 可忽略。
+
+**turbo 的必要性**（运营者实际场景）：上游连续几天缺货 · 自动判断可能算成 cool（supply 长期 0 · demand 也不高 · ratio 落 cool 区）· 但运营者知道"还要用 · 有货就抢" · 手工按住不放。
+
+**幂等 · 一号一抢**：多信号源同时到 · `stock_watcher.status` 走 conditional UPDATE（`WHERE status='watching'`）· 只有一个抢到 `fired` · 其他 skip。抢到的调 `decider.Purchase` 用 `pull_intent.client_order_id` · vendor 侧同 order_id 重放不重复扣（`09-transactions §2`）。
+
+**表**：`stock_watcher`（migration 027）· 主键 `intent_id` 一对一 · `fire_count` 计数防 spam retry。
+
+**加速预存池**（Q2=C 定稿 · **还没落码** · 下一轮）：
+- 抢到的号 **必须落 housepool**（kiro.rs group `prebuy-pool`）· 不做纯内存中间池
+- `credential_ledger` owner 都 NULL · `current_group='prebuy-pool'`
+- 有 pull_intent 排队 → 从 `prebuy-pool` 移到 `bus-<id>` · 台账 owner 改 bus
+- **5min TTL** · janitor 扫过期 → 走 warranty 退 vendor + 删 kiro.rs 里的号
+- **跟 §2.3 长效号预留池的区别**：§2.3 是"预付 + 议价"商业模型（号老 · 已否决）· 这个是"看到就抢的短时缓冲"（号新 · 5min TTL · 纯抢号动作）· CLAUDE.md §5 已加提示行防未来 AI 混淆
+
+**当前进度**：
+- ✅ migration 027 `stock_watcher` 表
+- ✅ `stockwatch` 包 · Enqueue / Notify / Sweep / ModeMgr / FileFlag · 17 个单测
+- ⏳ decider 缺货挂单 + Firer 实现（下一 commit）
+- ⏳ Prober delta / webhook onNewKeys 接 Notify（下一 commit）
+- ⏳ 加速预存池 · kiro.rs `prebuy-pool` group（单独一轮）
+
 ### 11.14 Status UI 时间轴热力图（6 家共享 x 轴）✅
 
 **背景**：目前每张 vendor 卡有自己的 24h 柱图 · 单看很好 · 但**6 家横向比较难**（要在脑子里对齐时间轴）· 用户诉求"一眼看谁的缺口在哪"。
