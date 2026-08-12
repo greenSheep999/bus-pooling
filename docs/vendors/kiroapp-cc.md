@@ -56,9 +56,30 @@ curl "https://kiroapp.cc/openapi/balance" -H "Authorization: Bearer <API Key>"
 
 响应：`{ balance }`（**极简，只有余额一个字段**）
 
-### 积分流水（`/api/user/*` 前台会话接口，非开放 API）
+### 内部会话端点 `/api/user/*`（2026-08-12 Network 抓到 · **不在官方 openapi 文档**）
 
-页面能看到但没暴露给 `/openapi/*`。从流水 UI 观察到的 ledger 类型：
+页面用这些 · 需 cookie 会话鉴权 · **我方作为纯 API 客户不能直接调**（API key 只走 `/openapi/*`）。
+列出来的意义：知道 vendor 后台能力全景 · 未来若 kiroappcc 开放它们 / 或我方需要模拟登录爬时能用。
+
+| 端点 | 页面 tab | 用途 |
+|---|---|---|
+| `GET /api/user/me` | 全站 | 当前用户 · 积分 · 角色 |
+| `GET /api/user/site-info` | 全站 | 站点公告 / 服务器时间 |
+| `GET /api/user/announcements` | 全站 | 公告列表 |
+| `POST /api/user/claim-preview` | 提取 Key | 提取预估 · body 带 count · 返扣多少积分 |
+| `GET /api/user/orders?limit=200` | 我的订单 | 我的订单历史（含 `/openapi/orders` 覆盖不到的字段） |
+| `GET /api/user/my-keys` | 我的订单 | 我持有的所有 key 明细（历史 + 存活） |
+| `GET /api/user/txns?limit=200` | 账户与积分 | 积分流水（**比 `/openapi` 完整** · 含 refund/adjust 类型） |
+| `GET /api/user/api-keys` | API Key | 我的 API key 列表（不含明文） |
+| `GET /api/user/webhook` | API Key | webhook 配置 · 含签名密钥（**页面 PUT 存 · 未抓到路径 · 猜同路径**） |
+| `GET /api/user/my-mothers` | 我要发车 | 我投放的母号列表 |
+| `GET /api/user/my-mothers/usage` | 我要发车 | 母号用量统计 |
+| `GET /api/user/dispatch?limit=50` | 我要发车 | 发车历史 · 含"评价"字段（拉完了 / NPC / 人上人 / 夯 / 拉完） |
+| `GET /api/user/payout-qr` | 我的收益 | 收款二维码（未配置返 404） |
+| `GET /api/user/earnings` | 我的收益 | 收益汇总 |
+| `GET /api/user/settlements` | 我的收益 | 结算历史（车主分成） |
+
+**观察到的 ledger 类型**（对齐 `/api/user/txns`）：
 
 | 观察到的类型 | 含义 |
 |---|---|

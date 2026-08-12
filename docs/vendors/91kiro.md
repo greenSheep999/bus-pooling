@@ -163,6 +163,18 @@
 
 车次状态：`preparing` 准备中 → `standby` 备车 → `live` 运行中 → `dying` 复核中 → `dead` 已死。另有 `failed`（开号失败）、`scrapped`（发车前母号已死）。
 
+### `GET /api/my/stock/rounds`
+
+比 `/api/my/rounds` 多给一列 `current_price`（按存活时长降价的**现价**）· 用于价格趋势展示。
+建议客户端**每 60 秒轮询一次** · `remaining > 0` 就去 purchase。
+
+vendor 原文：
+> `GET /api/my/stock/rounds` 每行则多给一个 `current_price`。两者都由服务端用与计费
+> 同一个公式算出，取数那一刻有效。
+
+跟 `/api/my/rounds` 的区别：`rounds` 里的 `unit_price` 是**基准价**（`base_price`），
+`stock/rounds` 里 `current_price` 是**已按存活时长现算过的价** —— 展示实际扣费应该用后者。
+
 ### `GET /api/my/keys`
 
 已领走的 key 列表。**只给前缀，不给正文** —— 要完整正文走 §7 的补拉。
@@ -289,12 +301,17 @@
 
 - `GET /api/my/mothers`
 - `PUT /api/my/mothers/{id}`
+- `POST /api/my/mothers/{id}/pool` · 切换池归属 body `{"pool": "public" | "private"}` · 母号有未结束车次时返 `409 mother_busy`
 - `POST /api/my/mothers/{id}/status`
 - `POST /api/my/mothers/{id}/verify`
 - `POST /api/my/mothers/{id}/quota`
 - `DELETE /api/my/mothers/{id}`
 
 母号还有未结束的车次时不允许删除，请先停用。
+
+**池切换语义**（`pool` 端点）：`public` = 进公开车队列（产出全站可买 · 卖出分成回来）·
+`private` = 只等运营手动开号（不排队自动车）。跑到一半换池会让"这批产出算哪个池的"没有
+答案 · 所以有未结束车次时会拒。
 
 ## 10. Webhook
 

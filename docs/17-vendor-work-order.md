@@ -41,7 +41,7 @@ commit 都没上线）· 本地 HEAD `8875864`（docs 那条）。
 - ❌ **91kiro / kiroappio / kiroappcc 母号供应侧全套** · 我方投放 AWS 母号进 vendor 号池 · vendor 帮开号卖出后分成回来
 - ❌ Kirooo auto-fleet 用户端配置（我方作为 kirooo 客户享受）
 
-**状态**：✅ 摸底完 · 数据在 `docs/vendors/_endpoints-audit-2026-08-12-v2.md` · raw 抓包留本机不入库
+**状态**：✅ 摸底完 · **各家端点已并进 `docs/vendors/{91kiro,kiro-ceo,kiro-ooo,kiroapp-io,kiroapp-cc,drop-kiro-ss}.md`**（不新开 audit 文档）· raw 抓包留本机 `.playwright-mcp/vendor-scrape-2026-08-12/` 不入库
 
 ---
 

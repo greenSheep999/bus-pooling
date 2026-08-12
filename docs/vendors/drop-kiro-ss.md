@@ -117,9 +117,10 @@
 | `price` | 单价 (USD)，字符串格式保留两位小数 |
 | `balance` | 我的可用余额 (CNY)，字符串格式保留小数 |
 
-### 完整报价
+### `GET /api/v1/reservation`
 
-调用 `GET /api/v1/reservation?quantity=2&region=eu`（vendor 文档只提了路径，未详列字段）。
+完整报价接口 · Query `quantity=2&region=eu`。**独家**（对齐 6 家 · 只有 kirodrop 有）。
+vendor 文档只列了路径 · 未详列返回字段（2026-08-12 抓文档时已确认）。
 
 ## 8. 购买
 
