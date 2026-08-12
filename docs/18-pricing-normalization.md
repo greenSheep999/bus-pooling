@@ -303,16 +303,36 @@ func (s *Service) PricedFor(ctx, vendorID, region, count, viewer) (*PricedView, 
 
 ## 5 · 落码顺序（每步一 commit · 可回退）
 
-1. **migration** · vendor_probe 加 8 列 + 新表 `vendor_price_tier` + 新表 `user_subsidy` + 改 `passenger.tier` CHECK
-2. **老 tier 数据迁移** · 生产库若有 `insider` 值（老 §8.39 命名）· 迁到 `wholesale`
-3. **providers.StockSnapshot** 加字段 · `TieredPricing` 结构
-4. **kirodrop adapter · Stock 打两个端点** · `/api/me/stock` + `/api/v1/reservation` 合成 snapshot
-5. **其他 5 家 adapter** · 填 `our_unit_credits = vendor_unit_raw`（pass-through）
-6. **Prober 落库** · 补 A 层字段 + 分档 tier 每档一行
-7. **`vendorview.PricedFor`** · 唯一门面 · 服务费/tier 判断都在这
-8. **decider `convertToMicroCredits` / `vendorMaxTotal`** · **删** · 走 PricedFor 拿的积分
-9. **拉号 / 拼车 / Pricing / Status 全部改走 PricedFor**
-10. **前端** · vendor 真名可见性由 API 决定 · retail / community 拿到的就是匿名 label · 不再前端藏
+| # | 步骤 | 状态 |
+|---|---|---|
+| 1 | **migration 028** · vendor_probe 加 8 列 + `vendor_price_tier` + `user_subsidy` + `passenger.tier` | ✅ 已落 · 本地库已应用 |
+| 2 | **老 tier 数据迁移** · 生产库若有老命名值 | ✅ 无需迁 —— `tier` 是 028 新加列 · 全表默认 `retail`（见下方注意） |
+| 3 | **providers.StockSnapshot** 加 `TieredPricing` | ✅ 已落 |
+| 4 | **分档 vendor adapter** · Stock 合成两个端点 | ✅ 已落（顺带修 USD 单价字段丢失 bug） |
+| 5 | **其他 5 家 adapter** · pass-through | ✅ 已落 · 走 `vendor_pricing.credits_per_unit=1_000_000` 统一路径 |
+| 6 | **Prober 落库** · 补 A 层 8 字段 | ✅ 已落 |
+| 7 | **`vendorview.PricedFor`** · 唯一门面 | ✅ 已落 · 三档计费栈 + 减免栈已测 |
+| 8 | **删热路径换算** · `convertToMicroCredits` / `vendorMaxTotal` 等比映射 | ✅ 已落 · 改读 `our_unit_credits`（`pricing.ProbeCredits`）· 保留快照兜底 |
+| 9 | **展示路径补币种换算** | ✅ 已落 · `Service.baseCredits()` · 顺带修 3 个 bug（见下） |
+| 10 | **前端** · 真名可见性由 tier 决定 | ✅ 已落 · `vendorLabel(id, tier)` · 只 `wholesale` 看真名 |
+
+**步骤 2 的注意**：老 `§8.39` 承诺过「`invited=1` 不掉档」·028 **没做**这个回填。
+上生产前先 `SELECT COUNT(*) FROM passenger WHERE invited=1` —— 非 0 就补
+`UPDATE passenger SET tier='wholesale' WHERE invited=1`。本地库已确认 0 行。
+
+**步骤 8 为什么保留快照兜底**（不硬失败）：`our_unit_credits` 只在 028 之后的探针轮次才有值 ·
+迁移当时库里 13k 行历史探针全是 NULL。硬失败会让整条拉号链停摆到探针跑完第一轮。
+兜底只影响**冻结估价**和 vendor 侧上限 —— 实扣走 `settle` 里 vendor 返的 `TotalCost`（权威值）。
+
+**步骤 9 修的 3 个 bug**（都在展示路径 · 不影响实扣）：
+1. `finalUnitPrice(z.UnitPrice.Amount, v)` 把 `Money.Amount` 当积分用 —— USD 家展示价只有实际的 **1/6.8**
+2. `AutoPick` 跨 vendor 比价用 raw amount —— USD 家的 `7.35` 跟 credit 家的 `30` 比 · **永远赢**（实际 7.35 USD = 49.98 积分 · 更贵）
+3. `AutoPick` 返真 `vendor_id` 绕过 `visibleVendorID` —— retail / community 都能拿到真 id
+
+**仍未收口**（记在这防遗忘）：
+- `vendor_probe` **无 region 列** · `our_unit_credits` 是首个 zone 的采样值 ·
+  `PricedFor` 的 `region` 参数当前不生效。多 region 差价拉大时要给 vendor_probe 加 region 维度。
+- 老 `Viewer.Invited` / `WaiveMarkup` 字段还在（兼容）· 全链切完 tier 后可删。
 
 ---
 
