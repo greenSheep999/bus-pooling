@@ -440,13 +440,13 @@ func buildDecider(
 	})
 
 	return decider.New(decider.Config{
-		DB:            sqldb.DB,
-		State:         decider.NewStore(sqldb.DB),
-		Vendor:        vendor,
-		Vendors:       vendors,
-		Pool:          pool,
-		Rates:         rates,
-		Pricing:       pricingAdapter,
+		DB:      sqldb.DB,
+		State:   decider.NewStore(sqldb.DB),
+		Vendor:  vendor,
+		Vendors: vendors,
+		Pool:    pool,
+		Rates:   rates,
+		Pricing: pricingAdapter,
 		// 估价基准读 vendor_probe.our_unit_credits（docs/18 §1.4）·
 		// 探针还没落过数时自动退回按快照现算
 		Credits:       pricing.NewProbeCredits(sqldb.DB),

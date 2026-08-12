@@ -156,9 +156,10 @@ func (s *Service) tierLabel(vendorID string, v Viewer) (label, anon string) {
 // computeBreakdown · 静态计费栈（docs/18 §2.2 · 逐层乘 · §8.34 铁律）
 //
 // **计费栈**：
-//   retail    · base × (1 + vendor 67%) × (1 + region 20%) × (1 + single_pull 20% if count=1) × (1 + service 5%)
-//   community · base × (1 + vendor 67%)                    × (1 + single_pull 20% if count=1) × (1 + service 5%)
-//   wholesale · base                                        × (1 + single_pull 20% if count=1) × (1 + service 5%)
+//
+//	retail    · base × (1 + vendor 67%) × (1 + region 20%) × (1 + single_pull 20% if count=1) × (1 + service 5%)
+//	community · base × (1 + vendor 67%)                    × (1 + single_pull 20% if count=1) × (1 + service 5%)
+//	wholesale · base                                        × (1 + single_pull 20% if count=1) × (1 + service 5%)
 //
 // **Rates 单位**：basis point · 500 = 5%（对齐 decider.Rates 老口径）
 func computeBreakdown(base int64, count int, tier string, rates decider.Rates) Breakdown {
