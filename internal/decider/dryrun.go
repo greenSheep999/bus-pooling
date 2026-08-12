@@ -22,8 +22,24 @@ type DryRunVendor struct {
 	VendorID     providers.VendorID
 	UnitPrice    int64 // microunit · 假单价
 	MaxAvailable int   // 每次 Stock 报的可购量
-	orderSeq     atomic.Uint64
-	keySeq       atomic.Uint64
+	// stockOverride · 非 0 时用它替代 MaxAvailable（-1 表示 0 库存 · 因为 0 会被
+	// Stock() 兜底成 100 · 破坏"缺货"场景）· 抢号链模拟测试用
+	stockOverride atomic.Int64
+	orderSeq      atomic.Uint64
+	keySeq        atomic.Uint64
+}
+
+// SetStock · 动态改库存 · 抢号链端到端模拟用（先 0 触发挂单 · 后 N 模拟 restock）
+//
+// 传 0 = 缺货（stock 返 0 · decider 返 ErrNoStock 触发挂单）
+// 传 N>0 = 有 N 个可购（fire 时能真抢到）
+// 只对本 vendor 实例生效 · 并发安全
+func (d *DryRunVendor) SetStock(n int) {
+	if n <= 0 {
+		d.stockOverride.Store(-1) // -1 sentinel: 明确的 0 库存（跟 MaxAvailable=0 走兜底 100 区分）
+		return
+	}
+	d.stockOverride.Store(int64(n))
 }
 
 func (d *DryRunVendor) ID() providers.VendorID { return d.VendorID }
@@ -45,8 +61,17 @@ func (d *DryRunVendor) Stock(_ context.Context, _ providers.StockOptions) (*prov
 	if unit <= 0 {
 		unit = 30 * 1_000_000 // 30 积分作为占位单价，测试可读
 	}
-	avail := d.MaxAvailable
-	if avail <= 0 {
+	// SetStock 覆盖优先（抢号链模拟）· 未设走 MaxAvailable · 都没设兜到 100
+	var avail int
+	if ov := d.stockOverride.Load(); ov != 0 {
+		if ov < 0 {
+			avail = 0 // sentinel: 明确的缺货
+		} else {
+			avail = int(ov)
+		}
+	} else if d.MaxAvailable > 0 {
+		avail = d.MaxAvailable
+	} else {
 		avail = 100
 	}
 	return &providers.StockSnapshot{

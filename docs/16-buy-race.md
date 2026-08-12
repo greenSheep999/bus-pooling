@@ -400,6 +400,46 @@ schema 里有（`001_init.sql` bus 表）· `bus.Strategy` struct 也读了 · �
 - **对外文案**：不能叫「加钱插队」（§12.6 对外术语）· 得想个说法
 - CLAUDE.md §3 / §5 的否决记录要改 —— 那两条现在明文写着 ❌
 
+## 缺口 5 · Region 命名口径不统一（模拟测试踩出来的真 bug · 2026-08-12）
+
+**症状**：`buyrace_e2e_test.go` 里 Notify 带 `region="us-east-1-dryrun"` 匹配不到
+挂单（挂单存的是 `providers.ZoneUS = "us"`）· SQL 严格相等就查不到。
+
+**根因**：三处对 region 用了三套字面量：
+- **`enqueue` 时**：decider 传 `in.Zone`（`providers.Zone` 枚举 · 值是 `"us"` / `"eu"`）
+- **webhook 来时**：`webhookin.onNewKeys` 传 `e.Zone`（vendor 自己的 zone 名 · 通常也是 `"us"`）
+- **探针 delta 时**：`prober.deriveStockDelta` 传 `d.Region`（vendor 的 region 名 ·
+  各家不同 · 如 `us-east-1` / `us-east-1-dryrun`）
+
+`stock_watcher.region` 列的语义没定死是哪套。SQL 查询是严格相等：
+```sql
+WHERE (region IS NULL OR ? = '' OR region = ?)
+```
+`"us"` 匹配不上 `"us-east-1"` · 挂单被跳过。
+
+**待定的三个方案**：
+
+**A · 挂单和 Notify 都改成 zone 名**（推 · 简单）
+- 挂单存 `"us"` / `"eu"` · Notify 也传 zone 名
+- 探针那头把 region 归一到 zone：`us-east-1 → us`（`providers.RegionToZone` 加一个）
+- 命名统一 · SQL 逻辑不动
+
+**B · 都改成 region 名**
+- 分区更细 · 但 vendor 之间 region 命名不一致（`us-east-1` vs `us-east-1-dryrun`）· 硬对齐要每家 vendor 加映射表
+- 复杂
+
+**C · 完全放弃分区匹配 · region 忽略**
+- Notify 时 region 空 · fire 所有 watching · 由 fire 时的 Purchase 再选 zone
+- 简单 · 但失去"只等特定 region 补货"的能力
+
+**当前**：测试临时传空 region 绕过 · 生产代码里 `webhookin` 和 `prober` 都会传非空
+region · **上线后大概率所有挂单都匹配不上** —— 需要在推 vps22 前修。
+
+修法建议 · 走 **A**：
+1. `providers` 加个 `ZoneOf(region string) Zone` · 6 家 vendor adapter 各自实现
+2. `webhookin.onNewKeys` 和 `prober.deriveStockDelta` 用它把 region 归一到 zone
+3. `stock_watcher.region` 列**语义定死为 zone 名**（`"us"`/`"eu"`/空）· 加注释
+
 ## 落地顺序（讨论定稿后）
 
 1. 缺口 3 先做 —— 纯文档 + 删死字段 · 零风险 · 清掉认知债
