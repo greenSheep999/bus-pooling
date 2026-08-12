@@ -2,6 +2,7 @@ package kirodrop
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/providers"
@@ -119,13 +120,66 @@ func toStockSnapshot(sr *stockResp, raw json.RawMessage) *providers.StockSnapsho
 			UnitPrice: credits(z.UnitPrice),
 		})
 	}
-	// 新形状无 zones 数组 · 但 sr.Region 有值时补一个默认 zone · 让 status 页
-	// region_count 能显示"1 区可用"而不是 0
+	// 新形状无 zones 数组 · 但 sr.Region 有值时补一个默认 zone
+	//
+	// **单价字段修复（docs/18 §1.3 落码 · 2026-08-12）**：新形状顶层有 `price:"7.35"` 字符串 ·
+	// 单位 USD · 老 mapper 完全忽略 · 导致 decider 拿到 UnitPrice.Amount=0 · Prices 页显示 0。
+	// 现在解析成 microunit USD Money · Prober 落库时经 vendor_pricing 换算成积分（唯一权威）。
 	if len(snap.Zones) == 0 && sr.Region != "" {
 		snap.Zones = append(snap.Zones, providers.ZoneStock{
 			Region:    sr.Region,
 			Available: available,
+			UnitPrice: parseUSDStringToMoney(sr.Price), // "7.35" → Money{Amount:7350000, Currency:USD}
 		})
 	}
 	return snap
 }
+
+// parseUSDStringToMoney · 把 "7.35" 之类的 USD 字符串转 Money microunit。
+// 空字符串 / 非法值返 Money{} 零值（Currency 空 · Amount 0）· 上层安全跳过。
+func parseUSDStringToMoney(s string) providers.Money {
+	if s == "" {
+		return providers.Money{}
+	}
+	// 分割整数 / 小数部分
+	dot := -1
+	for i, c := range s {
+		if c == '.' {
+			dot = i
+			break
+		}
+	}
+	var intPart, fracPart string
+	if dot < 0 {
+		intPart = s
+	} else {
+		intPart = s[:dot]
+		fracPart = s[dot+1:]
+	}
+	// 补齐 6 位小数（microunit 精度）· 截断多的
+	if len(fracPart) > 6 {
+		fracPart = fracPart[:6]
+	}
+	for len(fracPart) < 6 {
+		fracPart += "0"
+	}
+	// 拼成整数微单位
+	amt, err := parseInt64(intPart + fracPart)
+	if err != nil {
+		return providers.Money{}
+	}
+	return providers.Money{Amount: amt, Currency: providers.CurrencyUSD}
+}
+
+func parseInt64(s string) (int64, error) {
+	var n int64
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, errBadPrice
+		}
+		n = n*10 + int64(c-'0')
+	}
+	return n, nil
+}
+
+var errBadPrice = errors.New("kirodrop: bad price string")
