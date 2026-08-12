@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/providers"
@@ -26,6 +27,11 @@ type Backfiller struct {
 	client *Client
 	store  DispatchStore
 	logger *slog.Logger
+
+	// 后台 tick 用（Start 后填）
+	cancel context.CancelFunc
+	done   chan struct{}
+	once   sync.Once
 }
 
 func NewBackfiller(client *Client, store DispatchStore, logger *slog.Logger) *Backfiller {
@@ -33,6 +39,110 @@ func NewBackfiller(client *Client, store DispatchStore, logger *slog.Logger) *Ba
 		logger = slog.Default()
 	}
 	return &Backfiller{client: client, store: store, logger: logger}
+}
+
+// Start · 起后台 goroutine · 每 tickInterval 拉一次 signals（增量小·省流量）·
+// 每 fullInterval 拉一次 restock-log 全量（500 条 · 覆盖 2 天）。
+//
+// 服务停跑期 xi8 侧会继续记 · 服务重启后一次全量 fetch 就能补回来。
+// 只做 signals + restock-log · vendors 端点是实时状态 · 探针已经在拉不重复。
+//
+// tickInterval 建议 30s（xi8 服务端上货推 3s 内会到 signals）
+// fullInterval 建议 5min（覆盖 signals 漏批 + xi8 自己推算延迟）
+// client 或 store nil 时 · Start 是 no-op（未 seed xi8 API key 场景）
+func (b *Backfiller) Start(ctx context.Context, tickInterval, fullInterval time.Duration) {
+	if b.client == nil || b.store == nil {
+		b.logger.Info("xi8.Backfiller: client 或 store nil · 不启动")
+		return
+	}
+	if tickInterval <= 0 {
+		tickInterval = 30 * time.Second
+	}
+	if fullInterval <= 0 {
+		fullInterval = 5 * time.Minute
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	b.cancel = cancel
+	b.done = make(chan struct{})
+
+	go func() {
+		defer close(b.done)
+		// 启动立即拉一次全量
+		if _, _, err := b.RunOnce(runCtx, 500); err != nil {
+			b.logger.Warn("xi8.Backfiller: 启动首次 RunOnce 失败", "err", err)
+		}
+		signalsTicker := time.NewTicker(tickInterval)
+		defer signalsTicker.Stop()
+		fullTicker := time.NewTicker(fullInterval)
+		defer fullTicker.Stop()
+
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-signalsTicker.C:
+				// 只拉 signals 增量（100 条够 30s 内的 · 省流量）
+				if err := b.pullSignalsOnly(runCtx, 100); err != nil {
+					b.logger.Warn("xi8.Backfiller: signals tick 失败", "err", err)
+				}
+			case <-fullTicker.C:
+				// 全量 · 补 signals 漏批 + restock-log 推算源
+				if _, _, err := b.RunOnce(runCtx, 500); err != nil {
+					b.logger.Warn("xi8.Backfiller: full tick 失败", "err", err)
+				}
+			}
+		}
+	}()
+}
+
+// Stop 停后台 goroutine · 有 timeout 兜底
+func (b *Backfiller) Stop(timeout time.Duration) {
+	if b.cancel == nil {
+		return
+	}
+	b.cancel()
+	select {
+	case <-b.done:
+	case <-time.After(timeout):
+		b.logger.Warn("xi8.Backfiller: Stop 超时 · 强行返回")
+	}
+}
+
+// pullSignalsOnly · 只拉 signals · 增量 tick 用
+func (b *Backfiller) pullSignalsOnly(ctx context.Context, limit int) error {
+	signals, err := b.client.ListSignals(ctx, limit)
+	if err != nil {
+		return err
+	}
+	byVendor := make(map[string][]providers.VendorDispatch)
+	for _, s := range signals.Signals {
+		slug := VendorSlugForXi8ID(s.VendorID)
+		if slug == "" {
+			continue
+		}
+		t, err := parseXi8Time(s.At.ISO)
+		if err != nil {
+			continue
+		}
+		raw, _ := json.Marshal(s)
+		d := providers.VendorDispatch{
+			DispatchKey:  "xi8-sig-" + s.VendorOrderID,
+			Region:       xi8RegionToOurs(joinRegions(s.Regions)),
+			DispatchedAt: t,
+			Count:        s.Count,
+			Alive:        s.Count,
+			Status:       "running",
+			Raw:          raw,
+		}
+		byVendor[slug] = append(byVendor[slug], d)
+	}
+	for slug, ds := range byVendor {
+		if err := b.store.UpsertDispatches(ctx, slug, "xi8", ds); err != nil {
+			b.logger.Warn("xi8.Backfiller: signals upsert 失败", "vendor", slug, "err", err)
+		}
+	}
+	return nil
 }
 
 // RunOnce · 拉一次 xi8 数据 · 落 vendor_dispatch source='xi8'。

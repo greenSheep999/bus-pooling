@@ -51,6 +51,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/vendorview"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 	"github.com/bus-pooling/bus-pooling/internal/webhookin"
+	"github.com/bus-pooling/bus-pooling/internal/xi8"
 )
 
 func main() {
@@ -563,6 +564,24 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	})
 	backfiller.Start(ctx)
 	defer backfiller.Stop(5 * time.Second)
+
+	// xi8 后台 backfill · 30s 拉 signals 增量 · 5min 拉 restock-log 全量
+	// 服务停跑期 xi8 侧继续记 · 重启自动补 · 落 source='xi8' 不出前端（CLAUDE.md §0.1）
+	// BP_XI8_API_KEY 未设置时 Start 是 no-op（本地 dev 无 xi8 也能跑）
+	if xi8Key := os.Getenv("BP_XI8_API_KEY"); xi8Key != "" {
+		xi8HTTP, err := httpx.New(httpx.Config{Timeout: 15 * time.Second, MaxRetries: 2})
+		if err != nil {
+			slog.Warn("xi8 httpx 装配失败 · 跳过 xi8 backfill", "err", err)
+		} else {
+			xi8Client := xi8.New(xi8Key, xi8HTTP)
+			xi8Backfiller := xi8.NewBackfiller(xi8Client, orderKeyStoreForView, slog.Default())
+			xi8Backfiller.Start(ctx, 30*time.Second, 5*time.Minute)
+			defer xi8Backfiller.Stop(5 * time.Second)
+			slog.Info("xi8 backfiller 已启动 · 30s signals + 5min full")
+		}
+	} else {
+		slog.Info("BP_XI8_API_KEY 未设置 · xi8 backfiller 关闭")
+	}
 
 	handoffs := handoff.NewStore(database.DB, 0) // 0 = 默认 TTL
 
