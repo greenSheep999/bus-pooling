@@ -35,6 +35,9 @@ type Orchestrator struct {
 	// pricing · vendor 报价换算规则（vendor_pricing 表 · 1b P1-2A）·
 	// nil = 全 vendor 走 fallback（1a 兼容·CNY 1:1）
 	pricing PricingLookup
+	// credits · vendor_probe.our_unit_credits 读取器（docs/18 §1.4）·
+	// 估价基准优先读它 · nil / 无数据时退回按本轮快照现算
+	credits CreditsLookup
 	// ratesResolver · surcharge_rule 实时求值（1b P1-2B）· nil = 用 o.rates（env 兜底）
 	ratesResolver RatesResolver
 	// limits · 拉号并发 + 数量区间（config.pull · §8.35 #18）· 零值 = 不限
@@ -62,6 +65,12 @@ type PricingLookup interface {
 	QuoteFor(ctx context.Context, vendorID providers.VendorID) VendorQuote
 }
 
+// CreditsLookup · 读 vendor_probe.our_unit_credits（docs/18 §1.4）·
+// 实现方 pricing.ProbeCredits · 装配层注入 · nil = 退回按快照现算（冷启动 / 测试）
+type CreditsLookup interface {
+	LatestCredits(ctx context.Context, vendorID string) (int64, time.Time, bool)
+}
+
 // VendorQuote · 换算规则的最小视图（跟 internal/pricing.VendorQuote 对齐但避免包循环）
 type VendorQuote struct {
 	QuoteCurrency     string // CNY | USD | credit
@@ -84,6 +93,9 @@ type Config struct {
 	Rates   Rates
 	// Pricing · vendor_pricing 表的换算规则（1b P1-2A）·nil = 全走 fallback
 	Pricing PricingLookup
+	// Credits · vendor_probe.our_unit_credits 读取器（docs/18 §1.4）·
+	// nil = 退回按快照现算（测试 / 冷启动）
+	Credits CreditsLookup
 	// RatesResolver · surcharge_rule 表的实时求值（1b P1-2B）· nil = 用 env Rates
 	RatesResolver RatesResolver
 	// Limits · 拉号并发 + 数量区间上限（config.pull · decisions §8.35 #18）
@@ -111,6 +123,7 @@ func New(cfg Config) *Orchestrator {
 		pool:          cfg.Pool,
 		rates:         cfg.Rates,
 		pricing:       cfg.Pricing,
+		credits:       cfg.Credits,
 		ratesResolver: cfg.RatesResolver,
 		limits:        cfg.Limits,
 		enqueuer:      cfg.Enqueuer,
@@ -136,23 +149,45 @@ func (o *Orchestrator) quoteFor(ctx context.Context, vendorID providers.VendorID
 	return o.pricing.QuoteFor(ctx, vendorID)
 }
 
-// convertToMicroCredits · 把 vendor 快照里的单价换成我方积分 microunit。
+// unitCreditsFor · 拿这一轮的**估价基准**（我方积分 microunit）。
 //
-// vendor 报价（Money.Amount 是 microunit 但语义按 Money.Currency 决定）：
-//   - Currency=credit / CNY → 直接是 microunit 积分（1 credit = 1 积分）·pass-through
-//   - Currency=USD → 需要按 CreditsPerUnit 换算（例：5 USD × 7 CNY/USD = 35 积分）
+// **优先读库**（docs/18 §1.4 · 机制 A）：`vendor_probe.our_unit_credits` 是入库时
+// 一次换算好的权威积分 · 下游只读结果 · 不再各自拿汇率反推。
 //
-// 幅度控制：只允许 USD 家走真换算 · 别的币种保持 pass-through·避免误换算把 CNY 家的号价乘 7 倍。
-func (o *Orchestrator) convertToMicroCredits(ctx context.Context, vendorID providers.VendorID, unitPrice providers.Money) int64 {
-	if unitPrice.Currency == providers.CurrencyUSD {
-		q := o.quoteFor(ctx, vendorID)
-		// unitPrice.Amount 是 USD microunit（例 5 USD = 5_000_000）·
-		// q.CreditsPerUnit 是"每单位 USD 对应多少积分 microunit"（例 7_000_000）
-		// 结果 = unitPrice / 1_000_000 × CreditsPerUnit = unitPrice × CreditsPerUnit / 1_000_000
-		return unitPrice.Amount * q.CreditsPerUnit / 1_000_000
+// 读不到才按本轮快照现算（冷启动 · 探针还没跑完第一轮 · 新接入 vendor）——
+// **不能硬失败**：这个值只用于冻结估价和 vendor 侧上限 · 实扣走
+// `settle` 里的 `purchase.TotalCost`（vendor 权威值）· 为了估价把整条拉号链停掉不值当。
+//
+// 返回的 fromDB 只用于打点区分来源。
+func (o *Orchestrator) unitCreditsFor(
+	ctx context.Context, vendorID providers.VendorID, snapshotPrice providers.Money,
+) (credits int64, fromDB bool) {
+	if o.credits != nil {
+		if c, _, ok := o.credits.LatestCredits(ctx, string(vendorID)); ok && c > 0 {
+			return c, true
+		}
 	}
-	// CNY / credit / 未指定 · 认为已是积分 microunit
-	return unitPrice.Amount
+	return o.convertSnapshotPrice(ctx, vendorID, snapshotPrice), false
+}
+
+// convertSnapshotPrice · 冷启动兜底 · 按 vendor_pricing 规则换算本轮快照单价。
+//
+// 换算式跟 Prober 落库时**同一条**（docs/18 §1.3）：
+//
+//	credits = Amount × credits_per_unit / 1_000_000
+//
+// credit / CNY 家 credits_per_unit = 1_000_000 · 退化成恒等（pass-through）。
+func (o *Orchestrator) convertSnapshotPrice(
+	ctx context.Context, vendorID providers.VendorID, m providers.Money,
+) int64 {
+	if m.Amount == 0 {
+		return 0
+	}
+	perUnit := int64(1_000_000)
+	if q := o.quoteFor(ctx, vendorID); q.CreditsPerUnit > 0 {
+		perUnit = q.CreditsPerUnit
+	}
+	return m.Amount * perUnit / 1_000_000
 }
 
 // vendorFor 从注册表选 vendor · id 空回落到 defaultVendor（向后兼容）。
@@ -286,8 +321,9 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 		o.maybeEnqueueOnNoStock(ctx, in, vendor.ID())
 		return nil, ErrNoStock
 	}
-	// **1b P1-2A** · 按 vendor_pricing 换算（USD 家 → 积分 · CNY/credit 家 pass-through）
-	unitCostHint := o.convertToMicroCredits(ctx, vendor.ID(), rawUnitPrice)
+	// 估价基准 · 优先读 vendor_probe.our_unit_credits（入库时换算好的权威积分 · docs/18 §1.4）·
+	// 读不到才按本轮快照现算（冷启动兜底）。实扣不看这个值 —— 走 settle 里 vendor 的 TotalCost。
+	unitCostHint, _ := o.unitCreditsFor(ctx, vendor.ID(), rawUnitPrice)
 
 	// 冻结按估价的上限；实扣多退少补
 	// 1b P1-2B · 按本次拉号上下文实时求 Rates（surcharge_rule 表） · nil resolver 走 env
@@ -303,6 +339,13 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 	}
 	rates := o.resolveRates(ctx, rc)
 	reserved := Price(unitCostHint, in.Count, rates).Total
+
+	// 涨价保护上限 · 用 vendor_pricing 的换算规则把积分上限折回 vendor 币种。
+	// 表里币种跟快照币种对不上时不设（配错的表会把上限放大几倍 · 见 quoteCurrencyMatches）
+	var vendorCap *providers.Money
+	if q := o.quoteFor(ctx, vendor.ID()); quoteCurrencyMatches(q.QuoteCurrency, rawUnitPrice) {
+		vendorCap = vendorMaxTotal(in.MaxUnitPrice, in.Count, rawUnitPrice, q.CreditsPerUnit)
+	}
 
 	// 抢号链 fire 传现成的（挂单时已定 · 复用保证 vendor 侧幂等）· 其他路径自动生成
 	clientOrderID := in.ClientOrderID
@@ -349,7 +392,7 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 		Zone:          nonZeroZone(in.Zone),
 		// 涨价保护 · 把用户的**积分**上限换回 vendor 报价币种（部分 vendor 原生支持 ·
 		// 不支持的 adapter 忽略这个字段）。见 vendorMaxTotal 说明。
-		MaxTotal: vendorMaxTotal(in.MaxUnitPrice, in.Count, rawUnitPrice, unitCostHint),
+		MaxTotal: vendorCap,
 	})
 	if err != nil {
 		// 崩在这里的**不能**回 reserved 释放 —— vendor 可能已扣款。留在 purchasing，janitor 接手。
@@ -596,40 +639,61 @@ func groupFor(busID, passengerID string) string {
 
 // vendorMaxTotal 把用户的**积分**单价上限换回 vendor 报价币种的总价上限。
 //
-// **为什么要换算**：用户在设置里填的上限是"我方积分/个"（`strategy.decide` 已取过
-// 全局跟车级更严的那个）· 但 vendor 的涨价保护参数用的是**它自己的币种**（有的 CNY ·
-// 有的 USD）。直接把积分数传过去会把上限设错几倍。
+// **为什么要换算**：用户填的上限是"我方积分/个"（`strategy.decide` 已取过全局跟车级
+// 更严的那个）· vendor 的涨价保护参数用的是**它自己的币种**。直接把积分数传过去会把上限设错几倍。
 //
-// **换算办法**：不查换算表 · 用这一次已经拿到的两个量做等比映射 ——
+// **换算走 vendor_pricing 同一条规则的逆式**（docs/18 §1.3）——
+// 入库时 `credits = raw × credits_per_unit / 1_000_000` · 这里反过来：
 //
-//	rawUnitPrice  = vendor 原始报价（vendor 币种 · 已知）
-//	unitCostHint  = 同一个价换成我方积分后的值（已知 · convertToMicroCredits 算的）
-//	maxUnitPrice  = 用户的积分上限
-//	→ vendor 侧上限 = maxUnitPrice × rawUnitPrice / unitCostHint × count
+//	vendor 侧单价上限 = maxUnitPrice × 1_000_000 / credits_per_unit
 //
-// 这样不管中间隔了几层汇率 · 比例都对。CNY / credit 家 rawUnitPrice == unitCostHint ·
-// 等比映射退化成恒等（直接就是 maxUnitPrice × count）。
+// 不再用"本轮快照两个量等比映射"（老实现）—— 那个依赖 unitCostHint 必须来自同一次快照 ·
+// 现在估价基准优先读库（可能是上一轮探针的值）· 等比映射的前提就不成立了。
 //
-// 返 nil 的三种情况（都表示"不设保护" · adapter 会跳过这个字段）：
+// 返 nil 的四种情况（都表示"不设保护" · adapter 会跳过这个字段）：
 //   - 用户没设上限（maxUnitPrice <= 0）
-//   - unitCostHint <= 0（换算基准缺失 · 宁可不设也不要设错）
 //   - count <= 0（不该发生 · 防御）
+//   - credits_per_unit <= 0（换算规则缺失 · 宁可不设也不要设错）
+//   - **quote 币种跟快照币种不一致** —— 说明 vendor_pricing 没配对（例：表里记 CNY ·
+//     vendor 实际报 USD）· 这时换出来的数字会挂错币种标签 · 宁可不设
 //
-// **只有原生支持的 vendor 会用它**（当前 6 家里 1 家）· 其他 adapter 忽略 ·
-// 我方仍有 `strategy.decide` 那层护栏挡着 · 所以这里返 nil 不会失去保护。
-func vendorMaxTotal(maxUnitPrice int64, count int, rawUnitPrice providers.Money, unitCostHint int64) *providers.Money {
-	if maxUnitPrice <= 0 || unitCostHint <= 0 || count <= 0 {
+// **只有原生支持的 vendor 会用它** · 其他 adapter 忽略 ·
+// 我方仍有 `strategy.decide` 那层护栏挡着 · 所以返 nil 不会失去保护。
+func vendorMaxTotal(
+	maxUnitPrice int64, count int, snapshotPrice providers.Money, creditsPerUnit int64,
+) *providers.Money {
+	if maxUnitPrice <= 0 || count <= 0 || creditsPerUnit <= 0 {
 		return nil
 	}
-	// 等比映射到 vendor 币种 · 再乘数量
-	vendorUnitCap := maxUnitPrice * rawUnitPrice.Amount / unitCostHint
+	// credit / CNY 家 creditsPerUnit = 1_000_000 · 逆式退化成恒等
+	vendorUnitCap := maxUnitPrice * 1_000_000 / creditsPerUnit
 	if vendorUnitCap <= 0 {
 		return nil
 	}
 	return &providers.Money{
 		Amount:   vendorUnitCap * int64(count),
-		Currency: rawUnitPrice.Currency,
+		Currency: snapshotPrice.Currency,
 	}
+}
+
+// quoteCurrencyMatches · vendor_pricing 记的币种跟快照实际报的币种对不对得上。
+//
+// 对不上说明表没配对 · 换算会挂错币种标签（例：USD 家表里记 CNY · 算出来的数字
+// 按 CNY 传给 vendor · vendor 当 USD 读 → 上限放大 6.8 倍 · 涨价保护形同虚设）。
+//
+// `credit` 和 `CNY` 视为同一族（我方积分口径 1:1 · docs/18 §1.3）。
+func quoteCurrencyMatches(quoteCurrency string, snapshot providers.Money) bool {
+	if snapshot.Currency == "" || quoteCurrency == "" {
+		// 任一侧没标币种 · 无从校验 · 交给调用方的其他护栏
+		return true
+	}
+	norm := func(c string) string {
+		if c == providers.CurrencyCredit || c == "CNY" {
+			return "credit"
+		}
+		return c
+	}
+	return norm(quoteCurrency) == norm(snapshot.Currency)
 }
 
 // stockUnitPrice 从快照里取指定区的单价 · 0 = 该区无货（**deprecated · 1a 兼容**）

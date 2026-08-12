@@ -22,12 +22,12 @@ package vendorview
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/decider"
+	"github.com/bus-pooling/bus-pooling/internal/pricing"
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
@@ -117,29 +117,27 @@ func (s *Service) PricedFor(ctx context.Context, in PricedForInput) (*PricedView
 	}, nil
 }
 
-// latestCredits · 读 vendor_probe.our_unit_credits · 优先当前时刻 · 缺则最近一条
+// latestCredits · 读 vendor_probe.our_unit_credits（机制 A 的出口）
+//
+// **region 参数当前不生效** —— `vendor_probe` 没有 region 列 · `our_unit_credits` 是
+// 首个 zone 的采样值（`sample_price_region` 记了是哪个 zone）· 一条探针行只有一个积分值。
+// 要精确到区得先给 vendor_probe 加 region 维度（当前多 region 差价不大 · 不值当）。
+// 签名保留 region 是为了将来加维度时调用方不用改。
 func (s *Service) latestCredits(ctx context.Context, vendorID, region string) (int64, time.Time, error) {
+	_ = region // 见上方说明
 	if s.probeStore == nil {
 		return 0, time.Time{}, ErrPriceMissing
 	}
-	// 直接 SQL · 不走 LatestProbe（那个走 sample_price_micro 老列）
-	var credits sql.NullInt64
-	var probedAtStr string
-	q := `SELECT our_unit_credits, probed_at FROM vendor_probe
-	       WHERE vendor_id = ? AND our_unit_credits IS NOT NULL AND our_unit_credits > 0
-	       ORDER BY probed_at DESC LIMIT 1`
-	err := s.probeStore.db.QueryRowContext(ctx, q, vendorID).Scan(&credits, &probedAtStr)
-	if errors.Is(err, sql.ErrNoRows) {
+	credits, probedAt, ok := s.probeCredits().LatestCredits(ctx, vendorID)
+	if !ok {
 		return 0, time.Time{}, ErrPriceMissing
 	}
-	if err != nil {
-		return 0, time.Time{}, err
-	}
-	if !credits.Valid || credits.Int64 <= 0 {
-		return 0, time.Time{}, ErrPriceMissing
-	}
-	probedAt, _ := time.Parse(time.RFC3339Nano, probedAtStr)
-	return credits.Int64, probedAt, nil
+	return credits, probedAt, nil
+}
+
+// probeCredits · 复用 pricing 那份读取器 · 保证跟 decider 估价读的是同一列同一条 SQL
+func (s *Service) probeCredits() *pricing.ProbeCredits {
+	return pricing.NewProbeCredits(s.probeStore.db)
 }
 
 // tierLabel · docs/18 §2.1 · 只 wholesale 看真名

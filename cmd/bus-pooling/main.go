@@ -447,6 +447,9 @@ func buildDecider(
 		Pool:          pool,
 		Rates:         rates,
 		Pricing:       pricingAdapter,
+		// 估价基准读 vendor_probe.our_unit_credits（docs/18 §1.4）·
+		// 探针还没落过数时自动退回按快照现算
+		Credits:       pricing.NewProbeCredits(sqldb.DB),
 		RatesResolver: surchargeResolver,
 		// 拉号并发 + 数量区间走 config.pull（§8.35 #18 · 避免并发打爆上游）
 		Limits: decider.Limits{
