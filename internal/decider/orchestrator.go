@@ -347,6 +347,9 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 		Count:         in.Count,
 		ClientOrderID: clientOrderID,
 		Zone:          nonZeroZone(in.Zone),
+		// 涨价保护 · 把用户的**积分**上限换回 vendor 报价币种（部分 vendor 原生支持 ·
+		// 不支持的 adapter 忽略这个字段）。见 vendorMaxTotal 说明。
+		MaxTotal: vendorMaxTotal(in.MaxUnitPrice, in.Count, rawUnitPrice, unitCostHint),
 	})
 	if err != nil {
 		// 崩在这里的**不能**回 reserved 释放 —— vendor 可能已扣款。留在 purchasing，janitor 接手。
@@ -589,6 +592,44 @@ func groupFor(busID, passengerID string) string {
 		return housepool.BusGroup(busID)
 	}
 	return housepool.RecordGroup(passengerID)
+}
+
+// vendorMaxTotal 把用户的**积分**单价上限换回 vendor 报价币种的总价上限。
+//
+// **为什么要换算**：用户在设置里填的上限是"我方积分/个"（`strategy.decide` 已取过
+// 全局跟车级更严的那个）· 但 vendor 的涨价保护参数用的是**它自己的币种**（有的 CNY ·
+// 有的 USD）。直接把积分数传过去会把上限设错几倍。
+//
+// **换算办法**：不查换算表 · 用这一次已经拿到的两个量做等比映射 ——
+//
+//	rawUnitPrice  = vendor 原始报价（vendor 币种 · 已知）
+//	unitCostHint  = 同一个价换成我方积分后的值（已知 · convertToMicroCredits 算的）
+//	maxUnitPrice  = 用户的积分上限
+//	→ vendor 侧上限 = maxUnitPrice × rawUnitPrice / unitCostHint × count
+//
+// 这样不管中间隔了几层汇率 · 比例都对。CNY / credit 家 rawUnitPrice == unitCostHint ·
+// 等比映射退化成恒等（直接就是 maxUnitPrice × count）。
+//
+// 返 nil 的三种情况（都表示"不设保护" · adapter 会跳过这个字段）：
+//   - 用户没设上限（maxUnitPrice <= 0）
+//   - unitCostHint <= 0（换算基准缺失 · 宁可不设也不要设错）
+//   - count <= 0（不该发生 · 防御）
+//
+// **只有原生支持的 vendor 会用它**（当前 6 家里 1 家）· 其他 adapter 忽略 ·
+// 我方仍有 `strategy.decide` 那层护栏挡着 · 所以这里返 nil 不会失去保护。
+func vendorMaxTotal(maxUnitPrice int64, count int, rawUnitPrice providers.Money, unitCostHint int64) *providers.Money {
+	if maxUnitPrice <= 0 || unitCostHint <= 0 || count <= 0 {
+		return nil
+	}
+	// 等比映射到 vendor 币种 · 再乘数量
+	vendorUnitCap := maxUnitPrice * rawUnitPrice.Amount / unitCostHint
+	if vendorUnitCap <= 0 {
+		return nil
+	}
+	return &providers.Money{
+		Amount:   vendorUnitCap * int64(count),
+		Currency: rawUnitPrice.Currency,
+	}
 }
 
 // stockUnitPrice 从快照里取指定区的单价 · 0 = 该区无货（**deprecated · 1a 兼容**）

@@ -28,8 +28,8 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/topupchannel"
 	"github.com/bus-pooling/bus-pooling/internal/vendoraccount"
 	"github.com/bus-pooling/bus-pooling/internal/vendorview"
-	"github.com/bus-pooling/bus-pooling/internal/webhookin"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
+	"github.com/bus-pooling/bus-pooling/internal/webhookin"
 )
 
 // maxBodyBytes 请求体上限（契约错误码表里的 body_too_large 是 1 MiB）
@@ -75,17 +75,17 @@ type Server struct {
 // ServerDeps 装配 Server 需要的依赖。decider 允许为 nil（migrate 之类的
 // 子命令不需要跑拉号，主进程 serve 才装配）
 type ServerDeps struct {
-	DB           *sql.DB
-	Passengers   *passenger.Store
-	Wallets      *wallet.Store
-	Strategies   *strategy.Store
-	Buses        *bus.Store
-	Decider      *decider.Orchestrator
-	Redeems      *redeem.Store
-	Topups       *topup.Store
-	PullRecords  *pullrecord.Store
-	Handoffs     *handoff.Store
-	Pool         housepool.HousePool
+	DB                  *sql.DB
+	Passengers          *passenger.Store
+	Wallets             *wallet.Store
+	Strategies          *strategy.Store
+	Buses               *bus.Store
+	Decider             *decider.Orchestrator
+	Redeems             *redeem.Store
+	Topups              *topup.Store
+	PullRecords         *pullrecord.Store
+	Handoffs            *handoff.Store
+	Pool                housepool.HousePool
 	VendorView          *vendorview.Service
 	Insights            *insight.Store
 	Downstreams         *downstream.Store
@@ -112,17 +112,17 @@ func NewServer(d ServerDeps) *Server {
 		panic("api: 装配了 PaymentGW 但缺 PendingTopups · gateway_creating 状态无法落库 · 会丢单")
 	}
 	return &Server{
-		db:           d.DB,
-		passengers:   d.Passengers,
-		wallets:      d.Wallets,
-		strategies:   d.Strategies,
-		buses:        d.Buses,
-		decider:      d.Decider,
-		redeems:      d.Redeems,
-		topups:       d.Topups,
-		pullRecords:  d.PullRecords,
-		handoffs:     d.Handoffs,
-		pool:         d.Pool,
+		db:                  d.DB,
+		passengers:          d.Passengers,
+		wallets:             d.Wallets,
+		strategies:          d.Strategies,
+		buses:               d.Buses,
+		decider:             d.Decider,
+		redeems:             d.Redeems,
+		topups:              d.Topups,
+		pullRecords:         d.PullRecords,
+		handoffs:            d.Handoffs,
+		pool:                d.Pool,
 		vendorView:          d.VendorView,
 		insights:            d.Insights,
 		downstreams:         d.Downstreams,
@@ -231,8 +231,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/webhooks/vendor/{vendor_id}", handler(s.handleVendorWebhook))
 
 	// vendors 只读（05-api-contract §9）· 全部要鉴权
-	mux.Handle("GET /api/vendors/status", handler(s.handleVendorsStatus)) // 公开
-	mux.Handle("GET /api/vendors/status/{anon_id}/trend", handler(s.handleVendorStatusTrend))   // 公开 · 老契约（按 source 两种 schema）
+	mux.Handle("GET /api/vendors/status", handler(s.handleVendorsStatus))                         // 公开
+	mux.Handle("GET /api/vendors/status/{anon_id}/trend", handler(s.handleVendorStatusTrend))     // 公开 · 老契约（按 source 两种 schema）
 	mux.Handle("GET /api/vendors/status/{anon_id}/events", handler(s.handleVendorDispatchEvents)) // 公开 · 统一事件流 · /status 页用这个
 	mux.Handle("GET /api/vendors/stock", handler(s.RequireAuth(s.handleVendorsStock)))
 	mux.Handle("GET /api/vendors/prices", handler(s.RequireAuth(s.handleVendorsPrices)))
@@ -616,6 +616,15 @@ func atoiDefault(s string, def int) int {
 		return def
 	}
 	return n
+}
+
+// derefInt64 · nil 指针取 0。用于把 strategy 的"nil = 不限"语义转成 decider 的
+// "0 = 不限"语义（两边约定不同 · 这里是唯一的转换点）。
+func derefInt64(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 // clientIP 尽力取真实来源 IP（审计用，不做鉴权依据 —— header 可伪造）

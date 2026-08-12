@@ -293,8 +293,9 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	busID := r.PathValue("bus_id")
-	// 校验乘客在这辆车里（防越权拉到别人车里）
-	if _, err := s.buses.GetForPassenger(r.Context(), busID, p.ID); err != nil {
+	// 校验乘客在这辆车里（防越权拉到别人车里）· 顺带拿车级策略（下面判上限要用）
+	b, err := s.buses.GetForPassenger(r.Context(), busID, p.ID)
+	if err != nil {
 		return ErrNotFound("找不到这辆车")
 	}
 
@@ -345,13 +346,16 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	// 1a 阶段暂不接车级 max_unit_price（表里有列，还没端点配置它） · Iss #12 补
-	if _, err := s.strategies.CanPull(r.Context(), p.ID, strategy.CheckInput{
-		BusID:   busID,
-		Count:   req.Count,
-		Balance: bal.Balance,
-		Used:    strategy.Usage{Rounds: used.Rounds, Spend: used.Spend},
-	}); err != nil {
+	// 车级 max_unit_price 参与判定（跟全局取更严 · strategy.decide 的 stricter）。
+	// 车级策略由 PUT /api/buses/{id}/strategy 配 · b 是上面已经取到的那辆车。
+	intent, err := s.strategies.CanPull(r.Context(), p.ID, strategy.CheckInput{
+		BusID:           busID,
+		Count:           req.Count,
+		Balance:         bal.Balance,
+		Used:            strategy.Usage{Rounds: used.Rounds, Spend: used.Spend},
+		BusMaxUnitPrice: b.Strategy.MaxUnitPrice,
+	})
+	if err != nil {
 		if fail := translateStrategyErr(err); fail != nil {
 			return fail
 		}
@@ -364,6 +368,8 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 		Count:               req.Count,
 		Zone:                providers.Zone(req.Zone),
 		IdempotencyRecordID: hit.recordID,
+		// 生效上限（全局 ∧ 车级取严）· 用途见 pull.go 同处注释
+		MaxUnitPrice: derefInt64(intent.MaxUnitPrice),
 	})
 	if err != nil {
 		if fail := translateDeciderErr(err); fail != nil {

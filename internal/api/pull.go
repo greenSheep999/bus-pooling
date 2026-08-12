@@ -115,12 +115,13 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// 单独拉号 · 没有 bus 级上限
-	if _, err := s.strategies.CanPull(r.Context(), p.ID, strategy.CheckInput{
+	intent, err := s.strategies.CanPull(r.Context(), p.ID, strategy.CheckInput{
 		BusID:   "",
 		Count:   req.Count,
 		Balance: bal.Balance,
 		Used:    strategy.Usage{Rounds: used.Rounds, Spend: used.Spend},
-	}); err != nil {
+	})
+	if err != nil {
 		if fail := translateStrategyErr(err); fail != nil {
 			return fail
 		}
@@ -136,6 +137,10 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 		Zone:                providers.Zone(req.Zone),
 		VendorID:            providers.VendorID(req.VendorID),
 		IdempotencyRecordID: hit.recordID,
+		// 生效的单价上限（CanPull 已取全局跟车级更严的）· 给 decider 两个用途：
+		//   ① 缺货挂单时存进 stock_watcher · fire 时继续守同一上限
+		//   ② 换算成 vendor 币种传涨价保护（部分 vendor 原生支持）
+		MaxUnitPrice: derefInt64(intent.MaxUnitPrice),
 	})
 	if err != nil {
 		if fail := translateDeciderErr(err); fail != nil {
