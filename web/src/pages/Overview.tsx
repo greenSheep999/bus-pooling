@@ -577,7 +577,7 @@ export default function Overview() {
                 buses={(ov?.buses.items ?? []).map((b) => ({ id: b.id, name: b.name }))}
                 vendors={(vendors?.stats ?? [])
                   .filter((v) => !v.out_of_stock)
-                  .map((v) => ({ id: v.vendor_id, name: vendorLabel(v.vendor_id, !!me?.invited) }))}
+                  .map((v) => ({ id: v.vendor_id, name: vendorLabel(v.vendor_id, me?.tier) }))}
               />
               <Segmented
                 options={METRIC_KEYS.map((m) => ({ value: m.value, label: t(m.labelKey) }))}
@@ -654,7 +654,7 @@ export default function Overview() {
                         v.out_of_stock && "text-fg-tertiary",
                       )}
                     >
-                      {vendorLabel(v.vendor_id, !!me?.invited)}
+                      {vendorLabel(v.vendor_id, me?.tier)}
                     </span>
                     {v.rank === 1 && <MicroStat tone="ok">{t("vendor_table.tag_best")}</MicroStat>}
                     {v.out_of_stock && <MicroStat tone="danger">{t("vendor_table.tag_oos")}</MicroStat>}
@@ -796,7 +796,7 @@ export default function Overview() {
                       noData ? "text-fg-tertiary" : "text-fg-secondary",
                     )}
                   >
-                    {vendorLabel(s.vendor_id, !!me?.invited)}
+                    {vendorLabel(s.vendor_id, me?.tier)}
                   </span>
                   <span
                     className={cn(

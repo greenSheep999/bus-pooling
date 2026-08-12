@@ -45,17 +45,29 @@ const APIKeyPrefix = "usr-"
 const apiKeyPrefixLen = 12
 
 type Passenger struct {
-	ID             string
-	Username       string
-	Email          string
-	EmailVerified  bool
-	Role           string
-	Status         string
+	ID            string
+	Username      string
+	Email         string
+	EmailVerified bool
+	Role          string
+	Status        string
+	// Tier · 用户档次（retail / community / wholesale · docs/18 §2.1）·
+	// 决定计费链免哪几个分项 + 能不能看 vendor 展示名（只 wholesale 能）
+	Tier string
+	// Invited · **兜底字段** · 下次 schema 变更删。
+	// 别拿它判档次 —— community 和 wholesale 都是 true · 拿它当"能看展示名"会漏给社群档
 	Invited        bool
 	InviteCodeUsed string
 	CreatedAt      time.Time
 	LastLoginAt    *time.Time
 }
+
+// 档次常量 · CHECK 在应用层（migration 028 · SQLite 加列不支持带 CHECK）
+const (
+	TierRetail    = "retail"
+	TierCommunity = "community"
+	TierWholesale = "wholesale"
+)
 
 type APIKey struct {
 	ID         string
@@ -167,14 +179,18 @@ func (s *Store) Register(ctx context.Context, in RegisterInput) (*Passenger, err
 
 	return &Passenger{
 		ID: id, Username: username, Email: email,
-		Role: "user", Status: "active", Invited: invited,
+		Role: "user", Status: "active",
+		// 注册一律落 retail · 升档只走 system_invite_code.grants_tier 那条路（docs/18 §2.1）·
+		// 这里不按 invited 直接升 —— 任何非空码都能置 invited=1 · 拿它升档等于白送最优档
+		Tier:           TierRetail,
+		Invited:        invited,
 		InviteCodeUsed: code,
 		CreatedAt:      now,
 	}, nil
 }
 
 const passengerCols = `id, username, email, email_verified, role, status,
-	invited, COALESCE(invite_code_used, ''), created_at, last_login_at`
+	COALESCE(tier, 'retail'), invited, COALESCE(invite_code_used, ''), created_at, last_login_at`
 
 func scanPassenger(row interface{ Scan(...any) error }) (*Passenger, error) {
 	var p Passenger
@@ -183,11 +199,14 @@ func scanPassenger(row interface{ Scan(...any) error }) (*Passenger, error) {
 	var lastLogin sql.NullString
 
 	if err := row.Scan(&p.ID, &p.Username, &p.Email, &emailVerified, &p.Role, &p.Status,
-		&invited, &p.InviteCodeUsed, &createdAt, &lastLogin); err != nil {
+		&p.Tier, &invited, &p.InviteCodeUsed, &createdAt, &lastLogin); err != nil {
 		return nil, err
 	}
 	p.EmailVerified = emailVerified != 0
 	p.Invited = invited != 0
+	if p.Tier == "" {
+		p.Tier = TierRetail
+	}
 	p.CreatedAt = parseTime(createdAt)
 	if lastLogin.Valid {
 		t := parseTime(lastLogin.String)

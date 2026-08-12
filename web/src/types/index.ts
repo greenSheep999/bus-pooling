@@ -15,11 +15,13 @@ export interface Paged<T> {
 }
 
 // ── 乘客 / 钱包
-/** 用户档次 · decisions §8.39 · 每档"多减一层"
- *   retail    = 零售 · 无系统邀请码 · Vendor 0N + 全套分项
- *   wholesale = 批发 · 社群码（TG/Discord）· vendor 真名 + 免区域分项
- *   insider   = 同行 · 同行码（同行群邀请制）· vendor 真名 + 免 vendor + 区域分项 */
-export type PassengerTier = "retail" | "wholesale" | "insider";
+/** 用户档次 · docs/18 §2.1 · 每档"多减一层"
+ *   retail    = 零售   · 无系统邀请码 · Vendor 0N 匿名 + 全套分项
+ *   community = 社群   · 社群码（TG/Discord）· Vendor 0N 匿名 + 免区域分项
+ *   wholesale = 批发商 · 批发商码（B2B 定向）· vendor 真名（唯一可见的档）+ 免 vendor + 区域分项
+ *
+ * ⚠️ 别在 UI 上展示档次名（CLAUDE.md §0.1）· 只用来决定 vendor 显示真名还是匿名 label */
+export type PassengerTier = "retail" | "community" | "wholesale";
 
 export interface Passenger {
   id: string;
@@ -27,7 +29,7 @@ export interface Passenger {
   email: string;
   email_verified: boolean;
   created_at: ISOTime;
-  /** 用户档次（decisions §8.39）· 决定分项链和 vendor 显示名 */
+  /** 用户档次（docs/18 §2.1）· 决定分项链和 vendor 显示名 */
   tier: PassengerTier;
   /** 兼容字段（下版删）· 等同 tier != "retail" · 新代码一律用 tier */
   invited: boolean;

@@ -59,7 +59,7 @@ export function PoolDistribution({
                   className="size-[7px] shrink-0 rounded-full"
                   style={{ backgroundColor: shadeFor(i) }}
                 />
-                <span className="font-medium text-fg-secondary">{vendorLabel(v.id, !!me?.invited)}</span>
+                <span className="font-medium text-fg-secondary">{vendorLabel(v.id, me?.tier)}</span>
                 <span className="font-semibold tnum text-fg-tertiary">{v.n}</span>
               </span>
             ))}
@@ -94,7 +94,7 @@ export function PoolDistribution({
                 style={{ backgroundColor: shadeFor(i) }}
               />
               <span className="min-w-0 flex-1 truncate font-medium text-fg-secondary">
-                {vendorLabel(v.id, !!me?.invited)}
+                {vendorLabel(v.id, me?.tier)}
               </span>
               <span className="font-semibold tnum">{t("pool-distribution.row-unit", { count: v.n })}</span>
             </div>

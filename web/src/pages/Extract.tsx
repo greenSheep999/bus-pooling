@@ -297,7 +297,7 @@ function RecordRow({
         >
           {c.key_masked}
         </span>
-        <VendorTag name={vendorLabel(c.vendor_id, !!me?.invited)} />
+        <VendorTag name={vendorLabel(c.vendor_id, me?.tier)} />
         {/* 状态标记 · 正常 / 已失效（质保内的标出来，能退） */}
         {dead ? (
           inWarranty ? (
@@ -398,7 +398,7 @@ function ExtractEventRow({ e }: { e: ExtractEvent }) {
         <Chip tone={res.tone} dot>{t(res.labelKey)}</Chip>
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-2">
-        <VendorTag name={vendorLabel(e.vendor_id, !!me?.invited)} size="sm" />
+        <VendorTag name={vendorLabel(e.vendor_id, me?.tier)} size="sm" />
         {e.zone && (
           <TokenTag>
             {e.zone}
@@ -561,7 +561,7 @@ function AssignEventRow({ e }: { e: AssignEvent }) {
 
         <span className="flex min-w-0 flex-[0.9] flex-wrap items-center gap-1">
           {e.vendors.map((v) => (
-            <VendorTag key={v} name={vendorLabel(v, !!me?.invited)} />
+            <VendorTag key={v} name={vendorLabel(v, me?.tier)} />
           ))}
         </span>
       </BareRow>

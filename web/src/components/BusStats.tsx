@@ -140,7 +140,7 @@ function PullVolumeChart({ pulls }: { pulls: PullRound[] }) {
             {vendors.map((v) => (
               <span key={v} className="flex items-center gap-1.5 text-fg-secondary">
                 <span className="size-2 rounded-sm" style={{ backgroundColor: vendorColor(v) }} />
-                {vendorLabel(v, !!me?.invited)}
+                {vendorLabel(v, me?.tier)}
               </span>
             ))}
           </div>
@@ -519,7 +519,7 @@ function StackedTooltip({
             return (
               <div key={v} className="flex items-center gap-2">
                 <span className="size-1.5 rounded-sm" style={{ backgroundColor: vendorColor(v) }} />
-                <span className="text-fg-secondary">{vendorLabel(v, !!me?.invited)}</span>
+                <span className="text-fg-secondary">{vendorLabel(v, me?.tier)}</span>
                 <span className="ml-auto font-semibold tnum">{val} {unit}</span>
               </div>
             );

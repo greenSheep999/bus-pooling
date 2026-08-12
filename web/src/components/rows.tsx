@@ -49,7 +49,7 @@ export function PullRow({ r }: { r: PullRound }) {
         {failed ? (
           <span className="truncate text-fg-tertiary">
             {t("activity.pull.failed", {
-              vendor: vendorLabel(r.vendor_id, !!me?.invited),
+              vendor: vendorLabel(r.vendor_id, me?.tier),
               reason: r.fail_reason,
             })}
           </span>
@@ -57,7 +57,7 @@ export function PullRow({ r }: { r: PullRound }) {
           <>
             <span className="font-semibold tnum">+{r.count_purchased}</span>
             <span className="text-fg-secondary">{t("activity.pull.count-suffix")}</span>
-            <span className="text-fg-secondary">{vendorLabel(r.vendor_id, !!me?.invited)}</span>
+            <span className="text-fg-secondary">{vendorLabel(r.vendor_id, me?.tier)}</span>
             <ArrowRight className="size-3 shrink-0 text-fg-tertiary" />
             <span className="truncate font-medium">{r.bus_name}</span>
             {r.result === "refunded" && (

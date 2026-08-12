@@ -35,8 +35,8 @@ export function PullExtractForm({
   const { data: vendors } = useVendorStats();
   const availableVendors = (vendors?.stats ?? []).filter((v) => !v.out_of_stock);
 
-  /** 注册时填过邀请码 · 决定 vendor 显示真名还是编号 · decisions §8.20 */
-  const invited = !!me?.invited;
+  /** 档次 · 决定 vendor 显示真名还是匿名编号（只 wholesale 看真名 · docs/18 §2.1） */
+  const tier = me?.tier;
 
   const [count, setCount] = useState(3);
   const [vendorId, setVendorId] = useState<string>("auto");
@@ -68,7 +68,7 @@ export function PullExtractForm({
   /** 实际会派到的 vendor 显示名（auto 时来自推荐结果） */
   const effectiveVendorLabel = isAuto
     ? pick?.vendor_label ?? t("pull-form.vendor.auto-fallback")
-    : vendorLabel(vendorId, invited);
+    : vendorLabel(vendorId, tier);
   const effectiveZone = isAuto ? pick?.zone ?? null : activeZone ? (stock!.zones.length === 1 ? null : activeZone.zone) : null;
 
   /* 预估费用 · 走后端 /me/pull/estimate（对外只三项：unit_price / service_fee / total） */
@@ -132,7 +132,7 @@ export function PullExtractForm({
                 <SelectItem value="auto">{t("pull-form.vendor.auto")}</SelectItem>
                 {availableVendors.map((v) => (
                   <SelectItem key={v.vendor_id} value={v.vendor_id}>
-                    {vendorLabel(v.vendor_id, invited)}
+                    {vendorLabel(v.vendor_id, tier)}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -15,8 +15,8 @@ export const passenger: Passenger = {
   email: "danlio@example.com",
   email_verified: true,
   created_at: ago(24 * 54),
-  /* 用户档次 · decisions §8.39 · 改这里切视角
-     retail = 零售 · wholesale = 批发 · insider = 同行（看真名+最低价） */
+  /* 用户档次 · docs/18 §2.1 · 改这里切视角
+     retail = 零售 · community = 社群 · wholesale = 批发商（唯一看真名 + 最低价的档） */
   tier: "retail",
   /* 兼容字段 · 跟 tier 保持一致 · 下版后端删这个字段后前端一起删 */
   invited: false,
@@ -24,7 +24,7 @@ export const passenger: Passenger = {
 
 /** mock 内部 · 按当前 passenger 身份出 vendor 显示名 · decisions §8.20
     真实后端在 API 层做这个映射 · mock 里活动流 / 流水的文案也要走它，不许 hardcode 真名 */
-const vl = (id: string) => vendorLabel(id, passenger.invited);
+const vl = (id: string) => vendorLabel(id, passenger.tier);
 
 /** 散客费率 · decisions §8.20 · 无注册码且无消费码时适用
     后台可组合多条（当前只有 region_markup）· UI 绝不展示这个数 */

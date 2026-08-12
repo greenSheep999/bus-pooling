@@ -175,7 +175,7 @@ export const handlers = [
     return ok({
       ...pick,
       /* 显示名按身份 · 有注册码看真名 · 散客看 Vendor 0N */
-      vendor_label: vendorLabel(pick.vendor_id, fx.passenger.invited),
+      vendor_label: vendorLabel(pick.vendor_id, fx.passenger.tier),
     });
   }),
   // ── vendor 价格走势（Prices 页多线图）· decisions §8.22
@@ -187,7 +187,7 @@ export const handlers = [
     const waived = isWaived(request);
     const trends = Object.keys(fx.vendorStocks).map((id) => {
       const t = fx.vendorPriceTrend(id, days, waived, zone);
-      return { ...t, vendor_label: vendorLabel(id, fx.passenger.invited) };
+      return { ...t, vendor_label: vendorLabel(id, fx.passenger.tier) };
     });
     return ok({ trends });
   }),
@@ -319,9 +319,9 @@ export const handlers = [
   }),
   http.post("/api/register", async ({ request }) => {
     const body = (await request.json()) as { invite_code?: string };
-    // 填码 → tier 从零售升到同行（mock 简化 · 后端会按 grants_tier 分同行/批发 · decisions §8.39）
+    // 填码 → tier 升到批发商（mock 简化 · 后端按 grants_tier 分社群/批发商 · docs/18 §2.1）
     const hasCode = !!body.invite_code?.trim();
-    fx.passenger.tier = hasCode ? "insider" : "retail";
+    fx.passenger.tier = hasCode ? "wholesale" : "retail";
     fx.passenger.invited = hasCode; // 兼容字段（下版删）
     return ok({ ok: true }, 500);
   }),

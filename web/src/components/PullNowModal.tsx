@@ -105,7 +105,7 @@ export function PullNowModal({
                   <SelectItem value="auto">{t("pull-now-modal.vendor-auto")}</SelectItem>
                   {availableVendors.map((v) => (
                     <SelectItem key={v.vendor_id} value={v.vendor_id}>
-                      {vendorLabel(v.vendor_id, !!me?.invited)}
+                      {vendorLabel(v.vendor_id, me?.tier)}
                     </SelectItem>
                   ))}
                 </SelectContent>

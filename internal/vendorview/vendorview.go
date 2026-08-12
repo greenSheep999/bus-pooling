@@ -579,45 +579,57 @@ func (s *Service) lookupAny(id string) (providers.VendorEntry, bool) {
 // 计费链见 decisions §8.34（逐层乘）。这里**只对外暴露最终价** ——
 // 分层已经在 decider.Breakdown 里私有化了，vendorview 不再回头拆分。
 //
-// Viewer.Invited=true 或 Viewer.WaiveMarkup=true → 跳过 RegionMarkup / SinglePull /
-// Capability（对散客生效的分项）· Service（我方服务费）仍然算。
-// 简化实现：直接用 decider.Price(unit, 1, rates)；invited 时把这几层 rate 置 0。
+// **档次决定免哪层**（docs/18 §2.2）：
+//   - retail    · 全套
+//   - community · 免 region_markup
+//   - wholesale · 免 vendor_markup + region_markup
+//
+// `single_pull` / `service` 三档都收 —— 别在这里置 0。
+// WaiveMarkup 是运营手工豁免（跟档次正交）· 置 0 区域层。
 func (s *Service) finalUnitPrice(unit int64, v Viewer) int64 {
 	if unit <= 0 {
 		return 0
 	}
 	rates := s.rates
-	if v.Invited || v.WaiveMarkup {
+	switch v.Tier {
+	case TierWholesale:
+		rates.VendorMarkup = 0
 		rates.RegionMarkup = 0
-		rates.SinglePull = 0
-		rates.Capability = 0
+	case TierCommunity:
+		rates.RegionMarkup = 0
 	}
-	// count=1 让 SinglePull 有机会生效；非邀请用户看到"一份"的最终报价。
+	if v.WaiveMarkup {
+		rates.RegionMarkup = 0
+	}
+	// count=1 让 SinglePull 有机会生效；列表页展示的是"单拉一份"的最终报价
 	return decider.Price(unit, 1, rates).UnitPrice
 }
 
-// labelAndAnon 按身份出显示名 + 匿名编号。
+// labelAndAnon 按档次出显示名 + 匿名编号。
 //
-//   - Invited=true → 真名（vendor.DisplayName）+ anon 仍返（前端偶尔用它取色/查表）
-//   - Invited=false → "AWS-Q Kiro Vendor 0N" + anon
+//   - tier=wholesale → 真名（vendor.DisplayName）+ anon 仍返（前端偶尔用它取色/查表）
+//   - 其他档          → "AWS-Q Kiro Vendor 0N" + anon
+//
+// **别用 Invited 判** —— community 档也是 Invited=true · 拿它当门会把真名漏给社群档
+// （docs/18 §2.1 定死只 wholesale 可见）。
 //
 // 1a 简化：AnonID 用 VendorID sha256 前 6 位（稳定编号，前端可用）。
 // 前端约定：优先渲染 VendorLabel；VendorID 只用于取色（vendorColor）不直接展示。
 func labelAndAnon(e providers.VendorEntry, v Viewer) (label, anon string) {
 	anon = anonIDOf(e.VendorID)
-	if v.Invited {
+	if v.canSeeVendorName() {
 		return e.DisplayName, anon
 	}
 	return anonLabelOf(e.VendorID), anon
 }
 
-// visibleVendorID · **决定 vendor_id 字段是否泄漏真名**（CLAUDE.md §8.20 硬约束）：
-//   - Invited=true：返真 vendor_id
-//   - Invited=false：返 anon_id
+// visibleVendorID · **决定 vendor_id 字段是否泄漏真名**（CLAUDE.md §0.1 硬约束）：
+//   - tier=wholesale：返真 vendor_id
+//   - 其他档：返 anon_id
 //
 // 所有对外 view struct 的 VendorID 字段**必须**走这个函数拼装。
 func visibleVendorID(id providers.VendorID, v Viewer) string {
-	if v.Invited {
+	if v.canSeeVendorName() {
 		return string(id)
 	}
 	return anonIDOf(id)

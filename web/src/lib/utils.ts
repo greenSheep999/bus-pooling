@@ -1,6 +1,8 @@
 import { type ClassValue, clsx } from "clsx";
 import { extendTailwindMerge } from "tailwind-merge";
 
+import type { PassengerTier } from "@/types";
+
 /** tailwind-merge 必须知道项目自定义的 fontSize 名字
  *  否则它把 `text-label` 当成**颜色类**，跟 `text-white` 判定冲突后覆盖掉
  *  症状：brand 按钮在带 size="sm"（含 text-label）时变成紫底黑字
@@ -134,17 +136,20 @@ const VENDOR_ANON_INDEX: Record<string, string> = Object.fromEntries(
   ]),
 );
 
-/** vendor 显示名 · 按身份决定真名还是匿名编号
-    @param invited 是否非零售档（wholesale / insider）· decisions §8.39
-    批发和同行都看真名 · 只有零售看编号 */
-export function vendorLabel(id: string, invited: boolean): string {
-  if (invited) return vendorName(id);
+/** vendor 显示名 · 按档次决定真名还是匿名编号
+ *
+ *  **只有 `wholesale`（批发商）看真名**（docs/18 §2.1）· `retail` / `community` 都看匿名编号。
+ *
+ *  ⚠️ 别传 `me.invited` —— 那个字段 `community` 也是 true · 会把真名漏给社群档。
+ *  一律传 `me?.tier`。 */
+export function vendorLabel(id: string, tier: PassengerTier | undefined): string {
+  if (tier === "wholesale") return vendorName(id);
   return VENDOR_ANON_INDEX[id] ?? "AWS-Q Kiro Vendor";
 }
 
-/** ⚠️ 档次名（retail/wholesale/insider）**只在内部**用 · UI 上不要展示三档差别
- *  用户视角只有：有专属邀请码（社群成员）vs 没有 · 具体是批发还是同行不对外
- *  见 CLAUDE.md §0.1 §12.6（对外文案不出现内部术语）· decisions §8.39 */
+/** ⚠️ 档次名（retail/community/wholesale）**只在内部**用 · UI 上不要展示三档差别
+ *  用户视角只有：有专属邀请码（社群成员）vs 没有 · 具体哪档不对外
+ *  见 CLAUDE.md §0.1 §12.6（对外文案不出现内部术语）· docs/18 §2.1 */
 
 export function vendorColor(id: string): string {
   return VENDOR_COLOR[id] ?? "#9147FF";

@@ -25,9 +25,9 @@ export default function Community() {
   const [code, setCode] = useState("");
   const [msg, setMsg] = useState<{ tone: "ok" | "danger"; text: string } | null>(null);
 
-  /* 已绑码 · tier 明确为 wholesale/insider 才算 · retail 或未定义都算未绑
-     严格白名单判断 · 防 tier 字段缺失时误判"已绑" · decisions §8.39 */
-  const alreadyMember = me?.tier === "wholesale" || me?.tier === "insider";
+  /* 已绑码 · tier 明确为 community/wholesale 才算 · retail 或未定义都算未绑
+     严格白名单判断 · 防 tier 字段缺失时误判"已绑" · docs/18 §2.1 */
+  const alreadyMember = me?.tier === "community" || me?.tier === "wholesale";
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

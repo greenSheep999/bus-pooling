@@ -46,7 +46,7 @@ export function CredentialCard({
                   : "font-semibold text-fg-tertiary"
               }
             >
-              {vendorLabel(cred.vendor_id, !!me?.invited)}
+              {vendorLabel(cred.vendor_id, me?.tier)}
             </span>
           </div>
 

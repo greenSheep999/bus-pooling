@@ -207,7 +207,7 @@ export function AssignModal({
               <div className="mt-3 max-h-60 space-y-2 overflow-y-auto rounded-xl border border-hairline bg-bg-elevated p-3">
                 {handoff.keys.map((k) => (
                   <div key={k.credential_id} className="flex items-center gap-3 text-label">
-                    <VendorTag name={vendorLabel(k.vendor_id, !!me?.invited)} />
+                    <VendorTag name={vendorLabel(k.vendor_id, me?.tier)} />
                     {/* 真明文（不是打码版）· 后端从号池实时读，不落我方库 */}
                     <code className="min-w-0 flex-1 truncate font-mono">{k.key}</code>
                     <Button
@@ -290,7 +290,7 @@ export function AssignModal({
                           <span className="min-w-0 flex-1 truncate font-mono text-fg-secondary">
                             {r.key_masked}
                           </span>
-                          <VendorTag name={vendorLabel(r.vendor_id, !!me?.invited)} />
+                          <VendorTag name={vendorLabel(r.vendor_id, me?.tier)} />
                         </div>
                       ))}
                     </div>

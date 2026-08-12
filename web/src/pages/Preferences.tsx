@@ -169,7 +169,7 @@ export default function Preferences() {
                 <SelectItem value="auto">{t("defaults.vendor.auto")}</SelectItem>
                 {Object.keys(VENDOR_NAME).map((id) => (
                   <SelectItem key={id} value={id}>
-                    {vendorLabel(id, !!me?.invited)}
+                    {vendorLabel(id, me?.tier)}
                   </SelectItem>
                 ))}
               </SelectContent>

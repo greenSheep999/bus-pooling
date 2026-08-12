@@ -386,7 +386,7 @@ function PullHistRow({ r }: { r: PullRound }) {
       <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
         {failed ? (
           <span className="truncate text-fg-tertiary">
-            {t("row.failed-prefix")} <span className="font-medium">{vendorLabel(r.vendor_id, !!me?.invited)}</span>{" "}
+            {t("row.failed-prefix")} <span className="font-medium">{vendorLabel(r.vendor_id, me?.tier)}</span>{" "}
             · {r.fail_reason ?? t("row.fail-reason-default")}
           </span>
         ) : (
@@ -394,7 +394,7 @@ function PullHistRow({ r }: { r: PullRound }) {
             <span className="shrink-0 text-fg-secondary">{t("row.pulled-prefix")}</span>
             <span className="shrink-0 font-semibold tnum text-fg">{r.count_purchased}</span>
             <span className="shrink-0 text-fg-secondary">{t("row.pulled-mid")}</span>
-            <VendorTag name={vendorLabel(r.vendor_id, !!me?.invited)} size="sm" />
+            <VendorTag name={vendorLabel(r.vendor_id, me?.tier)} size="sm" />
             <span className="shrink-0 text-fg-tertiary">→</span>
             <TokenTag size="sm">{r.bus_name}</TokenTag>
           </>

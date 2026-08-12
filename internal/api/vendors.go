@@ -19,11 +19,22 @@ import (
 // viewerOf 把 passenger 翻译成 vendorview.Viewer。
 //
 // coupon_code 阶段 1a 简化：**永远 false**（暂不接优惠码逻辑；文档已注明 1a 待接）。
-// Invited 直接来自 passenger.Invited（注册时是否填了邀请码 · decisions §8.29）。
+//
+// **Tier 必须填** —— vendorview 用它决定计费链免哪几个分项 + 能不能看 vendor 展示名
+// （只 wholesale 能 · docs/18 §2.1）。漏填会让所有人退到 retail 视角（贵但不漏名 · 安全侧）。
 func viewerOf(p *passenger.Passenger, r *http.Request) vendorview.Viewer {
 	_ = r
+	if p == nil {
+		return vendorview.Viewer{Tier: vendorview.TierRetail}
+	}
+	tier := p.Tier
+	if tier == "" {
+		tier = vendorview.TierRetail
+	}
 	return vendorview.Viewer{
-		Invited:     p != nil && p.Invited,
+		PassengerID: p.ID,
+		Tier:        tier,
+		Invited:     p.Invited,
 		WaiveMarkup: false,
 	}
 }

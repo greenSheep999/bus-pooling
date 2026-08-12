@@ -33,13 +33,13 @@ CREATE TABLE passenger (
   password_hash          TEXT NOT NULL,                  -- Argon2id
   role                   TEXT NOT NULL DEFAULT 'user',   -- user | admin
   status                 TEXT NOT NULL DEFAULT 'active', -- active | disabled
-  -- 用户档次（decisions §8.39 · 三档 · 一档多减一层）
-  --   retail    = 零售 · 无系统邀请码 · 全套加价
-  --   wholesale = 批发 · 社群码注册（TG/Discord）· 免区域附加费
-  --   insider   = 同行 · 同行码注册（同行群邀请制）· 免 vendor + 区域附加费
-  tier                   TEXT NOT NULL DEFAULT 'retail'
-                         CHECK(tier IN ('retail','wholesale','insider')),
-  -- 兜底字段 · 下次 schema 变更删（decisions §8.39）· 迁移：invited=true → tier=insider
+  -- 用户档次（docs/18 §2.1 · 三档 · 一档多减一层）
+  --   retail    = 零售   · 无系统邀请码 · 全套加价
+  --   community = 社群   · 社群码注册（TG/Discord）· 免区域附加费
+  --   wholesale = 批发商 · 批发商码注册（B2B 定向）· 免 vendor + 区域附加费 · 唯一能看 vendor 真名的档
+  -- CHECK 在应用层做（migration 028 · SQLite ALTER TABLE 不支持带 CHECK 加列）
+  tier                   TEXT NOT NULL DEFAULT 'retail',
+  -- 兜底字段 · 下次 schema 变更删 · 迁移见下文「tier 迁移」
   invited                INTEGER NOT NULL DEFAULT 0,
   invite_code_used       TEXT,                            -- 注册时用的码（留痕 · 便于追来源）
   created_at             TEXT NOT NULL,
@@ -53,11 +53,18 @@ CREATE TABLE passenger (
 
 **依赖**：`internal/passenger`（Layer 3a）。
 
-**tier 迁移**（`decisions §8.39`）：
-- 现有 `invited = 1` 全部迁到 `tier = 'insider'`（保守 · 老用户不掉档）
-- 现有 `invited = 0` 迁到 `tier = 'retail'`
+**tier 迁移**（migration 028 实际行为）：
+- `tier` 是 028 新加的列 · **全表默认 `'retail'`**（不是从 `invited` 推的）
 - 加价链一律读 `tier`，不再读 `invited`
 - `invited` 字段作为兜底保留 · 下次 schema 变更时移除
+
+> **⚠️ 上线前必查**：老 `decisions §8.39` 承诺过「`invited=1` 不掉档」。028 没做这个回填 ——
+> 跑迁移前先 `SELECT COUNT(*) FROM passenger WHERE invited=1`：
+> - `0` 行 → 无影响，直接跑（本地库已确认 0 行）
+> - 非 0 → 跑完补一条 `UPDATE passenger SET tier='wholesale' WHERE invited=1`（新命名 `wholesale` = 最优档），别让老用户掉档
+
+**命名警告**：老 `§8.39` 用的是 `retail/wholesale/insider`，其中 `wholesale` 是**中间档**；
+现命名 `retail/community/wholesale` 里 `wholesale` 是**最优档**。**同名不同义 · 迁数据别做字符串替换**。
 
 ## 1.5 会话 · `session`
 
@@ -725,21 +732,21 @@ capability_slot / pull_round_capability （阶段 2c 起写）
 
 | 表 | 作用 | 关键约束 |
 |---|---|---|
-| `system_invite_code` | 我方发给社群 / 同行的码 · **只有它能置 tier ∈ {wholesale, insider}** | `max_uses` / `expires_at` / `disabled` 三重限制 · `grants_tier` 定授予档 |
+| `system_invite_code` | 我方发给社群 / 批发商的码 · **只有它能置 tier ∈ {community, wholesale}** | `max_uses` / `expires_at` / `disabled` 三重限制 · `grants_tier` 定授予档 |
 | `personal_invite_code` | 每人一个 · 只给**手续费减免额度**·**不改 tier** | `passenger_id` UNIQUE（一人一码） |
 | `invite_referral` | 谁邀请了谁 · 防刷 + 溯源 | 主键 = 被邀请人（**一人只能被邀一次**）· CHECK 挡自己邀自己 |
 
-**`system_invite_code` 加 `grants_tier` 列**（`decisions §8.39`）：
+**`system_invite_code` 加 `grants_tier` 列**（`docs/18 §2.1`）：
 
 ```sql
-grants_tier TEXT NOT NULL CHECK(grants_tier IN ('wholesale','insider'))
--- 'insider'   = 同行码 · 授 tier=insider · 同行群邀请制 · 车主手发白名单
--- 'wholesale' = 社群码 · 授 tier=wholesale · TG/Discord · 车主批量生成投放
+grants_tier TEXT NOT NULL CHECK(grants_tier IN ('community','wholesale'))
+-- 'community' = 社群码   · 授 tier=community · TG/Discord · 车主批量生成投放
+-- 'wholesale' = 批发商码 · 授 tier=wholesale · B2B 定向发 · 车主手发白名单 · 唯一能看 vendor 真名的档
 ```
 
 对外 UI 上两种码都叫「专属邀请码」（`CLAUDE.md §2`）· 用户不感知 · 后端按 `grants_tier` 决定授予哪档。
 
-**为什么个人码绝不能改 tier**（§8.29 明文）：如果个人码也解锁 wholesale/insider 身份，任何人都能
+**为什么个人码绝不能改 tier**（§8.29 明文）：如果个人码也解锁 community/wholesale 身份，任何人都能
 生成码让别人免区域分项 → 定价分层崩掉。所以个人码**只给减免额度**。
 
 **补绑**：`POST /api/me/community-code` 让已注册用户补绑（原来只能注册时填 ——

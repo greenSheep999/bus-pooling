@@ -132,7 +132,7 @@ func buildService(t *testing.T, opts ...func(*mockVendor, *mockVendor)) (*Servic
 
 func TestAggregateStock_SumsAvailableAcrossVendors(t *testing.T) {
 	svc, _, _ := buildService(t)
-	got := svc.AggregateStock(context.Background(), Viewer{Invited: true})
+	got := svc.AggregateStock(context.Background(), Viewer{Tier: TierWholesale})
 
 	if got.TotalAvailable != 42+12 {
 		t.Errorf("total = %d, want 54", got.TotalAvailable)
@@ -146,15 +146,25 @@ func TestAggregateStock_SumsAvailableAcrossVendors(t *testing.T) {
 	}
 }
 
-func TestAggregateStock_InvitedShowsRealNames(t *testing.T) {
+// 只 wholesale 看展示名 · retail / community 都看匿名编号（docs/18 §2.1）
+func TestAggregateStock_OnlyWholesaleSeesRealNames(t *testing.T) {
 	svc, _, _ := buildService(t)
 
-	invited := svc.AggregateStock(context.Background(), Viewer{Invited: true})
+	invited := svc.AggregateStock(context.Background(), Viewer{Tier: TierWholesale})
 	if invited.ByVendor[0].VendorLabel != "Kiro Market" {
-		t.Errorf("invited label = %q, want 'Kiro Market'", invited.ByVendor[0].VendorLabel)
+		t.Errorf("wholesale label = %q, want 'Kiro Market'", invited.ByVendor[0].VendorLabel)
 	}
 
-	anon := svc.AggregateStock(context.Background(), Viewer{Invited: false})
+	// community 档 · Invited 也是 true · 但**不该**看到展示名（老实现拿 Invited 判会漏）
+	comm := svc.AggregateStock(context.Background(), Viewer{Tier: TierCommunity, Invited: true})
+	if comm.ByVendor[0].VendorLabel == "Kiro Market" {
+		t.Errorf("community 不该看到展示名: %q", comm.ByVendor[0].VendorLabel)
+	}
+	if comm.ByVendor[0].VendorID == string(providers.Vendor91Kiro) {
+		t.Errorf("community 不该看到真 vendor_id: %q", comm.ByVendor[0].VendorID)
+	}
+
+	anon := svc.AggregateStock(context.Background(), Viewer{Tier: TierRetail})
 	// 匿名用户不该看到 "Kiro Market" —— 应该是 "AWS-Q Kiro Vendor 01"
 	if anon.ByVendor[0].VendorLabel == "Kiro Market" {
 		t.Errorf("anon label 不该是真名: %q", anon.ByVendor[0].VendorLabel)
@@ -174,7 +184,7 @@ func TestAggregateStock_SlowVendorDoesntBlockOthers(t *testing.T) {
 	})
 
 	start := time.Now()
-	got := svc.AggregateStock(context.Background(), Viewer{Invited: true})
+	got := svc.AggregateStock(context.Background(), Viewer{Tier: TierWholesale})
 	elapsed := time.Since(start)
 
 	// 单家 100ms 超时 · 并发跑 · 整体应远小于慢家的 1s
@@ -222,31 +232,41 @@ func TestVendorStock_MarkupAppliedForNonInvited(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 未邀请 → 全链生效 · 100 → 120 → 126
-	nonInvited, err := svc.VendorStock(context.Background(),
-		string(providers.Vendor91Kiro), Viewer{Invited: false})
+	// retail → 全链生效 · 100 → 120 → 126
+	retail, err := svc.VendorStock(context.Background(),
+		string(providers.Vendor91Kiro), Viewer{Tier: TierRetail})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p := nonInvited.Zones[0].UnitPrice; p != 126_000_000 {
-		t.Errorf("非邀请单价 = %d, want 126_000_000 (区 20 + 服务 5)", p)
+	if p := retail.Zones[0].UnitPrice; p != 126_000_000 {
+		t.Errorf("retail 单价 = %d, want 126_000_000 (区 20 + 服务 5)", p)
 	}
 
-	// 邀请 → 跳过区域分项 · 只保留服务费 · 100 → 105
-	invited, err := svc.VendorStock(context.Background(),
-		string(providers.Vendor91Kiro), Viewer{Invited: true})
+	// community → 免区域分项 · 只保留服务费 · 100 → 105
+	comm, err := svc.VendorStock(context.Background(),
+		string(providers.Vendor91Kiro), Viewer{Tier: TierCommunity})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p := invited.Zones[0].UnitPrice; p != 105_000_000 {
-		t.Errorf("邀请用户单价 = %d, want 105_000_000 (跳过区域 · 只服务 5)", p)
+	if p := comm.Zones[0].UnitPrice; p != 105_000_000 {
+		t.Errorf("community 单价 = %d, want 105_000_000 (免区域 · 只服务 5)", p)
+	}
+
+	// wholesale → 免 vendor + 区域分项 · 本例没配 vendor 分项 · 也是 105
+	whole, err := svc.VendorStock(context.Background(),
+		string(providers.Vendor91Kiro), Viewer{Tier: TierWholesale})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := whole.Zones[0].UnitPrice; p != 105_000_000 {
+		t.Errorf("wholesale 单价 = %d, want 105_000_000", p)
 	}
 }
 
 func TestVendorStock_NoInternalTermsInJSON(t *testing.T) {
 	svc, _, _ := buildService(t)
 	out, err := svc.VendorStock(context.Background(),
-		string(providers.Vendor91Kiro), Viewer{Invited: false})
+		string(providers.Vendor91Kiro), Viewer{Tier: TierRetail})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +285,7 @@ func TestVendorStock_NoInternalTermsInJSON(t *testing.T) {
 
 func TestAutoPick_PicksCheapestWhenNoHistory(t *testing.T) {
 	svc, _, _ := buildService(t) // 一家便宜（30）· 另一家贵（50）
-	pick := svc.AutoPick(context.Background(), "auto", Viewer{Invited: true})
+	pick := svc.AutoPick(context.Background(), "auto", Viewer{Tier: TierWholesale})
 	if pick.VendorID != string(providers.Vendor91Kiro) {
 		t.Errorf("autoPick = %q, want v01", pick.VendorID)
 	}
@@ -294,7 +314,7 @@ func TestAutoPick_OutOfStock_ReturnsEmptyShell(t *testing.T) {
 	_ = v91
 	_ = vceo
 
-	pick := svc.AutoPick(context.Background(), "auto", Viewer{Invited: true})
+	pick := svc.AutoPick(context.Background(), "auto", Viewer{Tier: TierWholesale})
 	if pick.Available != 0 {
 		t.Errorf("缺货时 available = %d, want 0", pick.Available)
 	}
@@ -315,7 +335,7 @@ func TestAutoPick_ZoneFilter(t *testing.T) {
 		}
 	})
 
-	pick := svc.AutoPick(context.Background(), "us", Viewer{Invited: true})
+	pick := svc.AutoPick(context.Background(), "us", Viewer{Tier: TierWholesale})
 	if pick.VendorID != string(providers.VendorKiroCEO) {
 		t.Errorf("zone=us pick = %q, want v02（v01 在 us 缺货）", pick.VendorID)
 	}
@@ -323,7 +343,7 @@ func TestAutoPick_ZoneFilter(t *testing.T) {
 
 func TestPrices_ReturnsPlaceholderDaysWithNotice(t *testing.T) {
 	svc, _, _ := buildService(t)
-	out := svc.Prices(context.Background(), "auto", 7, Viewer{Invited: false})
+	out := svc.Prices(context.Background(), "auto", 7, Viewer{Tier: TierRetail})
 	if out.Notice == "" {
 		t.Error("1a 阶段 prices 应带 notice 提示数据未采集")
 	}
@@ -363,7 +383,7 @@ func TestHistory_NotFound(t *testing.T) {
 
 func TestStats_ListsAllEnabledVendors(t *testing.T) {
 	svc, _, _ := buildService(t)
-	out := svc.Stats(context.Background(), Viewer{Invited: true})
+	out := svc.Stats(context.Background(), Viewer{Tier: TierWholesale})
 	if len(out.Stats) != 2 {
 		t.Fatalf("stats 数 = %d, want 2", len(out.Stats))
 	}

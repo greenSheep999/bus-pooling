@@ -166,7 +166,7 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
               <Trans
                 t={t}
                 i18nKey="card.strategy.preferred"
-                values={{ vendor: vendorLabel(s.preferred_vendor, !!me?.invited) }}
+                values={{ vendor: vendorLabel(s.preferred_vendor, me?.tier) }}
                 components={{ 1: <Em plain /> }}
                 parent="span"
               />

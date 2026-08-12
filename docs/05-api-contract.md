@@ -107,18 +107,24 @@ await POST(`/handoff/${download_token}/confirm`)
   "email": "alice@example.com",
   "email_verified": false,
   "created_at": "2026-08-07T12:00:00Z",
-  "tier": "insider",
+  "tier": "wholesale",
   "invited": true
 }
 ```
 
-**`tier`**（`decisions §8.39`）· 三档定价：
+**`tier`**（`docs/18 §2.1`）· 三档定价：
 
 | 值 | 含义 | vendor 显示 | 加价链 |
 |---|---|---|---|
 | `retail` | 零售 · 散客 · 无系统邀请码 | Vendor 0N 匿名编号 | 全套加价 |
-| `wholesale` | 批发 · TG/Discord 社群 · 社群码注册 | vendor 真名 | 免区域附加费 |
-| `insider` | 同行 · 同行群邀请制 · 同行码注册 | vendor 真名 | 免 vendor + 区域附加费 |
+| `community` | 社群 · TG/Discord · 社群码注册 | Vendor 0N 匿名编号 | 免区域附加费 |
+| `wholesale` | 批发商 · B2B 定向码注册 | **vendor 真名**（唯一可见的档） | 免 vendor + 区域附加费 |
+
+**`single_pull`（20% · `count==1` 时）三档都加** · **服务费（5%）三档都加** —— 档次只决定
+`vendor_markup` / `region_markup` 免不免。
+
+> **UI 不出现档次名**（`CLAUDE.md §0.1`）· 前端拿 `tier` 只用来决定「vendor 真名还是匿名 label」·
+> 不展示"零售 / 社群 / 批发商"字样 · 也不展示各层加价幅度。
 
 **`invited`**（**兼容字段** · 下版删）：等同 `tier != 'retail'` · 保留供旧前端兜底 · 新前端一律读 `tier`。
 

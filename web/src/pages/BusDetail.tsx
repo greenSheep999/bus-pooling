@@ -598,7 +598,7 @@ function CredentialRow({ c }: { c: Credential }) {
         <span className="truncate font-mono text-label font-medium text-fg-secondary">
           {c.key_masked}
         </span>
-        <VendorTag name={vendorLabel(c.vendor_id, !!me?.invited)} />
+        <VendorTag name={vendorLabel(c.vendor_id, me?.tier)} />
       </span>
 
       <span className="w-20 shrink-0 text-center text-label font-medium tnum text-fg-secondary">
@@ -707,14 +707,14 @@ function PullRow({ r }: { r: PullRound }) {
       <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
         {failed ? (
           <span className="truncate text-fg-tertiary">
-            {t("pulls.row.failed", { vendor: vendorLabel(r.vendor_id, !!me?.invited), reason: r.fail_reason ?? t("pulls.row.fail-reason-default") })}
+            {t("pulls.row.failed", { vendor: vendorLabel(r.vendor_id, me?.tier), reason: r.fail_reason ?? t("pulls.row.fail-reason-default") })}
           </span>
         ) : (
           <>
             <span className="shrink-0 text-fg-secondary">{t("pulls.row.flow-prefix")}</span>
             <span className="shrink-0 font-semibold tnum text-fg">{r.count_purchased}</span>
             <span className="shrink-0 text-fg-secondary">{t("pulls.row.flow-suffix")}</span>
-            <VendorTag name={vendorLabel(r.vendor_id, !!me?.invited)} size="sm" />
+            <VendorTag name={vendorLabel(r.vendor_id, me?.tier)} size="sm" />
           </>
         )}
       </span>
@@ -865,7 +865,7 @@ function PushRow({
         <span className="truncate font-mono text-label font-medium text-fg-secondary">
           {e.keyMasked}
         </span>
-        <VendorTag name={vendorLabel(e.vendorId, !!me?.invited)} />
+        <VendorTag name={vendorLabel(e.vendorId, me?.tier)} />
       </span>
       <span className="flex min-w-0 flex-[1.1] items-center gap-2 text-label">
         {e.status === "failed" && e.error ? (
