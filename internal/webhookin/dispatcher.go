@@ -227,9 +227,11 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 	// 而 dispatch 已经落库了 · 重推会走幂等 upsert 但也会重复 Notify（可接受 ·
 	// 挂单侧有 conditional UPDATE 保证只 fire 一次）。
 	if d.notifier != nil {
+		// **region 归一化**（docs/16 缺口 5）· e.Zone 可能是 "us"/"us-east-1"/"美国区" ·
+		// stock_watcher.region 语义定死 zone 名 · 走 ZoneOf 归一保 SQL 匹配一致
 		if err := d.notifier.Notify(ctx, stockwatch.NotifyParams{
 			VendorID: string(e.VendorID),
-			Region:   string(e.Zone),
+			Region:   string(providers.ZoneOf(string(e.Zone))),
 			Count:    e.NewKeys,
 			Source:   "webhook",
 		}); err != nil {

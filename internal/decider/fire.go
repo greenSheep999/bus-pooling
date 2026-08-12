@@ -103,11 +103,13 @@ func (o *Orchestrator) maybeEnqueueOnNoStock(
 		return false
 	}
 	id, err := o.enqueuer.Enqueue(ctx, stockwatch.EnqueueParams{
-		PassengerID:   in.PassengerID,
-		BusID:         in.BusID,
-		TargetGroup:   groupFor(in.BusID, in.PassengerID),
-		VendorID:      string(vendorID),
-		Region:        string(in.Zone),
+		PassengerID: in.PassengerID,
+		BusID:       in.BusID,
+		TargetGroup: groupFor(in.BusID, in.PassengerID),
+		VendorID:    string(vendorID),
+		// region 归一化 · in.Zone 是 API 层直接转的用户入参（可能是 "us-east-1"）·
+		// stock_watcher.region 语义定死 zone 名 · 跟 Notify 侧同一口径才能 SQL 匹配上
+		Region:        string(providers.ZoneOf(string(in.Zone))),
 		ClientOrderID: clientOrderID,
 		Count:         in.Count,
 		MaxUnitPrice:  in.MaxUnitPrice,

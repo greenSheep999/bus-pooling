@@ -459,9 +459,11 @@ func (p *Prober) deriveStockDelta(ctx context.Context, cur ProbeSample) {
 	// 逐 region 通知 · 让挂了特定 region 的挂单能精确匹配。
 	if p.notifier != nil {
 		for _, d := range dispatches {
+			// **region 归一化**（docs/16 缺口 5）· d.Region 是 vendor region 名（us-east-1）·
+			// 挂单存的是 zone 名（us）· 走 ZoneOf 归一保 SQL 匹配
 			if err := p.notifier.Notify(ctx, stockwatch.NotifyParams{
 				VendorID: cur.VendorID,
-				Region:   d.Region,
+				Region:   string(providers.ZoneOf(d.Region)),
 				Count:    d.Count,
 				Source:   "stock_delta",
 			}); err != nil {
