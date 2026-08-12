@@ -204,26 +204,26 @@ _ALLOWLIST = [
     (r"_test\.go$", r'\*got\.PreferredVendor\s*!=\s*"kiro91"'),
     (r"_test\.go$", r'BP_VENDOR_'),
     # ── 前 vendor adapter 自身文件里的 identifier 引用 ─
-    # kiro91 包内 用 kiro91 是自身 identifier · vendor 常量也一样·
-    # 错误前缀 fmt.Errorf("kiro91: ...") 也允许（内部日志 · 不面向用户）
-    (r"/providers/kiro/vendors/kiro91/",
-     r'\bkiro91\.|providers\.Vendor91Kiro|package kiro91|"kiro91:'),
-    (r"/providers/kiro/vendors/kiroceo/",
-     r'\bkiroceo\.|providers\.VendorKiroCEO|package kiroceo|"kiroceo:'),
-    (r"/providers/kiro/vendors/kirooo/",
-     r'\bkirooo\.|providers\.VendorKiroOOO|package kirooo|"kirooo:'),
-    (r"/providers/kiro/vendors/kiroappio/",
-     r'\bkiroappio\.|providers\.VendorKiroAppIO|package kiroappio|"kiroappio:'),
-    (r"/providers/kiro/vendors/kiroappcc/",
-     r'\bkiroappcc\.|providers\.VendorKiroAppCC|package kiroappcc|"kiroappcc:'),
-    (r"/providers/kiro/vendors/kirodrop/",
-     r'\bkirodrop\.|providers\.VendorKiroDrop|package kirodrop|"kirodrop:'),
+    # 各 vendor 包内 该家真名允许 · 是自身 identifier · 包内文件的注释里也可以引自己
+    # 错误前缀 fmt.Errorf("kiroXX: ...") 也允许（内部日志 · 不面向用户）
+    (r"/providers/kiro/vendors/kiro91/", r'\bkiro91\b'),
+    (r"/providers/kiro/vendors/kiroceo/", r'\bkiroceo\b'),
+    (r"/providers/kiro/vendors/kirooo/", r'\bkirooo\b'),
+    (r"/providers/kiro/vendors/kiroappio/", r'\bkiroappio\b'),
+    (r"/providers/kiro/vendors/kiroappcc/", r'\bkiroappcc\b'),
+    (r"/providers/kiro/vendors/kirodrop/", r'\bkirodrop\b'),
     # kiroceo 包用 kiroappcc 常量作为 provider ref（跨包 · 允许 identifier）
     (r"/providers/kiro/vendors/",
      r'providers\.VendorKiro(91|CEO|OOO|AppIO|AppCC|Drop)|kiroappcc:|kirodrop:'),
     # providers/kiro/register.go · 装配 6 家 · import 6 个包 · 全 identifier
     (r"/providers/kiro/register\.go$",
      r'\b(kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)\b|Kiro(91|CEO|OOO|AppIO|AppCC|Drop)'),
+    # internal/xi8/ · xi8 vendor_id → 我方 vendor slug 映射表（identifier · 跟数据契约挂钩）
+    # 这张表**就是**把外部聚合站 id 翻译到内部 vendor_id 的桥·不许它出现等于不许翻译
+    (r"internal/xi8/", r'\b(kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)\b'),
+    # cmd/bus-pooling/xi8.go · CLI 里 seed-vendor xi8 说明 · dev.env 路径注释 · identifier
+    (r"cmd/bus-pooling/xi8\.go$",
+     r'\b(kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)\b'),
     # providers/provider_test.go 里各 vendor id 用作测试 identifier
     (r"/providers/provider_test\.go$",
      r'"kiro(91|ceo|ooo)"|"kiroapp(io|cc)"|"kirodrop"|"91kiro"'),

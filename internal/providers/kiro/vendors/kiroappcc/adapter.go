@@ -116,13 +116,45 @@ func (a *Adapter) Purchase(ctx context.Context, req providers.PurchaseRequest) (
 	return toPurchaseResult(&cr, req.Count, resp.Body), nil
 }
 
-// OrderKeys 不支持 —— vendor 档案 §7：无 `/openapi/orders` 端点，无补拉能力。
-// 一旦网络超时，无法确认是否扣款成功（本 vendor 最大接入风险）。
-func (a *Adapter) OrderKeys(_ context.Context, _ string) (*providers.PurchaseResult, error) {
+// OrderKeys 补拉 —— 走 `/openapi/orders` 全量拉一遍 · 匹配 orderNo。
+//
+// 老档案说本 vendor 无 orders 端点 · 实测存在（endpoints-audit 2026-08-12）·
+// 每条订单有 orderNo/kiroApiKey/probeState/warrantyStatus · vendor 一单一 key。
+// 匹配到就复用 claimResp 结构返 · Replayed=true 补拉不重复扣费。
+func (a *Adapter) OrderKeys(ctx context.Context, orderID string) (*providers.PurchaseResult, error) {
+	req, err := a.newReq(ctx, http.MethodGet, "/openapi/orders", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := a.client.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("kiroappcc: OrderKeys orders http %d", resp.StatusCode)
+	}
+	var rows []ccOrder
+	if err := json.Unmarshal(resp.Body, &rows); err != nil {
+		return nil, fmt.Errorf("kiroappcc: OrderKeys 解析: %w", err)
+	}
+	for _, r := range rows {
+		if r.OrderNo != orderID {
+			continue
+		}
+		raw, _ := json.Marshal(r)
+		// 从 ccOrder 拼 claimResp（本 vendor 一单一 key · Key 单值）
+		cr := claimResp{
+			Key:        r.KiroApiKey,
+			PointsCost: r.PointsCost,
+		}
+		out := toPurchaseResult(&cr, 1, raw)
+		out.Replayed = true
+		return out, nil
+	}
 	return nil, &providers.APIError{
 		VendorID: providers.VendorKiroAppCC,
-		Sentinel: providers.ErrNotSupported,
-		Message:  "本 vendor 无 /openapi/orders 端点，不支持补拉",
+		Sentinel: providers.ErrNotFound,
+		Message:  fmt.Sprintf("orderNo %q 不在 /openapi/orders 里", orderID),
 	}
 }
 

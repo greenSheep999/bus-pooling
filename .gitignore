@@ -21,6 +21,11 @@ docs/vendors/_sources/kiroceo-docs.extracted.txt
 # Serena LSP index / 本地记忆 —— 工具中间产物·不入库
 .serena/
 
+# vendor 端点原始响应快照 —— 含 API key 明文 · 只本地摸端点用
+# 结论写进 docs/vendors/_endpoints-audit-*.md（脱敏）· 原始 JSON 不入库
+docs/vendors/_endpoints-*/
+!docs/vendors/_endpoints-audit-*.md
+
 # ── 前端
 web/node_modules/
 web/dist/
