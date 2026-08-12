@@ -33,6 +33,7 @@ type Prober struct {
 	store         *ProbeStore
 	orderKeyStore *OrderKeyStore  // 用于 stock-delta 落 vendor_dispatch · 可 nil（测试）
 	notifier      RestockNotifier // 抢号链通知口 · nil = 不通知（老装配 / 测试）
+	pricing       PricingLookup   // vendor 报价换算入口（migration 028 · docs/18 §1.3）· nil 时走 fallback
 	interval      time.Duration   // baseline 探测间隔（默认 60s）
 	hotInterval   time.Duration   // hot 模式间隔（默认 10s · 探到 delta / fleet_active 后启用）
 	hotDuration   time.Duration   // hot 持续时长（默认 6min · 无事件后退回 baseline）
@@ -45,6 +46,18 @@ type Prober struct {
 
 	// hot 状态跟踪（每 vendor 一份）· sync.Map 避免加锁
 	hotUntil sync.Map // vendor_id → time.Time · 到这个时刻前用 hotInterval
+}
+
+// PricingLookup · vendor_pricing 表适配的抽象（实现方 pricing.Store · main.go 装配注入）。
+//
+// 每次探针落库前查一次 · 用 vendor 报价的原始 microunit × credits_per_unit / 1_000_000
+// 换算成我方积分（唯一权威 our_unit_credits）· 之后所有读方（decider / vendorview /
+// PricedFor）**读积分列 · 不再算**（docs/18 §1.3）。
+type PricingLookup interface {
+	// QuoteFor 返换算规则 · rawUnits 是 vendor 报价 microunit
+	// 返值：quote_currency / credits_per_unit
+	// nil 或找不到时装配层适配器应返 fallback（credit / 1_000_000）
+	QuoteFor(ctx context.Context, vendorID string) (currency string, creditsPerUnit int64)
 }
 
 // RestockNotifier · 抢号链通知口的抽象（实现方 stockwatch.Watcher）。
@@ -62,6 +75,8 @@ type ProberConfig struct {
 	OrderKeyStore *OrderKeyStore
 	// Notifier 抢号链通知口 · stock-delta 推出 restock 时唤醒挂单 · nil = 不通知
 	Notifier RestockNotifier
+	// Pricing · vendor_pricing 表换算入口（docs/18 §1.3）· nil = fallback (credit 1:1)
+	Pricing PricingLookup
 	// Interval baseline 探测间隔 · 默认 60s（decisions §10.4 Q2）
 	Interval time.Duration
 	// HotInterval hot 模式间隔 · 默认 10s（探到 restock 事件后 6min 内提频）
@@ -100,6 +115,7 @@ func NewProber(cfg ProberConfig) *Prober {
 		store:         cfg.Store,
 		orderKeyStore: cfg.OrderKeyStore,
 		notifier:      cfg.Notifier,
+		pricing:       cfg.Pricing,
 		interval:      interval,
 		hotInterval:   hotInterval,
 		hotDuration:   hotDuration,
@@ -168,6 +184,38 @@ func (p *Prober) Start(ctx context.Context) {
 //
 // 逻辑：hotUntil[vendor] > now → 用 hotInterval · 否则 baseline interval。
 // hot 状态由 deriveStockDelta 里检测到 delta > 0 时 bump（延到 now + hotDuration）。
+// computeCreditsFromMoney · 把 vendor 原始报价换成我方积分 microunit（docs/18 §1.3）
+//
+// 规则：
+//   Money.Amount × credits_per_unit / 1_000_000
+//
+// 找不到 pricing 或 pricing 是 nil：走 credit / 1_000_000 fallback（1:1）· 老行为兼容。
+// Money.Amount == 0（vendor 没货 · 常见）：返 0 · 上层用 nullIfZeroInt64 转 NULL。
+func (p *Prober) computeCreditsFromMoney(ctx context.Context, vendorID string, m providers.Money) int64 {
+	if m.Amount == 0 {
+		return 0
+	}
+	perUnit := int64(1_000_000) // fallback: 1:1
+	if p.pricing != nil {
+		_, cpu := p.pricing.QuoteFor(ctx, vendorID)
+		if cpu > 0 {
+			perUnit = cpu
+		}
+	}
+	return m.Amount * perUnit / 1_000_000
+}
+
+// classifyPriceSource · 标 our_unit_credits 是怎么算的 · 便于对账
+func (p *Prober) classifyPriceSource(cur string) string {
+	switch cur {
+	case providers.CurrencyUSD:
+		return "computed_from_usd"
+	default:
+		// credit / CNY 都视为 vendor 侧就是积分（1:1）
+		return "vendor_native"
+	}
+}
+
 func (p *Prober) nextInterval(vendorID string) time.Duration {
 	if v, ok := p.hotUntil.Load(vendorID); ok {
 		if until, ok := v.(time.Time); ok && time.Now().Before(until) {
@@ -244,6 +292,19 @@ func (p *Prober) probeOnce(ctx context.Context, v providers.Vendor) {
 			sample.StockByRegion = regions
 			sample.SamplePriceMicro = snap.Zones[0].UnitPrice.Amount
 			sample.SamplePriceRegion = snap.Zones[0].Region
+
+			// ── pricing 标准化（docs/18 §1.3 · migration 028）──
+			// 上游原样 · 拿到就存
+			z0 := snap.Zones[0]
+			sample.VendorCurrency = string(z0.UnitPrice.Currency)
+			sample.VendorUnitRaw = z0.UnitPrice.Amount
+			if z0.UnitPrice.Currency == providers.CurrencyUSD {
+				sample.VendorPriceUSDRaw = z0.UnitPrice.Amount
+			}
+			// 我方计算 · 唯一权威积分
+			sample.OurUnitCredits = p.computeCreditsFromMoney(ctx, sample.VendorID, z0.UnitPrice)
+			sample.OurUnitSource = p.classifyPriceSource(z0.UnitPrice.Currency)
+			sample.OurComputedAt = sample.ProbedAt
 		}
 
 		if raw, _ := json.Marshal(snap); raw != nil {

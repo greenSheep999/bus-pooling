@@ -35,10 +35,23 @@ type ProbeSample struct {
 	StockByRegion     []RegionStock // 落 JSON 存
 	WarrantyMinutes   int
 	MaxPerOrder       int
-	SamplePriceMicro  int64  // 首个 zone 的单价 · 内部字段
+	SamplePriceMicro  int64  // **DEPRECATED**（migration 028）· 沿用旧行为 · 值 = vendor 原始报价（可能任币种混着 · 语义不再准）
 	SamplePriceRegion string // 采样的 zone id · 内部字段
 	ErrorKind         string // 空 = 成功
 	RawSnapshot       []byte // 完整 StockSnapshot JSON
+
+	// ── pricing 标准化（docs/18 §1.2 · migration 028）──
+	//
+	// 上游原样字段 · 拿到就存 · 没有则零值（SQL 层用 nullIfZero 转 NULL）：
+	VendorCurrency      string // credit / CNY / USD
+	VendorUnitRaw       int64  // microunit · vendor 报价原值
+	VendorExchangeRate  float64 // vendor 侧汇率（UI 有 · API 无 · 保留字段）
+	VendorPriceUSDRaw   int64  // USD 原值 microunit（部分 vendor 单独 USD 字段时填）
+	VendorPriceCNYRaw   int64  // CNY 原值 microunit（UI 有 · API 无 · 保留字段）
+	// 我方计算 · 唯一权威积分（docs/18 §1.3 换算路径）：
+	OurUnitCredits int64  // ★ microunit · 1_000_000 = 1 积分 = 1 RMB
+	OurUnitSource  string // vendor_native / computed_from_usd / fallback_last_rate
+	OurComputedAt  time.Time
 
 	// PublicStatus 相关字段 · vendor 自报的 fleet 累计数据（可选 · vendor 不支持时全 nil）
 	// 独立于 Alive/StockTotal —— 探针会同时打 Stock 和 PublicStatus 两个端点
@@ -83,6 +96,11 @@ func (s *ProbeStore) InsertProbe(ctx context.Context, p ProbeSample) error {
 			psGen = sql.NullInt64{Int64: 0, Valid: true}
 		}
 	}
+	// 标准化字段（docs/18 §1.3 · migration 028）· ComputedAt 空则用 ProbedAt
+	computedAt := p.OurComputedAt
+	if computedAt.IsZero() {
+		computedAt = p.ProbedAt
+	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO vendor_probe (
 			vendor_id, probed_at, alive, latency_ms, stock_total, stock_by_region,
@@ -90,8 +108,12 @@ func (s *ProbeStore) InsertProbe(ctx context.Context, p ProbeSample) error {
 			error_kind, raw_snapshot,
 			ps_keys_active, ps_keys_alive, ps_keys_dead, ps_keys_stock,
 			ps_keys_suspect, ps_keys_total, ps_generating,
-			ps_started_at, ps_uptime_seconds, ps_raw, ps_error_kind
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ps_started_at, ps_uptime_seconds, ps_raw, ps_error_kind,
+			vendor_currency, vendor_unit_raw, vendor_exchange_rate,
+			vendor_price_usd_raw, vendor_price_cny_raw,
+			our_unit_credits, our_unit_source, our_computed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		          ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		p.VendorID, p.ProbedAt.UTC().Format(time.RFC3339Nano),
 		boolToInt(p.Alive), nullIfZero(p.LatencyMs), nullIfZero(p.StockTotal),
@@ -103,6 +125,12 @@ func (s *ProbeStore) InsertProbe(ctx context.Context, p ProbeSample) error {
 		nullIfNilInt(p.PSKeysSuspect), nullIfNilInt(p.PSKeysTotal),
 		psGen, psStartedAt, nullIfNilInt64(p.PSUptimeSeconds), p.PSRaw,
 		nullIfEmpty(p.PSErrorKind),
+		// migration 028 · pricing 标准化字段
+		nullIfEmpty(p.VendorCurrency), nullIfZeroInt64(p.VendorUnitRaw),
+		nullIfZeroFloat64(p.VendorExchangeRate),
+		nullIfZeroInt64(p.VendorPriceUSDRaw), nullIfZeroInt64(p.VendorPriceCNYRaw),
+		nullIfZeroInt64(p.OurUnitCredits), nullIfEmpty(p.OurUnitSource),
+		computedAt.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
 		return fmt.Errorf("insert vendor_probe: %w", err)
@@ -421,4 +449,11 @@ func nullIfNilInt64(p *int64) sql.NullInt64 {
 		return sql.NullInt64{}
 	}
 	return sql.NullInt64{Int64: *p, Valid: true}
+}
+
+func nullIfZeroFloat64(v float64) sql.NullFloat64 {
+	if v == 0 {
+		return sql.NullFloat64{}
+	}
+	return sql.NullFloat64{Float64: v, Valid: true}
 }

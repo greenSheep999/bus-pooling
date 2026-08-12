@@ -598,6 +598,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		OrderKeyStore: orderKeyStoreForView,
 		// 抢号链：stock-delta 推出 restock 时唤醒挂单（只在 tight / turbo 时真 fire）
 		Notifier: stockWatcher,
+		// pricing 标准化（docs/18 §1.3 · migration 028）· 落库前把 vendor 报价换算成积分
+		Pricing:  pricing.NewVendorViewLookup(pricing.NewStore(database.DB)),
 		Interval: probeInterval,
 		Timeout:  10 * time.Second,
 	})
