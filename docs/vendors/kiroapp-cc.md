@@ -1,298 +1,278 @@
 # Vendor: kiroapp.cc
 
-## 1. 基础信息
+## 0 · 档案元信息
 
 | 项 | 值 |
 |---|---|
 | Base URL | `https://kiroapp.cc` |
-| 官方文档 | 无独立 `/docs`；对接说明写在登录后 "API Key" tab 的页面里，是 6 家里**最简的开放 API 面板** |
-| 抓取日期 | 2026-08-07（登录抓取） |
-| 站点标题 | Kiro Admin · Kiro Key 分发平台 |
-| 我方账号 | `<redacted>` |
-| 计费币种 | 积分 |
-| 当前单价 | 50 积分 / 个（我方 2026-08-07 视角，只有一档，无区域拆分） |
+| 官方文档 | **无独立 `/docs`** · 对接说明写在登录后 "API Key" tab 页面里 · 6 家里**最简的开放 API 面板**。抓取存档 `.playwright-mcp/vendor-scrape-2026-08-12/kiroappcc-docs.txt` |
+| 抓取日期 | 2026-08-12 |
+| 鉴权（openapi）| `Authorization: Bearer sk-…` |
+| 鉴权（`/api/user/*`）| **浏览器会话 Cookie** · 我方 API key 拿不到 |
+| 密钥前缀 | **`sk-`**（6 家里唯一 · ⚠️ 跟 OpenAI 的 `sk-` 混淆风险）|
+| **官方公开端点** | **5 个 `/openapi/*`** |
+| **隐藏内部端点** | **15 个 `/api/user/*`**（页面用 · 官方文档没写 · 需 cookie）|
+| **我方 adapter 接了** | **4 个 · 覆盖公开端点 80%** |
+| Provider group | `providers.ProviderKiro` |
+| Adapter 目录 | `internal/providers/kiro/vendors/kiroappcc/` |
+| 计价 | 积分 · **只有一档 · 无区域拆分** |
+| 分区 | **完全无区概念** · 6 家里唯一 |
+| 质保 | **双条件**（2 小时 **OR** 累计消耗 7000 积分）· 满一即结束 |
+| 商业模式 | **车主分成模式**（提供 AWS 母号 · 卖 key 拿收益）|
 
-## 2. 鉴权
+---
+
+## 1 · 端点清单
+
+### 1.1 官方公开 openapi（5 个）
+
+| # | 方法 | 路径 | vendor 描述 | 我方 adapter | 状态 |
+|---|---|---|---|---|---|
+| 1 | POST | `/openapi/claim` | 提取 1 个 key · body `{}` → `{key, pointsCost}` | `Adapter.Purchase()` | ✅ |
+| 2 | POST | `/openapi/claim` + `{count:N}` | **批量提取** → `{keys:[…], pointsCost}` | 同上 | ✅ |
+| 3 | GET | `/openapi/stock` | 库存 → `{availableKeys, keyPrice}` · **camelCase** | `Adapter.Stock()` | ✅ |
+| 4 | GET | `/openapi/balance` | 积分 → `{balance}` | `Adapter.Balance()` | ✅ |
+| 5 | GET | `/openapi/orders` | 历史订单 · **老档案曾判"不存在" · 实测存在** | `Adapter.OrderKeys()` | ✅ |
+
+**⚠️ 关键修正**（`docs/vendors/_endpoints-audit-2026-08-12.md`）：老档案 §7 写"本 vendor 无 `/openapi/orders` 端点 · 不支持补拉" · **实测存在** · 18 条历史订单 · 每条含 `probeState` / `warrantyStatus` / `refundedAt` / `usageSnapshot`。已修正。
+
+### 1.2 隐藏内部端点（15 个 · 页面用 · **需 cookie · 我方拿不到**）
+
+**用户与站点（3 个）**：
+
+| # | 方法 | 路径 | 用途 | 状态 |
+|---|---|---|---|---|
+| 6 | GET | `/api/user/site-info` | 站点公告 / 时间 | ❌ 需 cookie |
+| 7 | GET | `/api/user/announcements` | 公告列表 | ❌ 需 cookie |
+| 8 | GET | `/api/user/me` | 当前用户（含积分）· 页面多次调 | ❌ 需 cookie |
+
+**提取 key（1 个）**：
+
+| # | 方法 | 路径 | 用途 | 状态 |
+|---|---|---|---|---|
+| 9 | POST | `/api/user/claim-preview` | **提取预估** · body 带 count → 返扣多少积分 | ❌ 需 cookie · **有价值**（下单前预估）|
+
+**API Key + Webhook（2 个）**：
+
+| # | 方法 | 路径 | 用途 | 状态 |
+|---|---|---|---|---|
+| 10 | GET | `/api/user/api-keys` | 自己 API key 列表（不含明文）| ❌ 需 cookie |
+| 11 | GET | `/api/user/webhook` | 读 webhook 配置（url + 签名密钥 + 启用状态）| ❌ 需 cookie |
+
+（对应保存未抓到 PUT/POST · 推测同路径 PUT）
+
+**订单 + key（2 个）**：
+
+| # | 方法 | 路径 | 用途 | 状态 |
+|---|---|---|---|---|
+| 12 | GET | `/api/user/orders?limit=200` | 我的订单 | ❌ 需 cookie（有 `/openapi/orders` 替代）|
+| 13 | GET | `/api/user/my-keys` | 我的密钥（历史）| ❌ 需 cookie |
+
+**发车 · 母号供应侧（3 个）**：
+
+| # | 方法 | 路径 | 用途 | 状态 |
+|---|---|---|---|---|
+| 14 | GET | `/api/user/my-mothers` | 我的母号列表 | ❌ 阶段外 |
+| 15 | GET | `/api/user/my-mothers/usage` | 母号用量统计 | ❌ 阶段外 |
+| 16 | GET | `/api/user/dispatch?limit=50` | **发车历史** · 含"评价"字段（拉完了 / NPC / 人上人 / 夯）| ❌ 阶段外 |
+
+**收益 · 车主分成（4 个）**：
+
+| # | 方法 | 路径 | 用途 | 状态 |
+|---|---|---|---|---|
+| 17 | GET | `/api/user/payout-qr` | 收款二维码（我方账号 404 · 说明还没设）| ❌ 阶段外 |
+| 18 | GET | `/api/user/earnings` | 收益汇总 | ❌ 阶段外 |
+| 19 | GET | `/api/user/settlements` | 结算历史 | ❌ 阶段外 |
+| 20 | GET | `/api/user/txns?limit=200` | **积分流水** | ❌ 需 cookie · **有价值**（对账）|
+
+---
+
+## 2 · 逐端点字段清单（vendor 原文命名）
+
+### 2.1 `GET /openapi/stock`
+
+**实测响应**（我方账号 · 2026-08-12）：
+```json
+{ "availableKeys": 0, "keyPrice": 50 }
+```
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| **`availableKeys`** | int | 可购库存 · **camelCase**（6 家里唯一用驼峰的）|
+| **`keyPrice`** | int | 单价（积分/个）· **只有一档** |
+
+**⚠️ 这是 6 家里最简的库存端点** —— 2 个字段 · **无区域拆分** · 无质保时长 · 无单次上下限。
+
+**我方 adapter 映射**（`mapper.go`）：
+
+| 我方字段 | 来源 |
+|---|---|
+| `StockSnapshot.Available` | `availableKeys` |
+| `ZoneStock[0].Zone` | **硬编码 `providers.ZoneGeneral`**（无区）|
+| `ZoneStock[0].Available` | `availableKeys` |
+| `ZoneStock[0].UnitPrice` | `Money{keyPrice × 10^6, "credit"}` |
+| `ZoneStock[0].Region` | **空**（vendor 无区概念）|
+| `StockSnapshot.MinPerOrder` / `MaxPerOrder` | ❌ **vendor 不返** · 我方留 0 |
+| `StockSnapshot.WarrantyMinutes` | ❌ **vendor 不返**（质保信息在 orders 详情里）|
+
+**⚠️ `Region` 空 + `Zone=general` 都是对的** —— vendor 根本没有区域概念。
+
+---
+
+### 2.2 `GET /openapi/balance`
+
+```json
+{ "balance": 785 }
+```
+
+| 字段 | 语义 |
+|---|---|
+| `balance` | 我方积分余额 |
+
+**我方 adapter**：`Balance` ← `balance × 10^6`。
+
+---
+
+### 2.3 `POST /openapi/claim`
+
+**请求**：
+- 单个：`{}`（空 body）
+- 批量：`{"count": N}`
+
+**响应**：
+- 单个：`{ "key": "…", "pointsCost": 50 }`
+- 批量：`{ "keys": ["…", "…"], "pointsCost": 100 }`
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `key` | str | 单个提取时的 key |
+| `keys` | array of str | 批量提取时 · **字符串数组**（不是对象数组 · 跟 kiro91/kiroceo 差异）|
+| **`pointsCost`** | int | ★ **本次总扣积分** · 车主自取时为 **0**（特权）|
+
+**⚠️ 关键差异**：
+1. **`keys` 是字符串数组** —— 其他家是对象数组（含 account/password/issuer_url 或 region/paid 等）· 这家只给 key 正文
+2. **无 `client_order_id` 幂等键** —— 6 家里唯一不支持幂等的 · 网络超时后**无法安全重试**
+3. **车主自取 `pointsCost=0`** —— vendor 档案 §7 明确的特权
+
+**我方 adapter 映射**（`mapper.go:59`）：
+- `PurchaseResult.TotalCost` ← `Money{pointsCost × 10^6, "credit"}`
+- `PurchaseResult.Keys[].Key` ← `keys[i]`
+- `PurchaseResult.Keys[].Paid` ← **留零值**（vendor 只给总额不给逐把）
+
+---
+
+### 2.4 `GET /openapi/orders`（老档案曾判错）
+
+**实测存在** · 18 条历史订单。每条含（★ = 6 家里独有）：
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `orderNo` | str | 订单号 |
+| **`probeState`** | str | ★ **vendor 侧探活状态** |
+| **`warrantyStatus`** | str | ★ **质保状态** |
+| **`refundedAt`** | str | ★ 退款时刻 |
+| **`usageSnapshot`** | obj | ★ **用量快照** |
+| （其他字段需再抓一次确认全量）| | |
+
+**我方 adapter 用它**（`Adapter.OrderKeys()`）· 拿全量后从里面挑 `orderNo == 参数 order_id` 那条。
+
+**⚠️ 数据缺口**：`probeState` / `warrantyStatus` / `refundedAt` / `usageSnapshot` **都不落库** —— 这几个是 vendor 侧的**号质量 + 质保 + 用量**信号 · 全丢了。
+
+---
+
+### 2.5 `POST /api/user/claim-preview`（❌ 需 cookie）
+
+**提取预估** · body 带 count → 返扣多少积分。
+
+**为什么有价值**：**下单前预估扣费** —— 我方现在只能凭 `keyPrice × count` 估 · 但混价 / 车主特权 / 分档时会算错。这个端点是权威预估。
+
+**⚠️ 但需 cookie · 我方 API key 打不通**。
+
+---
+
+### 2.6 `GET /api/user/txns?limit=200`（❌ 需 cookie）
+
+**积分流水**。跟其他家的 `/ledger` 对应。
+
+**⚠️ 需 cookie** —— kiroappcc 是 6 家里**唯一没有 openapi 流水端点**的 · 对账数据拿不到。
+
+---
+
+## 3 · Webhook
+
+### 3.1 签名（HMAC-SHA256 · **我方已接**）
 
 | 项 | 值 |
 |---|---|
-| Header | `Authorization: Bearer <API Key>` |
-| API Key 前缀 | `sk-`（**唯一一家用 sk- 前缀的**，注意与 OpenAI 的 `sk-` 混淆风险） |
-| 创建入口 | 登录后 "API Key" tab → 备注名称 → 创建 |
-| 页面明文回显 | **API Key 会在列表里持续明文显示**（不像其他家只显示一次） |
-| 支持轮换 | 页面有"删除"按钮，创建-删除即可换 key |
-| 限制 | **仅程序化调用 `/openapi/*` 生效**；网页端提取、兑换不受影响 |
+| 签名头 | `X-Kiro-Signature` |
+| 算法 | `HMAC-SHA256(secret, body)` |
+| 我方已注册 | ✅ |
 
-## 3. 概念 / 术语（观察到的 UI 用词）
+### 3.2 事件类型
 
-| 术语 | 含义 |
+（vendor 页面没给完整事件表 · 需再抓 · 我方 webhookin 已处理注册的那些）
+
+---
+
+## 4 · 质保（**双条件** · 6 家里唯一）
+
+| 条件 | 值 |
 |---|---|
-| 车 / 批次 | 一次上架的一批 Key（如"第 70 批"，或"手动添加"管理员上架） |
-| 车主 / 发车人 | 提交 AWS 凭证发车的用户；有 `@shuaigege` 这类用户名标记 |
-| 发车评价 | 每车下架后有社区评价：**拉完了 / 夯 / NPC** 等（是 6 家里唯一有社区评价机制的） |
-| 提取消耗 | 积分扣费类型 |
-| 质保退款 | 积分退还类型 |
-| 待管理员打款 | 收益结算的中间态 |
-| 现金结算 | 收益选择走现金而非积分 |
-| 收款码 | 现金结算时上传的支付宝/微信收款码（PNG/JPEG/WebP, ≤ 512KB） |
+| 时间 | **2 小时** |
+| 用量 | **累计消耗 7000 积分** |
+| 规则 | **满一即结束**（OR 关系）|
 
-## 4. 计费规则（原文摘录）
+**⚠️ 我方缺口**：我方只判时间维度 · **缺积分消耗维度** —— 号在 2 小时内消耗超 7000 积分后质保已结束 · 我方还当它在保。
 
-- **单价当前 50 积分 / 个**（无区域拆分，一档到底）
-- **一车产出多少 Key 只发一条 Webhook**
-- **车主提示**：如果投放了 AWS 凭证发车，`/openapi/claim` 会**优先返回自己产出的 Key 并且不扣积分**（返回值里 `pointsCost` 为 0）。不需要单独的自取接口
-- **质保退款有独立 ledger 类型**：从我方积分流水观察到 7 笔"质保退款 +50" 集中在 `2026-07-30 15:50:11`（一次批量退款 350 积分）
-- 收益结算：一车 Key 全部售罄或失效、**且质保期结束后**才能申请结算
+---
 
-## 5. 账户 / 积分
+## 5 · 频率限制（openapi）
 
-**没有独立 `GET /openapi/profile` 端点**（是 6 家里唯一没有 profile 端点的）。开放 API 层只暴露：
-
-### `GET /openapi/balance`
-
-```bash
-curl "https://kiroapp.cc/openapi/balance" -H "Authorization: Bearer <API Key>"
-```
-
-响应：`{ balance }`（**极简，只有余额一个字段**）
-
-### 内部会话端点 `/api/user/*`（2026-08-12 Network 抓到 · **不在官方 openapi 文档**）
-
-页面用这些 · 需 cookie 会话鉴权 · **我方作为纯 API 客户不能直接调**（API key 只走 `/openapi/*`）。
-列出来的意义：知道 vendor 后台能力全景 · 未来若 kiroappcc 开放它们 / 或我方需要模拟登录爬时能用。
-
-| 端点 | 页面 tab | 用途 |
-|---|---|---|
-| `GET /api/user/me` | 全站 | 当前用户 · 积分 · 角色 |
-| `GET /api/user/site-info` | 全站 | 站点公告 / 服务器时间 |
-| `GET /api/user/announcements` | 全站 | 公告列表 |
-| `POST /api/user/claim-preview` | 提取 Key | 提取预估 · body 带 count · 返扣多少积分 |
-| `GET /api/user/orders?limit=200` | 我的订单 | 我的订单历史（含 `/openapi/orders` 覆盖不到的字段） |
-| `GET /api/user/my-keys` | 我的订单 | 我持有的所有 key 明细（历史 + 存活） |
-| `GET /api/user/txns?limit=200` | 账户与积分 | 积分流水（**比 `/openapi` 完整** · 含 refund/adjust 类型） |
-| `GET /api/user/api-keys` | API Key | 我的 API key 列表（不含明文） |
-| `GET /api/user/webhook` | API Key | webhook 配置 · 含签名密钥（**页面 PUT 存 · 未抓到路径 · 猜同路径**） |
-| `GET /api/user/my-mothers` | 我要发车 | 我投放的母号列表 |
-| `GET /api/user/my-mothers/usage` | 我要发车 | 母号用量统计 |
-| `GET /api/user/dispatch?limit=50` | 我要发车 | 发车历史 · 含"评价"字段（拉完了 / NPC / 人上人 / 夯 / 拉完） |
-| `GET /api/user/payout-qr` | 我的收益 | 收款二维码（未配置返 404） |
-| `GET /api/user/earnings` | 我的收益 | 收益汇总 |
-| `GET /api/user/settlements` | 我的收益 | 结算历史（车主分成） |
-
-**观察到的 ledger 类型**（对齐 `/api/user/txns`）：
-
-| 观察到的类型 | 含义 |
+| 项 | 值 |
 |---|---|
-| `提取消耗` | 扣积分（负值） |
-| `质保退款` | 退积分（正值） |
-
-### 兑换码充值
-
-**只能在网页兑换**（`/openapi/*` 无兑换端点）：
-
-- 入口：账户与积分 tab
-- 格式 `KRC-XXXX...`
-- **支持批量**：一行一个
-- 购买兑换码走外部：`https://pay.ldxp.cn/shop/DWUSVPTJ`
-
-## 6. 库存
-
-### `GET /openapi/stock`
-
-```bash
-curl "https://kiroapp.cc/openapi/stock" -H "Authorization: Bearer <API Key>"
-```
-
-**响应字段**：
-
-```json
-{ "availableKeys": <int>, "keyPrice": <int> }
-```
-
-| 字段 | 说明 |
-|---|---|
-| `availableKeys` | 当前存活库存量 |
-| `keyPrice` | 单价（积分/个） |
-
-**注意字段名是 camelCase `availableKeys` / `keyPrice`**，与其他家 snake_case 完全不同——**独树一帜**。
-
-**无区域字段**（不分 us/eu）。
-
-**"死"vs"缺货"判据**：`availableKeys == 0` 只表示当前无货。真正的失效走 UI 上"下架"信号，开放 API 未直接暴露。
-
-### 上架历史（页面观察，无 API 化）
-
-页面显示"最近 10 批上架记录"，每条含：
-
-- 批次号（如"第 70 批" / "手动添加"）
-- 车主（用户名或"管理员"）
-- 上架时间、下架时间
-- 持续时长（12 分钟 ~ 14 小时 47 分钟不等）
-- 发车评价（拉完了 / 夯 / NPC / 历史未知）
-
-**这些历史信息只在 UI，没有对应的 openapi 端点**。
-
-## 7. 拉号（核心）
-
-### `POST /openapi/claim` — 提取 1 个 Key
-
-```bash
-curl -X POST "https://kiroapp.cc/openapi/claim" -H "Authorization: Bearer <API Key>"
-```
-
-**响应形态**：`{ key }` —— **只有一个字符串 `key`**，无其他字段。**是 6 家里返回 payload 最简的**（比 Kiro Drop 的 `{key, region}` 还要少一个 region）。
-
-### `POST /openapi/claim`（批量）
-
-```bash
-curl -X POST "https://kiroapp.cc/openapi/claim" \
-  -H "Authorization: Bearer <API Key>" \
-  -H "Content-Type: application/json" \
-  -d "{\"count\":2}"
-```
-
-**响应**：`{ keys: [...] }` —— 字符串数组，无对象包装。
-
-### 车主自取特权
-
-- **`/openapi/claim` 会优先返回你自己产出的 Key 并且不扣积分**
-- 返回值里 `pointsCost` 为 `0` —— 说明**响应里其实还有 `pointsCost` 字段**（虽然主文档没列在返回形态里，是车主特权时才特别标示的）
-
-### **本 vendor 最大坑：无幂等键**
-
-- **没有 `client_order_id` / `Idempotency-Key`** 概念
-- **官方页面明确警告轮询也受频率限制**，但对"网络超时后重试可能双扣"**没有任何机制保护**
-- 与其他 5 家形成鲜明对比（91kiro/kiroceo/kirodrop/kiroapp.io 都强制 32-hex 幂等键）
-
-### 补拉 / 订单查询
-
-- **无 `/openapi/orders` 端点**
-- 有"我的订单" tab（前台会话）但未 API 化
-- **一旦网络超时，无法确认是否扣款成功；重试会重复扣款**
-
-## 8. 积分 / 兑换 / 流水
-
-见 §5（本 vendor 把这些混在账户 tab 里，且 `/openapi/*` 只有 balance）。
-
-## 9. 母号 / 开号 / 供应侧（"我要发车"）
-
-**页面能力**（`/api/user/*` 前台会话接口，非开放 API）：
-
-### 加入号池
-
-- 入口："我要发车" tab
-- 支持批量：`一行一个，备注 AK SK` 或 `AK SK`
-- **每行独立检测，失败不影响其他行**
-- **发车参数由平台统一管理**（不像 kiroapp.io 用户可以自选 tier）
-- **凭证加密存储**
-- **提交时先检测配额**，额度不足无法加入
-
-### 发车规则（原文摘录）
-
-- 把 AWS 凭证加入号池，系统自动开子账户并提取 Kiro Key
-- **号池由平台统一调度**，无需手动操作 —— 轮到你的号时会自动发车，收益照常计
-- 产出的 Key 进入**公共库存**
-- 其他用户购买后你获得**分成收益**
-- 提取 Key 时优先发你自己产出的，且不扣积分
-
-### 收益结算（"我的收益" tab）
-
-| 状态 | 含义 |
-|---|---|
-| 待管理员打款 | 收益已计算，等待管理员批准打款（显示积分数 + 人民币金额） |
-| 已付现金结算 | 走现金支付通道 |
-| 已完成转入余额 | 走积分抵账 |
-| 尚未形成待付单 | 车还未售罄或质保期未结束 |
-
-收益规则原文摘录：
-
-- 你发车产出的 Key 被**其他用户**购买后产生收益
-- 你自己提取的 Key 不扣积分，也不计入收益
-- **质保期内退款的订单不计收益**
-- 一车的 Key 全部售罄或失效、**且质保期结束后**，即可申请结算
-
-**关键点**：**开放 API 完全不暴露发车能力**。要发车必须走网页 UI。
-
-## 10. Webhook
-
-### 配置
-
-- 入口：API Key tab 底部"到货通知（Webhook）"
-- 只有**一个 URL 字段** + **一个"启用推送"开关**
-- 无独立配置 API（只有 UI）
-- **一车产出多少 Key 只发一条**（原文强调）
-
-### 事件（vendor 原文只有一句话）
-
-**"有新库存时主动推一条 JSON 到你的地址，不用一直轮询"**
-
-- 没有事件类型枚举
-- 没有 payload schema 详情（**是 6 家里 webhook 文档最简的**）
-- 没有签名 header / 算法说明
-
-**推荐降级方案**（vendor 原文）：轮询 `/openapi/stock`，30 秒一次，有货 (`availableKeys > 0`) 就调 `claim`。
-
-## 11. Key 剩余额度
-
-**无端点**。`/openapi/*` 不暴露 key 用量同步。
-
-## 12. 错误码与限流
-
-### 错误响应形状（原文）
-
-```json
-{ "error": { "type": "<code>", "message": "<msg>" } }
-```
-
-- **`error` 是嵌套对象**，包含 `type` 和 `message`
-- 触发限流时 `type` = `rate_limit_exceeded`，并附 `retryAfter`（秒）
-
-**与其他家对比**：这个嵌套结构最规整；比 kiro.ceo/kiroapp.io 的裸 `{error: "文案"}` 好，但没有 91kiro 那种全表 code 枚举。
-
-### 限流规则（原文摘录）
-
-- **每 60 秒最多调用 60 次开放 API**
-- 超出后**进入冷却，180 秒内所有请求都会返回 `429 Too Many Requests`**
-- 限制**按账号统计**，创建多个 API Key 也共用同一份额度
-- 被限流时响应头会带 `Retry-After`（剩余秒数），建议程序据此自动退避重试
-- **网页端不受此限制**，仅程序化 `/openapi/*` 生效
-
-## 13. 质保 / 退款
-
-- 从积分流水观察：`质保退款` 是一种 ledger 类型
-- **无独立退款端点**
-- **无独立 `warranty_refund` webhook 事件**
-- "我的收益"页面明确说明：**质保期内退款的订单不计收益**（暗示存在质保时间窗，但页面没写具体时长）
-- 我方账号 2026-07-30 15:50:11 观察到批量 7 笔 +50 质保退款（同一秒），说明一车失效时是**批量结算**
-
-## 14. 本 vendor 特有的事实（可验证的差异）
-
-- **`/openapi/*` 命名**（其他家都是 `/api/my/*` 或 `/api/me/*`）—— 命名空间独立
-- **`sk-` API Key 前缀** —— 与 OpenAI 撞名，用错客户端可能踩坑
-- **API Key 明文在 UI 里持续显示**（其他家一次性明文）
-- **key payload 极简**：单个 `{key}`，批量 `{keys: [string...]}`；**没有 account/password/issuer_url**，甚至没有 region —— 是 6 家里最简
-- **无幂等键机制** —— 网络超时重试会双扣，**这是本 vendor 最大接入风险**
-- **无 `client_order_id` / `order_id` / 补拉端点**
-- **单价无区域拆分**（其他家几乎都有 us/eu 区分）
-- **`camelCase` 响应字段**（`availableKeys / keyPrice`），与其他家 snake_case 全部不一致
-- **限流最严**：60 QPM，超限后 180 秒冷却（其他家一般看 Retry-After）
-- **限流按账号，不按 API Key**：多创建 key 不能绕过
-- **发车 / 收益 / 结算完全走网页**，没有 API 化
-- **发车带社区评价**（拉完了 / 夯 / NPC 等）—— 独家
-- **收益支持现金结算**（要上传收款码 PNG/JPEG/WebP ≤ 512KB） —— 独家
-- **Webhook 无签名说明**（其他家至少有 HMAC 或 URL secret）
-- **无独立 `/openapi/profile`** —— 只能拿 balance
-- **兑换码走外部支付**（`pay.ldxp.cn`），非站内自营
-- **错误 envelope 是嵌套的 `error: { type, message }`**，独家结构
-- **发车参数由平台统一管理**（vs kiroapp.io 用户可自选 subscription_tier）—— 车主"控制权"最弱
-
-## 15. Fleet 观测端点（2026-08-10 探测）
-
-| 端点 | 结果 | 备注 |
-|------|------|------|
-| `GET /openapi/orders` | ✅ `[{id, orderNo, kiroApiKey, pointsCost, claimedAt, warranty, probeState, probeTerminalAt, ...}]` | **6 家里唯一"一单一 key"的 vendor** · order 里直接有 key 明文 |
-| `GET /api/my/gen-logs` | 404 | 无此端点 |
-| `GET /api/me/orders` | 404 | 无此端点 |
-| `GET /api/status` | 404 | 无 fleet 自报端点 |
-
-**结论**：kiroappcc 没有独立的 fleet-wide gen-logs 端点 · 但 `/openapi/orders` 直接给到每单每 key 的完整生命周期（probeState / probeTerminalAt）· 我方 adapter `fleet.go` 从 order 数组**推 dispatch**（一单 = 一批 · count=purchased · alive/dead 从 probeState 判定）。
+| 窗口 | 每 60s 最多 **60 次** |
+| 超出 | 进 **180s 冷却** · 返 429 + `Retry-After` |
+| 作用域 | **按账号限流** · 多个 API key 共享 |
+
+---
+
+## 6 · 商业模式（车主分成 · 6 家里最特殊）
+
+vendor 页面 6 个 tab 之一是 **"我的收益"** —— **车主是分成模式**：
+- 提供 AWS 母号 → vendor 开号 → 卖 key → 车主拿收益
+- 首页显示"最近 10 批上架记录"含 **"评价"字段**（`拉完了` / `NPC` / `人上人` / `夯`）· **半人工审核**
+- 车主投放 AWS 凭证时 · `/openapi/claim` **优先返自己的号且 `pointsCost=0`**（自留）
+
+**收益端点 4 个**（`earnings` / `settlements` / `payout-qr` / `txns`）· 全需 cookie · 阶段外。
+
+---
+
+## 7 · 特有事实（跟其他 vendor 的差异）
+
+- **API 面板最简**（5 个 openapi 端点）· 无独立 docs 页
+- **密钥前缀 `sk-`** · 6 家里唯一（⚠️ OpenAI 混淆风险）
+- **响应用 camelCase**（`availableKeys` / `keyPrice` / `pointsCost` / `orderNo` / `probeState`）· 6 家里唯一（其他全 snake_case）
+- **完全无区域概念** · 6 家里唯一（其他都至少 us/eu 两区）
+- **`keys` 是字符串数组** · 不是对象数组
+- **无 `client_order_id` 幂等键** · 6 家里唯一 —— **网络超时无法安全重试**
+- **质保双条件**（2h OR 7000 积分）· 6 家里唯一有用量维度的
+- **车主分成模式** + **"评价"字段**（拉完了/NPC/人上人/夯）· 半人工审核
+- **车主自取 `pointsCost=0`** 特权
+- **限流按账号**（多 key 共享）· 60 次/60s · 超出 180s 冷却
+- **`/openapi/orders` 有 `probeState` / `warrantyStatus` / `usageSnapshot`** · vendor 侧号质量数据
+- **15 个隐藏 `/api/user/*` 端点需 cookie** · 我方拿不到（其他家 API key 能打全部）
+- **不在 xi8**（xi8 只对接 5 家 · 这家独立）
+
+---
+
+## 8 · 我方 adapter 缺口（按优先级）
+
+| # | 缺什么 | 影响 | 优先级 |
+|---|---|---|---|
+| 1 | **质保只判时间 · 缺 7000 积分消耗维度** | 号已出保我方还当在保 → 退款判断错 | **最高** |
+| 2 | `/openapi/orders` 的 `probeState` / `warrantyStatus` / `usageSnapshot` 不落库 | vendor 侧号质量数据全丢 | **高** |
+| 3 | **无幂等键** · 网络超时无法安全重试 | vendor 侧限制 · 我方只能靠 `pending_purchase` 状态机兜 | **高**（已知限制 · 无解）|
+| 4 | `POST /api/user/claim-preview` 需 cookie | 下单前无权威预估 | 中（拿不到）|
+| 5 | `GET /api/user/txns` 需 cookie | 对账数据拿不到 | 中（拿不到）|
+| 6 | `MinPerOrder` / `MaxPerOrder` vendor 不返 | 我方留 0 · 数量校验只能靠自己配 | 低 |
+| 7 | 母号 / 收益 7 端点 | 阶段外 | ❌ |

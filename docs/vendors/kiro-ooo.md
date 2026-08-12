@@ -1,336 +1,467 @@
 # Vendor: kiro.ooo
 
-## 1. 基础信息
+## 0 · 档案元信息
 
 | 项 | 值 |
 |---|---|
 | Base URL | `https://kiro.ooo/api` |
-| 官方文档 | `https://kiro.ooo/index.html#/api`（登录后可见，是 Vue SPA 里的一个页面） |
-| 抓取日期 | 2026-08-07（登录抓取） |
-| 站点标题 | Kiro Key 自助平台 |
-| 我方账号 | `<redacted>` |
-| 计费币种 | **积分（1 积分 = 1 元人民币）** —— 是唯一显式把积分挂钩 CNY 的家 |
-| 系统库存 | 页面显示"系统库存 0 / 存活 1,026"（快照瞬时值） |
-| 我方 API Key | `<redacted>`（页面持续明文显示） |
-
-## 2. 鉴权
-
-**两种任选其一**（vendor 原文强调）：
-
-| Header | 用法 |
-|---|---|
-| `X-API-Key: usr-...` | 主推 |
-| `Authorization: Bearer usr-...` | 等效 |
-
-- 令牌前缀：**`usr-`**（与 91kiro / kiro.ceo 同前缀，容易混淆）
-- **API Key 长期在 API 文档页明文回显**（"下面所有示例里的 KEY= 已经替换成你自己的 Key，复制出来可以直接跑"）
-- **有"一键复制整篇（含 API Key）" / "复制整篇（Key 用占位符）" 两个按钮**：文档强度足够，直接给开发者两种粘贴姿势
-
-## 3. 概念 / 术语
-
-kiro.ooo 是**功能面板最大**的一家。有独立的**发车方 / 自动车 / 自留 / 名单 / 阶梯定价 / Telegram 通知**等概念。
-
-| 术语 | 含义 |
-|---|---|
-| Key / 子号 | 平台产出的 kiro 密钥 |
-| 母号 (`master_id`) | 一个 AWS 母号，产出一批 Key |
-| 车次 (`order_id`) | 一次开号产出的一批 Key（"某趟车"） |
-| 发车 | 用户提交 AWS 凭证参与产能 |
-| 发车预留 (`reserve_count`) | 发车主为自己保留几个 Key（最少 1；填 0 = 本期不预留不上车） |
-| 自动车 (`auto-fleet`) | 自动挂市场；开启前 `reserve_count` 必须 ≥ 1 |
-| 自留配置 (`dispatch-config`) | `keep_keys` / `auto_sell`；剩余的自动挂市场 |
-| 单价阶梯 (`key-price-tiers`) | `base` 基准价 + `bands` 分档 `{lower, upper, price}` |
-| 积分 | 账户余额，**1 积分 = 1 元** |
-| 充值链 | 走 USDT 上链（多链可选） |
-| 发车名单 (`fleet-roster`) | 仅发车主可见的其他车主行 |
-| Telegram 通知 | 独立于 webhook 的推送通道 |
-
-## 4. 计费规则
-
-- **1 积分 = 1 元人民币**（币种明确挂钩 CNY）
-- **单价按阶梯**（`GET /my/key-price-tiers` 返回 `base + bands`）
-- **下单前算钱用 `/my/key-price-tiers`**（vendor 原文）
-- 充值走 **USDT 上链**（`POST /my/recharge/order` 返回收款地址 + 应付 USDT）
-
-## 5. 账号 / Profile
-
-### `GET /my/profile`
-
-账号与额度、速率、可领数量。字段清单未在文档页展示（TODO：直接调用一次验证形状）。
-
-### `POST /my/password`
-
-改自助台登录密码。Body：`{old_password, new_password}`。
-
-### `POST /my/bind-account`
-
-**只有 Key、还没有登录账号的老客户补一套用户名密码**。Body：`{username, password}`。
-（**独家**：兼容老用户"只有 key 无账号"迁移到"账号 + key"）
-
-### `POST /my/2fa-verify`
-
-敏感操作前的二次验证。Body：`{code}`。
-
-## 6. 库存
-
-### `GET /my/stock`（**授权**）
-
-可领上限 / 我可取库存 / 剩余配额。示例脚本里读的是 `.claimable` 字段。
-
-### `GET /status`（**免鉴权**）
-
-系统库存 / 存活 / 是否正在开号。是**唯一免鉴权的公开状态端点**。
-
-## 7. 拉号 / 补拉
-
-### `POST /my/keys/claim`
-
-**Body**：`{count, client_order_id}`
-
-**幂等要点（vendor 原文）**：
-- `client_order_id` 做幂等：**同一单号重复提交返回上次那批 Key，不重复扣配额**
-- 实际取 `min(count, 剩余配额, 我方可取库存)`，**单次上限 500**
-- 取不到货返回 **4xx 且不扣配额**，可安全重试
-- 被限流返回 **429**，建议指数退避
-
-**收到 webhook 后拉号（vendor 原文脚本）**：
-
-```bash
-#!/usr/bin/env bash
-KEY="usr-<你的 key>"
-BASE="https://kiro.ooo/api"
-
-# 1) 看现在能领几个
-n=$(curl -s -H "X-API-Key: $KEY" "$BASE/my/stock" | jq -r .claimable)
-[ "$n" -gt 0 ] || { echo "暂无可领"; exit 0; }
-
-# 2) 领取。收到 webhook 的话, OID 直接用推送里的 client_order_id,
-# 不要像下面一行那样自己 date 造 —— 同一轮货被重投时,
-# 只有原样回传才不会当成新一轮再领一次。轮询场景才用下面这个。
-OID="auto-$(date +%Y%m%d%H%M)"
-curl -s -X POST "$BASE/my/keys/claim" \
-  -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-  -d "{\"count\":$n,\"client_order_id\":\"$OID\"}" \
-  | jq -r ".keys[]" >> keys.txt
-```
-
-**每把 key 的 payload**：`keys[]` 字段（具体每项字段未在 API 文档页详列；从示例 `.keys[]` 追加到文件推断是字符串数组或有 `key` 字段的对象数组）。TODO：调一次真实 claim 验证。
-
-### `GET /my/keys`
-
-我的 Key 列表。`?history=1` 含已失效。
-
-### `GET /my/keys/export`
-
-**按母号下载 Key**。Query：`?master_id=&history=1&format=json`。
-（**独家**：能按母号维度导出，其他家没有）
-
-### `GET /my/keys/created-at`
-
-最早产出时间 + 累计个数（同 kiroapp.io 的 `keys/created-at`）。
-
-### `GET /my/purchase-orders`
-
-最近 **50 笔**订单。
-
-### `GET /my/orders/{id}`
-
-**某趟车的全部子号**。是**独家的"按车次维度查全部子号"** —— 与"按订单查交付"不同。
-
-### `GET /my/dispatch-log`
-
-按车次聚合的活死统计。
-
-## 8. 积分 / 兑换 / 流水
-
-### `GET /my/credits`
-
-积分余额 + 母号单价 + **积分流水**。Query：`?limit=50`。
-
-### `GET /my/recharge/options`
-
-充值档位、最低/最高额、**可选链**（USDT 多链）。
-
-### `POST /my/recharge/order`
-
-下充值单。Body：`{credits, network}`，返回**收款地址和应付 USDT**。
-
-### `GET /my/recharge/orders`
-
-我的充值单。Query：`?limit=50`。
-
-### `GET /my/recharge/order/{order_id}`
-
-单笔充值单状态。
-
-**特点**：完全走 **USDT 链上收款**，不做兑换码、不做支付宝。**这是 6 家里唯一原生用加密货币的**。
-
-## 9. 母号 / 开号 / 供应侧（发车方 API 化）
-
-kiro.ooo 是**唯一把发车方能力完整 API 化**的家。
-
-### 发车预留
-
-- **`PUT /my/reserve`** — Body：`{reserve_count}`；**最少 1，填 0 = 本期不预留不上车**
-
-### 自留配置
-
-- **`GET /my/dispatch-config`** — 返回 `{keep_keys, auto_sell}`
-- **`PUT /my/dispatch-config`** — 改自留配置；余下的自动挂市场
-
-### 自动车
-
-- **`GET /my/auto-fleet`** — 返回 `{enabled, unit_price, credits, next_count, afford_count, est_cost}`
-- **`PUT /my/auto-fleet`** — 开/关自动车；Body：`{enabled}`；**开之前 `reserve_count` 必须 ≥1**
-
-### 单价阶梯
-
-- **`GET /my/key-price-tiers`** — 返回 `{base, bands[{lower, upper, price}]}`；**下单前算钱用**
-
-### 发车名单
-
-- **`GET /my/fleet-roster`** — **仅发车主可见**；每行 `{name, user_no, credits, reserve_count, auto_fleet, eligible}`
-（独家：车主能看到同行的其他车主状态）
-
-**注意**：`kiro.ooo` 的对外文档里**没有**直接展示如何"上传 AWS AK/SK"—— 这套 API 面板假定车主已通过网页 / 后台完成母号绑定，然后用 API 做**运营配置**（预留 / 自留 / 自动车 / 单价阶梯 / 查看名单）。
-
-## 10. API Key 管理
-
-**API 文档页只展示"当前 key"**，没有列出创建/吊销端点。API Key 由 `usr-` 前缀识别；页面上直接明文回显。
-
-## 11. Webhook
-
-### 配置
-
-- **`PUT /my/webhook`** — Body：`{webhook_url}`
-- **`POST /my/webhook/test`** — 发一条测试到你配的地址
-
-### 请求头
-
-**vendor 原文**：
-
-- `Content-Type: application/json`
-- `User-Agent: kiro-reseller-webhook/1.0`
-- **不带签名，请自己用不可猜的 URL 路径当口令**
-
-**这是 6 家里明确说"不签名"的一家**（91kiro/kirodrop 有 HMAC，kiroapp.io 未列签名，kiroapp.cc/kiroceo 也无签名）。
-
-### 重试
-
-- 回 2xx 即算收到
-- 超时或 5xx/429 我方**退避重试 3 次**（**0s、2s、6s**）
-- **4xx 视为你明确拒绝，不再重试**
-
-### 事件字段（vendor 原文表）
-
-| 字段 | 类型 | 出现在 | 说明 |
-|---|---|---|---|
-| `event` | string | 全部 | `new_keys_available` \| `all_keys_dead` \| `test` |
-| `event_id` | string | 全部 | 这一条推送自己的编号，**32 位小写 hex**，每次投递都不同。**去重键** —— 注意它和 `client_order_id` **形态不同**，不要拿它当 claim 单号 |
-| `client_order_id` | string | `new_keys_available` | ★ 这一轮货的单号。**原样回传给 claim 即可，不要自己造** |
-| `purchase_order_id` | string | `new_keys_available` | `client_order_id` 的**旧名**，值完全一样。老脚本继续读它，新接入用 `client_order_id` |
-| `new_keys` | number | `new_keys_available` | 这一轮就绪的 Key 数。实际能领仍以 `min(count, 剩余配额, 可取库存)` 为准 |
-| `claim_hint` | string | `new_keys_available` | 给人看的取货提示，已经把该传的 `client_order_id` 填好了。程序不用解析它 |
-| `dead` | number | `all_keys_dead` | 本轮判失效的 Key 数 |
-| `message` | string | 全部 | 中文摘要，可直接转发到群里 |
-| `time` | string | 全部 | 我方发出时间，**UTC+8，格式 `YYYY-MM-DD HH:MM:SS`** |
-
-### 事件载荷（vendor 原文）
-
+| 官方文档 | `https://kiro.ooo/index.html#/api`（登录后可见 · Vue SPA 页）· 抓取存档 `.playwright-mcp/vendor-scrape-2026-08-12/kirooo-docs.txt` |
+| 抓取日期 | 2026-08-12 |
+| 鉴权 | `X-API-Key: usr-…` **或** `Authorization: Bearer usr-…` |
+| 密钥前缀 | `usr-`（跟 kiro91 / kiroceo 同前缀 · 容易混）|
+| **官方端点总数** | **32 个 · 分 7 组 · 6 家里最多** |
+| **我方 adapter 接了** | **7 个 · 覆盖率 22%** |
+| Provider group | `providers.ProviderKiro` |
+| Adapter 目录 | `internal/providers/kiro/vendors/kirooo/` |
+| 计价 | **积分（1 积分 = 1 元人民币）** · 6 家里唯一显式挂钩 CNY 的 |
+| 分区 | `us-east-1` / `eu-central-1`（**用完整 AWS region 名当 zone** · 不是 us/eu 短名）|
+| 单价 | us-east-1 = 100 · eu-central-1 = 70（2026-08-12 实测）|
+| 充值 | **走 USDT**（链上）· 我方不用 |
+
+---
+
+## 1 · 端点清单（vendor 官方 32 个 · 7 组）
+
+### 1.1 账号 + 库存 + 领取（10 个）
+
+| # | 方法 | 路径 | vendor 描述 | 我方 adapter | 状态 |
+|---|---|---|---|---|---|
+| 1 | GET | `/my/profile` | 账号 · 额度 · 速率 · 可领数量 | `Adapter.Balance()` | ✅ |
+| 2 | GET | `/my/stock` | 可领上限 / 可取库存 / 剩余配额（**单区聚合**）| — | ❌ 未接（用 #3 代替）|
+| 3 | GET | `/my/stock/regions` | **双区货架** `[{region,label,open,unit_price,claimable,can_buy}]` | `Adapter.Stock()` | ✅ |
+| 4 | POST | `/my/keys/claim` | 自助领取 `{count, client_order_id, region}` | `Adapter.Purchase()` | ✅ |
+| 5 | GET | `/my/keys` | 我的 key 列表 · `?history=1` 含已失效 | `Adapter.KeyStats()` | ✅ |
+| 6 | GET | `/my/keys/created-at` | 最早产出时间 + 累计个数 | — | ❌ **未接** |
+| 7 | GET | `/my/keys/export` | 按母号下载 key · `?master_id&history=1&format=json` | — | ❌ **未接** |
+| 8 | GET | `/my/dispatch-log` | **按车次聚合的活死统计** | — | ❌ **未接 · 高价值** |
+| 9 | GET | `/my/purchase-orders` | 最近 50 笔订单 | `Adapter.PurchaseHistory()` | ✅ |
+| 10 | GET | `/my/orders/{id}` | 某趟车的全部子号 | `Adapter.OrderKeys()`（走 `/my/purchase-orders/{id}/keys`）| ✅ |
+
+### 1.2 发车相关（6 个 · **我方完全没接**）
+
+| # | 方法 | 路径 | vendor 描述 | 状态 |
+|---|---|---|---|---|
+| 11 | GET | `/my/dispatch-config` | 发车自留配置 `{keep_keys, auto_sell}` | ❌ 阶段外 |
+| 12 | PUT | `/my/dispatch-config` | 改自留配置 | ❌ 阶段外 |
+| 13 | PUT | `/my/reserve` | 设发车预留 `{reserve_count}` · 0=本期不预留 | ❌ 阶段外 |
+| 14 | GET | `/my/auto-fleet` | 自动车状态 `{enabled, unit_price, credits, next_count, afford_count, est_cost}` | ❌ 阶段外 |
+| 15 | PUT | `/my/auto-fleet` | 开/关自动车 `{enabled}` | ❌ 阶段外 |
+| 16 | GET | `/my/fleet-roster` | 发车名单（仅发车主可见）· `[{name,user_no,credits,reserve_count,auto_fleet,eligible}]` | ❌ 阶段外 |
+
+**为什么不接**：供应侧 / 发车（我方交号给 vendor 开号）· `CLAUDE.md §3` 明确不做。
+
+### 1.3 Webhook（2 个 · **我方完全没接**）
+
+| # | 方法 | 路径 | vendor 描述 | 状态 |
+|---|---|---|---|---|
+| 17 | PUT | `/my/webhook` | 设通知地址 `{webhook_url}` | ❌ 未接（手工在后台配）|
+| 18 | POST | `/my/webhook/test` | 发一条测试 | ❌ 未接 |
+
+### 1.4 Telegram 通知（4 个 · **我方完全没接**）
+
+| # | 方法 | 路径 | vendor 描述 | 状态 |
+|---|---|---|---|---|
+| 19 | GET | `/my/notify/prefs` | 推送订阅开关 `{on_key_new, on_key_dead, on_key_suspect, on_dispatch}` | ❌ 不需要 |
+| 20 | PUT | `/my/notify/prefs` | 改订阅开关 | ❌ 不需要 |
+| 21 | POST | `/my/notify/test` | 给 TG 发测试消息 | ❌ 不需要 |
+| 22 | POST | `/my/notify/unbind` | 解绑 TG | ❌ 不需要 |
+
+**为什么不接**：TG 是 vendor 给**人**看的通知渠道 · 我方走 webhook 程序化处理。
+
+### 1.5 充值（4 个 · **我方完全没接**）
+
+| # | 方法 | 路径 | vendor 描述 | 状态 |
+|---|---|---|---|---|
+| 23 | GET | `/my/recharge/options` | 充值档位 / 最低最高 / 可选链 | ❌ 手工充值 |
+| 24 | POST | `/my/recharge/order` | 下充值单 `{credits, network}` | ❌ 手工充值 |
+| 25 | GET | `/my/recharge/orders` | 我的充值单 `?limit=50` | ❌ 手工充值 |
+| 26 | GET | `/my/recharge/order/{id}` | 单笔状态 | ❌ 手工充值 |
+
+**为什么不接**：**走 USDT 链上充值** · 我方运维手工充 · 不做程序化。
+
+### 1.6 积分 + 定价（2 个）
+
+| # | 方法 | 路径 | vendor 描述 | 我方 adapter | 状态 |
+|---|---|---|---|---|---|
+| 27 | GET | `/my/credits` | 积分余额 + 母号单价 + **积分流水** `?limit=50` | — | ❌ **未接** |
+| 28 | GET | `/my/key-price-tiers` | **key 单价阶梯** · `base` 基准价 + `bands` 分档 | — | ❌ **未接 · 高价值** |
+
+### 1.7 账号安全（3 个 · **我方完全没接**）
+
+| # | 方法 | 路径 | vendor 描述 | 状态 |
+|---|---|---|---|---|
+| 29 | POST | `/my/password` | 改自助台登录密码 `{old_password, new_password}` | ❌ 不需要 |
+| 30 | POST | `/my/bind-account` | 补一套用户名密码 `{username, password}` | ❌ 不需要 |
+| 31 | POST | `/my/2fa-verify` | 敏感操作前二次验证 `{code}` | ❌ 不需要 |
+
+### 1.8 公开（1 个）
+
+| # | 方法 | 路径 | vendor 描述 | 我方 adapter | 状态 |
+|---|---|---|---|---|---|
+| 32 | GET | `/status` | 系统库存 / 存活 / 是否正在开号（**免鉴权**）| `Adapter.PublicStatus()` | ✅ |
+
+---
+
+## 2 · 逐端点字段清单（vendor 原文命名）
+
+### 2.1 `GET /my/profile`
+
+**实测响应**（我方账号 · 2026-08-12）：
 ```json
-// event = new_keys_available —— 有新货, 回头 claim 取
 {
-  "event": "new_keys_available",
-  "event_id": "356f1c34bc5eb11f0aba4d5fcbb2247e",
-  "client_order_id": "ORD3F8N1TW6C",
-  "purchase_order_id": "ORD3F8N1TW6C",
-  "message": "新一轮 12 个 Key 已就绪",
-  "new_keys": 12,
-  "claim_hint": "POST /api/my/keys/claim {\"count\":N,\"client_order_id\":\"ORD3F8N1TW6C\"} —— 带上 client_order_id,重复调用返回同一批 key,不会多扣配额",
-  "time": "2026-08-02 14:30:00"
-}
-
-// event = all_keys_dead —— 本轮 key 全挂了, 等下一轮
-{
-  "event": "all_keys_dead",
-  "event_id": "5168b3156afa6c00be79ca406632dfba",
-  "message": "本轮全部 12 个 Key 已失效",
-  "dead": 12,
-  "time": "2026-08-02 14:30:00"
-}
-
-// event = test —— 点「发送测试」按钮时
-{
-  "event": "test",
-  "event_id": "81d4e47a2fce52d07df00b7340472242",
-  "message": "这是一条来自 Kiro Key 系统的测试消息",
-  "time": "2026-08-02 14:30:00"
+  "auto_fleet": false, "claimable": 0, "is_fleet_owner": false, "is_super": false,
+  "min_reserve": 0, "name": "…", "needs_2fa": false,
+  "quota": 0, "remaining": 0, "used_quota": 0,
+  "reserve_count": 0,
+  "risk_at": "…", "risk_flag": 0, "risk_rate": 0, "risk_threshold": 0,
+  "role": "user", "twofa_ok": true,
+  "user_no": "…", "username": "…", "webhook_url": ""
 }
 ```
 
-### 幂等要点（vendor 原文）
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `name` / `username` | str | 显示名 / 登录名 |
+| `user_no` | str | vendor 侧账号编号 |
+| `role` | str | `user` / 其他 |
+| `quota` | int | 总积分 |
+| `used_quota` | int | 已用积分 |
+| `remaining` | int | 剩余积分 |
+| `claimable` | int | **当前可领数量** |
+| `webhook_url` | str | 已配 webhook 地址 |
+| **`risk_flag`** | int | ★ **风控标记** · 独家 |
+| **`risk_rate`** | int | ★ 风险率 |
+| **`risk_threshold`** | int | ★ 风险阈值 |
+| **`risk_at`** | str | ★ 风控判定时刻 |
+| **`is_fleet_owner`** | bool | ★ 是否发车主 |
+| **`auto_fleet`** | bool | ★ 自动车是否开 |
+| **`reserve_count`** | int | ★ 发车预留数 |
+| **`min_reserve`** | int | ★ 最低预留 |
+| **`is_super`** | bool | ★ 超级用户 |
+| **`needs_2fa`** / **`twofa_ok`** | bool | ★ 2FA 状态 |
 
-> 认 `client_order_id`，别用 `event_id`，也别自己 date 造单号 —— 同一轮货被重投时，只有原样回传才不会重复扣配额。
+**我方 adapter 映射**：`Balance` ← `remaining × 10^6`。
 
-**特别注意**：`client_order_id` 与 `event_id` **形态不同**（前者示例是 `ORD3F8N1TW6C` 短标识、后者是 32-hex），vendor 明确警告不要混用。
+**⚠️ 数据缺口**：**风控四字段全部不落库**（`risk_flag` / `risk_rate` / `risk_threshold` / `risk_at`）· `claimable` 也不落库。风控字段是**独家信号** —— vendor 觉得我方账号有风险时这里会变 · 我方现在完全不知情。
 
-## 12. Telegram 通知（独立于 webhook）
+---
 
-这是 kiro.ooo 独家的第二通道推送。
+### 2.2 `GET /my/stock`（❌ 未接 · 单区聚合）
 
-| 端点 | 说明 |
+**实测响应**：
+```json
+{ "afford": 0, "can_buy": false, "claimable": 0, "credits": 70,
+  "max": 0, "remaining": 0, "short_credits": 0, "stock": 0, "unit_price": 100 }
+```
+
+| 字段 | 语义 |
 |---|---|
-| `GET /my/notify/prefs` | Telegram 推送订阅开关 `{on_key_new, on_key_dead, on_key_suspect, on_dispatch}` |
-| `PUT /my/notify/prefs` | 改订阅开关，缺省字段视为开 |
-| `POST /my/notify/test` | 给已对接的 Telegram 发一条测试消息 |
-| `POST /my/notify/unbind` | 解绑 Telegram 推送，body 空；**解绑后对接码作废，要重新在页面上对接** |
+| `stock` | 可取库存 |
+| `unit_price` | 单价（聚合 · 某一区）|
+| `credits` | 我方积分余额 |
+| `claimable` | 可领数量 |
+| `can_buy` | 能否买（一个布尔顶掉多个条件）|
+| `afford` | 按余额能买几个 |
+| `short_credits` | 差多少积分 |
+| `max` / `remaining` | 上限 / 剩余配额 |
 
-**独家**：**`on_key_suspect` 事件类型** —— 除 `new / dead` 外，还有"疑似失效"这一中间态。
+**我方不接**（用 `/my/stock/regions` 代替 · 那个逐区更精确）。
 
-## 13. 错误码与限流
+---
 
-**文档页在幂等区块提到**：
+### 2.3 `GET /my/stock/regions`（✅ 我方主用）
 
-- 取不到货返回 **4xx** 且不扣配额，可安全重试
-- 被限流返回 **429**，建议指数退避
+**实测响应**：
+```json
+{
+  "credits": 70, "fleet_active": true,
+  "fleet_now": "2026-08-12 22:17:47", "fleet_started_at": "2026-08-12 22:15:05",
+  "ok": true, "remaining": 0,
+  "regions": [
+    { "afford": 0, "can_buy": false, "claimable": 0, "label": "美国区",
+      "open": false, "region": "us-east-1", "short_credits": 0, "stock": 0, "unit_price": 100 },
+    { "afford": 1, "can_buy": false, "claimable": 0, "label": "欧洲区",
+      "open": false, "region": "eu-central-1", "short_credits": 0, "stock": 0, "unit_price": 70 }
+  ]
+}
+```
 
-**没有全表 code 枚举**（不像 91kiro 的一栏表格）。
+**顶层字段**：
 
-页面顶部 tooltip 观察：`积分余额 100（1 积分 = 1 元）`；顶部 badge 显示 `系统库存 0` / tooltip `存活 1,026`。
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `ok` | bool | 请求成功标记 |
+| `credits` | int | 我方积分余额 |
+| `remaining` | int | 剩余配额 |
+| **`fleet_active`** | bool | ★ **vendor 平台此刻是否正在开号** · 我方探针提频靠它 |
+| **`fleet_started_at`** | str | ★ 本轮开号开始时刻（UTC+8）|
+| **`fleet_now`** | str | ★ vendor 服务器当前时刻（UTC+8）· 算已开多久 |
 
-## 14. 本 vendor 特有的事实（可验证的差异）
+**`regions[]` 元素**：
 
-- **端点数量最多**（30+ 个），是 6 家里 API 面板最大的
-- **1 积分 = 1 元 CNY 显式挂钩**（其他家仅积分不带汇率）
-- **充值走 USDT 上链**（多链可选，返回收款地址 + 应付 USDT）—— 独家
-- **Webhook 明确"不签名"** —— 靠不可猜 URL 路径当口令
-- **Webhook 退避固定 `0s / 2s / 6s`**（vs drop 固定 1s / 91kiro 递增+抖动）
-- **4xx 视为"明确拒绝"不再重试**（其他家 4xx 语义未这么明确）
-- **`client_order_id` 形态是 `ORD` 前缀短串**（vs 91kiro/kiroceo/kiroapp.io 强制 32-hex）—— 幂等键的形态不同，接入时不能假设"都是 32-hex"
-- **`purchase_order_id` 是 `client_order_id` 的老名字**（其他家里两个字段有独立语义！kiroappio 里 `purchase_order_id` 是幂等键、`order_id` 是批次；drop 里也各有其意；kiro.ooo **两者字面同值**）
-- **`claim_hint` 独家字段**：完整的 curl 建议直接嵌在 webhook 载荷里
-- **Telegram 独立推送通道**（`on_key_new / on_key_dead / on_key_suspect / on_dispatch`），是 webhook 之外的第二通道 —— 独家
-- **`on_key_suspect` 事件**："疑似失效"中间态 —— 独家
-- **`/status` 免鉴权公开状态**（其他家至少要一次鉴权）
-- **`GET /my/keys/export` 按母号导出**（其他家没有）
-- **`GET /my/orders/{id}` 是"某趟车的全部子号"**（不是"按订单查交付"）
-- **`GET /my/fleet-roster` 车主视角看其他车主**（独家社交/协同信号）
-- **`GET /my/key-price-tiers` 显式阶梯定价查询**（kiroappio 只在 stock 里返 `price_min/price_max`，本家给完整阶梯）
-- **单次 claim 上限 500**（与 91kiro/kiroappio 一致）
-- **`POST /my/bind-account` 老客户补账号**（迁移场景独家 API）
-- **`POST /my/2fa-verify` 二次验证**（其他家未展示 2FA API）
-- **发车方能力完整 API 化**：`reserve` / `dispatch-config` / `auto-fleet` / `fleet-roster` / `key-price-tiers`（**是发车运营 API 化最完整的家**；kiroapp.io 只做了 refill-config，kiroapp.cc 完全 UI 化）
-- **UA 头 `kiro-reseller-webhook/1.0`** 可用于服务端识别
-- **时区 UTC+8 明写**（`2026-08-02 14:30:00` 无时区后缀）
-- **文档页有"一键复制整篇"按钮** —— 是 6 家里对开发者最友好的对接文档
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `region` | str | **`us-east-1` / `eu-central-1`** · ⚠️ 用完整 AWS region 当 zone 标识（跟 kiro91/kiroceo 的 us/eu 短名不同）|
+| `label` | str | 中文名 `"美国区"` / `"欧洲区"` |
+| `unit_price` | int | 该区单价（积分/个）|
+| `stock` | int | 该区库存 |
+| `claimable` | int | 该区可领数量 |
+| `open` | bool | 该区是否开放 |
+| `can_buy` | bool | 能否买（综合判断）|
+| `afford` | int | 按余额该区能买几个 |
+| `short_credits` | int | 差多少积分 |
 
-## 15. Fleet 观测端点（2026-08-10 探测）
+**我方 adapter 映射**（`mapper.go`）：
 
-| 端点 | 结果 | 备注 |
-|------|------|------|
-| `GET /api/status` | ✅ **免 auth** `{keys_active, keys_alive, keys_dead, keys_suspect, keys_stock, keys_total, generating, started_at, uptime_secs}` | 最丰富的 PublicStatus 端点 · 有 5 种 key 状态计数 |
-| `GET /api/my/stock/regions` | ✅ `regions[].dispatches[]` `{alive, dead, delivered, dead_at, running, time}` | **含 dead 明细** · 是 6 家里最完整的 dispatch 视图 |
-| `GET /api/my/stock` | ⚠️ 偶尔网络超时（不是接口问题）| 有 zones · 有 unit_price |
-| `GET /api/my/gen-logs` | 404 明确 `{"message":"接口不存在"}` | 无此端点 |
+| 我方字段 | 来源 |
+|---|---|
+| `StockSnapshot.Available` | Σ`regions[].stock` |
+| `ZoneStock[].Zone` | ⚠️ **`providers.Zone(r.Region)` 直接转** → 落成 `"us-east-1"` **不是 `"us"`** · **这是 bug**（见 §8 缺口 1）|
+| `ZoneStock[].Region` | `regions[].region` |
+| `ZoneStock[].Available` | `regions[].stock` |
+| `ZoneStock[].UnitPrice` | `Money{unit_price × 10^6, "credit"}` |
 
-**结论**：kirooo 是**观测能力最强**的 vendor · 同时给出"当前累计"（`/api/status`）+"最近开号明细"（`/api/my/stock/regions`）· 我方 adapter 里 `fleet.go` 和 `public_status.go` 分别接这两个。
+**⚠️ 数据缺口**：`label` / `open` / `can_buy` / `afford` / `short_credits` **都不落库**。`fleet_active` 只用于探针提频 · **不落库**（想事后分析"开号节奏 vs 我方抢号成功率"就没数据）。
+
+---
+
+### 2.4 `POST /my/keys/claim`
+
+**请求**：`{ "count": 5, "client_order_id": "…", "region": "us-east-1" }`
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `count` | ✓ | **单次上限 500**（6 家里最高）|
+| `client_order_id` | ★ | 幂等键 · 同单号重复提交返上次那批 · 不重复扣配额 |
+| `region` | ✗ | **必须显式传 `eu-central-1` 才拉 EU** |
+
+**vendor 明说**：实际取 `min(count, 剩余配额, 可取库存)` · 取不到返 4xx 且**不扣配额** · 可安全重试。
+
+**我方 adapter**：`Adapter.Purchase()`。
+
+---
+
+### 2.5 `GET /my/keys` · `?history=1`
+
+**实测响应**（我方账号有数据 · 是 6 家里唯一给完整 key 明细的）：
+```json
+{
+  "active": 0, "count": 0, "suspect": 0,
+  "keys": [{
+    "id": 123, "key": "…", "master_id": "…", "order_id": "…",
+    "region": "us-east-1", "status": "…",
+    "created_at": "…", "dispatched_at": "…", "last_probe": "…",
+    "dead_reason": "…",
+    "current_usage": 0, "usage_limit": 0, "usage_rate": 0,
+    "on_sale": false, "listing_price": 0
+  }]
+}
+```
+
+**顶层聚合**：
+
+| 字段 | 语义 |
+|---|---|
+| `active` | 存活数 |
+| `count` | 总数 |
+| **`suspect`** | ★ **可疑数**（vendor 判定异常但未确认死）· 独家 |
+
+**`keys[]` 元素**（★ = 6 家里独有）：
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `id` | int | vendor 侧 key id |
+| `key` | str | key 正文 |
+| **`master_id`** | str | ★ **母号 id**（拼车池 root）|
+| `order_id` | str | 归属订单 |
+| `region` | str | `us-east-1` / `eu-central-1` |
+| `status` | str | 状态 |
+| `created_at` | str | 产出时刻 |
+| **`dispatched_at`** | str | ★ 派发时刻（跟 created_at 分开）|
+| **`last_probe`** | str | ★ **vendor 最近一次探活时刻** |
+| **`dead_reason`** | str | ★ 死因 |
+| **`current_usage`** | int | ★ **当前用量** |
+| **`usage_limit`** | int | ★ 用量上限 |
+| **`usage_rate`** | int | ★ **用量速率** |
+| **`on_sale`** | bool | ★ 是否挂在转售市场 |
+| **`listing_price`** | int | ★ 挂牌价 |
+
+**我方 adapter 用它**：只拿聚合数（`active` / `count` / `suspect`）· **`keys[]` 明细完全不解析**。
+
+**⚠️ 最大数据缺口**：kirooo 是**唯一给逐把 key 用量 + 探活 + 死因的 vendor** · 我方全丢了。`current_usage` / `usage_limit` / `usage_rate` / `last_probe` / `dead_reason` 都是我方 kiro.rs 探测想要的数据 · vendor 直接给了却没接。
+
+---
+
+### 2.6 `GET /my/keys/created-at`（❌ 未接）
+
+最早产出时间 + 累计个数。轻量端点 · 用途：判断"我方在这家 vendor 用了多久"。
+
+---
+
+### 2.7 `GET /my/keys/export`（❌ 未接）
+
+`?master_id=&history=1&format=json` · **按母号下载 key**。
+
+**为什么有价值**：按 `master_id` 分组能看出"哪个母号出的号活得久" —— 是选 vendor 的质量信号。
+
+---
+
+### 2.8 `GET /my/dispatch-log`（❌ 未接 · 高价值）
+
+**按车次聚合的活死统计**。
+
+**为什么高价值**：这是 vendor 侧的**车次质量数据**（每批开了多少 / 死了多少 / 存活多久）· 我方现在靠自己探针推算 · vendor 直接给了。
+
+---
+
+### 2.9 `GET /my/purchase-orders`
+
+最近 50 笔订单。**实测响应**：
+```json
+[{ "client_order_id": "…", "created_at": "…", "purchased": 3, "requested": 5, "source": "…" }]
+```
+
+| 字段 | 语义 |
+|---|---|
+| `client_order_id` | 幂等键 |
+| `requested` | 申请数量 |
+| `purchased` | **实际成交** |
+| `created_at` | 下单时刻 |
+| **`source`** | ★ 订单来源（api / web / auto 等）|
+
+**⚠️ 数据缺口**：**这个端点不返单价 / 扣款额** —— 对账拿不到金额（要靠 `/my/credits` 流水补）。
+
+---
+
+### 2.10 `GET /my/credits`（❌ 未接）
+
+积分余额 + 母号单价 + **积分流水** `?limit=50`。
+
+**为什么该接**：`/my/purchase-orders` 不给金额 · 只有这里能拿到**实扣流水** · 是 kirooo 对账的唯一路径。
+
+---
+
+### 2.11 `GET /my/key-price-tiers`（❌ 未接 · 高价值）
+
+**key 单价阶梯** · `base` 基准价 + `bands` 分档。
+
+**为什么高价值**：这是 vendor 的**完整定价规则表**（不只当前价 · 是整张阶梯）。有了它我方能：
+1. 预测"再买 N 个会掉到哪一档"
+2. 算出"什么数量最划算"
+3. 做 `docs/18` 里 `vendor_price_tier` 表真正的数据源（现在那表是空的）
+
+---
+
+### 2.12 `GET /status`（免鉴权）
+
+**实测响应**：
+```json
+{
+  "announce": { "enabled": false, "level": "…", "text": "…", "updated_at": "…", "updated_by": "…" },
+  "auto_mode": true, "generating": false,
+  "keys_active": 1026, "keys_alive": 1026, "keys_dead": 0,
+  "keys_stock": 0, "keys_suspect": 0, "keys_total": 1026,
+  "started_at": "…", "uptime_secs": 12345
+}
+```
+
+| 字段 | 语义 |
+|---|---|
+| `keys_active` / `keys_alive` | fleet 存活 key 数 |
+| `keys_dead` | 已死 |
+| `keys_stock` | 可买库存 |
+| **`keys_suspect`** | ★ 可疑数 |
+| `keys_total` | 总数 |
+| `generating` | 是否正在开号 |
+| **`auto_mode`** | ★ 自动模式是否开 |
+| `started_at` / `uptime_secs` | vendor 服务运行时长 |
+| **`announce.*`** | ★ **站点公告**（enabled / level / text / updated_at / updated_by）|
+
+**我方 adapter 映射**：`PublicStatus` ← `keys_*` 系列 + `generating` + `started_at` + `uptime_secs`。
+
+**⚠️ 数据缺口**：`announce.*` **不落库** —— vendor 挂公告（例："今晚维护"）我方不知道。`auto_mode` 也不落库。
+
+---
+
+## 3 · Webhook
+
+### 3.1 事件类型（3 种）
+
+| `event` | 语义 |
+|---|---|
+| `new_keys_available` | 有新 key 就绪 |
+| `all_keys_dead` | 本轮全灭 |
+| `test` | 手工测试 |
+
+### 3.2 载荷字段（vendor 原文完整表）
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `event` | str | 事件类型 |
+| `event_id` | str | **32 位小写 hex** · 每次投递不同 · 去重用 |
+| **`client_order_id`** | str | ★ **原样回传给 claim**（vendor 明说：**不要用 event_id**）|
+| `purchase_order_id` | str | `client_order_id` 的**旧名** · 值完全一样 |
+| `new_keys` | int | 就绪数 |
+| `claim_hint` | str | 给人看的取货提示 |
+| `dead` | int | 失效数 |
+| `message` | str | 中文摘要 |
+| `time` | str | **UTC+8** `YYYY-MM-DD HH:MM:SS` |
+
+**⚠️ 关键**：`client_order_id` 和 `purchase_order_id` 是**同一个值的新旧名** · 我方代码要兼容两个字段名（生产实测 bug 就是这个 —— 见 `decisions §11.x` webhook OrderID 空）。
+
+### 3.3 签名
+
+**无签名** · vendor 明说"靠不可猜 URL 路径当口令"。
+
+### 3.4 重试
+
+3 次 · 间隔 **0s / 2s / 6s** · **4xx 视为拒绝不再重试**。
+
+---
+
+## 4 · 幂等 + 限流
+
+- `claim` 传 `client_order_id` · 同单号重复提交返上次那批 · 不重复扣配额
+- 实际取 `min(count, 剩余配额, 可取库存)`
+- **单次上限 500**（6 家里最高）
+- 取不到 4xx 且**不扣配额** · 可安全重试
+- 限流 429 · 指数退避
+
+---
+
+## 5 · 特有事实（跟其他 vendor 的差异）
+
+- **端点最多**（32 个 · 分 7 组）
+- **用完整 AWS region 当 zone 标识**（`us-east-1` 不是 `us`）· 6 家里唯一 —— **我方 adapter 归一 bug 的来源**
+- **积分显式 = 1 元人民币** · 6 家里唯一挂钩 CNY 的
+- **单次领取上限 500** · 6 家里最高
+- **`/my/keys` 给完整 key 明细**（用量 / 探活 / 死因 / 转售）· 6 家里唯一
+- **有 `suspect` 态**（可疑但未确认死）· kiro91 / kiroceo 都只有 active/dead
+- **profile 有风控四字段**（`risk_flag` / `risk_rate` / `risk_threshold` / `risk_at`）· 独家
+- **`fleet_active` + `fleet_started_at` + `fleet_now`** · vendor 主动告知"我正在开号" · 我方探针提频靠它
+- **有 `/status` 公告字段**（`announce.*`）· 独家
+- **充值走 USDT 链上** · 6 家里唯一
+- **有 TG 通知渠道**（4 个端点）· 独家
+- **有 2FA**（`/my/2fa-verify`）· 独家
+- **有转售市场**（`on_sale` / `listing_price`）· 独家
+- **webhook 无签名** · 跟 kiroceo 一样靠 URL secret
+- **`client_order_id` / `purchase_order_id` 双名同值** · 兼容旧客户端
+- **`/my/purchase-orders` 不返金额** · 对账必须配 `/my/credits`
+
+---
+
+## 6 · 我方 adapter 缺口（按优先级）
+
+| # | 缺什么 | 影响 | 优先级 |
+|---|---|---|---|
+| 1 | **`ZoneStock.Zone` 归一 bug** · 落 `us-east-1` 不是 `us` | 侧表 zone 列跟其他 vendor 对不上 · PricedFor 按 zone 查匹配不到 | **最高 · 是 bug** |
+| 2 | `GET /my/key-price-tiers` | 拿不到完整定价阶梯 · `vendor_price_tier` 表因此是空的 | **高** |
+| 3 | `keys[]` 明细全丢（用量 / 探活 / 死因 / master_id）| 唯一给这些数据的 vendor · 全没接 · kiro.rs 探测在重复劳动 | **高** |
+| 4 | `GET /my/credits` | kirooo 对账唯一金额来源 · 现在没有 | **高** |
+| 5 | `GET /my/dispatch-log` | vendor 侧车次质量数据 · 我方在自己推算 | **中** |
+| 6 | profile 风控四字段不落库 | vendor 觉得我方有风险时完全不知情 | **中** |
+| 7 | `fleet_active` 不落库 | 只用于提频 · 事后分析"开号节奏 vs 抢号成功率"没数据 | **中** |
+| 8 | `/status` 的 `announce.*` 不落库 | vendor 挂维护公告我方不知道 | 低 |
+| 9 | `GET /my/keys/export` | 按母号看号质量 | 低 |
+| 10 | `GET /my/keys/created-at` | 轻量 · 用途有限 | 低 |
+| 11 | 发车 6 端点 · TG 4 端点 · 充值 4 端点 · 账号安全 3 端点 | 阶段外 / 不需要 | ❌ |

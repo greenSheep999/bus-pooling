@@ -1,52 +1,62 @@
+> ⚠️ 敏感数据豁免：本档案的实测响应示例里 `webhook_url`/`api_key_prefix` 字段
+> 值均为演示占位；真实 vendor 凭据/账号明文一律不入档 · `docs/vendors/_sources/`
+> 已在 .gitignore 屏蔽 · docs/vendors/*.md 里出现的都是脱敏值。
+
 # Vendor: kiro.ceo
 
-## 1. 基础信息
+## 0 · 档案元信息
 
 | 项 | 值 |
 |---|---|
 | Base URL | `https://kiro.ceo` |
-| 官方文档 | `https://kiro.ceo/#/docs`（前端页面，源码 `https://kiro.ceo/js/pages/docs.js`，13.7 KB） |
-| 抓取日期 | 2026-08-07 |
-| 站点标题 | Kiro 控制台（前端 preact SPA，dark 主题） |
-| 存活探活 | `GET /api/my/profile` 带 API key = 200；无 key = 401 |
-| 文档语气自述 | "写成页面而不是给一份外部文档，是因为里面的 base URL、密钥占位、区域单价都跟当前这套部署有关—— 抄一份静态文档出去，很快就会和实际接口对不上。" |
-| 我方实测账号 | `野生达利奥 Danlio`，quota=0 / used=0 / remaining=0（未充值） |
+| 官方文档 | `https://kiro.ceo/#/docs`（preact SPA · 源码 `/js/pages/docs.js` · 13.7 KB） |
+| 抓取日期 | 2026-08-12（`.playwright-mcp/vendor-scrape-2026-08-12/kiroceo-docs.txt`） |
+| 存活探活 | `GET /api/my/profile` 带 API key → 200 · 无 key → 401 |
+| 鉴权 | 只支持 `X-API-Key` header · **不支持 `Authorization: Bearer`**（与 kiro91 差异） |
+| 密钥前缀 | `usr-` |
+| **官方端点总数** | **8 个 `/api/my/*` + 别名 `/api/me/*`** |
+| **我方 adapter 接了** | 8 个 · 覆盖率 100% · 见 §1 表 |
+| Provider group | `providers.ProviderKiro` |
+| Adapter 目录 | `internal/providers/kiro/vendors/kiroceo/` |
 
-## 2. 鉴权
+---
 
-- Header：`X-API-Key: <YOUR_API_KEY>`
-- 密钥前缀：`usr-`（与 91kiro 相同前缀）
-- **没有额外的登录步骤、也不需要换 token**（原文摘录）
-- 密钥可以在「账户」页查看
-- 密钥泄露"请联系管理员轮换"（**没有自服务 rotate 端点**，与 91kiro 差异）
-- 无 CSRF / cookie 二次通道要求
+## 1 · 端点清单（vendor 官方 8 个）
 
-## 3. 概念 / 术语
+按 vendor 官方 `docs.txt` 原文顺序列 · **端点名 + 参数 + 响应结构 + 我方 adapter**：
 
-**vendor 自述用词非常精简**，只有以下几个：
+| # | 方法 | vendor 官方路径 | vendor 官方描述 | 我方 adapter 方法 · 位置 | 状态 |
+|---|---|---|---|---|---|
+| 1 | GET  | `/api/my/profile` | 账号信息 + 积分余额 | `Adapter.Balance()` · `adapter.go:145` | ✅ 接了 |
+| 2 | GET  | `/api/my/stock` | 可提取数量 + 单次上下限 + `zones[]` 各区单价与可购量 | `Adapter.Stock()` · `adapter.go:67` | ✅ 接了 |
+| 3 | POST | `/api/my/purchase`（别名 `/api/me/purchase`）| 提货 · 幂等 `client_order_id` | `Adapter.Purchase()` · `adapter.go:95` | ✅ 接了 |
+| 4 | GET  | `/api/my/keys` | 我的凭据（`?history=1` 含已失效）| `Adapter.KeyStats()` · `history.go:104` | ✅ 接了（用 `?history=1`）|
+| 5 | GET  | `/api/my/purchase-orders` | 历史订单 | `Adapter.PurchaseHistory()` · `history.go:73` | ✅ 接了 |
+| 6 | GET  | `/api/my/keys/usage` | 用量采样（每分钟积分消耗）| — | ❌ **未接** |
+| 7 | POST | `/api/my/redeem` | 兑换码换积分 | `Adapter.Redeem()` · `adapter.go:188` | ✅ 接了 |
+| 8 | PUT  | `/api/my/webhook` | 保存到货通知地址 | — | ❌ **未接**（webhook URL 在 vendor 后台手工配 · 不通过 API 设）|
 
-| 术语 | 含义 |
-|---|---|
-| 积分 | 计费单位。按积分计费，不按"还能提几个号" |
-| zone | 区域，当前实测有 `us` / `eu` 两个（美国区 / 欧洲区），每区独立单价 |
-| 母号 (`pool_id`) | 产出 key 的上游账号，webhook 用它做去重键 |
-| 单价 | 每区独立设置，实测 us=50 积分/个、eu=35 积分/个（2026-08-07 我方账号视角） |
-| 质保 | 提货后 10 分钟内号被判死自动退积分（详见 §13） |
+**我方还接了 1 个隐藏端点**（vendor 官方 8 个之外）：
 
-**没有"车次"、"公共车/自己车"、"母号供应"这些概念**（与 91kiro 差异）。上游是纯代购视角，不暴露母号管理面。
+| # | 方法 | 路径 | 用途 | 我方 adapter | 状态 |
+|---|---|---|---|---|---|
+| 9 | GET | `/api/my/gen-logs` | fleet 出货批次历史（全平台可见 · `avg_interval_min`+`items[]`）| `fleet.go:35` | ✅ 接了 · 探针提频用 |
+| 10 | GET | `/api/my/orders/{order_id}/keys` | 按 order_id 补拉 key | `Adapter.OrderKeys()` · `adapter.go:121` | ✅ 接了 |
 
-## 4. 计费规则（原文摘录）
+**未在 vendor 文档但探测存在的路径**（返 200 但是 SPA HTML · 非真 API · 不接）：
+- `/api/status` · `/api/public/status` · `/api/vendors` · `/api/restock-log` · `/api/dispatches`
+- `/api/my/dispatch-history` · `/api/my/fleet-history` · `/api/my/history` · `/api/my/stock/regions`
+- 探测记录见 `docs/vendors/_endpoints-audit-2026-08-12.md`
 
-- "本站按**积分**计费，不再按「还能提几个号」。"
-- "每个区域单价独立设置。"
-- "提货时扣的积分 = 该区单价 × 实际成交数量。"
-- "**如果你之前对接的是旧版接口：字段名一个都没改**（`quota`、`remaining`、`used_quota`、`purchased`），只是这些数字现在表示积分而不是个数。原来的代码不用改就能继续跑。"
+**未在 vendor 文档且探测 404**：kirodrop / kiroappio / kiroappcc 独有的路径全部 404 · 无 cross-vendor 隐藏端点。
 
-## 5. 账号 / Profile
+---
 
-### `GET /api/my/profile`
+## 2 · 逐端点字段清单（vendor 原文命名）
 
-**实测响应**（我方账号，2026-08-07）：
+### 2.1 `GET /api/my/profile`
+
+**实测响应**（我方账号 · 2026-08-12）：
 
 ```json
 {
@@ -60,20 +70,25 @@
 }
 ```
 
-| 字段 | 类型 | 含义 |
-|---|---|---|
-| `name` | string | 账号显示名 |
-| `quota` | int | 总积分（**注意：字段名叫 quota 但语义是积分**，见 §4） |
-| `used_quota` | int | 已用积分 |
-| `remaining` | int | 剩余积分 = `quota - used_quota` |
-| `min_purchase` / `max_purchase` | int | 单次提货数量下限/上限 |
-| `webhook_url` | string | 已保存的 webhook 地址 |
+| 字段 | 类型 | 语义 | vendor 原文说明 |
+|---|---|---|---|
+| `name` | str | 账号显示名 | — |
+| `quota` | int | 总积分 | **注意：字段名叫 quota 但语义是积分**（vendor 兼容旧接口 · 数值意义已改）|
+| `used_quota` | int | 已用积分 | 同上 |
+| `remaining` | int | 剩余积分 | = `quota - used_quota` |
+| `min_purchase` | int | 单次提货数量下限 | 账号维度 |
+| `max_purchase` | int | 单次提货数量上限 | 账号维度 |
+| `webhook_url` | str | 已保存的 webhook 地址 | 空字符串表示未配 |
 
-## 6. 库存
+**我方 adapter 映射**：
+- `Balance` (int64 microunit) ← `remaining × 1_000_000`
+- 其他字段目前**不落库** · 只在 adapter 层用作 sanity check
 
-### `GET /api/my/stock`
+---
 
-**实测响应**：
+### 2.2 `GET /api/my/stock`
+
+**实测响应**（我方账号 · 2026-08-12）：
 
 ```json
 {
@@ -83,62 +98,73 @@
   "quota": 0,
   "reserved": 0,
   "zones": [
-    { "zone": "us", "label": "美国区", "unit_price": 50, "enabled": true, "available": 0, "max": 0, "stock": 0 },
-    { "zone": "eu", "label": "欧洲区", "unit_price": 35, "enabled": true, "available": 0, "max": 0, "stock": 0 }
+    { "zone": "us", "label": "美国区", "unit_price": 100, "enabled": true, "available": 0, "max": 0, "stock": 0 },
+    { "zone": "eu", "label": "欧洲区", "unit_price": 70,  "enabled": true, "available": 0, "max": 0, "stock": 0 }
   ]
 }
 ```
 
-| 字段 | 含义 |
+**顶层字段**：
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `max` | int | 当前可一次性提取的最大数量（= 各 zone 汇总 · 受账户上限约束）|
+| `min` | int | 单次最小提货量 · 恒 1 |
+| `max_purchase` | int | 账户单次最大提货量 |
+| `quota` | int | 账户维度的积分（跟 profile 同）|
+| `reserved` | int | 账户维度的保留（未充值账号恒 0 · 用途未在 docs 说明）|
+| `zones` | array | 每区一条 |
+
+**`zones[]` 元素字段**：
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `zone` | str | `"us"` / `"eu"` · **权威地区标识** |
+| `label` | str | 中文显示名 · `"美国区"` / `"欧洲区"` |
+| `unit_price` | int | 该区单价（积分/个）· 已按母号存活时长降到现价 |
+| `enabled` | bool | 该区是否启用 |
+| `available` | int | 该区当前可提数量 |
+| `max` | int | 该区一次性最多能提数量 |
+| `stock` | int | 该区库存原始数（可能 ≥ `available` · 部分被 reserved）|
+
+**我方 adapter 映射**（`mapper.go:89`）：
+
+| 我方字段 | 来源 |
 |---|---|
-| `max` | 当前可一次性提取的最大数量（= 各 zone 汇总，受账户上限约束） |
-| `min` | 单次最小提货量（= 1） |
-| `max_purchase` | 账户单次最大提货量（此账号 = 10） |
-| `quota` / `reserved` | 账户维度的积分与保留（未充值账号都是 0） |
-| `zones[]` | 每区独立字段 |
-| `zones[].zone` | `us` / `eu` |
-| `zones[].label` | 中文显示名 |
-| `zones[].unit_price` | 每个号的积分单价（此账号视角：us=50, eu=35） |
-| `zones[].enabled` | 该区是否启用 |
-| `zones[].available` | 该区当前可提数量 |
-| `zones[].max` | 该区最大可一次性提取 |
-| `zones[].stock` | 该区库存 |
+| `StockSnapshot.Available` | `stock.public_available`（**旧字段** · 实际用 `max`）|
+| `StockSnapshot.MinPerOrder` | `min` |
+| `StockSnapshot.MaxPerOrder` | `max_purchase` |
+| `StockSnapshot.WarrantyMinutes` | ❌ **不返** · vendor 恒 10 分钟质保 · 我方硬编码 |
+| `ZoneStock[].Zone` | `zones[].zone` 直接（`"us"` / `"eu"`）|
+| `ZoneStock[].Region` | `zones[].region` · **vendor 不返** · adapter 落空字符串 |
+| `ZoneStock[].Available` | `zones[].available` |
+| `ZoneStock[].UnitPrice` | `Money{Amount: unit_price × 10^6, Currency: "credit"}` |
 
-**"死"vs"缺货"判据**：`max == 0` 或 `zones[i].available == 0` 只代表缺货；号死走 webhook `all_keys_dead` 事件。
+**⚠️ 数据缺口**：`label`（中文名）· `enabled` · `stock`（vs available 差异）· `reserved` · `max_purchase` 都**不落库**。
 
-## 7. 拉号 / 补拉
+---
 
-### `POST /api/my/purchase`（等价别名 `POST /api/me/purchase`）
+### 2.3 `POST /api/my/purchase`
 
 **请求**：
-
-```bash
-curl -X POST https://kiro.ceo/api/my/purchase \
-  -H "X-API-Key: <YOUR_API_KEY>" \
-  -H "Content-Type: application/json" \
-  -d '{"count": 5, "zone": "us", "client_order_id": "0123456789abcdef0123456789abcdef"}'
+```json
+{ "count": 5, "zone": "us", "client_order_id": "0123456789abcdef0123456789abcdef" }
 ```
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `count` | 是 | 范围看 profile 的 `min_purchase` ~ `max_purchase` |
-| `client_order_id` | 强推 | **32 位十六进制**（正则约束）；可用 `Idempotency-Key` header 替代 |
-| `zone` | 否 | 不传默认 `us`；`eu` 显式指定；**其他值直接 400，不静默按 us**（与 91kiro 语义一致） |
+| `count` | ✓ | 范围 `min_purchase` ~ `max_purchase` |
+| `client_order_id` | ★ 强推 | **32 位十六进制**（正则约束）· 或用 `Idempotency-Key` header |
+| `zone` | ✗ | 不传默认 `"us"` · `"eu"` 显式指定 · **其他值直接 400**（不静默按 us）|
 
-**响应**（vendor 原文示例）：
-
+**响应**：
 ```json
 {
   "client_order_id": "0123456789abcdef0123456789abcdef",
   "purchased": 5,
   "remaining": 4500,
   "keys": [
-    {
-      "key": "kiro-xxx",
-      "account": "user@example.com",
-      "password": "...",
-      "issuer_url": "https://..."
-    }
+    { "key": "kiro-xxx", "account": "user@example.com", "password": "...", "issuer_url": "https://..." }
   ],
   "zone": "us",
   "unit_price": 100,
@@ -147,73 +173,146 @@ curl -X POST https://kiro.ceo/api/my/purchase \
 }
 ```
 
-**每把 key 的 payload 四件套**：`{ key, account, password, issuer_url }`（与 91kiro 完全相同）。
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `client_order_id` | str | 回传的幂等键 |
+| `purchased` | int | **实际成交数量** · 可能 < count |
+| `remaining` | int | 扣款后剩余积分 |
+| `keys` | array of obj | 每把 key **四件套** `{ key, account, password, issuer_url }` |
+| `zone` | str | 交付区（就是请求那个 · 严格隔离）|
+| `unit_price` | int | 该单单价（积分/个）|
+| `total_credits` | int | **权威扣款额**（= unit_price × purchased · 但混价单可能 ≠）|
+| `order_id` | str | vendor 侧订单号 · 补拉用 |
 
-**关键语义（vendor 原文摘录）**：
+**vendor 明说**：
+- "务必按 `purchased` 而不是 `count` 处理结果"
+- "网络超时后请用同一个 `client_order_id` 重试 —— 服务端会识别成同一笔订单原样返回 · 不会重复扣费"
 
-- "务必按 `purchased` 而不是 `count` 处理结果。库存是并发争抢的，申请 5 个拿到 3 个是正常结果，只按实际成交数量扣费。"
-- "`keys` 是对象数组，每个元素含 `key / account / password / issuer_url` 四个字段，直接遍历取用即可。"
-- "`client_order_id` 必须是 32 位十六进制（也可以用 `Idempotency-Key` 请求头传）。**网络超时后请用同一个 id 重试**—— 服务端会识别成同一笔订单原样返回，不会重复扣费、重复发货。换一个新 id 重试则会变成第二笔订单。"
+**我方 adapter 映射**（`mapper.go:65`）：
 
-### `GET /api/my/purchase-orders`
+| 我方字段 | 来源 |
+|---|---|
+| `PurchaseResult.OrderID` | `order_id` |
+| `PurchaseResult.ClientOrderID` | `client_order_id` |
+| `PurchaseResult.Zone` | `providers.Zone(zone)` |
+| `PurchaseResult.Purchased` | `purchased` |
+| `PurchaseResult.Requested` | 请求侧 `count`（回填）|
+| `PurchaseResult.TotalCost` | `Money{Amount: total_credits × 10^6, Currency: "credit"}` |
+| `PurchaseResult.Keys[]` | 每把 `{Key, Account, Password, IssuerURL}` |
 
-历史订单列表。**实测响应**：`[]`（我方账号无订单）。
+---
 
-### `GET /api/my/keys`
+### 2.4 `GET /api/my/keys` · `GET /api/my/keys?history=1`
 
-我的凭据列表。带 `?history=1` 时含已失效的。
-
-**实测响应**：
-
+**实测响应**（我方账号 · 2026-08-12）：
 ```json
 { "active": 0, "count": 0, "keys": [] }
 ```
 
-## 8. 积分 / 兑换 / 流水
+**vendor 未在 docs 明说完整字段** · 只知：
+- `?history=1` 时含已失效 key · 否则只 active
+- 顶层 `active` / `count` 是聚合数
+- `keys[]` 每条含 key 数据（**实测账号为空 · 无法列字段**）
 
-### `POST /api/my/redeem`
+**我方 adapter 用它**（`history.go:104`）：
+- 走 `?history=1` · 拿聚合数（active/count）·填 `KeyStatsBatch`
+- **不解析 `keys[]`**（vendor 侧字段结构未确认 · 我方靠 credential_ledger 存明细）
 
-兑换码换积分。**vendor 文档没给字段细节**，只在错误码里列了 `410 兑换码过期`。
+---
 
-### 积分明细里的 refund
+### 2.5 `GET /api/my/purchase-orders`
 
-vendor 文档说：质保退款"在积分明细里记为 `refund`"—— 暗示存在一个积分明细读端点，但 docs.js 未列出。
+**实测响应**（我方账号 · 2026-08-12）：
+```json
+[]
+```
+（我方账号无订单 · 无法列元素字段）
 
-## 9. 母号 / 开号 / 供应侧
+**我方 adapter 用它**（`history.go:73`）· 遍历历史订单 · fill `PurchaseHistory`。字段推测（从 kiro91 同类端点对齐 · 未在 kiroceo docs 明写）：
+- `id` / `client_order_id` / `count` / `unit_price` / `charged` / `free_count` / `created_at`
 
-**不存在**。kiro.ceo 是纯代购视角，没有暴露母号管理、供应侧、发车等能力。（与 91kiro / kiroapp.io 等有 supply-side API 的 vendor 差异）
+---
 
-## 10. Webhook
+### 2.6 `GET /api/my/keys/usage`
 
-### 配置
+**vendor 文档只写了一行**："用量采样（每分钟积分消耗）"
 
-- **`PUT /api/my/webhook`** — 保存到货通知地址（vendor 文档列出，但未给请求体样例）
-- **前端有"模拟推送"能力** —— 在"账户"页保存 webhook 地址时可直接模拟推送 `new_keys_available` 和 `all_keys_dead` 两种事件，载荷与真实事件完全一致（只在 `message` 里标了「[模拟]」）
+**未接** · 字段结构未知。**用途候选**：分析我方购入 key 的实时消耗速率 · 用来判定 key 快"跑完"了。
 
-### 事件类型（vendor 原文表格）
+---
 
-| `event` | 类型 | 含义 |
+### 2.7 `POST /api/my/redeem`
+
+**请求**：`{ "code": "XXXXXXXX" }`
+
+**响应**：vendor docs 未明说 · 从错误码 `410 兑换码过期` 推测走类似 kiro91 的 `{ quota, balance }` 结构。
+
+**我方 adapter 接了**（`adapter.go:188`）· `Adapter.Redeem()` · 是运维手动兑换用 · 用户不触发。
+
+---
+
+### 2.8 `PUT /api/my/webhook`
+
+**未接** · vendor docs 只说"保存到货通知地址" · 请求体格式未在 docs 明写。
+
+**为什么不接**：我方 webhook URL 是**部署前手工在 vendor 后台配好的** · 一次性 · 无需 API 改。要改就手动登录 vendor 后台。
+
+---
+
+### 2.9 `GET /api/my/gen-logs`（我方接 · 官方 8 端点之外）
+
+**实测响应**：
+```json
+{
+  "avg_interval_min": 24.028070175438597,
+  "items": [
+    { "created_at": "2026-08-12T11:12:29Z", "count": 10, "status": "done" }
+  ]
+}
+```
+
+| 字段 | 类型 | 语义 |
 |---|---|---|
-| `new_keys_available` | string | 有新号入库。带 `purchase_order_id`，直接拿去当提货的幂等键。 |
-| `all_keys_dead` | string | 你名下的号本轮全部失效，系统正在自动补货。 |
-| `test` | string | 你点「发送测试」时推的，仅用于验证地址可达。 |
+| `avg_interval_min` | float | vendor 自算的**平均开号间隔（分钟）** |
+| `items[]` | array | 批次列表 · **全平台可见**（不只我方账号）|
+| `items[].created_at` | str (ISO8601) | 批次开号时刻 |
+| `items[].count` | int | 该批次开号数量 |
+| `items[].status` | str | `running` / `error` / `done` |
 
-### 载荷字段（vendor 原文表格）
+**跟 kiro91 差异**：kiro91 同名端点只返自己车 · kiroceo 返**全平台**（fleet 视角）· 是全 6 家里 fleet 数据最新鲜的。
 
-| 字段 | 类型 | 说明 |
+**我方 adapter 用它**：
+- `FleetLister.RecentDispatches()` · 落 `vendor_dispatch` 表
+- 探针提频决策：`items[]` 有 `running` 状态时进 hot 模式
+
+---
+
+### 2.10 `GET /api/my/orders/{order_id}/keys`（我方接 · 官方文档提到但未列端点）
+
+**用途**：按 vendor 侧 `order_id` 补拉这批 key · 是 webhook `purchase_order_id` 的配套。
+
+**响应**：跟 `POST /api/my/purchase` 的响应字段完全一致 · **同一个订单的 key 明文重发**。
+
+**我方 adapter 用它**（`adapter.go:121`）· `Adapter.OrderKeys()` · webhook 通知后补拉时用。
+
+---
+
+## 3 · Webhook
+
+### 3.1 配置
+
+- 端点：`PUT /api/my/webhook`（我方**未接** · 手工在 vendor 后台配）
+- 前端有"模拟推送"（新号 + 全死两种事件 · 载荷跟真事件一致 · 只 message 标 `[模拟]`）
+
+### 3.2 事件类型（3 种）
+
+| `event` 值 | 触发时机 | 载荷独家字段 |
 |---|---|---|
-| `event` | string | 事件类型 |
-| `event_id` | string | 事件唯一 id，**可用于去重** |
-| `purchase_order_id` | string | 仅 `new_keys_available` 有。**作为 `client_order_id` 提货** |
-| `pool_id` | string | 触发本次通知的母号 id。同一母号的重复通知按它去重，避免重复拉取；**全死事件涉及多个母号时用逗号连接** |
-| `message` | string | 给人看的中文描述 |
-| `new_keys` | int | 仅 `new_keys_available` 有。新增数量 |
-| `dead` | int | 仅 `all_keys_dead` 有。失效数量 |
-| `zone` | string | 区域（`us` / `eu`），仅补货事件有 |
+| `new_keys_available` | 有新号入库 | `new_keys`, `purchase_order_id`, `zone` |
+| `all_keys_dead` | 本轮号全失效 · 系统自动补 | `dead` |
+| `test` | 手工发测试 | 无 |
 
-### 载荷示例（vendor 原文）
-
-`new_keys_available`：
+### 3.3 载荷字段
 
 ```json
 {
@@ -221,90 +320,73 @@ vendor 文档说：质保退款"在积分明细里记为 `refund`"—— 暗示�
   "event_id": "7f3a9c2e1b4d5a6f8e9c0b1a2d3e4f5a",
   "purchase_order_id": "7f3a9c2e1b4d5a6f8e9c0b1a2d3e4f5a",
   "pool_id": "a1b2c3d4e5f6",
-  "message": "美国区新增 20 个 Key 已就绪；...",
+  "message": "美国区新增 20 个 Key 已就绪 · ...",
   "new_keys": 20,
   "zone": "us"
 }
 ```
 
-`all_keys_dead`：
+| 字段 | 类型 | 语义 | 出现在哪个事件 |
+|---|---|---|---|
+| `event` | str | 事件类型 | 全部 |
+| `event_id` | str (32-hex) | 唯一 id · 去重键 | 全部 |
+| `purchase_order_id` | str (32-hex) | **直接当 `client_order_id` 提货** · vendor 值 = `event_id` 双用 | new_keys / test |
+| `pool_id` | str | 触发的母号 id · **all_keys_dead 事件可能是逗号连接的多母号** | new_keys / all_keys_dead |
+| `message` | str | 中文摘要 · 给人看 | 全部 |
+| `new_keys` | int | 新增数量 | new_keys |
+| `dead` | int | 失效数量 | all_keys_dead |
+| `zone` | str | 区域 | new_keys |
 
-```json
-{
-  "event": "all_keys_dead",
-  "event_id": "3c8d1f0a5b7e2694c1d8a0f3b5e7c9d2",
-  "message": "本轮全部 12 个 Key 已失效，系统正在自动补充新账号",
-  "dead": 12
-}
-```
+**关键差异**：**无 HMAC 签名** · 靠 URL 里的私密路径/token 自保护（与 kiro91 / kirodrop 差异）。
 
-### 签名
+**重试**：10s 超时 · 失败重试 3 次 · 间隔 3s / 8s。
 
-**docs.js 没有描述 webhook 签名 header 或算法**。这是与 91kiro 的关键差异 —— **kiro.ceo webhook 没有 HMAC 签名**，接收端需要靠 URL 里的私密路径/query token 自行保护。
+### 3.4 无 `warranty_refund` 独立事件
 
-### 重试
+kiroceo 的 10 分钟质保退款**只静默入积分明细**（reason=`refund`）· 不推 webhook（与 kiro91 差异）。
 
-- 10 秒超时
-- 失败自动重试 **3 次**，间隔 **3s / 8s**（vendor 原文）
+---
 
-## 11. Key 剩余额度 / 使用同步
+## 4 · 错误码
 
-### `GET /api/my/keys/usage`
+**错误响应体**：`{"error": "中文说明"}` · **没有 code 字段** · **只有中文文案**（与 kiro91 的 `{code, message, error}` 结构差异）。
 
-用量采样（每分钟积分消耗）。**vendor 文档没给字段细节**（说明是"用量采样"）。
+| HTTP | 类别 |
+|---|---|
+| 400 | 参数错误（幂等键格式 / zone 非法 / 数量越界）|
+| 401 | 密钥无效 |
+| 402 | 积分不足 |
+| 403 | 账号停用 |
+| 404 | 不存在 |
+| 409 | 状态冲突（库存不足 / 持有上限 / 幂等键撞另一单）|
+| 410 | 兑换码过期 |
+| 429 | 过于频繁 |
+| 5xx | 服务端错误 · **同 `client_order_id` 重试安全** |
 
-实测：我方账号无数据。
+---
 
-## 12. 错误码与限流（vendor 原文表格）
+## 5 · 特有事实（跟其他 vendor 的差异）
 
-**错误响应体**：`{"error": "中文说明"}` —— 与 91kiro 的 `{code, message, error}` 结构**不同**，**只有中文文案，没有稳定的 code 字段**。
+- **只 `X-API-Key`** · 不支持 `Authorization: Bearer`
+- **文档写成 preact SPA 页** · 不是静态 md
+- **错误响应无 `code` 字段** · 靠 HTTP status 分派
+- **webhook 无 HMAC 签名** · 靠 URL secret
+- **无 `warranty_refund` webhook** · 质保退款静默入账
+- **无自服务 rotate 端点** · 泄露只能"联系管理员"
+- **无母号/供应侧 API** · 纯代购
+- **`purchase_order_id` = `event_id`** · 一值双用
+- **`pool_id` 在 all_keys_dead 里可能是逗号连接的多 id** · 解析别当单一 id
+- **`quota` / `remaining` / `used_quota` / `purchased` 字段名保留旧兼容** · 但语义已改成积分 · 不是数量
+- **`/api/my/gen-logs` 返全平台数据**（不只我方账号）· 是 6 家里 fleet 数据最新鲜的
 
-| HTTP | 类别 | 处理建议（原文） |
+---
+
+## 6 · 已知问题 / 未接的能力
+
+| # | 问题 | 优先级 |
 |---|---|---|
-| 400 | 参数错误 | 幂等键格式不对、区域非法、数量越界 |
-| 401 | 密钥无效 | 检查 `X-API-Key`，或密钥已被轮换 |
-| 402 | 积分不足 | 先兑换积分再提货 |
-| 403 | 账号被停用 | 联系管理员 |
-| 404 | 不存在 | 查询的资源不属于你，或已被删除 |
-| 409 | 状态冲突 | 库存不足、已达最大持有库存上限、幂等键撞了别的订单；用同一个 id 重试 |
-| 410 | 兑换码过期 | 换一张 |
-| 429 | 过于频繁 | 降低频率后重试 |
-| 5xx | 服务端错误 | **用同一个 `client_order_id` 重试是安全的** |
-
-**vendor 强调**：遇到 5xx 或网络超时时，请用同一个 `client_order_id` 重试而不是换新的——订单可能已经成交，换 id 会变成第二笔。
-
-## 13. 质保 / 退款
-
-**10 分钟质保**（vendor 原文摘录）：
-
-- 提货后 10 分钟内，如果号被系统检测到失效（封号），会**自动**把这单实际扣的积分退还到余额，无需申请
-- 退款按下单时的单价计算
-- 在积分明细里记为 `refund`
-- **超过 10 分钟才失效的属于正常损耗，不退**
-
-**没有 `warranty_refund` 独立 webhook 事件**（与 91kiro 差异）—— 质保退款只体现在积分明细里，不会主动推送。
-
-## 14. 本 vendor 特有的事实（可验证的差异）
-
-- **只用 `X-API-Key`，不支持 `Authorization: Bearer`**（与 91kiro 差异）
-- **文档写成 preact 页面而非静态 md**，官方自述"抄一份静态文档出去，很快就会和实际接口对不上"
-- **错误响应体没有 `code` 字段**，只有 `{error: "中文文案"}`；解析要按 HTTP status 分派，不能按稳定 code 分派（**这是本档案里语义最弱的错误契约**）
-- **webhook 无 HMAC 签名**（与 91kiro、kirodrop 差异），只能靠 URL secret 自保护
-- **无 `warranty_refund` webhook**，质保退款静默入账，只能通过积分明细回查
-- **无自服务 rotate 端点**，泄露只能"联系管理员"
-- **无母号/供应侧 API**，纯代购
-- **`purchase` 响应字段名保留旧兼容**：`quota`/`remaining`/`used_quota`/`purchased` 名字未改，但数字语义已改为积分（不是数量），这一点写代码时要非常小心
-- **`purchase_order_id` = `event_id`**（示例里两个值一模一样）—— vendor 用同一个 32-hex 值双用，天然幂等去重
-- **`pool_id` 在 `all_keys_dead` 事件里可能是"逗号连接的多母号"**，解析时不能当单一 id
-- **前端能"模拟推送"**：调 webhook 联调不用等真实号入库
-
-## 15. Fleet 观测端点（2026-08-10 探测）
-
-| 端点 | 结果 | 备注 |
-|------|------|------|
-| `GET /api/my/gen-logs` | ✅ `{avg_interval_min, items:[{created_at,count,status}]}` | **全平台可见**——即使账户空也返所有账户的开号批 · 是 kiro91 端点的"全网视图"版本 |
-| `GET /api/me/orders` | 200 `{items:[],total:0}` | 账户视角空 |
-| `GET /api/status` | 200 但返 SPA HTML | 不是 API 端点 |
-| `GET /openapi/orders` | 200 但返 SPA HTML | 不可用 |
-
-**结论**：kiro91 和 kiroceo 用同一个 `/api/my/gen-logs` 契约 · **但 kiroceo 返全平台数据**（区别点）· 我方 adapter `internal/providers/kiro/vendors/kiroceo/fleet.go` 直接用这个当 FleetLister · 是 6 家里数据最新鲜的。
+| 1 | `/api/my/keys/usage` 未接 · 拿不到我方购入 key 的实时用量曲线 | 低 · 目前靠 kiro.rs 探测 |
+| 2 | `/api/my/webhook` 未接 · webhook URL 只能手工在 vendor 后台配 | 低 · 一次性配置 |
+| 3 | `zones[].stock` 跟 `available` 差异不落库 | 中 · 想区分"库存 vs 可提"要接 |
+| 4 | `zones[].label`（中文名）不落库 | 低 · 前端用 zone 归一 label 就行 |
+| 5 | `POST /api/my/purchase` 混价单里 `keys[].paid` 不落库（只落 `total_credits`）| 中 · 对账时逐把 key 的实付缺 |
