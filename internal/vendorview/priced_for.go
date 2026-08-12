@@ -94,8 +94,8 @@ func (s *Service) PricedFor(ctx context.Context, in PricedForInput) (*PricedView
 	rates := s.rates
 	bd := computeBreakdown(credits, in.Count, in.Viewer.Tier, rates)
 
-	// 3. 减免栈（Step 11 再补 · 现在留接口）
-	// TODO: bd.SubsidyWaived = s.applySubsidies(ctx, in.Viewer.PassengerID, bd)
+	// 3. 减免栈（docs/18 §3）· 查 user_subsidy · 有 remaining_uses/expires_at 才生效
+	bd.SubsidyWaived = s.applySubsidies(ctx, in.Viewer.PassengerID, bd)
 
 	// 4. 组合价 = base + vendor + region + single_pull + service - subsidy
 	unitPrice := bd.Base + bd.VendorMarkup + bd.RegionMarkup + bd.SinglePullExtra + bd.ServiceFee - bd.SubsidyWaived
