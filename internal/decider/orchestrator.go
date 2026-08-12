@@ -13,6 +13,7 @@ import (
 
 	"github.com/bus-pooling/bus-pooling/internal/housepool"
 	"github.com/bus-pooling/bus-pooling/internal/providers"
+	"github.com/bus-pooling/bus-pooling/internal/stockwatch"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 	"github.com/google/uuid"
 )
@@ -38,9 +39,21 @@ type Orchestrator struct {
 	ratesResolver RatesResolver
 	// limits · 拉号并发 + 数量区间（config.pull · §8.35 #18）· 零值 = 不限
 	limits Limits
+	// enqueuer · 抢号链缺货挂单（stockwatch.Watcher）· nil = 缺货直接失败（老行为）
+	// 只在 auto 模式（未指定 vendor）缺货时挂 · 见 maybeEnqueueOnNoStock
+	enqueuer StockEnqueuer
 	// now / newID 可注入，测试里用来控时钟和 id 生成
 	now   func() time.Time
 	newID func() string
+}
+
+// StockEnqueuer · 缺货挂单的抽象 · 避免 decider → stockwatch 硬依赖（也便于测试 mock）。
+//
+// 实现方是 stockwatch.Watcher.Enqueue · 装配层在 main.go 注入。
+// **反方向的 Firer 接口在 stockwatch 里定义** —— 两个接口各在自己的消费侧 ·
+// 不构成循环 import（stockwatch 不 import decider）。
+type StockEnqueuer interface {
+	Enqueue(ctx context.Context, p stockwatch.EnqueueParams) (string, error)
 }
 
 // PricingLookup 是 orchestrator 拿 vendor 换算规则的抽象接口。
@@ -76,6 +89,8 @@ type Config struct {
 	// Limits · 拉号并发 + 数量区间上限（config.pull · decisions §8.35 #18）
 	// 零值 = 全不限（老装配 / 测试兼容）
 	Limits Limits
+	// Enqueuer · 抢号链缺货挂单 · nil = 缺货直接失败退款（老行为 · 测试默认）
+	Enqueuer StockEnqueuer
 }
 
 func New(cfg Config) *Orchestrator {
@@ -98,6 +113,7 @@ func New(cfg Config) *Orchestrator {
 		pricing:       cfg.Pricing,
 		ratesResolver: cfg.RatesResolver,
 		limits:        cfg.Limits,
+		enqueuer:      cfg.Enqueuer,
 		now:           func() time.Time { return time.Now().UTC() },
 		newID:         uuid.NewString,
 	}
@@ -182,6 +198,19 @@ type PullInput struct {
 	// VendorID 请求指定 vendor · 空 = 用 defaultVendor（1a 兼容）·
 	// 1b 起 api 层从 strategy / request 决定后传进来
 	VendorID providers.VendorID
+	// ClientOrderID 覆盖内部生成的 vendor 幂等键 · 空 = 自动生成（正常路径）。
+	//
+	// **只给抢号链 fire 用**（stockwatch）：挂单落库时就定了 client_order_id ·
+	// fire 时必须复用同一个 · 否则"上一次 fire 其实买到了但返回超时 · 回退 watching
+	// 后再 fire"会在 vendor 侧变成两单（重复扣款）。传同一个 key · vendor 侧幂等
+	// 返回上次那批（09-transactions §2）。
+	ClientOrderID string
+	// MaxUnitPrice 生效的单价上限（microunit · 已经是全局跟车级取严后的结果 ·
+	// 见 strategy.decide）· 0 = 不限。
+	//
+	// **decider 不重新判上限** —— api 层 strategy.CanPull 已经判过。这里带进来只为
+	// 缺货挂单时存进 stock_watcher · fire 时能继续守住同一个上限（涨价保护）。
+	MaxUnitPrice int64
 }
 
 // PullResult 是**对外**结果（跟 05-api-contract §5 的 POST /me/pull 响应一致）。
@@ -247,9 +276,14 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 	}
 	rawUnitPrice, ok := stockUnitPriceMoney(stock, in.Zone)
 	if !ok || rawUnitPrice.Amount <= 0 {
+		// auto 模式挂单等补货（decisions §11.15）· 挂上也照样返 ErrNoStock ——
+		// 这一轮确实没拿到号 · api 层照常告诉用户"暂无库存"。补到货后 fire 会
+		// 走一轮新的 Pull · 号直接进 group（用户在"我的号"里看到）。
+		o.maybeEnqueueOnNoStock(ctx, in, vendor.ID())
 		return nil, ErrNoStock
 	}
 	if !hasEnoughStock(stock, in.Zone, in.Count) {
+		o.maybeEnqueueOnNoStock(ctx, in, vendor.ID())
 		return nil, ErrNoStock
 	}
 	// **1b P1-2A** · 按 vendor_pricing 换算（USD 家 → 积分 · CNY/credit 家 pass-through）
@@ -270,9 +304,14 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 	rates := o.resolveRates(ctx, rc)
 	reserved := Price(unitCostHint, in.Count, rates).Total
 
-	clientOrderID, err := newClientOrderID()
-	if err != nil {
-		return nil, err
+	// 抢号链 fire 传现成的（挂单时已定 · 复用保证 vendor 侧幂等）· 其他路径自动生成
+	clientOrderID := in.ClientOrderID
+	if clientOrderID == "" {
+		var err error
+		clientOrderID, err = newClientOrderID()
+		if err != nil {
+			return nil, err
+		}
 	}
 	pending := Pending{
 		IdempotencyRecordID: in.IdempotencyRecordID,
