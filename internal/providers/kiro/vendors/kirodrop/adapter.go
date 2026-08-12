@@ -96,6 +96,13 @@ func (a *Adapter) Purchase(ctx context.Context, req providers.PurchaseRequest) (
 	if req.Zone != nil {
 		body.Zone = string(*req.Zone)
 	}
+	// **涨价保护** · req.MaxTotal 传下来的是 microunit · vendor 要 CNY 保留 6 位小数
+	// 传 0 或 nil = 不设保护（保持老行为）· 只有非零才落 body
+	if req.MaxTotal != nil && req.MaxTotal.Amount > 0 {
+		// microunit -> CNY 字符串（vendor 档案 §4.1 例 "884.400000"）
+		amt := req.MaxTotal.Amount
+		body.MaxTotalCNY = fmt.Sprintf("%d.%06d", amt/1_000_000, amt%1_000_000)
+	}
 	payload, _ := json.Marshal(body)
 	httpReq, err := a.newReq(ctx, http.MethodPost, "/api/my/purchase", payload)
 	if err != nil {

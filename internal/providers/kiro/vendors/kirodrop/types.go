@@ -50,6 +50,10 @@ type purchaseReq struct {
 	Count         int    `json:"count"`
 	Zone          string `json:"zone,omitempty"`
 	ClientOrderID string `json:"client_order_id"`
+	// MaxTotalCNY 涨价保护 · 单位 CNY（vendor 用 CNY 记账 · price 是 USD 显示 · balance 是 CNY）
+	// vendor 侧行为：价格上涨超过这个值时返 409 且不扣款 · 见 docs/vendors/drop-kiro-ss.md
+	// 对齐 providers.PurchaseRequest.MaxTotal · 6 家里**只有 kirodrop 有原生支持**
+	MaxTotalCNY string `json:"max_total_cny,omitempty"`
 }
 
 type purchaseResp struct {
