@@ -288,10 +288,11 @@ func (b *Backfiller) pushVendorsToZone(ctx context.Context, resp *VendorsResp) i
 			// 分（10^-2 CNY）→ microunit（10^-6 CNY）· ×10000
 			rawMicro := int64(r.PriceFen) * 10_000
 			samples = append(samples, ZoneSample{
-				VendorID:       slug,
-				ProbedAt:       now,
-				Zone:           xi8RegionToOurs(r.Region),
-				Region:         r.Region,
+				VendorID: slug,
+				ProbedAt: now,
+				// zone 保留归一后的 · 跟 vendor_self 一路口径（"us"/"eu"）
+				Zone:           string(providers.ZoneOf(r.Region)),
+				Region:         xi8RegionToOurs(r.Region), // 展开成我方 region 名 · 便于对账
 				Available:      r.Stock,
 				VendorCurrency: "CNY",
 				VendorUnitRaw:  rawMicro,
