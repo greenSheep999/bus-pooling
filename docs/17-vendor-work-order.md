@@ -45,6 +45,49 @@ commit 都没上线）· 本地 HEAD `8875864`（docs 那条）。
 
 ---
 
+### A0.5 · 生产上线 · 实测记录（2026-08-12 16:11 UTC+8）✅
+
+**部署动作**（按本文档 A0 的 6 步做完）：
+1. ✅ GHCR build 成功 · vps22 `docker compose pull` 拉新镜像
+2. ✅ migration 027 应用（`docker run --rm ... migrate up` · 服务启动前跑 · 不然 abort）
+3. ✅ **洗生产脏数据**：29 条时区污染行（kiroceo 25 + kirooo 4）· `-8 hours` 修正
+   · `vendor_probe.ps_started_at` 同步洗
+4. ✅ 重启 · 抢号链装配成功
+
+**启动日志实测**：
+```
+抢号链已装配 turbo_flag=/app/data/TURBO_ON kill_flag=/app/data/KILL_PULLS mode=cool
+vendorview.Prober 启动 vendor_count=6 interval=1m0s timeout=10s
+xi8 backfiller 已启动 · 30s signals + 5min full
+xi8: backfill 完成 signals=1 restocks=200
+服务启动 addr=:8080 dry_run=false
+```
+
+**上线首 3 分钟就抓到一个真 bug**（**这就是上生产的价值**）：
+
+vendor 的 `new_keys_available` webhook **只发 `client_order_id` / `purchase_order_id` ·
+不发独立 `order_id`**。老 `onNewKeys` 判 `e.OrderID == ""` 直接 skip · 后果：
+- dispatch 不落库（Status 页看不到这批开号）
+- **抢号链根本不 Notify · fire 率恒 0**
+
+生产证据（3 条真 webhook 全被 skip）：
+```
+15:52:26  vendor=A  "缺 order_id · 跳过"  ← body 里明明有 client_order_id
+15:53:29  vendor=B  同上
+15:55:35  vendor=B  同上
+```
+
+**修法**：`OrderID` 空 → fallback `PurchaseOrderID`（档明说那就是幂等主键 · 每批唯一）·
+都空才 skip。加 3 个回归哨兵测试（`internal/webhookin/dispatcher_test.go`）。
+
+**运行时观察**（新版上线后）：
+- 探针：15 分钟 2881 条样本（6 家均匀）
+- **stock-delta 推算触发 1 次** · 落 vendor_dispatch
+- `stock_watcher` 挂单 = 0（当前无排队 · demand=0 → mode=cool 符合设计）
+- **mode=cool 下 stock_delta 只观测不 fire** —— 只有 webhook 会 fire（balance+ 就 fire）
+
+**当前状态**：抢号链生产就位 · webhook fallback 修好 · **等真实拉号需求触发第一次 fire**。
+
 ### A1 · 探针（60s stock 采样）
 
 **做什么**：每 60s 打 6 家 `/api/my/stock` · 采到货量 / 价格 / 单区可购 · 落 `vendor_probe` 表。
