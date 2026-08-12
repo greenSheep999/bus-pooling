@@ -132,15 +132,15 @@ type StockSnapshot struct {
 	WarrantyMinutes int
 	Raw             json.RawMessage
 
-	// TieredPricing · 阶梯降价规则 · 只 kirodrop 有 · 其他 vendor 恒 nil。
+	// TieredPricing · 阶梯降价规则 · 只部分 vendor 有 · 其他恒 nil。
 	// 拿到就填 · Prober 落 vendor_price_tier 表 · docs/18 §1.2 · §1.6 Q3。
 	TieredPricing *TieredPricing
 }
 
 // TieredPricing · vendor 侧的阶梯降价 schedule（docs/18 §1.2）
 //
-// 目前只 kirodrop 支持（`/api/v1/reservation` 返 timed_pricing）· 但那个端点需 cookie ·
-// 我方 API key 不能直接调 · 现阶段 TieredPricing 恒 nil。留字段供未来 vendor 开放时接入。
+// 目前只部分 vendor 支持（返 timed_pricing 的端点通常需 cookie · 我方 API key
+// 不能直接调）· 现阶段 TieredPricing 恒 nil。留字段供未来 vendor 开放时接入。
 type TieredPricing struct {
 	Enabled        bool           // 是否启用分档降价
 	Active         bool           // 当前是否在降价窗口
@@ -156,7 +156,7 @@ type TierSchedule struct {
 	Index            int       // 0 = base · 1 = 第一次降 · ...
 	EffectiveAt      time.Time // 这档生效时刻
 	UnitPriceCredits int64     // microunit · 这档的我方积分（Prober 落库时算好）
-	UnitPriceUSDRaw  int64     // microunit · 这档 USD 原值（有则存 · kirodrop 独家）
+	UnitPriceUSDRaw  int64     // microunit · 这档 USD 原值（有则存 · 部分 vendor 独家）
 }
 
 type ZoneStock struct {
