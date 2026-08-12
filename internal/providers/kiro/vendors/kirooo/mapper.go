@@ -94,7 +94,9 @@ func toStockSnapshotFromRegions(rr *regionsResp, raw json.RawMessage) *providers
 	total := 0
 	for _, r := range rr.Regions {
 		snap.Zones = append(snap.Zones, providers.ZoneStock{
-			Zone:      providers.Zone(r.Region),
+			// 本 vendor 只给完整 region 名（us-east-1）· 不给 us/eu 短名 ·
+			// 必须过 ZoneOf 归一 · 否则 zone 列落 "us-east-1" 跟其他 vendor 对不上
+			Zone:      providers.ZoneOf(r.Region),
 			Region:    r.Region,
 			Available: r.Stock,
 			UnitPrice: credits(r.UnitPrice),
@@ -143,8 +145,13 @@ func toStockSnapshot(sr *stockResp, raw json.RawMessage) *providers.StockSnapsho
 		Raw:             raw,
 	}
 	for _, z := range sr.Zones {
+		// zone 优先用 z.Zone · 空则从 z.Region 归一（老形状两个字段都可能有值）
+		zk := providers.ZoneOf(z.Zone)
+		if zk == "" {
+			zk = providers.ZoneOf(z.Region)
+		}
 		snap.Zones = append(snap.Zones, providers.ZoneStock{
-			Zone:      providers.Zone(z.Zone),
+			Zone:      zk,
 			Region:    z.Region,
 			Available: z.Available,
 			UnitPrice: credits(z.UnitPrice),

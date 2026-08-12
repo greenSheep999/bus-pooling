@@ -113,8 +113,13 @@ func toStockSnapshot(sr *stockResp, raw json.RawMessage) *providers.StockSnapsho
 		Raw:             raw,
 	}
 	for _, z := range sr.Zones {
+		// zone 优先用 z.Zone · 空则从 z.Region 归一
+		zk := providers.ZoneOf(z.Zone)
+		if zk == "" {
+			zk = providers.ZoneOf(z.Region)
+		}
 		snap.Zones = append(snap.Zones, providers.ZoneStock{
-			Zone:      providers.Zone(z.Zone),
+			Zone:      zk,
 			Region:    z.Region,
 			Available: z.Available,
 			UnitPrice: credits(z.UnitPrice),
@@ -125,8 +130,12 @@ func toStockSnapshot(sr *stockResp, raw json.RawMessage) *providers.StockSnapsho
 	// **单价字段修复（docs/18 §1.3 落码 · 2026-08-12）**：新形状顶层有 `price:"7.35"` 字符串 ·
 	// 单位 USD · 老 mapper 完全忽略 · 导致 decider 拿到 UnitPrice.Amount=0 · Prices 页显示 0。
 	// 现在解析成 microunit USD Money · Prober 落库时经 vendor_pricing 换算成积分（唯一权威）。
+	//
+	// **zone 归一（2026-08-13）**：本 vendor 只给 region 名（us-east-1）· 不给 us/eu 短名 ·
+	// 老代码这里完全没填 Zone · 导致侧表 zone 列落空 · PricedFor 按 zone 查匹配不到。
 	if len(snap.Zones) == 0 && sr.Region != "" {
 		snap.Zones = append(snap.Zones, providers.ZoneStock{
+			Zone:      providers.ZoneOf(sr.Region),
 			Region:    sr.Region,
 			Available: available,
 			UnitPrice: parseUSDStringToMoney(sr.Price), // "7.35" → Money{Amount:7350000, Currency:USD}
