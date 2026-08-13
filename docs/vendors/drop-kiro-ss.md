@@ -132,17 +132,35 @@ API key 无效 · 登录要图形验证码（见 §2.3）。所以 `vendor_price
 
 **我方现状**：`Adapter.Reservation()` 存在但返 `"阶段 1a 未接入"` · **实际没打**。
 
-**✅ 已实测（2026-08-14 · vendor-probe + curl）· 结论：拿不到 · 不是 404 是 401**：
-- `GET /api/v1/reservation` · **X-API-Key / Bearer / 无鉴权 一律 401** `AUTH_REQUIRED "请先登录"`
-  —— 这个端点**只认网页 session cookie** · 我方的 API key 对 `/api/v1/*` 无效
-- 登录端点是 **`POST /api/v1/auth/login`**（字段 `{email, password}`）· 但**要图形验证码**
-  （实测报 `CAPTCHA_INVALID`）· **没法程序化登录**
-- 账户没被封：`/api/my/profile` + X-API-Key 返 200 带我方真实数据 · 鉴权正常
-- **要接只能**：人工浏览器登录（过验证码）导出 session cookie → `seed-vendor kirodrop
-  --auth-scheme=cookie` 存 → adapter 用 cookie 打 reservation。cookie 会过期 · 需定期刷 · 脆。
+**✅ 已实测抓到真实响应（2026-08-14 · 浏览器登录 session）· 鉴权机制 + 真形状都清楚了**：
 
-**为什么高价值**（若拿得到）：完整报价 / 多货币权威汇率口径（xi8 7.07 vs 我方 6.8 差 4%）/
-EU 定价 / `vendor_price_tier` 数据源。**当前决策**：接不了 · 保持 6.8 汇率兜底 · 待用户定要不要走 cookie 方案。
+**鉴权**：`/api/v1/*` 只认 **`Authorization: Bearer <kiro_session_token>`**（SPA 存在
+localStorage · 网页登录后拿到）· X-API-Key / cookie / 直接导航都返 401 `AUTH_REQUIRED`。
+登录 `POST /api/v1/auth/login {email, password, captcha_token, captcha_code}` · 验证码是
+**自建 4 位点阵图形码**（`GET /api/v1/auth/captcha` 返 `{image, token(内含 HMAC answer_hash), expires_in:300}`）·
+只能人工/浏览器过。session token 会过期 → **不适合自动 backfiller**。
+
+**真实响应**（`GET /api/v1/reservation?quantity=N&region=us|eu`）：
+```json
+{"currency":"CNY","exchange_rate":"6.8","goods_id":1,"region":"us-east-1","stock":0,
+ "quantity":1,"max_count":100,"available_balance":"0.000000",
+ "unit_price_cny":"49.980000","unit_price_usd":"7.35",
+ "total_price_cny":"49.980000","total_price_usd":"7.35",
+ "timed_pricing":{"enabled":true,"active":false,"interval_minutes":30,"max_reductions":1,
+   "reduce_amount_cny":"9.996000","reduce_amount_usd":"1.47","reductions_applied":0,
+   "base_price_cny":"49.980000","current_price_cny":"49.980000",
+   "schedule":[{"reduction_number":0,"unit_price_cny":"49.980000","effective_at":"..."},
+               {"reduction_number":1,"unit_price_cny":"39.984000","effective_at":"..."}]}}
+```
+实测：**us** base 49.98 CNY / 7.35 USD · **eu** base 34.952 CNY / 5.14 USD ·
+**无数量分档**（unit_price 与 quantity 无关）· 只有**时间降价**（每 30min 降 9.996 · 最多 1 档）。
+
+**★ 权威汇率定案**：`exchange_rate` 恒 **6.8** —— **我方 6.8 兜底口径正确 · xi8 的 7.07 是错的**
+（那个"差 4% 谁对"的悬案就此关闭）。所以我方 kirodrop 定价**不用改**。
+
+**vendor_price_tier**：`timed_pricing.schedule` 就是它的数据源 · 但要 session token（会过期）·
+**当前不接**（时间降价是展示锦上添花 · 当前价我方已用 stock×6.8 拿到且已验证正确）。要接需人工
+导出 token → `seed --auth-scheme=bearer` · 手动续期 · 待用户拍板。
 
 ---
 
@@ -266,10 +284,10 @@ price "7.35" (USD)
   → our_unit_credits = 7_350_000 × 6_800_000 / 1_000_000 = 49_980_000（49.98 积分）
 ```
 
-**⚠️ 汇率分歧**：
-- **我方**：6.8（对齐 vendor UI 2026-08-12 展示）
-- **xi8**：7.07（= 51.97 CNY / 7.35 USD）
-- **差 4%** —— 谁对？`/api/v1/reservation`（支持多货币）可能是权威口径 · **待实测**
+**✅ 汇率定案（2026-08-14 实测 reservation）**：
+- `/api/v1/reservation` 明确返 `exchange_rate: "6.8"` · 且 `unit_price_usd:"7.35"` × 6.8 = `unit_price_cny:"49.98"` 自洽
+- **我方 6.8 正确** · **xi8 的 7.07 是错的**（xi8 用 51.97/7.35=7.07 是它自己的加价/口径 · 非 vendor 权威）
+- 结论：我方 kirodrop 换算链**不用改** · vendor_pricing.credits_per_unit=6_800_000 保持
 
 ---
 

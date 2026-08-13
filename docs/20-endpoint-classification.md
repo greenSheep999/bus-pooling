@@ -95,10 +95,11 @@
 | kiroappcc | webhook `price` | 第二个 webhook 带价的家 | 内部 |
 | xi8 | quality 五字段 | **六家 vendor 都不给的号质量评级** | 内部（喂 quality 标签）|
 
-**注**：kirodrop `reservation` **实测拿不到**（2026-08-14）—— 不是 404 是 **401 · 只认网页
-session cookie** · API key 对 `/api/v1/*` 无效 · 登录要**图形验证码**（没法程序化 · 见
-`docs/vendors/drop-kiro-ss.md §2.3`）。`vendor_price_tier` 保持空 · 走 6.8 汇率兜底。
-要接只能人工导出 cookie → `seed-vendor --auth-scheme=cookie`（cookie 会过期 · 脆）· 待用户拍板。
+**注**：kirodrop `reservation` **已实测抓到真形状**（2026-08-14 · 浏览器 session）：只认
+`Authorization: Bearer <kiro_session_token>`（网页登录+验证码才有 · 会过期 · 不适合 backfiller）。
+**关键收获**：`exchange_rate:"6.8"` 权威定案 —— **我方 6.8 正确 · xi8 7.07 错** · kirodrop 定价不用改。
+`timed_pricing.schedule` 是 `vendor_price_tier` 数据源（时间降价）· 但要 session token · 当前不接
+（当前价我方已用 stock×6.8 拿到且验证正确 · 时间降价是展示锦上添花）。详见 `docs/vendors/drop-kiro-ss.md §2.3`。
 
 ---
 
