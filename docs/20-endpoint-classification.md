@@ -65,6 +65,43 @@ kiroappcc SPA 面（`/api/user/*`）已接（自动登录）；kirodrop 富数�
 
 ---
 
+## 0.7 · 当前集成进度矩阵（2026-08-14 · 线上 prod 实况快照）
+
+> **只读快照** · 连接状态**以代码 + 线上 pipeline_health 为准**（本表会腐烂 · 存疑跑
+> `GET /api/admin/data-health` 看实时）。上线于 e1015a5 · prod 27 条管线全 `ok`。
+
+**矩阵 1 · 数据管线 × vendor**
+
+| vendor | 认证 | probe | orders | keys | dispatch | ledger | 阶梯价 | webhook |
+|---|---|---|---|---|---|---|---|---|
+| kiro91 | api-key(usr-)+账密 | ✅ | ✅ | ✅ | ✅fleet | ✅ | ➖平价 | ✅ |
+| kirooo | 登录返 api-key | ✅ | ✅ | ✅ | ✅fleet | ✅ | ✅数量档 | ✅ |
+| kiroceo | 单 key(API=登录) | ✅ | ✅ | ✅ | ✅fleet | ✅ | ➖平价 | ✅ |
+| kiroappio | api-key(km_)+账密\* | ✅ | ✅ | ✅ | 🟡webhook+xi8 | ✅ | ➖平价 | ✅ |
+| kiroappcc | api-key+账密无码 | ✅ | ✅ | ✅ | ✅fleet | ✅ | ➖平价 | ✅ |
+| kirodrop | api-key薄+session | ✅ | ❌ | ❌ | 🟡webhook+xi8 | ❌ | ✅时间档 | ✅ |
+
+✅接了+线上跑 · ❌vendor 硬限制拿不到（session+图形验证码·api-key 打 404）· ➖该家平价无阶梯 ·
+🟡无 fleet 端点·靠 webhook+xi8 兜底。\* kiroappio 网页表单带腾讯滑块码·但 api-key 直达 `/api/me/*` 全数据面。
+
+**矩阵 2 · 三种"缺"的性质（回答"齐不齐"）**
+
+| 类别 | 具体 | 结论 |
+|---|---|---|
+| API 可达的都接了 | 5 家 orders/keys/ledger · 4 家 fleet dispatch · kirooo 数量档 · kirodrop 时间档 | ✅ 齐 |
+| vendor 硬限制拿不到 | kirodrop orders/keys/ledger（全锁 session+图形验证码） | ❌ 非欠账 |
+| 号寿命/用量明细（阶段 3+） | usage / dispatch-log / keys-export / created-at（喂 quality） | ⏸ 不在当前范围 |
+
+**矩阵 3 · dispatch 来源（线上快照 · 会变）**：4 家 `vendor_self` fleet 权威源（kiroceo/kirooo/kiro91/kiroappcc）·
+kiroappio + kirodrop 无 fleet 端点 · 靠 webhook + xi8 兜底（**注意这俩 `vendor_self` 当前为 0 ——
+webhook 到现在没进过我方 · 要么上游没配好要么没到货 · 新鲜度监控会盯**）。
+
+**prod env（后端 only · 不出前端）**：`BP_VENDOR_KIROAPPCC_LOGIN_USER/PASS`（kiroappcc 对账登录）·
+`BP_VENDOR_KIRODROP_SESSION_TOKEN`（kirodrop 时间档 · **会过期 · 401 时监控报警 → 人工重 seed**）·
+`BP_ADMIN_KEY`（data-health 端点鉴权）· 均 2026-08-14 已配。
+
+---
+
 ## 0 · 分类框架
 
 补接需求分**两个正交维度**：
