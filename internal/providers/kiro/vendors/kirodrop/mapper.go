@@ -66,7 +66,8 @@ func toPurchaseResult(pr *purchaseResp, requested int, replayed bool, raw json.R
 	return &providers.PurchaseResult{
 		ClientOrderID: pr.ClientOrderID,
 		VendorOrderID: pr.OrderID,
-		Zone:          providers.Zone(pr.Zone),
+		// zone 归一 · vendor 可能返 "us-east-1" 也可能返 "us"
+		Zone:          providers.ZoneOf(pr.Zone),
 		Requested:     requested,
 		Purchased:     pr.Purchased,
 		Keys:          toKeyPayloads(pr.Keys),
@@ -75,7 +76,9 @@ func toPurchaseResult(pr *purchaseResp, requested int, replayed bool, raw json.R
 		Remaining:     credits(pr.Remaining),
 		WarrantyUntil: parseTime(pr.WarrantyUntil),
 		Replayed:      replayed,
-		Raw:           raw,
+		// 本 vendor 独家：明确告知"未成交部分我已经退了" · 上层就不用自己追差额
+		PartiallyRefunded: pr.Status == "partially_refunded" || pr.RefundedAmountCNY != "",
+		Raw:               raw,
 	}
 }
 

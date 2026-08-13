@@ -142,13 +142,13 @@ type StockSnapshot struct {
 // 目前只部分 vendor 支持（返 timed_pricing 的端点通常需 cookie · 我方 API key
 // 不能直接调）· 现阶段 TieredPricing 恒 nil。留字段供未来 vendor 开放时接入。
 type TieredPricing struct {
-	Enabled        bool           // 是否启用分档降价
-	Active         bool           // 当前是否在降价窗口
-	IntervalMin    int            // 每档间隔（分钟）
-	MaxReductions  int            // 最多降几次
-	Applied        int            // 已降几次
-	StartAt        time.Time      // 阶梯启动时刻
-	Schedule       []TierSchedule // 每档一条
+	Enabled       bool           // 是否启用分档降价
+	Active        bool           // 当前是否在降价窗口
+	IntervalMin   int            // 每档间隔（分钟）
+	MaxReductions int            // 最多降几次
+	Applied       int            // 已降几次
+	StartAt       time.Time      // 阶梯启动时刻
+	Schedule      []TierSchedule // 每档一条
 }
 
 // TierSchedule · 阶梯的每一档（docs/18 §1.2 vendor_price_tier 表对齐）
@@ -204,7 +204,14 @@ type PurchaseResult struct {
 	WarrantyUntil *time.Time
 	// Replayed 是否幂等重放（同 client_order_id 重复调用）
 	Replayed bool
-	Raw      json.RawMessage
+	// PartiallyRefunded · vendor 侧已把未成交部分退了（部分 vendor 独家有这个态）。
+	//
+	// **为什么要这个字段**：`Purchased < Requested` 有两种含义 ——
+	//   ① 只成交了一部分 · **差额还在 vendor 那边没退** → 我方要自己对账追
+	//   ② 只成交了一部分 · **vendor 已经把差额退了** → 我方按 TotalCost 结算就完事
+	// 混在一起会导致重复退款或漏退。vendor 明确告知②时置 true。
+	PartiallyRefunded bool
+	Raw               json.RawMessage
 }
 
 type KeyPayload struct {

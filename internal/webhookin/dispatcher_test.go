@@ -304,3 +304,131 @@ func TestDispatchByType_KeyRevokedAbuse_NoDeathwatch(t *testing.T) {
 		t.Errorf("status = %q · want skipped", status)
 	}
 }
+
+// ── 双区合并通知（某家 vendor 独家 · docs/19-fields.md §11）──
+
+// **回归哨兵 · 2026-08-13**
+//
+// 那家 vendor 一次到货**只推 1 条** webhook（notification_scope="dual"）·
+// 但 body 里带两个区的完整信息 · **且幂等键按区分开**。
+//
+// 老代码只认顶级字段 · 后果：
+//
+//	· 只落 1 条 dispatch → 另一区的开号批次在 /status 页完全看不到
+//	· 只 Notify 1 次 → 挂在另一区的挂单收不到唤醒 · 那区抢号率恒 0
+func TestOnNewKeys_DualZoneFansOut(t *testing.T) {
+	store := &mockDispatchStore{}
+	notifier := &mockNotifier{}
+	d := New(Config{DispatchStore: store, Notifier: notifier, Logger: slog.Default()})
+
+	evt := &providers.WebhookEvent{
+		VendorID:        providers.VendorKiroDrop,
+		EventID:         "evt-dual-1",
+		OrderID:         "ord-top",
+		PurchaseOrderID: "poid-top", // 顶级那个 · 双区场景不该用它
+		NewKeys:         5,          // 合计
+		ReceivedAt:      time.Now().UTC(),
+		EventType:       providers.EventNewKeysAvailable,
+		PerZone: []providers.ZoneDelivery{
+			{Zone: providers.ZoneUS, Region: "us-east-1", NewKeys: 3, PurchaseOrderID: "poid-us"},
+			{Zone: providers.ZoneEU, Region: "eu-central-1", NewKeys: 2, PurchaseOrderID: "poid-eu"},
+		},
+	}
+
+	status, err := d.onNewKeys(context.Background(), evt)
+	if err != nil {
+		t.Fatalf("onNewKeys: %v", err)
+	}
+	if status != "ok" {
+		t.Fatalf("status = %q · want ok", status)
+	}
+
+	// **两条 dispatch** · 各用该区的幂等键（不是顶级那个）
+	keys := store.dispatchKeys()
+	if len(keys) != 2 {
+		t.Fatalf("应落 2 条 dispatch（一区一条）· 得 %d：%v（老 bug 是 1 条）", len(keys), keys)
+	}
+	want := map[string]bool{"poid-us": true, "poid-eu": true}
+	for _, k := range keys {
+		if !want[k] {
+			t.Errorf("dispatch_key = %q · 应是逐区的 purchase_order_id · 不是顶级 poid-top", k)
+		}
+	}
+
+	// **两次 Notify** · 各带该区的 zone 和数量
+	notifier.mu.Lock()
+	calls := append([]stockwatch.NotifyParams(nil), notifier.calls...)
+	notifier.mu.Unlock()
+	if len(calls) != 2 {
+		t.Fatalf("应逐区唤醒 2 次 · 得 %d（老 bug 是 1 次 · 另一区挂单永远等不到）", len(calls))
+	}
+	byZone := map[string]int{}
+	for _, c := range calls {
+		byZone[c.Region] = c.Count
+	}
+	if byZone["us"] != 3 {
+		t.Errorf("us 区应唤醒 count=3 · 得 %d", byZone["us"])
+	}
+	if byZone["eu"] != 2 {
+		t.Errorf("eu 区应唤醒 count=2 · 得 %d", byZone["eu"])
+	}
+}
+
+// 某区这次没到货（new_keys=0）· 不唤醒那区
+func TestOnNewKeys_DualZone_SkipsZeroZone(t *testing.T) {
+	store := &mockDispatchStore{}
+	notifier := &mockNotifier{}
+	d := New(Config{DispatchStore: store, Notifier: notifier, Logger: slog.Default()})
+
+	evt := &providers.WebhookEvent{
+		VendorID:   providers.VendorKiroDrop,
+		EventID:    "evt-dual-2",
+		NewKeys:    4,
+		ReceivedAt: time.Now().UTC(),
+		EventType:  providers.EventNewKeysAvailable,
+		PerZone: []providers.ZoneDelivery{
+			{Zone: providers.ZoneUS, NewKeys: 4, PurchaseOrderID: "poid-us"},
+			{Zone: providers.ZoneEU, NewKeys: 0, PurchaseOrderID: "poid-eu"}, // 这区没到货
+		},
+	}
+
+	if _, err := d.onNewKeys(context.Background(), evt); err != nil {
+		t.Fatalf("onNewKeys: %v", err)
+	}
+	// dispatch 两条都落（留痕 · 哪怕 0）· 但只唤醒有货那区
+	if n := len(store.dispatchKeys()); n != 2 {
+		t.Errorf("dispatch 应落 2 条 · 得 %d", n)
+	}
+	if notifier.count() != 1 {
+		t.Errorf("只该唤醒有货的那一区 · 得 %d 次", notifier.count())
+	}
+}
+
+// 单区通知（PerZone 空）· 走老路径不变 —— 别把其他 5 家 vendor 带坏
+func TestOnNewKeys_SingleZoneUnaffected(t *testing.T) {
+	store := &mockDispatchStore{}
+	notifier := &mockNotifier{}
+	d := New(Config{DispatchStore: store, Notifier: notifier, Logger: slog.Default()})
+
+	evt := &providers.WebhookEvent{
+		VendorID:        providers.VendorKiroCEO,
+		EventID:         "evt-single",
+		PurchaseOrderID: "poid-single",
+		NewKeys:         7,
+		Zone:            providers.ZoneUS,
+		ReceivedAt:      time.Now().UTC(),
+		EventType:       providers.EventNewKeysAvailable,
+		PerZone:         nil, // 单区 vendor
+	}
+
+	if _, err := d.onNewKeys(context.Background(), evt); err != nil {
+		t.Fatalf("onNewKeys: %v", err)
+	}
+	keys := store.dispatchKeys()
+	if len(keys) != 1 || keys[0] != "poid-single" {
+		t.Errorf("单区该走老路径落 1 条 · 得 %v", keys)
+	}
+	if notifier.count() != 1 {
+		t.Errorf("单区该唤醒 1 次 · 得 %d", notifier.count())
+	}
+}

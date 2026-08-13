@@ -57,16 +57,24 @@ type purchaseReq struct {
 }
 
 type purchaseResp struct {
-	ClientOrderID string    `json:"client_order_id"`
-	OrderID       string    `json:"order_id"`
-	Zone          string    `json:"zone"`
-	Purchased     int       `json:"purchased"`
-	UnitPrice     int64     `json:"unit_price"`
-	TotalCredits  int64     `json:"total_credits"`
-	Remaining     int64     `json:"remaining"`
-	Keys          []keyItem `json:"keys"`
-	WarrantyUntil string    `json:"warranty_until"`
-	WM            int       `json:"warranty_minutes"`
+	ClientOrderID string `json:"client_order_id"`
+	OrderID       string `json:"order_id"`
+	Zone          string `json:"zone"`
+	Purchased     int    `json:"purchased"`
+	UnitPrice     int64  `json:"unit_price"`
+	TotalCredits  int64  `json:"total_credits"`
+	Remaining     int64  `json:"remaining"`
+	// Status · 订单状态 · vendor 文档明说可能是这三个（本 vendor 独家有部分退款态）：
+	//   completed           · 全部成交
+	//   partially_refunded  · **部分成交 · 差额已退**
+	//   refunded            · 全额退
+	// 空表示 vendor 没返（老响应形状）· 按 completed 处理
+	Status string `json:"status"`
+	// RefundedAmountCNY · 退款金额（CNY 字符串 · 本 vendor 独家）· 部分退款时非空
+	RefundedAmountCNY string    `json:"refunded_amount_cny"`
+	Keys              []keyItem `json:"keys"`
+	WarrantyUntil     string    `json:"warranty_until"`
+	WM                int       `json:"warranty_minutes"`
 }
 
 type keyItem struct {
@@ -111,20 +119,43 @@ func (e *errorResp) msg() string {
 	return e.Error
 }
 
+// webhookPayload · 本 vendor 的 webhook 载荷。
+//
+// ⚠️ **本 vendor 的 new_keys_available 是「双区合并通知」**（6 家里唯一）：
+// 一次到货**只推 1 条** · 但 body 里带两个区的完整信息（其他 vendor 是分两条推）。
+// 所以 `*_by_region` 那几个 map 字段才是权威值 —— 顶级的 `purchase_order_id`
+// 在双区场景下**不能当唯一幂等键用**（要按区取）。
+//
+// `notification_scope == "dual"` 是双区标记。
 type webhookPayload struct {
-	Event           string `json:"event"`
-	EventID         string `json:"event_id"`
-	Visibility      string `json:"visibility"`
-	NewKeys         int    `json:"new_keys"`
-	Dead            int    `json:"dead"`
-	Zone            string `json:"zone"`
-	OrderID         string `json:"order_id"`
+	Event      string `json:"event"`
+	EventID    string `json:"event_id"`
+	Visibility string `json:"visibility"`
+	NewKeys    int    `json:"new_keys"` // 合计（双区时是两区之和）
+	Dead       int    `json:"dead"`
+	Zone       string `json:"zone"`
+	Region     string `json:"region"`
+	OrderID    string `json:"order_id"`
+	// DispatchID · 本 vendor 独家 · 批次 id
+	DispatchID      string `json:"dispatch_id"`
 	PurchaseOrderID string `json:"purchase_order_id"`
-	PoolID          string `json:"pool_id"`
-	RoundID         string `json:"round_id"`
-	MotherID        string `json:"mother_id"`
-	RefundedQuota   int64  `json:"refunded_quota"`
-	RefundedKeys    int    `json:"refunded_keys"`
-	Reason          string `json:"reason"`
-	Timestamp       int64  `json:"timestamp"`
+	// NotificationScope · "dual" 表示这条是双区合并通知
+	NotificationScope string `json:"notification_scope"`
+	// Regions · 本次涉及的区（例 ["us-east-1","eu-central-1"]）
+	Regions []string `json:"regions"`
+	// NewKeysByRegion · 逐区新增数（例 {"us-east-1":3,"eu-central-1":2}）
+	NewKeysByRegion map[string]int `json:"new_keys_by_region"`
+	// PurchaseOrderIDsByRegion · ★ **逐区幂等键** · 双区场景要按区取这个 · 不是顶级那个
+	PurchaseOrderIDsByRegion map[string]string `json:"purchase_order_ids_by_region"`
+	// BatchIDsByRegion · 逐区批次 id 列表
+	BatchIDsByRegion map[string][]string `json:"batch_ids_by_region"`
+	CreatedAt        string              `json:"created_at"`
+	RefundedQuota    int64               `json:"refunded_quota"`
+	RefundedKeys     int                 `json:"refunded_keys"`
+	Reason           string              `json:"reason"`
+	// 以下字段本 vendor 实测不发 · 保留是因为 parse 逻辑跟其他家共用形状 · 解不到就是零值
+	PoolID    string `json:"pool_id"`
+	RoundID   string `json:"round_id"`
+	MotherID  string `json:"mother_id"`
+	Timestamp int64  `json:"timestamp"`
 }

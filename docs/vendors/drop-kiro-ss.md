@@ -298,15 +298,15 @@ price "7.35" (USD)
 
 ## 7 · 我方 adapter 缺口（按优先级）
 
-| # | 缺什么 | 影响 | 优先级 |
+| # | 缺什么 | 影响 | 状态 |
 |---|---|---|---|
-| 1 | **`ZoneStock.Zone` 落空** · 没从 `region` 归一 | 侧表 zone 列空 · PricedFor 按 zone 查匹配不到 | **最高 · 是 bug** |
-| 2 | **`/api/v1/reservation` 声明了但没实现** | ① 拿不到 EU 定价 ② 拿不到分档报价（`vendor_price_tier` 表因此空着）③ 拿不到权威汇率口径 | **最高** |
-| 3 | 汇率分歧未解（我方 6.8 vs xi8 7.07 · 差 4%）| 定价可能系统性偏低 4% | **高** |
-| 4 | `purchase_order_ids_by_region` 是否按区取？ | 双区通知用错幂等键 → 拉错区 / 重复扣费 | **高 · 待查 webhookin** |
-| 5 | `TotalCost` 字段名是 credits 但这家 CNY 计价 | 需核对 adapter 是否正确处理币种 | **高 · 待查** |
-| 6 | `refunded_amount_cny` 不落库 | 部分退款金额丢 | 中 |
-| 7 | `partially_refunded` 状态是否处理？ | 部分退款订单可能状态卡住 | 中 · 待查 |
+| 1 | ~~`ZoneStock.Zone` 落空~~ | 侧表 zone 列空 · PricedFor 匹配不到 | ✅ **已修**（走 `providers.ZoneOf(sr.Region)`）|
+| 2 | **`/api/v1/reservation` 声明了但没实现** | ① 拿不到 EU 定价 ② 拿不到分档报价（`vendor_price_tier` 表因此空着）③ 拿不到权威汇率口径 | ❌ **最高 · 待接** |
+| 3 | 汇率分歧未解（我方 6.8 vs 聚合源隐含 7.07 · 差 4%）| 定价可能系统性偏低 4% | ❌ **高 · 待定**（#2 接了可能自动解）|
+| 4 | ~~双区幂等键没按区取~~ | 双区到货漏一个区（dispatch 少一条 · 挂单少唤醒一次）| ✅ **已修**（`PerZone` + 逐区 fan-out）|
+| 5 | ~~`TotalCost` 币种标错~~ | — | ⚠️ **判错撤回** · 标 `credit` 是对的（我方 `1 积分 ≡ 1 CNY`）· 但**生产从没走过真 purchase** · 首次真实拉号要核一次 |
+| 6 | ~~`partially_refunded` 状态没解析~~ | 部分退款我方不知情 · 可能重复追差额 | ✅ **已修**（`PurchaseResult.PartiallyRefunded`）|
+| 7 | `refunded_amount_cny` 只用来判布尔 · 金额本身不落库 | 对账时看不到退了多少 | 中 |
 | 8 | webhook 管理 3 端点未接 | 手工配 · 可接受 | 低 |
 | 9 | `balance`（CNY 余额）不落 vendor_probe | 跟其他家一致 · 低影响 | 低 |
 | 10 | 页面用的其他 `/api` 未详摸 | 可能还有隐藏端点（需 Network 抓）| 中 · **待摸** |

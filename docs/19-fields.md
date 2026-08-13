@@ -487,9 +487,9 @@ cur:  [{Region:"", Available:5}(us), {Region:"", Available:5}(eu)]
 |---|---|---|---|
 | 5 | `reserved_keys_delivered`（kiro91）| ❌ **`providers.EventType` 枚举里都没定义** · 走 dispatcher `default` 分支只 log | **高** —— 包量协议交付的号 · 钱扣了但程序永远拿不到 key（vendor 明说这条通知里的 `order_id` 是取正文唯一入口）。**当前无包量协议 · 签了就会丢号** |
 | 6 | `key_revoked_abuse`（kiroappio）| ⚠️ 枚举**有** `EventKeyRevokedAbuse` · 但 `dispatcher.dispatchByType()` **无 case 分支** · 走 `default` 只 log | **高** —— vendor 收回已售号 · 我方 credential 还是 alive → **用户拿到废号** |
-| 7 | kirodrop 双区通知字段 | ❌ **`webhookPayload` struct 是从 kiro91 抄的** · kirodrop 官方的双区字段**一个都没定义**：`regions[]` / `new_keys_by_region` / `purchase_order_ids_by_region` / `batch_ids_by_region` / `notification_scope` / `dispatch_id` / `created_at` 全缺。反过来它解析的 `pool_id` / `round_id` / `mother_id` / `timestamp` **kirodrop 根本不发** | **高** —— 双区到货只拿到顶级 `purchase_order_id` · 拿不到按区的幂等键 → **可能拉错区** |
-| 8 | kirodrop `TotalCost` 币种 | ❌ **`mapper.go:74` `credits(pr.TotalCredits)`** 把它标成 `Currency=credit` · 但这家**余额是 CNY** · 单价是 USD · 字段名 `total_credits` 骗人 | **高** —— 实扣金额币种标错 · 下游按积分处理 |
-| 9 | kirodrop `partially_refunded` | ❌ `types.go` 里**无 `Status` 字段** · 订单状态完全没解析（vendor 文档明说状态可能是 `completed` / `partially_refunded` / `refunded`）| **中** —— 部分退款订单我方不知情 |
+| 7 | kirodrop 双区通知字段 | ❌ **`webhookPayload` struct 是从 kiro91 抄的** · kirodrop 官方的双区字段**一个都没定义**：`regions[]` / `new_keys_by_region` / `purchase_order_ids_by_region` / `batch_ids_by_region` / `notification_scope` / `dispatch_id` / `created_at` 全缺。反过来它解析的 `pool_id` / `round_id` / `mother_id` / `timestamp` **kirodrop 根本不发** | **高** → ✅ **已修** |
+| 8 | kirodrop `TotalCost` 币种 | ⚠️ **我判错了 · 撤回**。`credits()` 标 `Currency=credit` 是**对的** —— 我方口径 `1 积分 ≡ 1 CNY`（`CLAUDE.md §1.4`）· 这家余额就是 CNY · `total_credits` 数值等价我方积分 · 1:1 标 credit 无误。原注释的理由（"1:1 是当前兑换率不是恒等式 · 标 credit 让 decider 显式换算"）站得住 | ~~高~~ → **不是 bug** · 但**生产从没走过真 purchase**（`dry_run`）· 首次真实拉号时要核一次 |
+| 9 | kirodrop `partially_refunded` | ❌ `types.go` 里**无 `Status` 字段** · 订单状态完全没解析 | **中** → ✅ **已修** |
 
 ### 19.3 待接端点（按价值排序）
 

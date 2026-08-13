@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -383,9 +384,12 @@ func (a *Adapter) Parse(rawBody []byte, _ http.Header) (*providers.WebhookEvent,
 		PurchaseOrderID: wp.PurchaseOrderID,
 		NewKeys:         wp.NewKeys,
 		DeadKeys:        wp.Dead,
-		Zone:            providers.Zone(wp.Zone),
-		ReceivedAt:      time.Now().UTC(),
-		RawPayload:      rawBody,
+		// zone 归一 · 本 vendor 顶级可能给 zone 也可能只给 region
+		Zone:       firstNonEmptyZone(wp.Zone, wp.Region),
+		ReceivedAt: time.Now().UTC(),
+		RawPayload: rawBody,
+		// 双区合并通知 · 逐区拆开给上层（见 providers.WebhookEvent.PerZone 注释）
+		PerZone: perZoneDeliveries(&wp),
 	}
 
 	switch wp.Event {
@@ -403,6 +407,55 @@ func (a *Adapter) Parse(rawBody []byte, _ http.Header) (*providers.WebhookEvent,
 		evt.EventType = providers.EventType(wp.Event)
 	}
 	return evt, nil
+}
+
+// firstNonEmptyZone · 顶级 zone 字段可能空 · 回落 region 归一
+func firstNonEmptyZone(zone, region string) providers.Zone {
+	if z := providers.ZoneOf(zone); z != "" {
+		return z
+	}
+	return providers.ZoneOf(region)
+}
+
+// perZoneDeliveries · 把双区合并通知拆成逐区。
+//
+// **只在真是双区通知时返非空** —— 判据是 `purchase_order_ids_by_region` 有内容
+// （那才是按区的幂等键 · 没它就没法逐区 Purchase · 拆了也没用）。
+// 单区通知返 nil · 上层走老的顶级字段路径。
+//
+// 数据源优先级：`regions[]` 列出的区为准 · 逐区取 new_keys / purchase_order_id / batch_ids。
+// `regions[]` 缺失时退回用 `purchase_order_ids_by_region` 的 key 集合。
+func perZoneDeliveries(wp *webhookPayload) []providers.ZoneDelivery {
+	if len(wp.PurchaseOrderIDsByRegion) == 0 {
+		return nil
+	}
+	regions := wp.Regions
+	if len(regions) == 0 {
+		regions = make([]string, 0, len(wp.PurchaseOrderIDsByRegion))
+		for r := range wp.PurchaseOrderIDsByRegion {
+			regions = append(regions, r)
+		}
+		sort.Strings(regions) // 稳定顺序 · 便于测试和日志比对
+	}
+	out := make([]providers.ZoneDelivery, 0, len(regions))
+	for _, r := range regions {
+		poid := wp.PurchaseOrderIDsByRegion[r]
+		if poid == "" {
+			// 没有该区的幂等键 · 拉不了 · 跳过（宁可少一区也别用错的键去 Purchase）
+			continue
+		}
+		out = append(out, providers.ZoneDelivery{
+			Zone:            providers.ZoneOf(r),
+			Region:          r,
+			NewKeys:         wp.NewKeysByRegion[r],
+			PurchaseOrderID: poid,
+			BatchIDs:        wp.BatchIDsByRegion[r],
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 var (

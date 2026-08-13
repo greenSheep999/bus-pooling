@@ -194,6 +194,11 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 	if d.dispatchStore == nil {
 		return "skipped", nil
 	}
+	// **双区合并通知**（某家 vendor 独家 · 一次到货只推 1 条但带两区信息）·
+	// 逐区处理 —— 拿顶级字段当一条会漏掉另一区的开号批次和挂单唤醒
+	if len(e.PerZone) > 0 {
+		return d.onNewKeysPerZone(ctx, e)
+	}
 	// 幂等主键选择（2026-08-12 生产实测踩坑修）：
 	//   - 部分 vendor webhook 只发 client_order_id / purchase_order_id 不发独立 order_id ·
 	//     档明说这就是幂等主键 · 值稳定 · 每批唯一
@@ -241,6 +246,58 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 		}); err != nil {
 			d.logger.Warn("webhookin: 唤醒抢号链失败",
 				"vendor", e.VendorID, "dispatch_key", dispatchKey, "err", err)
+		}
+	}
+	return "ok", nil
+}
+
+// onNewKeysPerZone · 双区合并通知的逐区处理。
+//
+// 那家 vendor 一次到货只推 1 条 webhook（`notification_scope: "dual"`）· 但 body 里
+// 带两个区的完整信息 · **且幂等键按区分开**（`purchase_order_ids_by_region`）。
+//
+// 老代码只认顶级字段 · 后果：
+//
+//	· 只落 1 条 dispatch —— 另一区的开号批次在 /status 页上完全看不到
+//	· 只 Notify 1 次 —— 挂在另一区的挂单收不到唤醒 · 那区抢号率恒 0
+//	· 幂等键用顶级那个 —— fire 时可能拉错区
+//
+// 逐区落 dispatch（key 用该区的 purchase_order_id · 天然按区唯一）+ 逐区 Notify。
+func (d *Dispatcher) onNewKeysPerZone(ctx context.Context, e *providers.WebhookEvent) (string, error) {
+	dispatches := make([]providers.VendorDispatch, 0, len(e.PerZone))
+	for _, z := range e.PerZone {
+		dispatches = append(dispatches, providers.VendorDispatch{
+			DispatchKey:  z.PurchaseOrderID, // 该区专用幂等键 · 按区唯一
+			DispatchedAt: e.ReceivedAt,
+			Count:        z.NewKeys,
+			Alive:        z.NewKeys,
+			Region:       string(z.Zone), // 归一后的 zone（vendor_dispatch.region 语义）
+			Status:       "running",
+			Raw:          e.RawPayload,
+		})
+	}
+	if err := d.dispatchStore.UpsertDispatches(ctx, string(e.VendorID),
+		"vendor_self", dispatches); err != nil {
+		return "error", fmt.Errorf("upsert 双区 dispatch: %w", err)
+	}
+	d.logger.Info("webhookin: 双区合并通知 · 已逐区落 dispatch",
+		"vendor", e.VendorID, "zones", len(e.PerZone), "total_keys", e.NewKeys)
+
+	// 逐区唤醒抢号链 —— 挂在哪个区的挂单就该被哪个区的到货唤醒
+	if d.notifier != nil {
+		for _, z := range e.PerZone {
+			if z.NewKeys <= 0 {
+				continue // 该区这次没到货 · 不唤醒
+			}
+			if err := d.notifier.Notify(ctx, stockwatch.NotifyParams{
+				VendorID: string(e.VendorID),
+				Region:   string(z.Zone),
+				Count:    z.NewKeys,
+				Source:   "webhook",
+			}); err != nil {
+				d.logger.Warn("webhookin: 逐区唤醒抢号链失败",
+					"vendor", e.VendorID, "zone", z.Zone, "err", err)
+			}
 		}
 	}
 	return "ok", nil
