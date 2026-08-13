@@ -47,7 +47,7 @@
 | kirooo | `GET /api/my/credits` → `{credits,ledger:[{id,kind,amount,ref_id,created_at}]}` | ✅ 已接 · **真实数据实测**（claim_key/recharge · 北京墙钟）|
 | kiroappio | `GET /api/me/ledger` → `{items,page,summary,total}` 分页 | ✅ 已接（外层实测 · items 空 · 内层推断+存 raw）|
 | kiroceo | `GET /api/my/purchase-orders`（OrderHistoryLister 已接）| ✅ 无独立流水 · 用订单做 count-recon |
-| kirodrop | **无 ledger / 无订单列表**（实测 ledger/transactions/orders/credits/purchases/records 全 404 · 非被封：profile 200）| ⚠️ **只能按单核对**（pull_round.vendor_order_id → `/orders/{id}/keys` 验号在不在）· 无批量源 |
+| kirodrop | `GET /api/v1/dashboard` → `{orders:[], wallet:{total_spent,total_recharged,...}}`（实测真端点 · SPA 用的就是它）| ⏳ **源存在但 session-gated**（要 `kiro_session_token` · 登录带图形验证码 · 不能自动重登）· 当前 orders 空（0 购买）· 要接需 seed 会过期的 token（同 reservation）|
 | kiroappcc | `GET /api/user/txns`（login-session · 无验证码）| ✅ 已接 · **真实数据实测**（41 笔 · claim=purchase · delta 带符号）· adapter 自动登录换 token（api key 只管 /openapi/* · 两套独立鉴权）|
 
 **四家四个外层形状**（kiro91 `{entries,total}` · kirooo `{credits,ledger}` · kiroappio
@@ -56,8 +56,21 @@
 
 **kiroappcc 特殊**（2026-08-14 纠正）：`/api/user/*` 不认 API key（API key 只管
 `/openapi/*`）· 要网页 session token · 但**登录无验证码**（`POST /api/user/login`
-账密直接换 token）· 所以 adapter 内置自动登录+token 缓存+401 重登 · **可自动化**
-（不像 kirodrop 要图形验证码）。对账链 4 家有 ledger · kiroceo 用 orders · kirodrop 只能按单。
+账密直接换 token）· 所以 adapter 内置自动登录+token 缓存+401 重登 · **可自动化**。
+
+**6 家都有对账源**（2026-08-14 逐家实测确认 · 别再说 5 家）：
+
+| vendor | 源 | 自动化 |
+|---|---|---|
+| kiro91 | /api/my/ledger | ✅ API key |
+| kirooo | /api/my/credits | ✅ API key |
+| kiroappio | /api/me/ledger | ✅ API key |
+| kiroceo | /api/my/purchase-orders | ✅ API key |
+| kiroappcc | /api/user/txns | ✅ 自动登录（无验证码）|
+| kirodrop | /api/v1/dashboard（orders+wallet）| ⚠️ session-gated（登录带验证码 · 要 seed token · 会过期）|
+
+**分档同理**：kirodrop 的 reservation 与 dashboard 都在 `/api/v1/*` · 同一个 `kiro_session_token` ·
+要么都通（seed 一个 token · 定期人工续）· 要么都靠 seed。其余 5 家 API key / 无码登录直达。
 
 **落地进度**（2026-08-14）：
 - ✅ 基础设施：`providers.LedgerLister` + `VendorLedgerEntry`（reason 归一 6 类）·

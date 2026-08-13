@@ -64,6 +64,13 @@ API key 无效 · 登录要图形验证码（见 §2.3）。所以 `vendor_price
 
 **我方还接了**：`GET /api/my/orders/{id}/keys`（补拉 · `adapter.go:128`）· `POST /api/my/redeem` ✅
 
+**★ 对账源（2026-08-14 实测更正 · 之前误判"无源"）**：SPA 实际用 **`GET /api/v1/dashboard`**
+（`performance` 资源计时抓到 · 我之前猜的 /api/my/orders、/api/v1/orders 等全 404 是路径错）。
+返 `{metrics, orders:[...], wallet:{available_balance,held_balance,total_recharged,total_spent}}` ·
+`orders[]` 是订单历史（当前空 = 我方 0 购买）· `wallet.total_spent` 可做总额对账。
+**session-gated**（要 `kiro_session_token` · 登录带图形验证码 · 见 §2.3）· 跟 reservation 同一套 ·
+接需 seed 会过期的 token。
+
 ---
 
 ## 2 · 逐端点字段清单（vendor 原文命名）
