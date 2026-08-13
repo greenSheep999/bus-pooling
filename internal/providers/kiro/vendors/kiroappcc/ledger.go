@@ -16,7 +16,7 @@ import (
 //
 // **鉴权特殊**（2026-08-14 实测）：`/api/user/*` 不认 API key（API key 只管 /openapi/*）·
 // 要**网页登录 session token**。本 vendor 登录**无验证码**（`POST /api/user/login
-// {username,password}` → `{token,user}`）· 所以可自动重登 · 适合 backfiller（不像 kirodrop 要验证码）。
+// {username,password}` → `{token,user}`）· 所以可自动重登 · 适合 backfiller（不像另一家要验证码）。
 //
 // **响应形状实测确认**（bare array）：
 //

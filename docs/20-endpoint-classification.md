@@ -32,7 +32,7 @@
 |---|---|---|---|
 | kiro91 | 账密 `dalio` → `km_session` cookie（7d·HttpOnly）| `/api/my/*` 全 200 | 同 API（session 只多 rotate）| ✅ 登录+数据通 |
 | kirooo | 账密 → 返 **api_key**（SPA 就用它）| `/api/my/*` 全 200 | = API | ✅ 登录+数据通 |
-| kiroceo | **单 key**（API=登录同一把 usr-…）| `/api/my/*` 全 200 | = API | ✅ 登录+数据通 |
+| kiroceo | **单 key**（API=登录同一把 usr-…）| `/api/my/*` + `/api/me/*` 全 200（含 ledger/quotes）| = API | ✅ 登录+数据通 |
 | kiroappio | 账密 · 登录页**无验证码** | `/api/me/*` 全 200 | = API | ✅ 登录+数据通 |
 | kiroappcc | 账密 → token（**无验证码**·adapter 自动登录）| `/openapi/*` 全 200 | `/api/user/*` 全 200 | ✅ 两面都通 |
 | kirodrop | 账密 → token（**带图形验证码**）| profile+stock 200 | `/api/v1/*` 200（dashboard/reservation）| ✅ 两面都通（要 seed token）|
@@ -43,6 +43,25 @@
 
 **登录凭证口径**（seed）：kiro91=账密（用户名 `dalio` 非 `danlio`）· kiroceo=单 key（API/登录同一把）·
 其余 4 家=账密。别再纠结"少给了谁"——6 家登录机制已全部实测确认。
+
+---
+
+## 0.6 · 6 家 SPA 端点**实测清单**（2026-08-14 · 浏览器逐页登录 · `performance` 抓真实调用）
+
+> 用途：这是每家 SPA **实际调的全部 `/api/` 端点**（浏览器登录后逐页点开抓的 · 不是文档猜）。
+> 对照各家 adapter 的实际调用即知"我方接了 SPA 面的哪些"。**API key 可直达的都 200 实测过**。
+
+| vendor | 站点 | SPA 实测调用的端点（全量）|
+|---|---|---|
+| kiro91 | api.91kiro.com | `/api/login` · `/api/my/{profile,keys,orders,rounds,ledger,mothers,gen-logs,reservation,usage,webhook,webhook/deliveries}` · `/api/my/stock/rounds` · `/api/docs` · `/api/admin/subaccounts/pending` |
+| kirooo | kiro.ooo | `/api/user/login` · `/api/my/{profile,stock,stock/personal-pool,stock/regions,auto-fleet,purchase-orders}` · `/api/status` |
+| kiroceo | kiro.ceo | `/api/login` · `/api/me/{overview,keys,orders,ledger,quotes}` · `/api/my/gen-logs` · `/api/public/config` |
+| kiroappio | kiroapp.io | `/api/status` · `/api/me/{profile,stock,orders,keys,ledger}`（网页表单登录带腾讯 Turing 滑块验证码 · **但 SPA 调的这些 `/api/me/*` 用 api_key 直连全 200** · 验证码只挡人机登录 · 不挡 api_key 面）|
+| kiroappcc | kiroapp.cc | API `/openapi/{stock,balance,orders,claim}` + SPA `/api/user/{login,txns,orders,me}` |
+| kirodrop | drop.kiro.ss | api_key 面仅 `/api/status` · `/api/me/stock` · `/api/my/profile` · `/api/my/purchase` · `/api/my/redeem` · `/api/v1/reservation`；富数据（orders/ledger/dashboard）全在 SPA `/api/v1/*` session 后（api_key 打 404）|
+
+**结论**：4 家自助平台（kiro91/kirooo/kiroceo/kiroappio）SPA = api_key 面同一套 · **无隐藏数据端点**；
+kiroappcc SPA 面（`/api/user/*`）已接（自动登录）；kirodrop 富数据 session-gated（验证码 · 见 §1）。
 
 ---
 
@@ -78,7 +97,7 @@
 | kiro91 | `GET /api/my/ledger` → `{entries,total}` | ✅ 已接（外层实测 · items 空 · 内层推断+存 raw）|
 | kirooo | `GET /api/my/credits` → `{credits,ledger:[{id,kind,amount,ref_id,created_at}]}` | ✅ 已接 · **真实数据实测**（claim_key/recharge · 北京墙钟）|
 | kiroappio | `GET /api/me/ledger` → `{items,page,summary,total}` 分页 | ✅ 已接（外层实测 · items 空 · 内层推断+存 raw）|
-| kiroceo | `GET /api/my/purchase-orders`（OrderHistoryLister 已接）| ✅ 无独立流水 · 用订单做 count-recon |
+| kiroceo | `GET /api/me/ledger` → `{items,page,pages,total}` 分页（同 kiroappio 壳）| ✅ 已接（外层实测 · items 空 · 内层推断+存 raw）· 另有 purchase-orders 做 count-recon |
 | kirodrop | `GET /api/v1/dashboard` → `{orders:[], wallet:{total_spent,total_recharged,...}}`（实测真端点 · SPA 用的就是它）| ⏳ **源存在但 session-gated**（要 `kiro_session_token` · 登录带图形验证码 · 不能自动重登）· 当前 orders 空（0 购买）· 要接需 seed 会过期的 token（同 reservation）|
 | kiroappcc | `GET /api/user/txns`（login-session · 无验证码）| ✅ 已接 · **真实数据实测**（41 笔 · claim=purchase · delta 带符号）· adapter 自动登录换 token（api key 只管 /openapi/* · 两套独立鉴权）|
 
@@ -97,7 +116,7 @@
 | kiro91 | /api/my/ledger | ✅ API key |
 | kirooo | /api/my/credits | ✅ API key |
 | kiroappio | /api/me/ledger | ✅ API key |
-| kiroceo | /api/my/purchase-orders | ✅ API key |
+| kiroceo | /api/me/ledger（+ purchase-orders 做 count-recon）| ✅ API key |
 | kiroappcc | /api/user/txns | ✅ 自动登录（无验证码）|
 | kirodrop | /api/v1/dashboard（orders+wallet）| ⚠️ session-gated（登录带验证码 · 要 seed token · 会过期）|
 
@@ -110,10 +129,11 @@
 - ✅ 对账器 `vendorview.Reconciler` + CLI `bus-pooling reconcile [天数]` —— **三层核对**：
   存在性 / 数量（用 `vendor_order` · 5 家现成）+ 金额 / 漏退（用 `vendor_ledger` · 接了的家）·
   差异分 4 类：`orphan_ours` / `count_mismatch` / `amount_mismatch` / `refund_missing`
-- ✅ kiro91 `ListLedger` —— **容错解析**（外层包装名 + 字段名各试多个 · 永远存 raw）
-- ⏳ **其余 5 家 ledger adapter 待接**（kiroappio `/api/me/ledger` · kirooo `/my/credits` ·
-  kiroappcc `/api/user/txns` · kirodrop 订单列表 · kiroceo 用已接的 purchase-orders）
-  —— **必须先拿真实响应核字段再写**（别信文档推断 · kiroappcc webhook 100% 丢的教训）
+- ✅ **5/6 家 ledger adapter 已接**：kiro91 `/api/my/ledger` · kirooo `/api/my/credits`（真实数据）·
+  kiroappio `/api/me/ledger` · kiroappcc `/api/user/txns`（自动登录 · 真实 41 笔）· kiroceo `/api/me/ledger`
+  —— 全**容错解析**（外层实测 + 内层字段各试多个 · 永远存 raw · 有真数据再收紧）
+- ⏳ kirodrop ledger **拿不到**：orders/ledger/dashboard 全在 SPA session 后（API key 打全 404 · 2026-08-14 实测）·
+  登录带图形验证码 · 不能自动重登 —— **vendor 限制 · 非我方缺口**（要接需人工 seed 会过期的 token）
 
 **✅ 抓真实形状工具化 `bus-pooling vendor-probe <slug> <path>`**（2026-08-14）：
 只读探测 · 抓 vendor 端点真实响应（脱敏）· **institutionalize "写 adapter 前先抓真形状"**
@@ -207,8 +227,8 @@ webhook · xi8 这两个补掉盲区（`16-buy-race.md` 的多路信号里 xi8 �
    `{bands:[{lower,upper,price}]}`（实测 · 当前 flat 全 100 · 结构真实一开分档就反映）·
    kirodrop 时间降价形状已抓（token-gated · 见 §2 注）· kiro91 `stock/rounds`（当前空）待有数据接
 5. **号明细/寿命一批**（维度 A②③ · 喂 quality）—— dispatch-log / keys/export / usage / created-at
-6. **其余 ledger adapter**（维度 A①）· kirooo `/api/my/credits` ✅ 已接（真实形状）·
-   剩 kiroappio/kiroappcc/kirodrop（用 vendor-probe 抓真形状后接 · 别猜）
+6. ✅ **ledger adapter 5/6 已接**（维度 A①）· kiro91/kirooo/kiroappio/kiroappcc/kiroceo 全接 ·
+   仅 kirodrop 拿不到（SPA session + 图形验证码 · API key 打 404 · vendor 限制 · 非欠账）
 
 ---
 

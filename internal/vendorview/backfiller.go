@@ -188,7 +188,7 @@ func (b *Backfiller) backfillVendor(ctx context.Context, v providers.Vendor) {
 		}
 	}
 
-	// 5. 数量分档（阶梯价格 · docs/20 · 若实现了 KeyTierLister · 如 kirooo key-price-tiers）
+	// 5. 数量分档（阶梯价格 · docs/20 · 若实现了 KeyTierLister · 如 key-price-tiers 端点）
 	if b.tierStore != nil {
 		if lister, ok := v.(providers.KeyTierLister); ok {
 			callCtx, cancel := context.WithTimeout(ctx, b.timeout)

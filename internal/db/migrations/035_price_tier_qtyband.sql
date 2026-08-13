@@ -3,18 +3,18 @@
 -- 035 · vendor_price_tier 扩展：支持**数量分档**（不止时间降价）
 --
 -- **背景**：028 建 vendor_price_tier 时只按**时间降价**设计（interval_min / effective_at /
--- tier_index=0/1/…）· 匹配 kirodrop 的 timed_pricing（每 30min 降一档）。但 2026-08-14
+-- tier_index=0/1/…）· 匹配部分 vendor 的时间降价（每 30min 降一档）。但 2026-08-14
 -- 实测发现两种"阶梯"模型：
---   - **时间降价**（kirodrop timed_pricing / kiro91 stock/rounds decay）· 价随时间降
---   - **数量分档**（kirooo /api/my/key-price-tiers · bands[{lower,upper,price}]）· 价按产量档
+--   - **时间降价**（部分 vendor 的 rounds decay）· 价随时间降
+--   - **数量分档**（部分 vendor 的 key-price-tiers 端点 · bands[{lower,upper,price}]）· 价按产量档
 -- 数量分档的 lower/upper（数量阈值）是它的核心 · 老表没有列装它。
 --
 -- 本迁移加：
 --   - tier_kind · 'time_decay'（默认 · 老数据）| 'qty_band'
 --   - qty_lower / qty_upper · 数量档区间（qty_band 才有 · upper=0 表示"及以上"）
 --
--- kirodrop 时间降价仍走老列（effective_at / tier_interval_min …）· tier_kind='time_decay'。
--- kirooo 数量分档走 qty_lower/qty_upper · effective_at 填 probed_at（满足 NOT NULL）·
+-- 时间降价仍走老列（effective_at / tier_interval_min …）· tier_kind='time_decay'。
+-- 数量分档走 qty_lower/qty_upper · effective_at 填 probed_at（满足 NOT NULL）·
 -- 时间列留 NULL。
 --
 -- **纯内部 pricing 数据**（不直接出前端 · 经 vendorview 脱敏后才展示）。

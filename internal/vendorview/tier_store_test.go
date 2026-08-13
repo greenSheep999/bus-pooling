@@ -23,7 +23,7 @@ func tierDB(t *testing.T) *TierStore {
 	return NewTierStore(d.DB)
 }
 
-// 真实 kirooo bands 形状（2026-08-14 实测 · 4 档 · upper=0 表示及以上）
+// 真实 vendor bands 形状（2026-08-14 实测 · 4 档 · upper=0 表示及以上）
 func TestTierStore_ReplaceAndRead(t *testing.T) {
 	s := tierDB(t)
 	ctx := context.Background()
@@ -93,14 +93,14 @@ func TestTierStore_EmptyClears(t *testing.T) {
 func TestTierStore_DoesNotTouchTimeDecay(t *testing.T) {
 	s := tierDB(t)
 	ctx := context.Background()
-	// 手插一条 time_decay 行（模拟 kirodrop）
+	// 手插一条 time_decay 行（模拟时间降价 vendor）
 	_, err := s.db.Exec(`INSERT INTO vendor_price_tier
 		(vendor_id, region, probed_at, tier_kind, tier_index, effective_at, unit_price_credits, created_at)
 		VALUES ('kirodrop','eu','2026-08-14T00:00:00Z','time_decay',0,'2026-08-14T00:00:00Z',49980000,'2026-08-14T00:00:00Z')`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// kirooo 的 qty_band 覆盖不应动 kirodrop 的 time_decay
+	// qty_band 覆盖不应动同 vendor 的 time_decay 行
 	_ = s.ReplaceQtyBands(ctx, "kirodrop", []providers.QtyPriceBand{{Lower: 1, Upper: 0, UnitPriceCredits: 100_000_000}})
 	var td int
 	_ = s.db.QueryRow(`SELECT COUNT(*) FROM vendor_price_tier WHERE tier_kind='time_decay'`).Scan(&td)

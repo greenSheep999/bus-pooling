@@ -241,7 +241,7 @@ func buildVendorRegistry(ctx context.Context, cfg config.Config, vaStore *vendor
 	kccAPIKey, _ := resolveCred("kiroappcc", cfg.Secrets.KiroAppCCAPIKey, "")
 	kdropAPIKey, kdropWebhook := resolveCred("kirodrop", cfg.Secrets.KiroDropAPIKey, cfg.Secrets.KiroDropWebhookSecret)
 
-	// kiroappcc 网页账密 · 拉 /api/user/* 的 ledger 用（登录无验证码 · 可自动重登）
+	// 这家 vendor 的网页账密 · 拉 /api/user/* 的 ledger 用（登录无验证码 · 可自动重登）
 	kccCfg := base(cfg.Vendors.KiroAppCC, kccAPIKey, "")
 	kccCfg.LoginUser = os.Getenv("BP_VENDOR_KIROAPPCC_LOGIN_USER")
 	kccCfg.LoginPass = os.Getenv("BP_VENDOR_KIROAPPCC_LOGIN_PASS")

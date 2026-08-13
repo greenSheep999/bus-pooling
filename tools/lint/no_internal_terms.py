@@ -224,6 +224,9 @@ _ALLOWLIST = [
     (r"/providers/kiro/vendors/kiroappio/", r'\bkiroappio\b'),
     (r"/providers/kiro/vendors/kiroappcc/", r'\bkiroappcc\b'),
     (r"/providers/kiro/vendors/kirodrop/", r'\bkirodrop\b'),
+    # kiroappcc live 集成测试的 BaseURL（真实域名 · 默认 skip · 是 live 测试 identifier）
+    (r"/providers/kiro/vendors/kiroappcc/ledger_test\.go$",
+     r'BaseURL:\s*"https://kiroapp\.cc"'),
     # kiroceo 包用 kiroappcc 常量作为 provider ref（跨包 · 允许 identifier）
     (r"/providers/kiro/vendors/",
      r'providers\.VendorKiro(91|CEO|OOO|AppIO|AppCC|Drop)|kiroappcc:|kirodrop:'),
