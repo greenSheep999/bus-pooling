@@ -94,8 +94,14 @@
 |---|---|---|
 | kiro91 `GET /api/my/stock/rounds` | Prices 页逐车次现价（否则均值失真）| 脱敏上前端 |
 | kirooo `GET /my/key-price-tiers` | 同上 · kirooo 定价阶梯 | 脱敏上前端 |
-| xi8 `GET /stock`（buyable/blocked/floating）| **抢号决策**：blocked 别 fire · floating 必带价保 | 内部 |
+| xi8 buyable/blocked/floating | **抢号决策**：blocked 别 fire · floating 必带价保 | 内部 |
 | xi8 webhook | **抢号速度**：省 30s 轮询延迟 | 内部 |
+
+**✅ blocked/floating 已落地**（2026-08-14）：发现这几个字段**其实 `/api/vendors` 已在拉**
+（`VendorRegion.Buyable/Blocked/Floating`）· 老代码 `pushVendorsToZone` 只落价格把它们丢了 ·
+不用新端点。migration 034 `xi8_vendor_flags`（最新快照 · 每 vendor+zone 一行）· xi8
+backfiller 5min 落 · `stockwatch.BlockGuard` fire 前查 blocked 就跳过（turbo 绕过 · 急停优先 ·
+**fail-open**：查不到/数据旧不拦）。⏳ xi8 webhook（抢号提速那路）仍未接。
 | kiro91 usage×3 / kiroceo `keys/usage` / kirooo `keys/created-at` / kiroappio `keys/created-at` | 号寿命/用量 → status quality 更准 | 内部 |
 
 **注**：xi8 `/stock` + webhook 是**抢号链最后两块拼图** —— 现在抢号靠 60s 探针 + vendor
@@ -121,11 +127,13 @@ webhook · xi8 这两个补掉盲区（`16-buy-race.md` 的多路信号里 xi8 �
 
 按"防钱错 → 抢号打满 → 前端转真 → 增强"排：
 
-1. **维度 A① 对账链**（5 家断链 · 全内部）—— 生产真实扣费 · 无 vendor 账本无法核对
-2. **xi8 `/stock` + webhook**（维度 A③ · 抢号最后两块）
-3. **kirodrop `reservation`**（维度 A② · 前端定价从"估"转"真" · 填 `vendor_price_tier`）
+1. ✅ **维度 A① 对账链**（5 家断链 · 全内部）—— 已落地（Reconciler + CLI + kiro91 ledger）
+2. ✅ **xi8 blocked/floating guard**（维度 A③ · 抢号"blocked 别 fire"）—— 已落地 ·
+   ⏳ xi8 webhook（抢号提速）仍未接
+3. **kirodrop `reservation`**（维度 A② · 前端定价从"估"转"真" · 填 `vendor_price_tier`）← 下一个
 4. **kiro91 `stock/rounds` + kirooo `key-price-tiers`**（维度 A③ · Prices 页逐车次真价）
 5. **号明细/寿命一批**（维度 A②③ · 喂 quality）—— dispatch-log / keys/export / usage / created-at
+6. **其余 5 家 ledger adapter**（维度 A① · 拿真实响应核字段后接）
 
 ---
 

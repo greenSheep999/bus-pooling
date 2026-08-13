@@ -21,6 +21,22 @@ type ZoneStore interface {
 	InsertZoneBatch(ctx context.Context, samples []ZoneSample) error
 }
 
+// FlagStore · xi8_vendor_flags 落库接口（buyable/blocked/floating · 抢号 fire-guard · docs/20 §3）
+type FlagStore interface {
+	UpsertVendorFlags(ctx context.Context, flags []VendorFlagSample) error
+}
+
+// VendorFlagSample · xi8 /api/vendors 里一个 vendor+zone 的可买性 flag · 上层适配到 vendorview.VendorFlag
+type VendorFlagSample struct {
+	VendorID    string // 我方 slug（xi8 vendor_id 已映射）
+	Zone        string // us / eu · 归一后
+	Buyable     bool
+	Blocked     bool
+	BlockReason string
+	Floating    bool
+	PriceFen    int
+}
+
 // ZoneSample · xi8 侧的一个 zone 快照 · 上层适配到 vendorview.ProbeZoneSample
 type ZoneSample struct {
 	VendorID       string
@@ -48,6 +64,7 @@ type Backfiller struct {
 	client    *Client
 	store     DispatchStore
 	zoneStore ZoneStore // xi8 逐 zone 价格落库 · nil 时不写侧表（老装配 / 未 seed）
+	flagStore FlagStore // xi8 buyable/blocked/floating 落库 · nil 时不写（抢号 guard 用）
 	logger    *slog.Logger
 
 	// 后台 tick 用（Start 后填）
@@ -71,6 +88,9 @@ func NewBackfiller(client *Client, store DispatchStore, logger *slog.Logger) *Ba
 // SetZoneStore · 装配 xi8 → vendor_probe_zone 侧表 · main.go 起动时调
 // （避免改 NewBackfiller 签名 · 老调用点无痛升级）
 func (b *Backfiller) SetZoneStore(zs ZoneStore) { b.zoneStore = zs }
+
+// SetFlagStore · 装配 xi8 → xi8_vendor_flags（抢号 fire-guard 用 buyable/blocked/floating）
+func (b *Backfiller) SetFlagStore(fs FlagStore) { b.flagStore = fs }
 
 // Start · 起后台 goroutine · 每 tickInterval 拉一次 signals（增量小·省流量）·
 // 每 fullInterval 拉一次 restock-log 全量（500 条 · 覆盖 2 天）。
@@ -262,12 +282,18 @@ func (b *Backfiller) RunOnce(ctx context.Context, limit int) (int, int, error) {
 	}
 	// 3. vendors · 5 家实时逐 zone 单价 · 落 vendor_probe_zone 做第二源交叉核对
 	//    （只补漏 · 权威值仍是 vendor_self · 见 PricedFor / decider 的 LatestZoneCredits 顺序）
+	//    **同一次响应**里还带 buyable/blocked/floating · 顺手落 xi8_vendor_flags（抢号 guard）
 	zoneCount := 0
-	if b.zoneStore != nil {
+	if b.zoneStore != nil || b.flagStore != nil {
 		if vs, err := b.client.ListVendors(ctx); err == nil {
-			zoneCount = b.pushVendorsToZone(ctx, vs)
+			if b.zoneStore != nil {
+				zoneCount = b.pushVendorsToZone(ctx, vs)
+			}
+			if b.flagStore != nil {
+				b.pushVendorFlags(ctx, vs)
+			}
 		} else {
-			b.logger.Warn("xi8: 拉 /api/vendors 失败 · 侧表这轮不更新", "err", err)
+			b.logger.Warn("xi8: 拉 /api/vendors 失败 · 侧表/flag 这轮不更新", "err", err)
 		}
 	}
 
@@ -338,6 +364,40 @@ func (b *Backfiller) pushVendorsToZone(ctx context.Context, resp *VendorsResp) i
 		return 0
 	}
 	return len(samples)
+}
+
+// pushVendorFlags · 从 /api/vendors 捞 buyable/blocked/floating 落 xi8_vendor_flags（抢号 guard）。
+//
+// 跟 pushVendorsToZone 分开：那个落价格（有价才落）· 这个落可买性（**无价也要落** ——
+// blocked 的 vendor 恰恰是 price_fen=0 · 正是 guard 最该拦的情况）。
+func (b *Backfiller) pushVendorFlags(ctx context.Context, resp *VendorsResp) {
+	if resp == nil || len(resp.Vendors) == 0 {
+		return
+	}
+	flags := make([]VendorFlagSample, 0, len(resp.Vendors)*2)
+	for _, v := range resp.Vendors {
+		slug := VendorSlugForXi8ID(v.VendorID)
+		if slug == "" {
+			continue
+		}
+		for _, r := range v.Regions {
+			flags = append(flags, VendorFlagSample{
+				VendorID:    slug,
+				Zone:        string(providers.ZoneOf(r.Region)),
+				Buyable:     r.Buyable,
+				Blocked:     r.Blocked,
+				BlockReason: r.BlockReason,
+				Floating:    r.Floating,
+				PriceFen:    r.PriceFen,
+			})
+		}
+	}
+	if len(flags) == 0 {
+		return
+	}
+	if err := b.flagStore.UpsertVendorFlags(ctx, flags); err != nil {
+		b.logger.Warn("xi8: 写 xi8_vendor_flags 失败", "err", err)
+	}
 }
 
 // pushNotificationsToZone · 站内通知 → vendor_probe_zone（source='xi8_notif'）

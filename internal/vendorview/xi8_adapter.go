@@ -41,3 +41,23 @@ func firstNonEmpty(a, b string) string {
 	}
 	return b
 }
+
+// UpsertVendorFlags · 实现 xi8.FlagStore 接口 · 把 xi8 的可买性 flag 落 xi8_vendor_flags。
+func (s *FlagStore) UpsertVendorFlags(ctx context.Context, samples []xi8.VendorFlagSample) error {
+	if len(samples) == 0 {
+		return nil
+	}
+	converted := make([]VendorFlag, 0, len(samples))
+	for _, x := range samples {
+		converted = append(converted, VendorFlag{
+			VendorID:    x.VendorID,
+			Zone:        x.Zone,
+			Buyable:     x.Buyable,
+			Blocked:     x.Blocked,
+			BlockReason: x.BlockReason,
+			Floating:    x.Floating,
+			PriceFen:    x.PriceFen,
+		})
+	}
+	return s.UpsertFlags(ctx, converted)
+}

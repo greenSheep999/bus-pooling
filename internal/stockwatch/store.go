@@ -53,6 +53,9 @@ type Watcher struct {
 	// 也不高）· 但运营者知道"还要用 · 有货就抢" · 手工按住。
 	turbo *FileFlag
 
+	// guard · fire 前查聚合源 blocked（xi8）· nil = 不拦
+	guard BlockGuard
+
 	// 后台 sweeper 运行时 · StartSweeper 后填
 	sweepCancel context.CancelFunc
 	sweepDone   chan struct{}
@@ -89,6 +92,15 @@ type WatcherRow struct {
 // ErrStillNoStock · Firer 返这个说明 vendor 又缺货了 · Watcher 保持 watching 等下次
 var ErrStillNoStock = errors.New("stockwatch: fire 后 vendor 仍缺货")
 
+// BlockGuard · fire 前查聚合源是否标该 vendor+region "暂停出售"（docs/20 §3）· 可 nil。
+//
+// 独立接口避免 stockwatch → vendorview 依赖 · vendorview.FlagStore 实现它 · main.go 注入。
+// **fail-open**：查不到 / 数据旧 · 返 false（不拦）—— 聚合源没数据不该误伤能抢的单。
+type BlockGuard interface {
+	// IsBlocked · blocked=true 表示 vendor 主动停售（fire 必被拒 · 别浪费尝试）
+	IsBlocked(ctx context.Context, vendorID, region string) (blocked bool, reason string)
+}
+
 type Config struct {
 	DB         *sql.DB
 	Firer      Firer
@@ -97,6 +109,7 @@ type Config struct {
 	Mode       *ModeMgr      // 运营态管理器 · nil = 一律 fire（保守）
 	Kill       *FileFlag     // 急停开关（KILL_PULLS 文件）· nil = 从不急停
 	Turbo      *FileFlag     // 人工强制抢（TURBO_ON 文件）· nil = 从不强制
+	Guard      BlockGuard    // blocked 别 fire（xi8 聚合源）· nil = 不拦
 }
 
 func New(cfg Config) *Watcher {
@@ -119,6 +132,7 @@ func New(cfg Config) *Watcher {
 		mode:       cfg.Mode,
 		kill:       cfg.Kill,
 		turbo:      cfg.Turbo,
+		guard:      cfg.Guard,
 	}
 }
 
@@ -263,6 +277,18 @@ func (w *Watcher) Notify(ctx context.Context, p NotifyParams) error {
 			"mode", w.currentMode(),
 			"hint", "cool=无排队需求 · balance=只 webhook 抢 · tight=都抢")
 		return nil
+	}
+	// blocked guard · 聚合源标该 vendor 主动停售时别 fire（docs/20 §3）·
+	// fire 必被 vendor 拒 · 白烧一次尝试还占 conditional UPDATE。
+	// **turbo 强制时绕过**（人工按住 · 最高意志 · guard 也让路）· guard nil 时不拦。
+	if w.guard != nil && !(w.turbo != nil && w.turbo.Engaged()) {
+		if blocked, reason := w.guard.IsBlocked(ctx, p.VendorID, p.Region); blocked {
+			w.logger.Info("stockwatch: 聚合源标停售 · 本轮不 fire",
+				"vendor", p.VendorID, "region", p.Region, "source", p.Source,
+				"block_reason", reason,
+				"hint", "vendor 主动停售（成本可疑等）· fire 必被拒 · 等它恢复")
+			return nil
+		}
 	}
 	// 查 watching 队列 · 按 started_at 顺序（先挂先抢 · 公平）
 	rows, err := w.db.QueryContext(ctx, `
