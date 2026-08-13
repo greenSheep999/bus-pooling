@@ -3,10 +3,13 @@ package pricing
 // probe_credits · 读 vendor_probe_zone.our_unit_credits（migration 029 · docs/18 §1.4 权威源）·
 // 侧表缺数据时退回主表 vendor_probe.our_unit_credits（首个 zone 采样 · 单 zone vendor 够用）
 //
-// **两级 fallback**：
-//   1. `vendor_probe_zone` 按 zone 精确匹配（US/EU 差价能几十个百分点 · 首选）
-//   2. `vendor_probe_zone` 跨 zone 最近一条（多 zone vendor 但指定 zone 无价 · 单 zone vendor 也走这条）
-//   3. `vendor_probe` 主表（029 刚上 / 老装配 / 侧表未回填的历史窗口）
+// **fallback 链**（按 source 权威度 · 每级内部再按 zone 精确度）：
+//   1. 侧表 · 按 zone 精确匹配 · source=vendor_self（我方直连上游 · 最权威）
+//   2. 侧表 · 按 zone 精确匹配 · source=xi8（聚合源实时快照 · 补上游单端只给一区的空缺）
+//   3. 侧表 · 按 zone 精确匹配 · source=xi8_notif（聚合源历史通知 · 补探针上线前的空窗）
+//   4-6. 同上三级 · 但跨 zone 取最近一条（单 zone vendor / 指定 zone 无价时）
+//   7. 侧表无 source 过滤（migration 030 之前的老数据）
+//   8. `vendor_probe` 主表（029 刚上 / 老装配 / 侧表未回填的历史窗口）
 //
 // **schema 说明**：`vendor_probe_zone` 主键 (vendor_id, probed_at, zone) · 一探针 N 行 ·
 // 主表 (vendor_id, probed_at) 保留 · 首 zone 采样兼容老读取。
@@ -46,12 +49,18 @@ func (p *ProbeCredits) LatestCredits(
 		if c, at, ok := p.lookupZone(ctx, vendorID, zone, "xi8"); ok {
 			return c, at, true
 		}
+		if c, at, ok := p.lookupZone(ctx, vendorID, zone, "xi8_notif"); ok {
+			return c, at, true
+		}
 	}
-	// ② 侧表跨 zone 最近一条（vendor_self 优先 · 再 xi8）
+	// ② 侧表跨 zone 最近一条（vendor_self 优先 · 再聚合源实时 · 再聚合源历史）
 	if c, at, ok := p.lookupZone(ctx, vendorID, "", "vendor_self"); ok {
 		return c, at, true
 	}
 	if c, at, ok := p.lookupZone(ctx, vendorID, "", "xi8"); ok {
+		return c, at, true
+	}
+	if c, at, ok := p.lookupZone(ctx, vendorID, "", "xi8_notif"); ok {
 		return c, at, true
 	}
 	// ③ 侧表无 source 过滤（migration 030 前老数据）

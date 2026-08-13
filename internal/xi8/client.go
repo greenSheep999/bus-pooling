@@ -98,3 +98,30 @@ func (c *Client) ListSignals(ctx context.Context, limit int) (*SignalsResp, erro
 	}
 	return &out, nil
 }
+
+// ListNotifications · 站内通知 · **唯一带历史价格的端点**（`price_fen` + `old_price_fen`）
+//
+// 上游其他端点都不给历史价：`/signals` 和 `/restock-log` 只有数量和批次号 ·
+// `/vendors` 和 `/stock` 是实时快照。想补探针上线前的价格只有这条路。
+//
+// **服务端限制**（实测 2026-08-13）：
+//   - limit 硬顶 100 · 传 500/1000/5000 都只返 100
+//   - **只 `since_id` 生效**（返 id > 该值的）· `page` / `offset` / `cursor` /
+//     `before_id` / `until_id` / `max_id` 全部无效 · 一律返首页
+//   - 所以 API 层最多拿最近 100 条（约 2 天）· 更早的只有网页版能翻（需 cookie）
+//
+// sinceID <= 0 时不带该参数 · 拿最近的一批。
+func (c *Client) ListNotifications(ctx context.Context, limit, sinceID int) (*NotificationsResp, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 100 // 服务端硬顶 · 传更大无意义
+	}
+	path := fmt.Sprintf("/api/my/notifications?limit=%d", limit)
+	if sinceID > 0 {
+		path += fmt.Sprintf("&since_id=%d", sinceID)
+	}
+	var out NotificationsResp
+	if err := c.do(ctx, path, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

@@ -92,12 +92,16 @@ func (s *ProbeZoneStore) LatestZoneCredits(
 	if s == nil || s.db == nil {
 		return 0, time.Time{}, false
 	}
-	// 先 vendor_self
+	// 先 vendor_self（我方直连上游 · 最权威）
 	if c, at, ok := s.querySource(ctx, vendorID, zone, "vendor_self"); ok {
 		return c, at, true
 	}
-	// fallback · xi8（部分 vendor EU 定价我方官端拿不到 · xi8 有）
+	// fallback ① 聚合源实时快照（部分 vendor EU 定价我方官端拿不到 · 聚合源有）
 	if c, at, ok := s.querySource(ctx, vendorID, zone, "xi8"); ok {
+		return c, at, true
+	}
+	// fallback ② 聚合源历史通知（补探针上线前的价格空窗 · 最后兜）
+	if c, at, ok := s.querySource(ctx, vendorID, zone, "xi8_notif"); ok {
 		return c, at, true
 	}
 	// 老数据 · source 未填的行（migration 030 前）· 兜底最后一次

@@ -31,6 +31,10 @@ type ZoneSample struct {
 	VendorCurrency string // xi8 都是 CNY
 	VendorUnitRaw  int64  // microunit · 分 → microunit 时 × 10000
 	OurUnitCredits int64  // xi8 是 CNY 计价 · 1 CNY = 1 积分 · pass-through
+	// Source · 区分 xi8 的两条数据路径 · 空按 "xi8" 处理：
+	//   "xi8"       · /api/vendors 实时快照（"现在的价"）
+	//   "xi8_notif" · /api/my/notifications 历史事件流（"那一刻的价"）
+	Source string
 }
 
 // Backfiller · xi8 一次性回填 · 只做后端对账 + 历史空窗填。
@@ -50,6 +54,11 @@ type Backfiller struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	once   sync.Once
+
+	// lastNotifID · 已拉过的最大通知 id · 下轮 since_id 用它只拉增量。
+	// **进程内状态**（不落库）· 重启后从 0 开始 · 会重拉最近 100 条 ·
+	// 但侧表写入走 INSERT OR REPLACE 幂等 · 重复无害。
+	lastNotifID int
 }
 
 func NewBackfiller(client *Client, store DispatchStore, logger *slog.Logger) *Backfiller {
@@ -261,8 +270,29 @@ func (b *Backfiller) RunOnce(ctx context.Context, limit int) (int, int, error) {
 			b.logger.Warn("xi8: 拉 /api/vendors 失败 · 侧表这轮不更新", "err", err)
 		}
 	}
+
+	// 4. notifications · **唯一带历史价格的端点** · 落 source='xi8_notif'
+	//    每条通知带那一刻的 price_fen · ProbedAt 用通知时刻 · 补探针上线前的价格空窗。
+	//    since_id 只拉增量 —— 服务端 limit 硬顶 100 · 不带 since_id 每轮都在重复拉同一批。
+	notifCount := 0
+	if b.zoneStore != nil {
+		if ns, err := b.client.ListNotifications(ctx, 100, b.lastNotifID); err == nil {
+			notifCount = b.pushNotificationsToZone(ctx, ns)
+			// 记住最大 id · 下轮只拉更新的
+			for _, n := range ns.Items {
+				if n.ID > b.lastNotifID {
+					b.lastNotifID = n.ID
+				}
+			}
+		} else {
+			b.logger.Warn("xi8: 拉通知失败 · 历史价这轮不更新", "err", err)
+		}
+	}
+
 	b.logger.Info("xi8: backfill 完成",
-		"signals", sigCount, "restocks", rsCount, "vendor_zones", zoneCount)
+		"signals", sigCount, "restocks", rsCount,
+		"vendor_zones", zoneCount, "notif_prices", notifCount,
+		"last_notif_id", b.lastNotifID)
 	return sigCount, rsCount, nil
 }
 
@@ -305,6 +335,57 @@ func (b *Backfiller) pushVendorsToZone(ctx context.Context, resp *VendorsResp) i
 	}
 	if err := b.zoneStore.InsertZoneBatch(ctx, samples); err != nil {
 		b.logger.Warn("xi8: 写 vendor_probe_zone 失败", "err", err)
+		return 0
+	}
+	return len(samples)
+}
+
+// pushNotificationsToZone · 站内通知 → vendor_probe_zone（source='xi8_notif'）
+//
+// **为什么单独一条路径**：`/vendors` 是**实时快照**（写"现在的价"）· 通知是**历史事件流**
+// （每条带那一刻的 `price_fen`）· 是唯一能补探针上线前价格的源。两者 source 分开标 ·
+// 免得"历史回填"和"实时观测"混在一起分不清哪条更权威。
+//
+// **ProbedAt 用通知自己的时刻**（不是拉取时刻）—— 这样落进去就是**那一刻的价** ·
+// 时间轴对得上我方探针的行。
+//
+// 只落 `price_fen > 0` 的 —— `sold_out` 通知没价（也没意义）。
+func (b *Backfiller) pushNotificationsToZone(ctx context.Context, resp *NotificationsResp) int {
+	if resp == nil || len(resp.Items) == 0 {
+		return 0
+	}
+	samples := make([]ZoneSample, 0, len(resp.Items))
+	for _, n := range resp.Items {
+		if n.PriceFen <= 0 {
+			continue
+		}
+		// 通知里**没有 vendor_id · 只有昵称** —— 靠昵称反查我方 slug
+		slug := VendorSlugForXi8Name(n.Vendor)
+		if slug == "" {
+			continue // 未映射的昵称 · 跳过（宁可少一条 · 不要归错家）
+		}
+		at, err := parseXi8Time(n.At.ISO)
+		if err != nil {
+			continue
+		}
+		rawMicro := int64(n.PriceFen) * 10_000 // 分 → microunit
+		samples = append(samples, ZoneSample{
+			VendorID:       slug,
+			ProbedAt:       at, // ★ 用通知时刻 · 不是拉取时刻
+			Zone:           string(providers.ZoneOf(n.Region)),
+			Region:         xi8RegionToOurs(n.Region),
+			Available:      n.Stock,
+			VendorCurrency: "CNY",
+			VendorUnitRaw:  rawMicro,
+			OurUnitCredits: rawMicro, // CNY 1:1 到积分
+			Source:         "xi8_notif",
+		})
+	}
+	if len(samples) == 0 {
+		return 0
+	}
+	if err := b.zoneStore.InsertZoneBatch(ctx, samples); err != nil {
+		b.logger.Warn("xi8: 写通知历史价失败", "err", err)
 		return 0
 	}
 	return len(samples)

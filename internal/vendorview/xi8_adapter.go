@@ -28,8 +28,16 @@ func (s *ProbeZoneStore) InsertZoneBatch(ctx context.Context, samples []xi8.Zone
 			VendorUnitRaw:  x.VendorUnitRaw,
 			OurUnitCredits: x.OurUnitCredits,
 			OurUnitSource:  "xi8_native",
-			Source:         "xi8",
+			// Source 由上游指定（"xi8" 实时快照 / "xi8_notif" 历史通知）· 空按 "xi8"
+			Source: firstNonEmpty(x.Source, "xi8"),
 		})
 	}
 	return s.InsertBatch(ctx, converted)
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
