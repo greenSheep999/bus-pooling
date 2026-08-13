@@ -14,6 +14,34 @@
 
 ---
 
+## 0.5 · API 面 vs SPA 面 · 6 家逐个测通（2026-08-14 · 全实测 · 别再问"接没接"）
+
+**两种 vendor**：
+- **API 面 = SPA 面**（4 家）：`kiro91 / kirooo / kiroceo / kiroappio` —— SPA 登录**就是发 api_key**
+  （实测 kirooo 登录返 `{api_key,...}`）· 网页和我方用**同一套** `/api/my/*`（或 `/api/me/*`）·
+  api_key 直达全部数据 · **无独立 SPA 端点**。已测：stock / ledger(credits) / pricing / dispatch / keys 全 200。
+- **API 面 ≠ SPA 面**（2 家）：api_key 面很窄 · 富数据在 SPA session 后：
+  - `kiroappcc`：API `/openapi/*`（stock/balance/orders/claim ✅）+ SPA `/api/user/*`（txns/orders/me ✅ ·
+    登录**无验证码** · adapter 自动登录）
+  - `kirodrop`：API `/api/my/profile`+`/api/me/stock` ✅ + SPA `/api/v1/*`（dashboard/reservation ✅ ·
+    登录**带图形验证码** · 要 seed token）
+
+**测通矩阵**：
+
+| vendor | API 面（api_key）| SPA 面 | 结论 |
+|---|---|---|---|
+| kiro91 | `/api/my/*` 全 200 | 同 API（登录发 key）| ✅ 全通 |
+| kirooo | `/api/my/*` 全 200 | 同 API（登录返 api_key 实证）| ✅ 全通 |
+| kiroceo | `/api/my/*` 全 200 | 同 API | ✅ 全通 |
+| kiroappio | `/api/me/*` 全 200 | 同 API | ✅ 全通 |
+| kiroappcc | `/openapi/*` 全 200 | `/api/user/*` 全 200（自动登录）| ✅ 两面都通 |
+| kirodrop | `/api/my/profile`+`/api/me/stock` 200 | `/api/v1/*` 200（session·验证码）| ✅ 两面都通（SPA 要 seed token）|
+
+**一句话**：6 家的 API 面全 200；其中 4 家 SPA 面 = API 面（登录只是发 key）· 2 家有独立 SPA 面也都实测 200。
+唯一"要人工续"的是 kirodrop SPA（验证码登录 · token 会过期）· 其余全自动。
+
+---
+
 ## 0 · 分类框架
 
 补接需求分**两个正交维度**：
