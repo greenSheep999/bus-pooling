@@ -269,7 +269,8 @@ vendor 页面 6 个 tab 之一是 **"我的收益"** —— **车主是分成模
 
 | # | 缺什么 | 影响 | 优先级 |
 |---|---|---|---|
-| 1 | **质保只判时间 · 缺 7000 积分消耗维度** | 号已出保我方还当在保 → 退款判断错 | **最高** |
+| 0 | ~~Zones 留 nil · 这家在定价链上"不存在"~~ | 4209 条探针 · 侧表 0 行 · 无价 · stock-delta 推不出 restock | ✅ **已修**（补 ZoneGeneral · 2026-08-13 生产实测发现）|
+| 1 | ~~质保只判时间 · 缺 7000 积分维度 → 退款判断错~~ | ⚠️ **判过头了 · 撤回**：我方退款**完全跟随上游**（`deathwatch.FindRefundable` 要求 `pull_round.status='refunded'` 才退）· 从不独立判质保窗口 · 所以"只判时间"**不会导致错误退款**。<br>**真实缺口小得多**：这家 stock / claim 都不返质保字段（只在 orders 详情有 `warrantyStatus`）· 所以 `credential.warranty_until` 恒空 · **用户端看不到质保信息** · 也展示不出"2h OR 7000 积分"这个条款 | 中 · 展示层 |
 | 2 | `/openapi/orders` 的 `probeState` / `warrantyStatus` / `usageSnapshot` 不落库 | vendor 侧号质量数据全丢 | **高** |
 | 3 | **无幂等键** · 网络超时无法安全重试 | vendor 侧限制 · 我方只能靠 `pending_purchase` 状态机兜 | **高**（已知限制 · 无解）|
 | 4 | `POST /api/user/claim-preview` 需 cookie | 下单前无权威预估 | 中（拿不到）|

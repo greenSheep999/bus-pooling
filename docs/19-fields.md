@@ -476,17 +476,19 @@ cur:  [{Region:"", Available:5}(us), {Region:"", Available:5}(eu)]
 
 | # | 问题 | 位置 | 修法 |
 |---|---|---|---|
-| 1 | **kirooo `Zone` 落 `us-east-1`** 不是 `us` | `kirooo/mapper.go` | `Zone: providers.ZoneOf(r.Region)` |
-| 2 | **kirodrop `Zone` 落空** | `kirodrop/mapper.go` | `Zone: providers.ZoneOf(sr.Region)` |
+| 1 | ~~某 vendor `Zone` 落 `us-east-1`~~ | `kirooo/mapper.go` | ✅ **已修** · 走 `providers.ZoneOf(r.Region)` |
+| 2 | ~~某 vendor `Zone` 落空~~ | `kirodrop/mapper.go` | ✅ **已修** · 走 `providers.ZoneOf(sr.Region)` |
 | 3 | ~~`ZoneStock.Region` 死冗余~~ → **改判**：不是冗余 · 真 bug 是 **stock-delta 拿 region 当对比键** · 不返 region 的 3 家 vendor 两个 zone 塌成一条 · 整区 restock 漏报 | `vendorview/prober.go:deriveStockDelta` | ✅ **已修** · 键改用 zone（`deltaKeyOf`）· `region` 列保留（vendor 原文留痕）|
-| 4 | **kiroappcc 质保只判时间** · 缺 7000 积分维度 | 我方质保逻辑 | 加用量维度 |
+| 4 | ~~某 vendor 质保只判时间~~ | — | ⚠️ **判过头 · 撤回**：我方退款完全跟随上游（`FindRefundable` 要 `pull_round.status='refunded'`）· 从不独立判质保窗口 · 不会错退。真实缺口是那家 `warranty_until` 恒空（vendor stock/claim 不返）· 用户看不到质保信息 · 见该家档案 §8 |
+
+| 5 | ~~某 vendor `Zones` 留 nil · 整家在定价链上"不存在"~~ | `kiroappcc/mapper.go` + `providers.ZoneOf` | ✅ **已修**（2026-08-13 生产实测发现：4209 条探针 · 侧表 0 行 · 无价 · restock 推不出）· 补 `ZoneGeneral` + `ZoneOf("general")` 原样保留 |
 
 ### 19.2 待查项的结论（**2026-08-13 查完 · 全是真问题**）
 
 | # | 查什么 | 结论 | 严重度 |
 |---|---|---|---|
-| 5 | `reserved_keys_delivered`（kiro91）| ❌ **`providers.EventType` 枚举里都没定义** · 走 dispatcher `default` 分支只 log | **高** —— 包量协议交付的号 · 钱扣了但程序永远拿不到 key（vendor 明说这条通知里的 `order_id` 是取正文唯一入口）。**当前无包量协议 · 签了就会丢号** |
-| 6 | `key_revoked_abuse`（kiroappio）| ⚠️ 枚举**有** `EventKeyRevokedAbuse` · 但 `dispatcher.dispatchByType()` **无 case 分支** · 走 `default` 只 log | **高** —— vendor 收回已售号 · 我方 credential 还是 alive → **用户拿到废号** |
+| 5 | `reserved_keys_delivered`（kiro91）| ✅ **已修** —— 原来 `providers.EventType` 枚举里都没定义 · 走 dispatcher `default` 只 log。现在：加枚举 + parse case + `onReservedKeysDelivered`（落 dispatch 带 `reserved-` 前缀 + ERROR 告警 + **绝不唤醒抢号链** + 缺 order_id 返 error）| **高** —— 包量协议交付的号 · 钱扣了但程序永远拿不到 key（vendor 明说这条通知里的 `order_id` 是取正文唯一入口）。**当前无包量协议 · 签了就会丢号** |
+| 6 | `key_revoked_abuse`（kiroappio）| ✅ **已修** —— 原来枚举有但 dispatcher 无 case 分支 · 走 `default` 只 log。现在：dispatcher 加分支触发 deathwatch 全池探活 + adapter parse 显式列出（不再靠 default 字符串透传的巧合）| **高** —— vendor 收回已售号 · 我方 credential 还是 alive → **用户拿到废号** |
 | 7 | kirodrop 双区通知字段 | ❌ **`webhookPayload` struct 是从 kiro91 抄的** · kirodrop 官方的双区字段**一个都没定义**：`regions[]` / `new_keys_by_region` / `purchase_order_ids_by_region` / `batch_ids_by_region` / `notification_scope` / `dispatch_id` / `created_at` 全缺。反过来它解析的 `pool_id` / `round_id` / `mother_id` / `timestamp` **kirodrop 根本不发** | **高** → ✅ **已修** |
 | 8 | kirodrop `TotalCost` 币种 | ⚠️ **我判错了 · 撤回**。`credits()` 标 `Currency=credit` 是**对的** —— 我方口径 `1 积分 ≡ 1 CNY`（`CLAUDE.md §1.4`）· 这家余额就是 CNY · `total_credits` 数值等价我方积分 · 1:1 标 credit 无误。原注释的理由（"1:1 是当前兑换率不是恒等式 · 标 credit 让 decider 显式换算"）站得住 | ~~高~~ → **不是 bug** · 但**生产从没走过真 purchase**（`dry_run`）· 首次真实拉号时要核一次 |
 | 9 | kirodrop `partially_refunded` | ❌ `types.go` 里**无 `Status` 字段** · 订单状态完全没解析 | **中** → ✅ **已修** |
