@@ -40,10 +40,13 @@ type VendorConfig struct {
 	APIKey        string
 	WebhookSecret string
 	// LoginUser / LoginPass · 网页后台账密（当前只 kiroappcc 用 · /api/user/* 端点）· 可空
-	LoginUser  string
-	LoginPass  string
-	Timeout    time.Duration
-	MaxRetries int
+	LoginUser string
+	LoginPass string
+	// SessionToken · 网页登录后的 Bearer token（当前只 kirodrop 用 · /api/v1/* 降价 schedule）·
+	// 登录带图形验证码不能自动重登 · 人工 seed · 会过期 · 可空
+	SessionToken string
+	Timeout      time.Duration
+	MaxRetries   int
 	ProxyURL   string
 	NoProxy    string
 }
@@ -136,6 +139,7 @@ func Register(r *providers.Registry, cfg Config) error {
 		aDrop, err := kirodrop.New(kirodrop.Config{
 			BaseURL: cfg.KiroDrop.BaseURL, APIKey: cfg.KiroDrop.APIKey,
 			WebhookSecret: cfg.KiroDrop.WebhookSecret,
+			SessionToken:  cfg.KiroDrop.SessionToken,
 			Timeout:       cfg.KiroDrop.Timeout, MaxRetries: cfg.KiroDrop.MaxRetries,
 			ProxyURL: cfg.KiroDrop.ProxyURL, NoProxy: cfg.KiroDrop.NoProxy,
 		})

@@ -40,11 +40,13 @@
 | # | 方法 | 路径 | vendor 描述 | 我方 adapter | 状态 |
 |---|---|---|---|---|---|
 | 3 | GET | `/api/me/stock?region=us\|eu` | `region` / `stock` / `price`（USD 字符串）/ `balance`（CNY）| `Adapter.Stock()` | ✅ |
-| 4 | GET | `/api/v1/reservation?quantity=2&region=eu` | **完整报价**（独家）· 支持多货币 | `Adapter.Reservation()` · **声明了但返"未接入"** | ⚠️ **半接** |
+| 4 | GET | `/api/v1/reservation?quantity=2&region=eu` | **完整报价**（独家·时间降价 schedule）· 支持多货币 | `Adapter.ListTimeDecay()`（tiers.go）| ✅ **已接**（seed session token）|
 
-**⚠️ `Reservation` 现状**（`adapter.go:224`）：方法存在但返 `"阶段 1a 未接入"` · **实际没打端点**。
-**2026-08-14 实测：就算打也拿不到** —— `/api/v1/reservation` 返 401 · 只认网页 session cookie ·
-API key 无效 · 登录要图形验证码（见 §2.3）。所以 `vendor_price_tier` 一直空 · 走 6.8 汇率兜底。
+**✅ `ListTimeDecay` 现状**（`tiers.go`）：逐区（us/eu）拉 `/api/v1/reservation` 的 `timed_pricing.schedule`
+→ 落 `vendor_price_tier`（tier_kind='time_decay'）· backfiller step6 · **2026-08-14 live 验证 4 行落库**。
+**鉴权**：只认 `Authorization: Bearer <kiro_session_token>`（网页登录·图形验证码·人工 seed 到
+`BP_VENDOR_KIRODROP_SESSION_TOKEN`·会过期）· 空 token 静默跳过 · 401 记 WARN 提示重 seed ·
+**现价链（`/api/me/stock` · api_key）不依赖它 · token 挂了不影响探活/现价**（见 §2.3）。
 
 ### 1.4 购买（1 个）
 
@@ -165,9 +167,10 @@ localStorage · 网页登录后拿到）· X-API-Key / cookie / 直接导航都�
 **★ 权威汇率定案**：`exchange_rate` 恒 **6.8** —— **我方 6.8 兜底口径正确 · xi8 的 7.07 是错的**
 （那个"差 4% 谁对"的悬案就此关闭）。所以我方 kirodrop 定价**不用改**。
 
-**vendor_price_tier**：`timed_pricing.schedule` 就是它的数据源 · 但要 session token（会过期）·
-**当前不接**（时间降价是展示锦上添花 · 当前价我方已用 stock×6.8 拿到且已验证正确）。要接需人工
-导出 token → `seed --auth-scheme=bearer` · 手动续期 · 待用户拍板。
+**vendor_price_tier**：`timed_pricing.schedule` 就是它的数据源 · **2026-08-14 已接**（`ListTimeDecay`）·
+seed `BP_VENDOR_KIRODROP_SESSION_TOKEN`（浏览器 localStorage `kiro_session_token`）→ backfiller
+每 5min 拉 us/eu 落 `vendor_price_tier`（tier_kind='time_decay'）· live 验证 4 行（us/eu 各 base+1 档）。
+**token 会过期** → 401 时 backfiller 记 WARN · 保留上次落库值 · 人工重新 seed 即可（现价链不受影响）。
 
 ---
 
@@ -332,7 +335,7 @@ price "7.35" (USD)
 | # | 缺什么 | 影响 | 状态 |
 |---|---|---|---|
 | 1 | ~~`ZoneStock.Zone` 落空~~ | 侧表 zone 列空 · PricedFor 匹配不到 | ✅ **已修**（走 `providers.ZoneOf(sr.Region)`）|
-| 2 | **`/api/v1/reservation` 声明了但没实现** | ① 拿不到 EU 定价 ② 拿不到分档报价（`vendor_price_tier` 表因此空着）③ 拿不到权威汇率口径 | ❌ **最高 · 待接** |
+| 2 | ~~`/api/v1/reservation` 声明了但没实现~~ | ① EU 定价 ② 时间降价 schedule → `vendor_price_tier` ③ 权威汇率 | ✅ **已接**（`ListTimeDecay` · seed session token · live 验证 4 行落库）|
 | 3 | 汇率分歧未解（我方 6.8 vs 聚合源隐含 7.07 · 差 4%）| 定价可能系统性偏低 4% | ❌ **高 · 待定**（#2 接了可能自动解）|
 | 4 | ~~双区幂等键没按区取~~ | 双区到货漏一个区（dispatch 少一条 · 挂单少唤醒一次）| ✅ **已修**（`PerZone` + 逐区 fan-out）|
 | 5 | ~~`TotalCost` 币种标错~~ | — | ⚠️ **判错撤回** · 标 `credit` 是对的（我方 `1 积分 ≡ 1 CNY`）· 但**生产从没走过真 purchase** · 首次真实拉号要核一次 |

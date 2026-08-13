@@ -166,11 +166,12 @@ kiroappcc SPA 面（`/api/user/*`）已接（自动登录）；kirodrop 富数�
 | kiroappcc | webhook `price` | 第二个 webhook 带价的家 | 内部 |
 | xi8 | quality 五字段 | **六家 vendor 都不给的号质量评级** | 内部（喂 quality 标签）|
 
-**注**：kirodrop `reservation` **已实测抓到真形状**（2026-08-14 · 浏览器 session）：只认
-`Authorization: Bearer <kiro_session_token>`（网页登录+验证码才有 · 会过期 · 不适合 backfiller）。
-**关键收获**：`exchange_rate:"6.8"` 权威定案 —— **我方 6.8 正确 · xi8 7.07 错** · kirodrop 定价不用改。
-`timed_pricing.schedule` 是 `vendor_price_tier` 数据源（时间降价）· 但要 session token · 当前不接
-（当前价我方已用 stock×6.8 拿到且验证正确 · 时间降价是展示锦上添花）。详见 `docs/vendors/drop-kiro-ss.md §2.3`。
+**注**：kirodrop `reservation` **已接**（2026-08-14 · `ListTimeDecay` · TimeDecayLister）：只认
+`Authorization: Bearer <kiro_session_token>`（网页登录+图形验证码 · seed 到 `BP_VENDOR_KIRODROP_SESSION_TOKEN` · 会过期）。
+`timed_pricing.schedule`（us/eu）→ backfiller step6 落 `vendor_price_tier`（tier_kind='time_decay'）·
+**live 验证 4 行落库**（us base ¥49.98→¥39.98 · eu ¥34.95→¥24.96 · 北京墙钟转 UTC）。
+token 空/过期 → 静默跳过/WARN · **现价链（stock×6.8 · api_key）不受影响**。
+**关键收获**：`exchange_rate:"6.8"` 权威定案 —— 我方 6.8 正确 · 定价不用改。详见 `docs/vendors/drop-kiro-ss.md §2.3`。
 
 ---
 
@@ -220,12 +221,13 @@ webhook · xi8 这两个补掉盲区（`16-buy-race.md` 的多路信号里 xi8 �
 1. ✅ **维度 A① 对账链**（5 家断链 · 全内部）—— 已落地（Reconciler + CLI + kiro91 ledger）
 2. ✅ **xi8 buyable/blocked/floating 落对账表**（维度 A③ · `xi8_vendor_flags`）—— 已落地 ·
    **纯对账参考 · 不接采购**（用户拍板 · 前一版误接 fire 已撤）· xi8 webhook 不接
-3. ~~**kirodrop `reservation`**~~ —— **实测拿不到**（401 · 网页 session + 验证码 · 见 §2 注）·
-   转走 **kirooo `key-price-tiers`**（真形状已抓 · API key 可达）填 `vendor_price_tier`
+3. ✅ **kirodrop `reservation` → 时间降价已落地**（seed session token · `ListTimeDecay`）·
+   backfiller step6 落 `vendor_price_tier`（tier_kind='time_decay'）· **live 验证 4 行**（us/eu 各 base+1 档）·
+   token 会过期 → 401 记 WARN · 人工重 seed（现价链 api_key 不受影响）
 4. ✅ **kirooo `key-price-tiers` → 数量分档已落地**（阶梯价格）· migration 035 扩
    `vendor_price_tier`（tier_kind='qty_band' + qty_lower/upper）· backfiller 拉 · 真形状
    `{bands:[{lower,upper,price}]}`（实测 · 当前 flat 全 100 · 结构真实一开分档就反映）·
-   kirodrop 时间降价形状已抓（token-gated · 见 §2 注）· kiro91 `stock/rounds`（当前空）待有数据接
+   kiro91 `stock/rounds`（当前空 · api_key 可达）待有数据再接时间降价
 5. **号明细/寿命一批**（维度 A②③ · 喂 quality）—— dispatch-log / keys/export / usage / created-at
 6. ✅ **ledger adapter 5/6 已接**（维度 A①）· kiro91/kirooo/kiroappio/kiroappcc/kiroceo 全接 ·
    仅 kirodrop 拿不到（SPA session + 图形验证码 · API key 打 404 · vendor 限制 · 非欠账）

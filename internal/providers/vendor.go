@@ -142,6 +142,7 @@ type StockSnapshot struct {
 // 目前只部分 vendor 支持（返 timed_pricing 的端点通常需 cookie · 我方 API key
 // 不能直接调）· 现阶段 TieredPricing 恒 nil。留字段供未来 vendor 开放时接入。
 type TieredPricing struct {
+	Region        string         // us / eu / "" 全区（reservation 逐区一份 schedule）
 	Enabled       bool           // 是否启用分档降价
 	Active        bool           // 当前是否在降价窗口
 	IntervalMin   int            // 每档间隔（分钟）
@@ -182,6 +183,17 @@ type QtyPriceBand struct {
 type KeyTierLister interface {
 	// ListKeyTiers 拉当前数量分档表 · 空 slice = 无分档（当前 flat）
 	ListKeyTiers(ctx context.Context) ([]QtyPriceBand, error)
+}
+
+// TimeDecayLister 可选接口 · vendor 有"时间降价"报价端点就实现（逐区一份 schedule）。
+// backfiller 拉进来落 vendor_price_tier（tier_kind='time_decay'）。
+//
+// 部分 vendor 的降价 schedule 端点需网页 session token（API key 打不了）· 实现方
+// 自己处理鉴权 · 未配置 token 返 (nil, nil)（backfiller 静默跳过 · 不清旧值）。
+type TimeDecayLister interface {
+	// ListTimeDecay 拉各区当前降价 schedule · 每区一个 TieredPricing（Region 已填）。
+	// 返 nil = 未配置 / 拿不到（保留上次落库值 · 不清空）。
+	ListTimeDecay(ctx context.Context) ([]TieredPricing, error)
 }
 
 type ZoneStock struct {

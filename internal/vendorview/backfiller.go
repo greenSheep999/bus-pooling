@@ -204,6 +204,23 @@ func (b *Backfiller) backfillVendor(ctx context.Context, v providers.Vendor) {
 			}
 		}
 	}
+
+	// 6. 时间降价 schedule（阶梯价格 · docs/20 · 若实现了 TimeDecayLister · 如 reservation 端点）
+	// 返 nil = 未配置 token / 拿不到 · **保留上次落库值不清空**（token 会过期 · 别把旧值抹了）。
+	if b.tierStore != nil {
+		if lister, ok := v.(providers.TimeDecayLister); ok {
+			callCtx, cancel := context.WithTimeout(ctx, b.timeout)
+			tiers, err := lister.ListTimeDecay(callCtx)
+			cancel()
+			if err != nil {
+				b.logger.Warn("backfill 时间降价失败", "vendor", vid, "err", err)
+			} else if len(tiers) > 0 {
+				if err := b.tierStore.ReplaceTimeDecay(ctx, vid, tiers); err != nil {
+					b.logger.Warn("落时间降价失败", "vendor", vid, "err", err)
+				}
+			}
+		}
+	}
 }
 
 // collectLedger 分页拉全部流水 · 单页超时 b.timeout · 最多 100 页兜底

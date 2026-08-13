@@ -23,10 +23,14 @@ type Config struct {
 	BaseURL       string
 	APIKey        string
 	WebhookSecret string
-	Timeout       time.Duration
-	MaxRetries    int
-	ProxyURL      string
-	NoProxy       string
+	// SessionToken · 网页登录后的 kiro_session_token（Bearer）· /api/v1/* 独家端点用
+	// （API key 打不了 · 登录带图形验证码不能自动重登 · 人工 seed · 会过期）。
+	// 空 = 不拉 /api/v1/* 的降价 schedule（现价仍走 api_key 的 /api/me/stock 不受影响）。
+	SessionToken string
+	Timeout      time.Duration
+	MaxRetries   int
+	ProxyURL     string
+	NoProxy      string
 }
 
 type Adapter struct {

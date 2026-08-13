@@ -246,13 +246,18 @@ func buildVendorRegistry(ctx context.Context, cfg config.Config, vaStore *vendor
 	kccCfg.LoginUser = os.Getenv("BP_VENDOR_KIROAPPCC_LOGIN_USER")
 	kccCfg.LoginPass = os.Getenv("BP_VENDOR_KIROAPPCC_LOGIN_PASS")
 
+	// 这家 vendor 的网页 session token · 拉 /api/v1/* 的降价 schedule 用（登录带图形验证码 ·
+	// 人工 seed · 会过期 · 空则不拉降价表 · 现价链走 api_key 不受影响）
+	kdropCfg := base(cfg.Vendors.KiroDrop, kdropAPIKey, kdropWebhook)
+	kdropCfg.SessionToken = os.Getenv("BP_VENDOR_KIRODROP_SESSION_TOKEN")
+
 	err := kiro.Register(r, kiro.Config{
 		Kiro91:    base(cfg.Vendors.Kiro91, k91APIKey, k91Webhook),
 		KiroCEO:   base(cfg.Vendors.KiroCEO, kceoAPIKey, ""),
 		KiroOOO:   base(cfg.Vendors.KiroOOO, koooAPIKey, ""),
 		KiroAppIO: base(cfg.Vendors.KiroAppIO, kioAPIKey, ""),
 		KiroAppCC: kccCfg,
-		KiroDrop:  base(cfg.Vendors.KiroDrop, kdropAPIKey, kdropWebhook),
+		KiroDrop:  kdropCfg,
 	})
 	if err != nil {
 		return nil, err
