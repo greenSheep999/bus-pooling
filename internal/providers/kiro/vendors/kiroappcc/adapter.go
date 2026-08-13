@@ -325,8 +325,12 @@ func (a *Adapter) VerifySignature(_ string, _ http.Header, _ []byte) error {
 	return providers.ErrNoSignature
 }
 
-// Parse · vendor 档案 §10：payload schema 未公开，只有一句"有新库存时推一条 JSON"。
-// 骨架先按 6 家共性字段解析；实际字段等对接联调时再修。
+// Parse · 载荷真实形状见 `types.go` 的 webhookPayload 注释（2026-08-13 生产实测）。
+//
+// 本家两点跟别家不同：
+//   - 去重 id 叫 `id`（"evt_" 前缀）· **没有任何订单号字段** · 所以 dispatcher
+//     的 dispatch_key 只能落到 EventID 那一级 fallback
+//   - 事件名是 `stock`（不是别家的 `new_keys_available`）
 func (a *Adapter) Parse(rawBody []byte, _ http.Header) (*providers.WebhookEvent, error) {
 	var wp webhookPayload
 	if err := json.Unmarshal(rawBody, &wp); err != nil {
@@ -335,26 +339,42 @@ func (a *Adapter) Parse(rawBody []byte, _ http.Header) (*providers.WebhookEvent,
 
 	evt := &providers.WebhookEvent{
 		VendorID:        providers.VendorKiroAppCC,
-		EventID:         wp.EventID,
+		EventID:         wp.eventID(),
 		OrderID:         wp.OrderID,
 		PurchaseOrderID: wp.PurchaseOrderID,
-		NewKeys:         wp.NewKeys,
+		NewKeys:         wp.newKeys(),
 		Zone:            providers.ZoneGeneral,
-		ReceivedAt:      time.Now().UTC(),
+		ReceivedAt:      parseWebhookTime(wp),
 		RawPayload:      rawBody,
 	}
 
-	// vendor 档案 §10：只有一种事件"新库存"，没有 all_keys_dead / warranty_refund 事件。
-	// 事件字符串留裸值时用作 EventType，未来对齐再收敛。
+	// 本家只推"有新库存"一种业务事件（无 all_keys_dead / warranty_refund）。
+	// `stock` 是实测事件名 · 另两个是共性别名 · 兜底保留裸值。
 	switch wp.Event {
-	case "new_keys_available", "":
+	case "stock", "new_keys_available", "":
 		evt.EventType = providers.EventNewKeysAvailable
-	case "webhook_test":
+	case "test", "webhook_test":
 		evt.EventType = providers.EventTest
 	default:
 		evt.EventType = providers.EventType(wp.Event)
 	}
 	return evt, nil
+}
+
+// parseWebhookTime · 取 vendor 侧事件时刻 · 拿不到就用当下。
+//
+// 用 vendor 时刻而不是我方接收时刻：本家 `time` 是 RFC3339 UTC（实测无时区歧义）·
+// 比落在我方接收时刻更贴真实开号时间（实测差几百 ms · vendor 重推时差更大）。
+func parseWebhookTime(wp webhookPayload) time.Time {
+	if wp.Time != "" {
+		if t, err := time.Parse(time.RFC3339, wp.Time); err == nil {
+			return t.UTC()
+		}
+	}
+	if wp.Timestamp > 0 {
+		return time.Unix(wp.Timestamp, 0).UTC()
+	}
+	return time.Now().UTC()
 }
 
 var (

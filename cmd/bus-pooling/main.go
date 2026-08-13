@@ -693,6 +693,16 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	})
 	slog.Info("webhookin 分派器已装配")
 
+	// webhook 静默哨兵 · 上游在开号但我方 webhook 收不到时报警。
+	// 静默不会自己暴露（vendor 侧看我方永远 200 · /status 有探针兜底看不出缺口）·
+	// 代价是抢号链在均衡态收不到这家信号 —— 见 webhookin/health.go。
+	webhookHealth := webhookin.NewHealthChecker(webhookin.HealthConfig{
+		DB:     database.DB,
+		Logger: slog.Default(),
+	})
+	webhookHealth.Start(ctx)
+	defer webhookHealth.Stop(2 * time.Second)
+
 	apiSrv := api.NewServer(api.ServerDeps{
 		DB:                  database.DB,
 		Passengers:          passenger.NewStore(database.DB),

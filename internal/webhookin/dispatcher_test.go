@@ -136,15 +136,46 @@ func TestOnNewKeys_PrefersOrderID(t *testing.T) {
 	}
 }
 
-// 两个都空才 skip（防误改成"永不 skip"）
-func TestOnNewKeys_BothEmpty_Skips(t *testing.T) {
+// 两个订单号都空时回落 EventID（2026-08-13 生产实测：有一家一个订单号字段都不发 ·
+// 只给 "evt_xxx" 去重 id · 原来两级 fallback 让它整天静默丢事件）
+func TestOnNewKeys_NoOrderIDs_FallsBackToEventID(t *testing.T) {
+	store := &mockDispatchStore{}
+	notifier := &mockNotifier{}
+	d := New(Config{DispatchStore: store, Notifier: notifier, Logger: slog.Default()})
+
+	evt := &providers.WebhookEvent{
+		VendorID:   providers.VendorKiroAppCC,
+		EventID:    "evt_BsawZMiNERBGITaBl5DcGNwV",
+		NewKeys:    50,
+		ReceivedAt: time.Now().UTC(),
+		EventType:  providers.EventNewKeysAvailable,
+	}
+
+	status, err := d.onNewKeys(context.Background(), evt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != "ok" {
+		t.Fatalf("有 EventID 就该落库 · 得 %q", status)
+	}
+	keys := store.dispatchKeys()
+	if len(keys) != 1 || keys[0] != "evt_BsawZMiNERBGITaBl5DcGNwV" {
+		t.Fatalf("dispatch_key 应回落 EventID · 得 %v", keys)
+	}
+	// 抢号链要被唤醒 —— 这家只能靠 webhook 拿到 balance 态的 fire 资格
+	if notifier.count() != 1 {
+		t.Errorf("抢号链应被通知 1 次 · 得 %d", notifier.count())
+	}
+}
+
+// 三级 fallback 全空才 skip（防误改成"永不 skip"落一堆无主行）
+func TestOnNewKeys_AllKeysEmpty_Skips(t *testing.T) {
 	store := &mockDispatchStore{}
 	notifier := &mockNotifier{}
 	d := New(Config{DispatchStore: store, Notifier: notifier, Logger: slog.Default()})
 
 	evt := &providers.WebhookEvent{
 		VendorID:   providers.VendorKiroCEO,
-		EventID:    "e2",
 		NewKeys:    5,
 		ReceivedAt: time.Now().UTC(),
 		EventType:  providers.EventNewKeysAvailable,
@@ -155,7 +186,7 @@ func TestOnNewKeys_BothEmpty_Skips(t *testing.T) {
 		t.Fatal(err)
 	}
 	if status != "skipped" {
-		t.Fatalf("两个 id 都空应 skip · 得 %q", status)
+		t.Fatalf("三个键都空应 skip · 得 %q", status)
 	}
 	if len(store.dispatchKeys()) != 0 {
 		t.Error("skip 时不该落 dispatch")

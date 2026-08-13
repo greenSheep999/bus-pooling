@@ -53,18 +53,57 @@ type errorResp struct {
 	RetryAfter int `json:"retryAfter"`
 }
 
-func (e *errorResp) code() string    { return e.Error.Type }
-func (e *errorResp) msg() string     { return e.Error.Message }
+func (e *errorResp) code() string { return e.Error.Type }
+func (e *errorResp) msg() string  { return e.Error.Message }
 
-// webhookPayload —— vendor 档案 §10：**payload schema 未公开**。
+// webhookPayload —— 本家 webhook 载荷。
 //
-// 骨架先按 6 家共性放一组常见字段，实际字段名等对接联调时再修。当前只有一句话：
-// "有新库存时主动推一条 JSON 到你的地址"。字段全 optional / omitempty。
+// **真实形状**（2026-08-13 生产实测抓到 · vendor 从不公开 schema）：
+//
+//	{"available":50,"count":50,"event":"stock","id":"evt_BsawZMiNERBGITaBl5DcGNwV",
+//	 "price":100,"time":"2026-08-13T15:30:39Z"}
+//
+// 跟 6 家共性字段**一个都对不上** —— 老结构按 `event_id` / `new_keys` /
+// `order_id` 解析 · 全部落空 · dispatcher 因缺 event_id 直接丢弃。
+// 后果：这家的 webhook 从接通起 100% 丢失（实测一天 21+ 条）。
+//
+// 下面两组字段都留着：`id`/`count`/`time` 是实测形状 · `event_id`/`new_keys`/
+// `order_id` 是共性别名（vendor 改版靠回名的话仍能接住）。
 type webhookPayload struct {
-	Event           string `json:"event"`
+	Event string `json:"event"`
+
+	// —— 实测字段 ——
+	// ID 形如 "evt_xxx" · 本家唯一的去重 id（无独立 order_id）
+	ID string `json:"id"`
+	// Count 本批新增数
+	Count int `json:"count"`
+	// Available 推送时刻的当前库存（不是增量）
+	Available int `json:"available"`
+	// Price 单价（积分）· 本家 webhook 独有 · stock 端点之外的第二价格源
+	Price float64 `json:"price"`
+	// Time RFC3339 UTC · vendor 侧事件时刻（比我方收到早几百 ms）
+	Time string `json:"time"`
+
+	// —— 共性别名 · vendor 改版兜底 ——
 	EventID         string `json:"event_id"`
 	NewKeys         int    `json:"new_keys"`
 	OrderID         string `json:"order_id"`
 	PurchaseOrderID string `json:"purchase_order_id"`
 	Timestamp       int64  `json:"timestamp"`
+}
+
+// eventID 去重 id · 实测字段优先 · 回落共性名
+func (w *webhookPayload) eventID() string {
+	if w.ID != "" {
+		return w.ID
+	}
+	return w.EventID
+}
+
+// newKeys 本批新增数 · 实测字段优先 · 回落共性名
+func (w *webhookPayload) newKeys() int {
+	if w.Count > 0 {
+		return w.Count
+	}
+	return w.NewKeys
 }

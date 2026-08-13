@@ -199,18 +199,24 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 	if len(e.PerZone) > 0 {
 		return d.onNewKeysPerZone(ctx, e)
 	}
-	// 幂等主键选择（2026-08-12 生产实测踩坑修）：
+	// 幂等主键选择（2026-08-12 / 08-13 两轮生产实测踩坑修）：
 	//   - 部分 vendor webhook 只发 client_order_id / purchase_order_id 不发独立 order_id ·
 	//     档明说这就是幂等主键 · 值稳定 · 每批唯一
 	//   - 部分 vendor 发 order_id 是"开号批次 id" · 跟 client_order_id 不同语义
-	// 我方 fallback：优先 OrderID · 空则用 PurchaseOrderID · 都空才 skip
+	//   - **有一家一个订单号字段都不发**（只给 "evt_xxx" 去重 id）· 前两级全空 ·
+	//     再 skip 就等于这家 webhook 永久静默（实测丢了一整天）
+	// fallback 三级：OrderID → PurchaseOrderID → EventID。
+	// EventID 当 key 安全：vendor 重推同一事件带同一 id（去重语义本就如此）· upsert 幂等。
 	dispatchKey := e.OrderID
 	if dispatchKey == "" {
 		dispatchKey = e.PurchaseOrderID
 	}
 	if dispatchKey == "" {
-		d.logger.Warn("webhookin: new_keys_available 缺 order_id 与 purchase_order_id · 跳过",
-			"vendor", e.VendorID, "event_id", e.EventID)
+		dispatchKey = e.EventID
+	}
+	if dispatchKey == "" {
+		d.logger.Warn("webhookin: new_keys_available 无任何可用幂等键 · 跳过",
+			"vendor", e.VendorID)
 		return "skipped", nil
 	}
 	dispatch := providers.VendorDispatch{

@@ -299,7 +299,7 @@ cur:  [{Region:"", Available:5}(us), {Region:"", Available:5}(eu)]
 
 | 事件 | kiro91 | kiroceo | kirooo | kiroappio | kiroappcc | kirodrop |
 |---|---|---|---|---|---|---|
-| **有新号** | `new_keys_available` | `new_keys_available` | `new_keys_available` | `new_keys_available` | （已接 · 事件名待确认）| `new_keys_available` |
+| **有新号** | `new_keys_available` | `new_keys_available` | `new_keys_available` | `new_keys_available` | ★ **`stock`**（2026-08-13 实测确认）| `new_keys_available` |
 | **全部失效** | `all_keys_dead` | `all_keys_dead` | `all_keys_dead` | `all_keys_dead` | — | `all_keys_dead` |
 | **质保退款** | ★ `warranty_refund` | ❌ 静默入账 | ❌ | ❌ | ❌ | ❌ |
 | **包量交付** | ★ `reserved_keys_delivered` | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -341,9 +341,35 @@ cur:  [{Region:"", Available:5}(us), {Region:"", Available:5}(eu)]
 | **重试标记** | 头 `X-KM-Delivery-Attempt` | ❌ | ❌ | ❌ | ❌ | ★ `retry` |
 | **测试标记** | `event=webhook_test` | `event=test` | `event=test` | `event=test` | `event=test` | ★ `test` 字段（`vendor_id`=0）|
 
+### 11.1 kiroappcc 载荷（★ 2026-08-13 实测抓到 · 此前整列空白）
+
+上表没有这家的列 —— 因为 vendor 从不公开 schema，档案一直标"待确认"。生产日志抓到原文：
+
+```json
+{"available":50,"count":50,"event":"stock",
+ "id":"evt_BsawZMiNERBGITaBl5DcGNwV","price":100,"time":"2026-08-13T15:30:39Z"}
+```
+
+| 字段语义 | 本家字段 | 说明 |
+|---|---|---|
+| 事件名 | `event` | 值是 **`stock`** · 不是别家的 `new_keys_available` |
+| 去重 id | `id` | `evt_` 前缀 · **本家唯一可用的幂等键** |
+| 订单号 | ❌ **一个都没有** | 无 `order_id` / 无 `purchase_order_id` |
+| 新增数 | `count` | |
+| 库存 | `available` | 推送时刻的当前库存（不是增量）|
+| 价格 | ★ `price` | 积分单价 · **stock 端点之外的第二价格源** |
+| 时刻 | `time` | RFC3339 **UTC**（无时区歧义 · 跟 kirooo 的 UTC+8 字符串不同）|
+| 区域 | ❌ | 本家无区概念 · 我方归一到 `general` |
+
+**这家把我方坑了一整天**（2026-08-13）：`webhookPayload` 是照 6 家共性字段猜的骨架，
+字段名一个都对不上 → 解析后 `event_id` 空 → dispatcher 判"缺 event_id"丢弃 →
+**webhook 从接通起 100% 丢失**（实测一天 21+ 条）。链路上每一环都返 200，无人报错。
+**已修**：按实测形状解析 + 保留共性别名兜底 + 回归哨兵钉死原文（`kiroappcc/webhook_test.go`）。
+
 **⚠️ 我方生产实测踩过的坑**（`decisions §11.x`）：
 - **kirooo / kiroceo 只给 `client_order_id` / `purchase_order_id` · 没有独立 `order_id`** —— 我方代码原来只读 `OrderID` → 空 → dispatch 落库失败。**已修**（fallback 到 `PurchaseOrderID`）
-- **kirodrop 双区合并通知** —— 幂等键要从 `purchase_order_ids_by_region` 按区取 · **不是顶级那个**。**待查我方是否正确处理**
+- **有一家连订单号都不发**（见 §11.1）—— 两级 fallback 仍然落空。**已修**：dispatch_key 加第三级 `EventID`
+- **kirodrop 双区合并通知** —— 幂等键要从 `purchase_order_ids_by_region` 按区取 · **不是顶级那个**。**已修**（逐区处理）
 
 ---
 
@@ -492,6 +518,28 @@ cur:  [{Region:"", Available:5}(us), {Region:"", Available:5}(eu)]
 | 7 | kirodrop 双区通知字段 | ❌ **`webhookPayload` struct 是从 kiro91 抄的** · kirodrop 官方的双区字段**一个都没定义**：`regions[]` / `new_keys_by_region` / `purchase_order_ids_by_region` / `batch_ids_by_region` / `notification_scope` / `dispatch_id` / `created_at` 全缺。反过来它解析的 `pool_id` / `round_id` / `mother_id` / `timestamp` **kirodrop 根本不发** | **高** → ✅ **已修** |
 | 8 | kirodrop `TotalCost` 币种 | ⚠️ **我判错了 · 撤回**。`credits()` 标 `Currency=credit` 是**对的** —— 我方口径 `1 积分 ≡ 1 CNY`（`CLAUDE.md §1.4`）· 这家余额就是 CNY · `total_credits` 数值等价我方积分 · 1:1 标 credit 无误。原注释的理由（"1:1 是当前兑换率不是恒等式 · 标 credit 让 decider 显式换算"）站得住 | ~~高~~ → **不是 bug** · 但**生产从没走过真 purchase**（`dry_run`）· 首次真实拉号时要核一次 |
 | 9 | kirodrop `partially_refunded` | ❌ `types.go` 里**无 `Status` 字段** · 订单状态完全没解析 | **中** → ✅ **已修** |
+
+### 19.2b 第二轮实测（2026-08-13 深夜 · 查 webhook 到底有没有落库）
+
+对着生产库 + Caddy 访问日志 + 容器日志三方核，查出 3 个新问题：
+
+| # | 问题 | 证据 | 状态 |
+|---|---|---|---|
+| 10 | **一家 webhook 100% 丢弃** · 载荷字段名全对不上（§11.1）| 当天 21+ 条推送 · `inbound_webhook_event` 里 0 行 | ✅ **已修** · 按实测形状解析 + `dispatch_key` 加第三级 `EventID` 兜底 |
+| 11 | **webhook 静默无人发现** · 三家先后停推 · 最久静默 3 天 | 独立信源（探针 delta / 聚合站）持续看到开号 · webhook 一条不来 | ✅ **已补哨兵** · `webhookin/health.go` · 每小时比对 · 静默即 ERROR |
+| 12 | **同一批开号被重复计数** · 老键 `delta--<ts>` 与新键 `delta-<zone>-<ts>` 并存 | 回填 CLI 用新键规则重放历史 · 老行没清 · 一家虚增 4 批 25 个 key | ✅ **已修** · migration 032 只删有配对的重复行 |
+
+**为什么三个都没被自动发现**（下次设计要吸取的）：
+
+- vendor 侧看我方**永远是 200** —— 我方对解析失败也返 200（免得 vendor 关订阅）· 上游无从告警
+- 我方侧"没收到 webhook"和"上游没开号"**长得一模一样** · 没有第三方参照就判不了
+- `/status` 页**照常有数据** —— 探针 stock-delta 兜底了 · 图上看不出缺口
+
+**结论**：**多信源交叉比对是发现静默故障的唯一手段**。哨兵就建在这个判据上 ——
+拿探针 / 聚合站当"上游确实在开号"的独立证据，跟 webhook 到达时刻比。
+
+**⚠️ 还没定的**：同一批开号同时被 webhook 和探针 delta 记两条（键不同 · 不撞主键 ·
+但 `/status` 的批次数会偏高）。跨源去重要按时间窗合并 · **属于设计决策 · 待拍板**。
 
 ### 19.3 待接端点（按价值排序）
 
