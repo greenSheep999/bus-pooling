@@ -26,19 +26,23 @@
   - `kirodrop`：API `/api/my/profile`+`/api/me/stock` ✅ + SPA `/api/v1/*`（dashboard/reservation ✅ ·
     登录**带图形验证码** · 要 seed token）
 
-**测通矩阵**：
+**测通矩阵**（2026-08-14 · 6 家**逐个登录实测** · 含各家登录机制）：
 
-| vendor | API 面（api_key）| SPA 面 | 结论 |
+| vendor | 登录机制（实测）| API 面 | SPA 面 | 结论 |
 |---|---|---|---|
-| kiro91 | `/api/my/*` 全 200 | 同 API（登录发 key）| ✅ 全通 |
-| kirooo | `/api/my/*` 全 200 | 同 API（登录返 api_key 实证）| ✅ 全通 |
-| kiroceo | `/api/my/*` 全 200 | 同 API | ✅ 全通 |
-| kiroappio | `/api/me/*` 全 200 | 同 API | ✅ 全通 |
-| kiroappcc | `/openapi/*` 全 200 | `/api/user/*` 全 200（自动登录）| ✅ 两面都通 |
-| kirodrop | `/api/my/profile`+`/api/me/stock` 200 | `/api/v1/*` 200（session·验证码）| ✅ 两面都通（SPA 要 seed token）|
+| kiro91 | 账密 `dalio` → `km_session` cookie（7d·HttpOnly）| `/api/my/*` 全 200 | 同 API（session 只多 rotate）| ✅ 登录+数据通 |
+| kirooo | 账密 → 返 **api_key**（SPA 就用它）| `/api/my/*` 全 200 | = API | ✅ 登录+数据通 |
+| kiroceo | **单 key**（API=登录同一把 usr-…）| `/api/my/*` 全 200 | = API | ✅ 登录+数据通 |
+| kiroappio | 账密 · 登录页**无验证码** | `/api/me/*` 全 200 | = API | ✅ 登录+数据通 |
+| kiroappcc | 账密 → token（**无验证码**·adapter 自动登录）| `/openapi/*` 全 200 | `/api/user/*` 全 200 | ✅ 两面都通 |
+| kirodrop | 账密 → token（**带图形验证码**）| profile+stock 200 | `/api/v1/*` 200（dashboard/reservation）| ✅ 两面都通（要 seed token）|
 
-**一句话**：6 家的 API 面全 200；其中 4 家 SPA 面 = API 面（登录只是发 key）· 2 家有独立 SPA 面也都实测 200。
-唯一"要人工续"的是 kirodrop SPA（验证码登录 · token 会过期）· 其余全自动。
+**一句话**：6 家**全部登录成功 + 数据面全 200**。4 家自助平台（kiro91/kirooo/kiroceo/kiroappio）
+登录只是拿 api_key/cookie · SPA 和 API 是同一套 `/api/my/*`（数据无遗漏）· 2 家（kiroappcc/kirodrop）
+有独立 SPA 数据面也都测通。**唯一要人工续的是 kirodrop**（验证码登录·token 过期）· 其余全自动。
+
+**登录凭证口径**（seed）：kiro91=账密（用户名 `dalio` 非 `danlio`）· kiroceo=单 key（API/登录同一把）·
+其余 4 家=账密。别再纠结"少给了谁"——6 家登录机制已全部实测确认。
 
 ---
 
