@@ -449,20 +449,80 @@ func (d *Dispatcher) onAllKeysDead(ctx context.Context, e *providers.WebhookEven
 // onWarrantyRefund · vendor 侧退了钱给我方 · 我方要退回给拼车成员
 // （多人车按 bus_member.share_pct 分摊 · 单人车全额给 owner）
 //
-// 具体分摊逻辑在 deathwatch.RefundOnce 里 · 从 credential_ledger 找 FindRefundable
-// 的 candidate · 每一个用 planRefund 分摊 · 落 wallet_ledger。这里只触发。
+// **两步**：
+//  1. 先把对应 pull_round 从 completed/partial → refunded
+//     （deathwatch.FindRefundable 只扫 status='refunded' 的候选 · 少这一步候选集恒空）
+//  2. 再调 deathwatch.RefundOnce · 分摊落 wallet_ledger
+//
+// **关联键优先级**：vendor_order_id > client_order_id (PurchaseOrderID)
+// （part 1: WebhookEvent.OrderID 是 vendor 侧订单号 · pull_round.vendor_order_id 就是它 ·
+//   part 2: 少数 vendor 只发 purchase_order_id · 那个就是我方 client_order_id）
+//
+// **幂等**：UPDATE 加 `WHERE status IN ('completed','partial')` · 已经 refunded 的不重刷 ·
+// 重放 webhook 不会造成重复退款（deathwatch 也有 warranty_refunded_at 幂等锚 · 双保险）。
 func (d *Dispatcher) onWarrantyRefund(ctx context.Context, e *providers.WebhookEvent) (string, error) {
 	if d.deathwatch == nil {
 		return "skipped", nil
 	}
-	rep := d.deathwatch.RefundOnce(ctx, 100) // 一次最多退 100 个 candidate
-	d.logger.Info("webhookin: warranty_refund · 触发退款",
+
+	// 1. 标 pull_round.status='refunded' · 让 deathwatch.FindRefundable 能扫到
+	marked, markErr := d.markRoundRefunded(ctx, e)
+	if markErr != nil {
+		// 标失败也要继续 · deathwatch 兜底还是要跑（可能之前已经标过）
+		d.logger.Warn("webhookin: 标 pull_round refunded 失败 · 仍尝试 RefundOnce",
+			"vendor", e.VendorID, "event_id", e.EventID,
+			"order_id", e.OrderID, "purchase_order_id", e.PurchaseOrderID,
+			"err", markErr)
+	}
+
+	// 2. 触发退款分摊
+	rep := d.deathwatch.RefundOnce(ctx, 100)
+	d.logger.Info("webhookin: warranty_refund · 已处理",
 		"vendor", e.VendorID, "event_id", e.EventID,
-		"scanned", rep.Scanned, "refunded", rep.Refunded, "errors", rep.Errors)
+		"marked_refunded", marked, "scanned", rep.Scanned,
+		"refunded", rep.Refunded, "errors", rep.Errors)
 	if rep.Errors > 0 {
 		return "error", fmt.Errorf("deathwatch.RefundOnce 有 %d 个错误", rep.Errors)
 	}
 	return "ok", nil
+}
+
+// markRoundRefunded · 按事件里的 order_id / purchase_order_id 标 pull_round refunded。
+//
+// 返回被 UPDATE 的行数 · 0 表示没找到匹配的（可能是重放 · 或者 vendor 用了非标记键 ·
+// 或者是"包量预留"这类不走 pull_round 的路径）· 上层 log WARN 但不阻塞 RefundOnce。
+func (d *Dispatcher) markRoundRefunded(ctx context.Context, e *providers.WebhookEvent) (int64, error) {
+	if d.db == nil {
+		return 0, nil
+	}
+	// 至少要有一个键 · 都空的话根本没法定位（vendor 契约违反 · 提前返 0 记 log）
+	if e.OrderID == "" && e.PurchaseOrderID == "" {
+		return 0, nil
+	}
+
+	// vendor_order_id 优先（vendor 侧稳定单号）· client_order_id 兜底（我方幂等键 = vendor 侧 purchase_order_id）
+	// 一次 UPDATE 匹配任一：
+	res, err := d.db.ExecContext(ctx, `
+		UPDATE pull_round
+		   SET status = 'refunded',
+		       completed_at = COALESCE(completed_at, ?)
+		 WHERE vendor_id = ?
+		   AND status IN ('completed', 'partial')
+		   AND (
+		         (? != '' AND vendor_order_id = ?)
+		      OR (? != '' AND client_order_id = ?)
+		       )
+	`,
+		time.Now().UTC().Format(time.RFC3339),
+		string(e.VendorID),
+		e.OrderID, e.OrderID,
+		e.PurchaseOrderID, e.PurchaseOrderID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
 }
 
 // markDispatched · 把派单结果补回 inbound_webhook_event 的 dispatch_* 列

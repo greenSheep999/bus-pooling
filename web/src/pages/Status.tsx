@@ -11,7 +11,6 @@ import { PromoBar } from "@/components/PromoBar";
 import { PublicHeader } from "@/components/PublicHeader";
 import { DocumentMeta } from "@/components/DocumentMeta";
 import { QualityTags } from "@/components/VendorQualityTags";
-import { VendorHeatmapSection } from "@/components/VendorHeatmap";
 import { Card, Chip } from "@/components/ui/primitives";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -86,13 +85,9 @@ function StatusOverview() {
               <p className="text-fg-secondary">{t("hero.no-data")}</p>
             </Card>
           ) : (
-            <>
-              {/* 时间轴热力图 · 共享 x 轴 · 一眼看缺口（decisions §11.14） */}
-              <VendorHeatmapSection vendors={vendors} window={window} />
-              <div className="space-y-3">
-                {vendors.map((v) => <VendorCard key={v.anon_id} vendor={v} window={window} />)}
-              </div>
-            </>
+            <div className="space-y-3">
+              {vendors.map((v) => <VendorCard key={v.anon_id} vendor={v} window={window} />)}
+            </div>
           )}
 
           <div className="grid gap-4 md:grid-cols-2">
