@@ -65,12 +65,30 @@ func toPurchaseResult(cr *claimResp, requested int, raw json.RawMessage) *provid
 // toStockSnapshot 翻译 stock 响应。
 //
 // vendor 档案 §6：**无区域字段**、无 min/max per order、无质保分钟数。
-// Zones 留空 —— 上层按 Capability.SupportsZones=false 判断分区能力。
+//
+// **必须给一条 ZoneGeneral**（2026-08-13 修 · 老代码 Zones 留 nil）：
+// 下游全部按 `len(snap.Zones) > 0` 才干活 —— Zones 空意味着
+//
+//	· vendor_probe_zone 侧表零行（定价查不到这家）
+//	· our_unit_credits 不落（明明有 keyPrice）
+//	· stock_by_region 空 → stock-delta 推不出 restock → 抢号链收不到这家的补货
+//
+// 本 vendor 无区概念 · 用 ZoneGeneral 占位就是它的"唯一一区"。
 func toStockSnapshot(sr *stockResp, raw json.RawMessage) *providers.StockSnapshot {
-	return &providers.StockSnapshot{
+	snap := &providers.StockSnapshot{
 		VendorID:   providers.VendorKiroAppCC,
 		ObservedAt: time.Now().UTC(),
 		Available:  sr.AvailableKeys,
 		Raw:        raw,
 	}
+	// keyPrice 是唯一一档单价（无区拆分）· 0 表示 vendor 没报价 · 不造零价 zone
+	if sr.KeyPrice > 0 || sr.AvailableKeys > 0 {
+		snap.Zones = []providers.ZoneStock{{
+			Zone:      providers.ZoneGeneral,
+			Region:    "", // vendor 无 region 概念 · 空是事实
+			Available: sr.AvailableKeys,
+			UnitPrice: credits(sr.KeyPrice),
+		}}
+	}
+	return snap
 }

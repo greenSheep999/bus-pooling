@@ -28,9 +28,10 @@ func TestZoneOf_OnlyEmitsStandardValues(t *testing.T) {
 		"", "unknown", "ap-southeast-1", // 边界
 	}
 	valid := map[providers.Zone]bool{
-		providers.ZoneUS: true,
-		providers.ZoneEU: true,
-		"":               true, // 识别不出 · 交给调用方兜底
+		providers.ZoneUS:      true,
+		providers.ZoneEU:      true,
+		providers.ZoneGeneral: true, // 不分区 vendor 的唯一一区
+		"":                    true, // 识别不出 · 交给调用方兜底
 	}
 	for _, in := range inputs {
 		got := providers.ZoneOf(in)
@@ -58,6 +59,12 @@ func TestZoneOf_AllVendorShapes(t *testing.T) {
 		{"dryrun 后缀", "us-east-1-dryrun", providers.ZoneUS},
 		{"大写", "US-EAST-1", providers.ZoneUS},
 		{"带空格", "  eu  ", providers.ZoneEU},
+		// general · 不分区 vendor 的唯一一区 · **必须原样保留**
+		// 归一成空串会让那家的侧表行 zone 列空 → PricedFor 按 zone 查匹配不到 →
+		// 等于这家 vendor 在定价链上"不存在"（2026-08-13 生产实测：该家侧表 0 行）
+		{"general 原样保留", "general", providers.ZoneGeneral},
+		{"general 大写", "GENERAL", providers.ZoneGeneral},
+		{"general 带空格", "  general  ", providers.ZoneGeneral},
 		{"空串", "", ""},
 		{"认不出", "ap-southeast-1", ""},
 	}
@@ -70,9 +77,9 @@ func TestZoneOf_AllVendorShapes(t *testing.T) {
 	}
 }
 
-// **归一必须幂等** —— 已经是 us/eu 的再过一次不变（adapter 可能重复调）
+// **归一必须幂等** —— 已经是标准值的再过一次不变（adapter 可能重复调）
 func TestZoneOf_Idempotent(t *testing.T) {
-	for _, z := range []providers.Zone{providers.ZoneUS, providers.ZoneEU} {
+	for _, z := range []providers.Zone{providers.ZoneUS, providers.ZoneEU, providers.ZoneGeneral} {
 		once := providers.ZoneOf(string(z))
 		twice := providers.ZoneOf(string(once))
 		if once != twice {
