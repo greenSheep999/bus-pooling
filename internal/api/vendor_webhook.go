@@ -130,23 +130,44 @@ func (s *Server) handleVendorWebhook(w http.ResponseWriter, r *http.Request) err
 	//
 	// dispatcher 未装配（老部署 / 测试）· 或 registry 里查不到 vendor · 都直接 200
 	// 不阻塞 vendor 侧（vendor 只关心 2xx · 我方内部错误自己重试或人工排查）
+	// **每条没能进入分派的都要落库**（2026-08-13 实测教训）：原来这些只在容器日志里
+	// 留一行 WARN · 容器一重建就查无对证 —— 有一家因为载荷字段名对不上 · 22 条全丢 ·
+	// 而链路上每一环都是 200 · 谁也没发现。落 inbound_webhook_event 让丢弃可统计。
 	processed := false
 	if s.webhookDispatcher != nil {
 		internalID := slugToInternalVendorID(slug)
-		if v, ok := s.lookupVendorByID(internalID); ok {
-			if wp, ok := v.(providers.WebhookParser); ok {
-				if evt, err := wp.Parse(raw, r.Header); err == nil && evt != nil {
-					if evt.VendorID == "" {
-						evt.VendorID = providers.VendorID(internalID)
-					}
-					if err := s.webhookDispatcher.Handle(r.Context(), evt); err != nil {
-						slog.Warn("webhookin 分派出错 · vendor 侧仍返 200",
-							"vendor", slug, "event_id", evt.EventID, "err", err)
-					} else {
-						processed = true
-					}
-				} else if err != nil {
-					slog.Warn("vendor adapter Parse 失败", "vendor", slug, "err", err)
+		v, found := s.lookupVendorByID(internalID)
+		var wp providers.WebhookParser
+		if found {
+			wp, _ = v.(providers.WebhookParser)
+		}
+		switch {
+		case !found:
+			s.webhookDispatcher.RecordRejected(r.Context(), internalID, "vendor 未注册到 registry", raw)
+		case wp == nil:
+			s.webhookDispatcher.RecordRejected(r.Context(), internalID, "adapter 未实现 WebhookParser", raw)
+		default:
+			evt, err := wp.Parse(raw, r.Header)
+			switch {
+			case err != nil:
+				s.webhookDispatcher.RecordRejected(r.Context(), internalID,
+					"adapter Parse 失败: "+err.Error(), raw)
+			case evt == nil:
+				s.webhookDispatcher.RecordRejected(r.Context(), internalID,
+					"adapter Parse 返回 nil 事件", raw)
+			case evt.EventID == "":
+				// 载荷字段名对不上时就长这样 —— 解析"成功"但字段全空
+				s.webhookDispatcher.RecordRejected(r.Context(), internalID,
+					"解析后缺 event_id · 多半是载荷字段名跟 adapter 对不上", raw)
+			default:
+				if evt.VendorID == "" {
+					evt.VendorID = providers.VendorID(internalID)
+				}
+				if err := s.webhookDispatcher.Handle(r.Context(), evt); err != nil {
+					slog.Warn("webhookin 分派出错 · vendor 侧仍返 200",
+						"vendor", slug, "event_id", evt.EventID, "err", err)
+				} else {
+					processed = true
 				}
 			}
 		}

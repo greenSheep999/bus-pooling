@@ -23,6 +23,12 @@ import (
 	"time"
 )
 
+// minEvidenceBatch · 增量至少这么大才当"可能是一批新号"的绝对下限。
+//
+// 3 这个数是拿实测噪音定的：库存回升噪音（退款回流 / 上游挪货）实测集中在 1-4 个 ·
+// 而真批次实测 9-20 个。3 只是兜底 —— 有自报历史的家会用它自己的批量折半，门槛更高。
+const minEvidenceBatch = 3
+
 // HealthChecker 定期比对"独立信源看到的开号" vs "webhook 收到的开号"。
 type HealthChecker struct {
 	db     *sql.DB
@@ -146,8 +152,16 @@ func (h *HealthChecker) RunOnce(ctx context.Context) []SilentVendor {
 //   - `delta-%` · 我方探针 stock-delta 推算
 //   - `source='xi8'` · 聚合站
 //
-// webhook 到达时刻取 `inbound_webhook_event` 全表最大值（不限事件类型 ——
-// 收到任何一条都说明通道是通的）。
+// **只认够大的批**（2026-08-13 实测教训）：库存回升不等于开新批 —— 质保退款回流、
+// 上游内部挪货都会让库存涨几个 · 上游对这些本来就不推 webhook。拿"任意正增量"当
+// 证据会天天误报（实测某家真批次恒 10-12 个 · 而噪音增量全是 1-4 个）。
+//
+// 门槛按**该家自己的历史批量**定：取 vendor 自报批次里最常见的那个规模 · 折半当下限 ·
+// 再跟绝对下限 3 取大。没有自报历史的家只用绝对下限。
+//
+// webhook 到达时刻取 `inbound_webhook_event` 里**非 rejected** 行的最大值 ——
+// 收到任何一条能进分派的事件都说明通道是通的；`rejected` 是"推来了但没接住" ·
+// 算进去的话全量丢弃的那家反而永远报不出来。
 func (h *HealthChecker) Check(ctx context.Context) ([]SilentVendor, error) {
 	if h.db == nil {
 		return nil, nil
@@ -155,19 +169,39 @@ func (h *HealthChecker) Check(ctx context.Context) ([]SilentVendor, error) {
 	cutoff := time.Now().UTC().Add(-h.window).Format(time.RFC3339)
 
 	rows, err := h.db.QueryContext(ctx, `
+		WITH confirmed AS (
+		    -- vendor 自报的批次规模分布（webhook / fleet 落的行 · 不含探针推算）
+		    SELECT vendor_id, count AS sz, COUNT(*) AS freq
+		      FROM vendor_dispatch
+		     WHERE source = 'vendor_self' AND dispatch_key NOT LIKE 'delta-%'
+		       AND count > 0
+		     GROUP BY vendor_id, count
+		),
+		typical AS (
+		    -- 每家最常见的批量 · 并列时取最大（宁可门槛高 · 少报胜过误报）
+		    SELECT vendor_id, MAX(sz) AS sz
+		      FROM confirmed c
+		     WHERE freq = (SELECT MAX(freq) FROM confirmed c2 WHERE c2.vendor_id = c.vendor_id)
+		     GROUP BY vendor_id
+		)
 		SELECT d.vendor_id,
 		       COUNT(*)                       AS batches,
 		       COALESCE(SUM(d.count), 0)      AS keys,
+		       -- **排除 rejected 行**：那是"推来了但我方没接住" · 不能算通道活着 ·
+		       -- 否则恰恰是全量丢弃的那家永远报不出来（本末倒置）
 		       COALESCE((SELECT MAX(w.received_at)
 		                   FROM inbound_webhook_event w
-		                  WHERE w.vendor_id = d.vendor_id), '') AS last_webhook
+		                  WHERE w.vendor_id = d.vendor_id
+		                    AND w.event_type <> 'rejected'), '') AS last_webhook
 		  FROM vendor_dispatch d
+		  LEFT JOIN typical t ON t.vendor_id = d.vendor_id
 		 WHERE d.dispatched_at >= ?
 		   AND (d.dispatch_key LIKE 'delta-%' OR d.source = 'xi8')
+		   AND d.count >= MAX(?, COALESCE(t.sz, 0) / 2)
 		 GROUP BY d.vendor_id
 		HAVING batches >= ?
 		 ORDER BY batches DESC
-	`, cutoff, h.minBatch)
+	`, cutoff, minEvidenceBatch, h.minBatch)
 	if err != nil {
 		return nil, err
 	}

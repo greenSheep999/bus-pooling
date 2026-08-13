@@ -20,7 +20,9 @@ package webhookin
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -162,6 +164,44 @@ func (d *Dispatcher) Handle(ctx context.Context, e *providers.WebhookEvent) erro
 	status, dispatchErr := d.dispatchByType(ctx, e)
 	d.markDispatched(ctx, vendorID, e.EventID, status, dispatchErr)
 	return dispatchErr
+}
+
+// RecordRejected · 记一条**没能进入分派的** webhook。
+//
+// 为什么要落库（2026-08-13 实测教训）：解析失败的包只在容器日志里留一行 WARN ·
+// 容器一重建就没了。结果是"上游推了多少 / 我方接住多少"这个最基本的问题 ·
+// 只能靠翻反代访问日志人工比对才答得上来（实测有一家 22 条全丢 · 查了半天）。
+//
+// 落进 inbound_webhook_event · 用合成 event_id（`reject-<body 指纹>`）：
+//   - 同一个 body 重推会撞主键 · 天然去重 · 不会把表刷爆
+//   - `event_type='rejected'` 一眼跟正常事件分得开
+//   - 只存指纹和原因 · **不存 body**（跟本表既定口径一致 · body 里可能有明文 key）
+//
+// 记录失败只 log · 不往上抛 —— 这条路径本身就是兜底 · 不能再制造新的失败。
+func (d *Dispatcher) RecordRejected(ctx context.Context, vendorID, reason string, rawBody []byte) {
+	if d.db == nil || vendorID == "" {
+		return
+	}
+	sum := sha256.Sum256(rawBody)
+	eventID := "reject-" + hex.EncodeToString(sum[:])[:16]
+	now := time.Now().UTC().Format(time.RFC3339)
+	if len(reason) > 200 {
+		reason = reason[:200]
+	}
+	_, err := d.db.ExecContext(ctx, `
+		INSERT INTO inbound_webhook_event
+		  (vendor_id, event_id, event_type, received_at, dispatch_status, dispatch_error)
+		VALUES (?, ?, 'rejected', ?, 'rejected', ?)
+		ON CONFLICT(vendor_id, event_id) DO NOTHING
+	`, vendorID, eventID, now, reason)
+	if err != nil {
+		d.logger.Warn("webhookin: 记录丢弃事件失败", "vendor", vendorID, "err", err)
+		return
+	}
+	d.logger.Error("webhook 被丢弃 · 上游推了但我方没接住",
+		"vendor", vendorID, "reason", reason,
+		"body_fingerprint", eventID, "body_bytes", len(rawBody),
+		"how_to", "对着 docs/19-fields.md §11 核这家的载荷字段名")
 }
 
 // dispatchByType · 按 EventType 走不同分支 · 返 (status, err)。

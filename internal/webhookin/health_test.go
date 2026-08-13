@@ -129,6 +129,60 @@ func TestCheck_SingleBatchBelowThreshold(t *testing.T) {
 	}
 }
 
+// **误报哨兵**（2026-08-13 实测：这套逻辑第一版就栽在这）
+//
+// 有家 vendor 真批次恒 10 个 · 但质保退款回流会让库存涨 1-3 个 · 探针照样推出
+// "restock 事件"。拿任意正增量当证据 → 上游明明没开新批 · 我方天天报警。
+// 门槛按该家自己的批量（10 折半 = 5）定 · 1-3 的噪音全部过滤。
+func TestCheck_SmallChurnBelowVendorBatchSizeNotReported(t *testing.T) {
+	dbc := healthDB(t)
+	now := time.Now().UTC()
+
+	// 该家自报历史：批次规模恒 10（webhook / fleet 落的行）
+	for i := 0; i < 8; i++ {
+		at := now.Add(-time.Duration(72+i) * time.Hour)
+		putDispatch(t, dbc, "vendorA", "poid-"+at.Format("150405"), "vendor_self", at, 10)
+	}
+	// 窗口内只有小额回升 · 不是新批
+	for i, c := range []int{1, 3, 2, 3} {
+		at := now.Add(-time.Duration(i+1) * time.Hour)
+		putDispatch(t, dbc, "vendorA", "delta-us-"+at.Format("20060102T150405Z"),
+			"vendor_self", at, c)
+	}
+
+	silent, err := newHealth(dbc).Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(silent) != 0 {
+		t.Fatalf("小额回升不是开新批 · 不该报 · 得 %+v", silent)
+	}
+}
+
+// 同一家 · 增量达到自身批量级别时必须报（别把门槛调成永不触发）
+func TestCheck_FullSizeBatchStillReported(t *testing.T) {
+	dbc := healthDB(t)
+	now := time.Now().UTC()
+
+	for i := 0; i < 8; i++ {
+		at := now.Add(-time.Duration(72+i) * time.Hour)
+		putDispatch(t, dbc, "vendorA", "poid-"+at.Format("150405"), "vendor_self", at, 10)
+	}
+	for i := 0; i < 2; i++ {
+		at := now.Add(-time.Duration(i+1) * time.Hour)
+		putDispatch(t, dbc, "vendorA", "delta-us-"+at.Format("20060102T150405Z"),
+			"vendor_self", at, 10)
+	}
+
+	silent, err := newHealth(dbc).Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(silent) != 1 {
+		t.Fatalf("整批规模的增量应报 · 得 %+v", silent)
+	}
+}
+
 // webhook 自己落的 dispatch 行不能当"独立信源" —— 否则是循环论证 · 永远报不出来
 func TestCheck_WebhookOriginRowsAreNotEvidence(t *testing.T) {
 	dbc := healthDB(t)
@@ -146,6 +200,73 @@ func TestCheck_WebhookOriginRowsAreNotEvidence(t *testing.T) {
 	}
 	if len(silent) != 0 {
 		t.Fatalf("非独立信源不该触发报警 · 得 %+v", silent)
+	}
+}
+
+// 丢弃必须留痕 —— 这是"上游推了多少 / 我方接住多少"能对得上账的前提
+func TestRecordRejected_PersistsAndDedupes(t *testing.T) {
+	dbc := healthDB(t)
+	d := New(Config{DB: dbc, Logger: slog.Default()})
+	body := []byte(`{"event":"stock","id":"evt_x","count":50}`)
+
+	d.RecordRejected(context.Background(), "vendorA", "解析后缺 event_id", body)
+	// vendor 重推同一个包 · 不能把表刷爆
+	d.RecordRejected(context.Background(), "vendorA", "解析后缺 event_id", body)
+
+	var n int
+	var etype, status, reason string
+	if err := dbc.QueryRow(`SELECT COUNT(*) FROM inbound_webhook_event
+		 WHERE vendor_id='vendorA'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("同 body 重推应去重成 1 行 · 得 %d", n)
+	}
+	if err := dbc.QueryRow(`SELECT event_type, dispatch_status, COALESCE(dispatch_error,'')
+		  FROM inbound_webhook_event WHERE vendor_id='vendorA'`).
+		Scan(&etype, &status, &reason); err != nil {
+		t.Fatal(err)
+	}
+	if etype != "rejected" || status != "rejected" {
+		t.Errorf("应标成 rejected · 得 type=%q status=%q", etype, status)
+	}
+	if reason == "" {
+		t.Error("应留下丢弃原因 · 否则查不出是哪个字段对不上")
+	}
+
+	// 不同 body 各留一行 —— 否则同一家的多种失败形态会互相盖掉
+	d.RecordRejected(context.Background(), "vendorA", "解析后缺 event_id",
+		[]byte(`{"event":"stock","id":"evt_y"}`))
+	if err := dbc.QueryRow(`SELECT COUNT(*) FROM inbound_webhook_event
+		 WHERE vendor_id='vendorA'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("不同 body 应各留一行 · 得 %d", n)
+	}
+}
+
+// 丢弃行不能被当成"通道活着"的证据 —— 否则通道死了反而不报警了
+func TestCheck_RejectedRowsDoNotCountAsWebhookAlive(t *testing.T) {
+	dbc := healthDB(t)
+	now := time.Now().UTC()
+	d := New(Config{DB: dbc, Logger: slog.Default()})
+
+	for i := 0; i < 3; i++ {
+		at := now.Add(-time.Duration(i+1) * time.Hour)
+		putDispatch(t, dbc, "vendorA", "delta-us-"+at.Format("20060102T150405Z"),
+			"vendor_self", at, 10)
+	}
+	// 刚刚才丢弃过一条（received_at = 现在）· 若被当成到达就会漏报
+	d.RecordRejected(context.Background(), "vendorA", "解析后缺 event_id",
+		[]byte(`{"event":"stock"}`))
+
+	silent, err := newHealth(dbc).Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(silent) != 1 {
+		t.Fatalf("丢弃不等于收到 · 应照报 · 得 %+v", silent)
 	}
 }
 
