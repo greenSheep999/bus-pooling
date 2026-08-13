@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/httpx"
@@ -36,6 +37,13 @@ type Config struct {
 type Adapter struct {
 	cfg    Config
 	client *httpx.Client
+
+	// dashboard 响应缓存 · 三个 Lister（orders/keys/ledger）共享同一次 HTTP 调用。
+	// 避免 backfiller 每 5min 打 3 次同一端点（省流量 · 少一次触发 token 过期机会）。
+	// TTL 见 dashboard.go 的 dashboardCacheTTL。
+	dashMu       sync.Mutex
+	dashCache    *dashboardResp
+	dashCachedAt time.Time
 }
 
 func New(cfg Config) (*Adapter, error) {
