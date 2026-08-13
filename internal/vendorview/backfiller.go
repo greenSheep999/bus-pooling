@@ -22,6 +22,7 @@ type Backfiller struct {
 	store       *OrderKeyStore
 	ledgerStore *LedgerStore  // 可 nil（老装配 / 测试）· 非 nil 才拉 ledger
 	tierStore   *TierStore    // 可 nil · 非 nil 才拉数量分档（docs/20 阶梯价格）
+	health      *HealthStore  // 可 nil · 每步盖管线心跳（migration 036）
 	interval    time.Duration // 全量间隔（默认 5min）
 	timeout     time.Duration // 单家 vendor 单次 backfill 超时
 	logger      *slog.Logger
@@ -37,9 +38,11 @@ type BackfillerConfig struct {
 	LedgerStore *LedgerStore
 	// TierStore 数量分档（阶梯价格 · docs/20）· 传 nil = 不拉分档
 	TierStore *TierStore
-	Interval  time.Duration
-	Timeout   time.Duration
-	Logger    *slog.Logger
+	// HealthStore 管线心跳（migration 036）· 传 nil = 不盖戳
+	HealthStore *HealthStore
+	Interval    time.Duration
+	Timeout     time.Duration
+	Logger      *slog.Logger
 }
 
 func NewBackfiller(cfg BackfillerConfig) *Backfiller {
@@ -57,8 +60,8 @@ func NewBackfiller(cfg BackfillerConfig) *Backfiller {
 	}
 	return &Backfiller{
 		registry: cfg.Registry, store: cfg.Store, ledgerStore: cfg.LedgerStore,
-		tierStore: cfg.TierStore,
-		interval:  interval, timeout: timeout, logger: logger,
+		tierStore: cfg.TierStore, health: cfg.HealthStore,
+		interval: interval, timeout: timeout, logger: logger,
 	}
 }
 
@@ -135,10 +138,12 @@ func (b *Backfiller) backfillVendor(ctx context.Context, v providers.Vendor) {
 				"vendor", vid, "err", err,
 			)
 		} else if len(orders) > 0 {
-			if err := b.store.UpsertOrders(ctx, vid, orders); err != nil {
-				b.logger.Warn("upsert orders 失败", "vendor", vid, "err", err)
+			if uerr := b.store.UpsertOrders(ctx, vid, orders); uerr != nil {
+				b.logger.Warn("upsert orders 失败", "vendor", vid, "err", uerr)
+				err = uerr
 			}
 		}
+		b.markHealth(ctx, vid, "orders", err)
 	}
 
 	// 2. Keys（如果 vendor 实现了 KeyHistoryLister）
@@ -149,10 +154,12 @@ func (b *Backfiller) backfillVendor(ctx context.Context, v providers.Vendor) {
 				"vendor", vid, "err", err,
 			)
 		} else if len(keys) > 0 {
-			if err := b.store.UpsertKeys(ctx, vid, keys); err != nil {
-				b.logger.Warn("upsert keys 失败", "vendor", vid, "err", err)
+			if uerr := b.store.UpsertKeys(ctx, vid, keys); uerr != nil {
+				b.logger.Warn("upsert keys 失败", "vendor", vid, "err", uerr)
+				err = uerr
 			}
 		}
+		b.markHealth(ctx, vid, "keys", err)
 	}
 
 	// 3. Dispatches（fleet-wide 最近开号 · 若 vendor 实现了 FleetLister）
@@ -168,10 +175,12 @@ func (b *Backfiller) backfillVendor(ctx context.Context, v providers.Vendor) {
 			)
 		} else if len(dispatches) > 0 {
 			// source="vendor_self" · vendor 自家 fleet 端点是权威源
-			if err := b.store.UpsertDispatches(ctx, vid, "vendor_self", dispatches); err != nil {
-				b.logger.Warn("upsert dispatches 失败", "vendor", vid, "err", err)
+			if uerr := b.store.UpsertDispatches(ctx, vid, "vendor_self", dispatches); uerr != nil {
+				b.logger.Warn("upsert dispatches 失败", "vendor", vid, "err", uerr)
+				err = uerr
 			}
 		}
+		b.markHealth(ctx, vid, "dispatch", err)
 	}
 
 	// 4. Ledger（vendor 侧积分流水 · 交叉对账 · docs/20 §1 · 若实现了 LedgerLister）
@@ -181,10 +190,12 @@ func (b *Backfiller) backfillVendor(ctx context.Context, v providers.Vendor) {
 			if err != nil {
 				b.logger.Warn("backfill ledger 失败", "vendor", vid, "err", err)
 			} else if len(entries) > 0 {
-				if err := b.ledgerStore.UpsertLedger(ctx, vid, entries); err != nil {
-					b.logger.Warn("upsert ledger 失败", "vendor", vid, "err", err)
+				if uerr := b.ledgerStore.UpsertLedger(ctx, vid, entries); uerr != nil {
+					b.logger.Warn("upsert ledger 失败", "vendor", vid, "err", uerr)
+					err = uerr
 				}
 			}
+			b.markHealth(ctx, vid, "ledger", err)
 		}
 	}
 
@@ -198,10 +209,12 @@ func (b *Backfiller) backfillVendor(ctx context.Context, v providers.Vendor) {
 				b.logger.Warn("backfill 数量分档失败", "vendor", vid, "err", err)
 			} else {
 				// 整表覆盖（含空 · 空=当前无分档也要清掉旧的）
-				if err := b.tierStore.ReplaceQtyBands(ctx, vid, bands); err != nil {
-					b.logger.Warn("落数量分档失败", "vendor", vid, "err", err)
+				if uerr := b.tierStore.ReplaceQtyBands(ctx, vid, bands); uerr != nil {
+					b.logger.Warn("落数量分档失败", "vendor", vid, "err", uerr)
+					err = uerr
 				}
 			}
+			b.markHealth(ctx, vid, "qty_tiers", err)
 		}
 	}
 
@@ -215,11 +228,27 @@ func (b *Backfiller) backfillVendor(ctx context.Context, v providers.Vendor) {
 			if err != nil {
 				b.logger.Warn("backfill 时间降价失败", "vendor", vid, "err", err)
 			} else if len(tiers) > 0 {
-				if err := b.tierStore.ReplaceTimeDecay(ctx, vid, tiers); err != nil {
-					b.logger.Warn("落时间降价失败", "vendor", vid, "err", err)
+				if uerr := b.tierStore.ReplaceTimeDecay(ctx, vid, tiers); uerr != nil {
+					b.logger.Warn("落时间降价失败", "vendor", vid, "err", uerr)
+					err = uerr
 				}
 			}
+			// 只在"配置了且有动作"时盖戳：未配置 token 返 (nil,nil) → 不建心跳行
+			// （否则未 seed 的家会莫名出现 time_decay 陈旧告警）。
+			if err != nil || len(tiers) > 0 {
+				b.markHealth(ctx, vid, "time_decay", err)
+			}
 		}
+	}
+}
+
+// markHealth 盖一条管线心跳（health 为 nil 时静默跳过）· 失败不阻塞 backfill。
+func (b *Backfiller) markHealth(ctx context.Context, vid, pipeline string, stepErr error) {
+	if b.health == nil {
+		return
+	}
+	if err := b.health.Mark(ctx, vid, pipeline, stepErr); err != nil {
+		b.logger.Warn("盖管线心跳失败", "vendor", vid, "pipeline", pipeline, "err", err)
 	}
 }
 

@@ -35,6 +35,7 @@ type Prober struct {
 	orderKeyStore *OrderKeyStore  // 用于 stock-delta 落 vendor_dispatch · 可 nil（测试）
 	notifier      RestockNotifier // 抢号链通知口 · nil = 不通知（老装配 / 测试）
 	pricing       PricingLookup   // vendor 报价换算入口（migration 028 · docs/18 §1.3）· nil 时走 fallback
+	health        *HealthStore    // 管线心跳 · 每轮探测盖戳（migration 036）· 可 nil
 	interval      time.Duration   // baseline 探测间隔（默认 60s）
 	hotInterval   time.Duration   // hot 模式间隔（默认 10s · 探到 delta / fleet_active 后启用）
 	hotDuration   time.Duration   // hot 持续时长（默认 6min · 无事件后退回 baseline）
@@ -80,6 +81,8 @@ type ProberConfig struct {
 	Notifier RestockNotifier
 	// Pricing · vendor_pricing 表换算入口（docs/18 §1.3）· nil = fallback (credit 1:1)
 	Pricing PricingLookup
+	// HealthStore 管线心跳（migration 036）· nil = 不盖戳（测试 / 老装配）
+	HealthStore *HealthStore
 	// Interval baseline 探测间隔 · 默认 60s（decisions §10.4 Q2）
 	Interval time.Duration
 	// HotInterval hot 模式间隔 · 默认 10s（探到 restock 事件后 6min 内提频）
@@ -120,6 +123,7 @@ func NewProber(cfg ProberConfig) *Prober {
 		orderKeyStore: cfg.OrderKeyStore,
 		notifier:      cfg.Notifier,
 		pricing:       cfg.Pricing,
+		health:        cfg.HealthStore,
 		interval:      interval,
 		hotInterval:   hotInterval,
 		hotDuration:   hotDuration,
@@ -400,11 +404,23 @@ func (p *Prober) probeOnce(ctx context.Context, v providers.Vendor) {
 		p.deriveStockDelta(ctx, sample)
 	}
 
-	if err := p.store.InsertProbe(ctx, sample); err != nil {
+	insErr := p.store.InsertProbe(ctx, sample)
+	if insErr != nil {
 		p.logger.Warn("vendorview.Prober: 写 vendor_probe 失败",
 			"vendor", sample.VendorID,
-			"err", err,
+			"err", insErr,
 		)
+	}
+
+	// 管线心跳（migration 036）· probe 健康 = Stock 通 + 落库成功。
+	// vendor 挂了（Stock 错）也记 err —— 持续拿不到新鲜样本本身就是要盯的信号
+	// （运维再看 vendor_probe.alive 区分是 vendor 全站挂还是只我方访问断）。
+	if p.health != nil {
+		markErr := err
+		if markErr == nil {
+			markErr = insErr
+		}
+		_ = p.health.Mark(ctx, sample.VendorID, "probe", markErr)
 	}
 
 	// 侧表 · 逐 zone 落权威积分（docs/18 §5 未收口补齐 · migration 029）

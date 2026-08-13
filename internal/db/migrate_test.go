@@ -49,6 +49,7 @@ var wantTables = []string{
 	"vendor_probe_zone",     // 029 · 每探针每 zone 一行 · 精确定价的权威源
 	"vendor_ledger",         // 033 · vendor 侧积分流水 · 交叉对账
 	"xi8_vendor_flags",      // 034 · 聚合源 buyable/blocked/floating · 抢号 guard
+	"pipeline_health",       // 036 · 各数据管线心跳 · 新鲜度自检
 }
 
 func openTestDB(t *testing.T) *DB {

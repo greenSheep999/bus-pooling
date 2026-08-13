@@ -621,6 +621,10 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	// **stock-delta 推算 restock** · 拿 OrderKeyStore 落 vendor_dispatch · 无额外 API 调用
 	// 补上 4 家无 fleet 端点的 vendor 的开号事件流（decisions §11.9）
 	// 复用 vendorSvc 那份 orderKeyStoreForView · 一处装配多处用
+	// 管线心跳（migration 036）· Prober / Backfiller 每轮盖戳 · data-health 端点 +
+	// StalenessChecker 据此发现"某条管线停更了"（token 过期 / vendor 改形状 / serve 挂）
+	healthStore := vendorview.NewHealthStore(database.DB)
+
 	prober := vendorview.NewProber(vendorview.ProberConfig{
 		Registry:      vendorRegistry,
 		Store:         probeStore,
@@ -629,9 +633,10 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		// 抢号链：stock-delta 推出 restock 时唤醒挂单（只在 tight / turbo 时真 fire）
 		Notifier: stockWatcher,
 		// pricing 标准化（docs/18 §1.3 · migration 028）· 落库前把 vendor 报价换算成积分
-		Pricing:  pricing.NewVendorViewLookup(pricing.NewStore(database.DB)),
-		Interval: probeInterval,
-		Timeout:  10 * time.Second,
+		Pricing:     pricing.NewVendorViewLookup(pricing.NewStore(database.DB)),
+		HealthStore: healthStore,
+		Interval:    probeInterval,
+		Timeout:     10 * time.Second,
 	})
 	prober.Start(ctx)
 	defer prober.Stop(3 * time.Second)
@@ -650,12 +655,19 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		// 交叉对账（docs/20 §1）· 拉 vendor 侧流水落 vendor_ledger · 实现了 LedgerLister 的家才拉
 		LedgerStore: vendorview.NewLedgerStore(database.DB),
 		// 阶梯价格（docs/20）· 拉数量分档落 vendor_price_tier · 实现了 KeyTierLister 的家才拉
-		TierStore: vendorview.NewTierStore(database.DB),
-		Interval:  5 * time.Minute,
-		Timeout:   20 * time.Second,
+		TierStore:   vendorview.NewTierStore(database.DB),
+		HealthStore: healthStore, // 每步盖管线心跳（migration 036）
+		Interval:    5 * time.Minute,
+		Timeout:     20 * time.Second,
 	})
 	backfiller.Start(ctx)
 	defer backfiller.Stop(5 * time.Second)
+
+	// StalenessChecker · 定时扫 pipeline_health · 陈旧管线大声打 ERROR（系统自己盯）·
+	// 5min 一轮 · 首查延后一个间隔（等采集先盖上戳）
+	stalenessChecker := vendorview.NewStalenessChecker(healthStore, 5*time.Minute, slog.Default())
+	stalenessChecker.Start(ctx)
+	defer stalenessChecker.Stop(2 * time.Second)
 
 	// xi8 后台 backfill · 30s 拉 signals 增量 · 5min 拉 restock-log 全量
 	// 服务停跑期 xi8 侧继续记 · 重启自动补 · 落 source='xi8' 不出前端（CLAUDE.md §0.1）
@@ -757,6 +769,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		CommunityChannels:   cfg.Community.Channels,
 		VendorAccounts:      vaStore,           // vendor_account 表 · webhook 验签走这里读 secret
 		WebhookDispatcher:   webhookDispatcher, // vendor webhook 事件的分派器
+		Health:              healthStore,       // 数据管线心跳（migration 036）· data-health 端点用
+		AdminKey:            os.Getenv("BP_ADMIN_KEY"),
 	})
 	apiSrv.Routes(mux)
 

@@ -70,6 +70,10 @@ type Server struct {
 	// webhookDispatcher · webhookin 分派器 · 收到 vendor webhook 后处理 event
 	// nil 时 receiver 只 log 不分派（保留旧行为兼容测试 / 旧部署）
 	webhookDispatcher *webhookin.Dispatcher
+	// health · 数据管线心跳（migration 036）· admin data-health 端点读它 · 可 nil
+	health *vendorview.HealthStore
+	// adminKey · BP_ADMIN_KEY · 非空才挂 /api/admin/* · 且请求要带 X-Admin-Key 匹配
+	adminKey string
 }
 
 // ServerDeps 装配 Server 需要的依赖。decider 允许为 nil（migrate 之类的
@@ -103,6 +107,10 @@ type ServerDeps struct {
 	VendorAccounts *vendoraccount.Store
 	// WebhookDispatcher webhookin 分派器 · 允许 nil（老装配路径 · receiver 只 log 不分派）
 	WebhookDispatcher *webhookin.Dispatcher
+	// Health 数据管线心跳（migration 036）· admin data-health 端点用 · 允许 nil
+	Health *vendorview.HealthStore
+	// AdminKey BP_ADMIN_KEY · 非空才挂 /api/admin/* 运维端点（X-Admin-Key 头校验）
+	AdminKey string
 }
 
 func NewServer(d ServerDeps) *Server {
@@ -135,6 +143,8 @@ func NewServer(d ServerDeps) *Server {
 		communityChannels:   d.CommunityChannels,
 		vaStore:             d.VendorAccounts,
 		webhookDispatcher:   d.WebhookDispatcher,
+		health:              d.Health,
+		adminKey:            d.AdminKey,
 	}
 }
 
@@ -241,6 +251,12 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/vendors/{vendor_id}/stock", handler(s.RequireAuth(s.handleVendorStock)))
 	mux.Handle("GET /api/vendors/{vendor_id}/history", handler(s.RequireAuth(s.handleVendorHistory)))
 	mux.Handle("GET /api/vendors/{vendor_id}/prices/daily", handler(s.RequireAuth(s.handleVendorPricesDaily)))
+
+	// 运维：数据管线新鲜度自检 · 仅 BP_ADMIN_KEY 非空 + 心跳已装配才挂（X-Admin-Key 头校验）·
+	// 把 /healthz「HTTP 活着」升级到「数据在更新」· 纯运维视角 · 不给乘客前端（§0.1）
+	if s.adminKey != "" && s.health != nil {
+		mux.Handle("GET /api/admin/data-health", handler(s.requireAdmin(s.handleDataHealth)))
+	}
 
 	// 首页 / 数据 tab / 活动流（05-api-contract §9b）
 	mux.Handle("GET /api/me/overview", handler(s.RequireAuth(handleOverviewWith(s.insights))))

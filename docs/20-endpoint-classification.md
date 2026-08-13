@@ -246,3 +246,27 @@ webhook · xi8 这两个补掉盲区（`16-buy-race.md` 的多路信号里 xi8 �
 
 **防再犯**：端点连接状态**只以代码为准** · 任何文档都不设"已接/未接"状态列。
 本文只分类 + 排序 · 不追踪状态。
+
+---
+
+## 7 · 数据管线新鲜度自检（migration 036 · "系统自己盯"）
+
+**为什么**：`/healthz` 只查 DB ping（HTTP 活着）· 不查数据在不在更新。管线**静默停更**
+（vendor 改形状 / token 过期 / 端点下线）时容器照样"健康"· 数据变旧没人知道 —— 只有没人看的
+WARN 日志。这套把它变成"系统自己盯"。
+
+**机制**：
+- `pipeline_health` 表：每条采集管线每轮盖戳 `last_ok_at` / `last_err`（Prober 盖 `probe` ·
+  Backfiller 每步盖 `orders/keys/dispatch/ledger/qty_tiers/time_decay`）。
+- `vendorview.StalenessChecker`：5min 一轮扫全表 · 超阈值（probe 3min · backfill 家族 15min）
+  的管线**大声打 ERROR**（可被日志告警抓）· 全新鲜打 INFO。
+- `GET /api/admin/data-health`（**仅运维** · `BP_ADMIN_KEY` 非空才挂 · `X-Admin-Key` 头校验）：
+  返每条管线 `stale` / `last_ok_ago` / `last_err` · 供人工/监控按需查。**不给乘客前端**（§0.1）。
+
+**覆盖**（live 验证 27 条心跳）：probe 6 家全 · orders/keys/ledger 5 家（kirodrop session-gated 不跑）·
+dispatch 4 家（有 fleet 端点的）· qty_tiers kirooo · time_decay kirodrop（seed token 后才盖）。
+kirodrop 只出现 probe + time_decay 两条 —— 正好是它仅有的活管线。
+
+**部署注意**：serve **启动即检查未应用迁移 · 有就拒绝启动**（不会跑在旧 schema 上）· 所以
+`bus-pooling migrate up` 必须先跑（deploy 脚本已有此步）。`BP_ADMIN_KEY` 不配 = data-health 端点不挂
+（StalenessChecker 日志仍照打）。
