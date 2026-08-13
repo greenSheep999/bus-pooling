@@ -42,7 +42,9 @@
 | 3 | GET | `/api/me/stock?region=us\|eu` | `region` / `stock` / `price`（USD 字符串）/ `balance`（CNY）| `Adapter.Stock()` | ✅ |
 | 4 | GET | `/api/v1/reservation?quantity=2&region=eu` | **完整报价**（独家）· 支持多货币 | `Adapter.Reservation()` · **声明了但返"未接入"** | ⚠️ **半接** |
 
-**⚠️ `Reservation` 现状**（`adapter.go:224`）：方法存在但直接返 `Message: "本 vendor reservation 阶段 1a 未接入"` · **实际没打端点**。`docs/18` 里 `TieredPricing`（分档降价）本该从这里来 · 所以 `vendor_price_tier` 表至今是空的。
+**⚠️ `Reservation` 现状**（`adapter.go:224`）：方法存在但返 `"阶段 1a 未接入"` · **实际没打端点**。
+**2026-08-14 实测：就算打也拿不到** —— `/api/v1/reservation` 返 401 · 只认网页 session cookie ·
+API key 无效 · 登录要图形验证码（见 §2.3）。所以 `vendor_price_tier` 一直空 · 走 6.8 汇率兜底。
 
 ### 1.4 购买（1 个）
 
@@ -130,13 +132,17 @@
 
 **我方现状**：`Adapter.Reservation()` 存在但返 `"阶段 1a 未接入"` · **实际没打**。
 
-**为什么高价值**：
-1. **完整报价** —— `quantity` 参数说明支持"买 N 个多少钱"的批量报价（可能有分档）
-2. **支持多货币** —— 可能能直接拿到 CNY 报价 · 不用我方按 6.8 汇率换（xi8 用 7.07 · 我方用 6.8 · **差 4%** · 这个端点可能是权威口径）
-3. **`region=eu` 参数** —— **可能这才是拿 EU 定价的正确路径**（`/api/me/stock` 只返 us）
-4. `docs/18` 的 `TieredPricing` / `vendor_price_tier` 表数据源就是它 —— 现在表空着
+**✅ 已实测（2026-08-14 · vendor-probe + curl）· 结论：拿不到 · 不是 404 是 401**：
+- `GET /api/v1/reservation` · **X-API-Key / Bearer / 无鉴权 一律 401** `AUTH_REQUIRED "请先登录"`
+  —— 这个端点**只认网页 session cookie** · 我方的 API key 对 `/api/v1/*` 无效
+- 登录端点是 **`POST /api/v1/auth/login`**（字段 `{email, password}`）· 但**要图形验证码**
+  （实测报 `CAPTCHA_INVALID`）· **没法程序化登录**
+- 账户没被封：`/api/my/profile` + X-API-Key 返 200 带我方真实数据 · 鉴权正常
+- **要接只能**：人工浏览器登录（过验证码）导出 session cookie → `seed-vendor kirodrop
+  --auth-scheme=cookie` 存 → adapter 用 cookie 打 reservation。cookie 会过期 · 需定期刷 · 脆。
 
-**⚠️ 必须实测这个端点** · 是当前最大的信息缺口。
+**为什么高价值**（若拿得到）：完整报价 / 多货币权威汇率口径（xi8 7.07 vs 我方 6.8 差 4%）/
+EU 定价 / `vendor_price_tier` 数据源。**当前决策**：接不了 · 保持 6.8 汇率兜底 · 待用户定要不要走 cookie 方案。
 
 ---
 

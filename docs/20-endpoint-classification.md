@@ -47,7 +47,7 @@
 | kirooo | `GET /api/my/credits` → `{credits,ledger:[{id,kind,amount,ref_id,created_at}]}` | ✅ 已接 · **真实数据实测**（claim_key/recharge · 北京墙钟）|
 | kiroappio | `GET /api/me/ledger` → `{items,page,summary,total}` 分页 | ✅ 已接（外层实测 · items 空 · 内层推断+存 raw）|
 | kiroceo | `GET /api/my/purchase-orders`（OrderHistoryLister 已接）| ✅ 无独立流水 · 用订单做 count-recon |
-| kirodrop | **无 ledger / 无订单列表**（实测 ledger/transactions/orders/credits 全 404）| ⚠️ **只能按单核对**（pull_round.vendor_order_id → `/orders/{id}/keys` 验号在不在）· 无批量源 |
+| kirodrop | **无 ledger / 无订单列表**（实测 ledger/transactions/orders/credits/purchases/records 全 404 · 非被封：profile 200）| ⚠️ **只能按单核对**（pull_round.vendor_order_id → `/orders/{id}/keys` 验号在不在）· 无批量源 |
 | kiroappcc | `GET /api/user/txns`（隐藏 · 未验）| ⏳ vendor-probe 抓真形状后接 |
 
 **三家三个外层形状**（kiro91 `{entries}` · kirooo `{ledger}` · kiroappio `{items,summary}`）
@@ -95,8 +95,10 @@
 | kiroappcc | webhook `price` | 第二个 webhook 带价的家 | 内部 |
 | xi8 | quality 五字段 | **六家 vendor 都不给的号质量评级** | 内部（喂 quality 标签）|
 
-**注**：kirodrop `reservation` 现在是 501 桩（`adapter.go:231`）· `vendor_price_tier` 表因此
-恒空（有表无写入方）· 是这组里唯一卡住**前端定价真实性**的。
+**注**：kirodrop `reservation` **实测拿不到**（2026-08-14）—— 不是 404 是 **401 · 只认网页
+session cookie** · API key 对 `/api/v1/*` 无效 · 登录要**图形验证码**（没法程序化 · 见
+`docs/vendors/drop-kiro-ss.md §2.3`）。`vendor_price_tier` 保持空 · 走 6.8 汇率兜底。
+要接只能人工导出 cookie → `seed-vendor --auth-scheme=cookie`（cookie 会过期 · 脆）· 待用户拍板。
 
 ---
 
@@ -146,7 +148,8 @@ webhook · xi8 这两个补掉盲区（`16-buy-race.md` 的多路信号里 xi8 �
 1. ✅ **维度 A① 对账链**（5 家断链 · 全内部）—— 已落地（Reconciler + CLI + kiro91 ledger）
 2. ✅ **xi8 buyable/blocked/floating 落对账表**（维度 A③ · `xi8_vendor_flags`）—— 已落地 ·
    **纯对账参考 · 不接采购**（用户拍板 · 前一版误接 fire 已撤）· xi8 webhook 不接
-3. **kirodrop `reservation`**（维度 A② · 前端定价从"估"转"真" · 填 `vendor_price_tier`）← 下一个
+3. ~~**kirodrop `reservation`**~~ —— **实测拿不到**（401 · 网页 session + 验证码 · 见 §2 注）·
+   转走 **kirooo `key-price-tiers`**（真形状已抓 · API key 可达）填 `vendor_price_tier`
 4. **kiro91 `stock/rounds` + kirooo `key-price-tiers`**（维度 A③ · Prices 页逐车次真价）
 5. **号明细/寿命一批**（维度 A②③ · 喂 quality）—— dispatch-log / keys/export / usage / created-at
 6. **其余 ledger adapter**（维度 A①）· kirooo `/api/my/credits` ✅ 已接（真实形状）·
