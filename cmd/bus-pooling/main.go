@@ -114,8 +114,10 @@ func run(cmd, cfgPath string, args []string) error {
 		return runXi8Audit(ctx, cfg, args)
 	case "backfill-probe-zone":
 		return runBackfillProbeZone(ctx, cfg, args)
+	case "backfill-stock-delta":
+		return runBackfillStockDelta(ctx, cfg, args)
 	default:
-		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem | seed-vendor | list-vendors | xi8-backfill | xi8-audit | backfill-probe-zone）", cmd)
+		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem | seed-vendor | list-vendors | xi8-backfill | xi8-audit | backfill-probe-zone | backfill-stock-delta）", cmd)
 	}
 }
 
