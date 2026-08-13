@@ -18,11 +18,12 @@ import (
 // 一次 backfill：对每家实现了 OrderHistoryLister/KeyHistoryLister 的 vendor 拉全量 upsert。
 // vendor 侧订单量 / key 量都不大（几百到几千），全量比增量简单可靠。
 type Backfiller struct {
-	registry *providers.Registry
-	store    *OrderKeyStore
-	interval time.Duration // 全量间隔（默认 5min）
-	timeout  time.Duration // 单家 vendor 单次 backfill 超时
-	logger   *slog.Logger
+	registry    *providers.Registry
+	store       *OrderKeyStore
+	ledgerStore *LedgerStore // 可 nil（老装配 / 测试）· 非 nil 才拉 ledger
+	interval    time.Duration // 全量间隔（默认 5min）
+	timeout     time.Duration // 单家 vendor 单次 backfill 超时
+	logger      *slog.Logger
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -31,9 +32,11 @@ type Backfiller struct {
 type BackfillerConfig struct {
 	Registry *providers.Registry
 	Store    *OrderKeyStore
-	Interval time.Duration
-	Timeout  time.Duration
-	Logger   *slog.Logger
+	// LedgerStore 交叉对账用（docs/20 §1）· 传 nil = 不拉 ledger（vendor 无端点时也不影响）
+	LedgerStore *LedgerStore
+	Interval    time.Duration
+	Timeout     time.Duration
+	Logger      *slog.Logger
 }
 
 func NewBackfiller(cfg BackfillerConfig) *Backfiller {
@@ -50,7 +53,7 @@ func NewBackfiller(cfg BackfillerConfig) *Backfiller {
 		logger = slog.Default()
 	}
 	return &Backfiller{
-		registry: cfg.Registry, store: cfg.Store,
+		registry: cfg.Registry, store: cfg.Store, ledgerStore: cfg.LedgerStore,
 		interval: interval, timeout: timeout, logger: logger,
 	}
 }
@@ -166,6 +169,45 @@ func (b *Backfiller) backfillVendor(ctx context.Context, v providers.Vendor) {
 			}
 		}
 	}
+
+	// 4. Ledger（vendor 侧积分流水 · 交叉对账 · docs/20 §1 · 若实现了 LedgerLister）
+	if b.ledgerStore != nil {
+		if lister, ok := v.(providers.LedgerLister); ok {
+			entries, err := b.collectLedger(ctx, lister)
+			if err != nil {
+				b.logger.Warn("backfill ledger 失败", "vendor", vid, "err", err)
+			} else if len(entries) > 0 {
+				if err := b.ledgerStore.UpsertLedger(ctx, vid, entries); err != nil {
+					b.logger.Warn("upsert ledger 失败", "vendor", vid, "err", err)
+				}
+			}
+		}
+	}
+}
+
+// collectLedger 分页拉全部流水 · 单页超时 b.timeout · 最多 100 页兜底
+func (b *Backfiller) collectLedger(
+	ctx context.Context, lister providers.LedgerLister,
+) ([]providers.VendorLedgerEntry, error) {
+	var all []providers.VendorLedgerEntry
+	cursor := ""
+	for pages := 0; pages < 100; pages++ {
+		pageCtx, cancel := context.WithTimeout(ctx, b.timeout)
+		page, err := lister.ListLedger(pageCtx, cursor)
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+		if page == nil {
+			break
+		}
+		all = append(all, page.Items...)
+		if page.NextCursor == "" {
+			break
+		}
+		cursor = page.NextCursor
+	}
+	return all, nil
 }
 
 // collectOrders 分页拉全部 · 单页超时 b.timeout · 最多 100 页兜底防死循环

@@ -116,8 +116,10 @@ func run(cmd, cfgPath string, args []string) error {
 		return runBackfillProbeZone(ctx, cfg, args)
 	case "backfill-stock-delta":
 		return runBackfillStockDelta(ctx, cfg, args)
+	case "reconcile":
+		return runReconcile(ctx, cfg, args)
 	default:
-		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem | seed-vendor | list-vendors | xi8-backfill | xi8-audit | backfill-probe-zone | backfill-stock-delta）", cmd)
+		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem | seed-vendor | list-vendors | xi8-backfill | xi8-audit | backfill-probe-zone | backfill-stock-delta | reconcile）", cmd)
 	}
 }
 
@@ -628,8 +630,10 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	backfiller := vendorview.NewBackfiller(vendorview.BackfillerConfig{
 		Registry: vendorRegistry,
 		Store:    orderKeyStoreForView,
-		Interval: 5 * time.Minute,
-		Timeout:  20 * time.Second,
+		// 交叉对账（docs/20 §1）· 拉 vendor 侧流水落 vendor_ledger · 实现了 LedgerLister 的家才拉
+		LedgerStore: vendorview.NewLedgerStore(database.DB),
+		Interval:    5 * time.Minute,
+		Timeout:     20 * time.Second,
 	})
 	backfiller.Start(ctx)
 	defer backfiller.Stop(5 * time.Second)

@@ -47,6 +47,7 @@ var wantTables = []string{
 	"vendor_price_tier",     // 028 · kirodrop 分档 schedule
 	"user_subsidy",          // 028 · 减免栈（个人邀请码/邀请奖励/优惠码）
 	"vendor_probe_zone",     // 029 · 每探针每 zone 一行 · 精确定价的权威源
+	"vendor_ledger",         // 033 · vendor 侧积分流水 · 交叉对账
 }
 
 func openTestDB(t *testing.T) *DB {

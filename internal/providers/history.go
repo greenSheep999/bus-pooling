@@ -102,3 +102,52 @@ type FleetLister interface {
 	// ListDispatches 拉最近 N 批 · limit=0 用 vendor 默认
 	ListDispatches(ctx context.Context, limit int) ([]VendorDispatch, error)
 }
+
+// ── 交叉对账（维度 A① · docs/20 §1）──────────────────────────
+//
+// vendor 侧的**积分流水**（recharge / purchase / refund / …）· 拿来跟我方
+// `pull_round` + `wallet_ledger` 双向核对：我方记的扣费能不能在 vendor 账本里对上 ·
+// 有没有被多扣 / 漏退。**纯内部**（CLAUDE.md §0.1）· 绝不出前端。
+
+// 归一后的流水类型 · 各家原文 reason 五花八门 · adapter 映射到这几个。
+// 对账只关心 purchase（扣费）和 refund（退款）· 其余留原文备查。
+const (
+	LedgerPurchase = "purchase" // 领 key 扣费
+	LedgerRefund   = "refund"   // 质保 / 售后退款
+	LedgerRecharge = "recharge" // 充值 / 兑换码
+	LedgerIncome   = "income"   // 供应侧收入（母号被买走返分）
+	LedgerAdjust   = "adjust"   // 运营手工调整
+	LedgerOther    = "other"    // 未归类
+)
+
+// VendorLedgerEntry 一笔 vendor 侧流水 · 对应各家的 ledger / credits / txns 端点。
+type VendorLedgerEntry struct {
+	// EntryID vendor 侧稳定流水 id（同 vendor 内唯一 · 幂等主键）。
+	// vendor 不给稳定 id 时 · adapter 用 (created_at + reason + amount) 合成指纹。
+	EntryID string
+	// OrderID 关联的订单号 · **对账的 join 键**（跟我方 pull_round.vendor_order_id /
+	// client_order_id 对） · 非 purchase/refund 类可能空。
+	OrderID string
+	// Reason 归一后类型（上面常量之一）
+	Reason string
+	// RawReason vendor 原文 reason · 留证
+	RawReason string
+	// Amount 带符号 microunit · **扣费为负 · 入账为正**（各家口径不一 · adapter 统一到这个约定）
+	Amount Money
+	// BalanceAfter 该笔后余额（vendor 支持时）· Amount=0 且 BalanceAfter=0 视为未知
+	BalanceAfter Money
+	// CreatedAt vendor 侧时刻
+	CreatedAt time.Time
+	// Raw 完整流水 JSON · **对账排查靠它**（字段推断不准时至少 raw 是真的）
+	Raw json.RawMessage
+}
+
+// LedgerLister 可选接口 · vendor 有积分流水端点就实现。
+//
+// **⚠️ 上线纪律**（2026-08-14 · 吸取 kiroappcc webhook 100% 丢的教训）：
+// vendor 不公开响应 schema 时 · adapter 用**容错解析**（多字段名 fallback）+ **永远
+// 存 Raw** · 上线后**必须**对着真实响应核一遍字段（看 vendor_ledger.raw）· 别信文档推断。
+type LedgerLister interface {
+	// ListLedger 拉一页流水 · cursor 空 = 从头 · 返 NextCursor="" 到底。
+	ListLedger(ctx context.Context, cursor string) (*HistoryPage[VendorLedgerEntry], error)
+}
