@@ -39,10 +39,13 @@ type VendorConfig struct {
 	BaseURL       string
 	APIKey        string
 	WebhookSecret string
-	Timeout       time.Duration
-	MaxRetries    int
-	ProxyURL      string
-	NoProxy       string
+	// LoginUser / LoginPass · 网页后台账密（当前只 kiroappcc 用 · /api/user/* 端点）· 可空
+	LoginUser  string
+	LoginPass  string
+	Timeout    time.Duration
+	MaxRetries int
+	ProxyURL   string
+	NoProxy    string
 }
 
 // Register 把 kiro 下的 vendor 装进 registry。
@@ -117,7 +120,8 @@ func Register(r *providers.Registry, cfg Config) error {
 		aCC, err := kiroappcc.New(kiroappcc.Config{
 			BaseURL: cfg.KiroAppCC.BaseURL, APIKey: cfg.KiroAppCC.APIKey,
 			WebhookSecret: cfg.KiroAppCC.WebhookSecret,
-			Timeout:       cfg.KiroAppCC.Timeout, MaxRetries: cfg.KiroAppCC.MaxRetries,
+			LoginUser:     cfg.KiroAppCC.LoginUser, LoginPass: cfg.KiroAppCC.LoginPass,
+			Timeout: cfg.KiroAppCC.Timeout, MaxRetries: cfg.KiroAppCC.MaxRetries,
 			ProxyURL: cfg.KiroAppCC.ProxyURL, NoProxy: cfg.KiroAppCC.NoProxy,
 		})
 		if err != nil {

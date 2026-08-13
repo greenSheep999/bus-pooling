@@ -241,12 +241,17 @@ func buildVendorRegistry(ctx context.Context, cfg config.Config, vaStore *vendor
 	kccAPIKey, _ := resolveCred("kiroappcc", cfg.Secrets.KiroAppCCAPIKey, "")
 	kdropAPIKey, kdropWebhook := resolveCred("kirodrop", cfg.Secrets.KiroDropAPIKey, cfg.Secrets.KiroDropWebhookSecret)
 
+	// kiroappcc 网页账密 · 拉 /api/user/* 的 ledger 用（登录无验证码 · 可自动重登）
+	kccCfg := base(cfg.Vendors.KiroAppCC, kccAPIKey, "")
+	kccCfg.LoginUser = os.Getenv("BP_VENDOR_KIROAPPCC_LOGIN_USER")
+	kccCfg.LoginPass = os.Getenv("BP_VENDOR_KIROAPPCC_LOGIN_PASS")
+
 	err := kiro.Register(r, kiro.Config{
 		Kiro91:    base(cfg.Vendors.Kiro91, k91APIKey, k91Webhook),
 		KiroCEO:   base(cfg.Vendors.KiroCEO, kceoAPIKey, ""),
 		KiroOOO:   base(cfg.Vendors.KiroOOO, koooAPIKey, ""),
 		KiroAppIO: base(cfg.Vendors.KiroAppIO, kioAPIKey, ""),
-		KiroAppCC: base(cfg.Vendors.KiroAppCC, kccAPIKey, ""),
+		KiroAppCC: kccCfg,
 		KiroDrop:  base(cfg.Vendors.KiroDrop, kdropAPIKey, kdropWebhook),
 	})
 	if err != nil {

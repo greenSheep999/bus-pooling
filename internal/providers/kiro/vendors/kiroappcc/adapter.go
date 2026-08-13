@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/httpx"
@@ -19,15 +20,24 @@ type Config struct {
 	BaseURL       string
 	APIKey        string
 	WebhookSecret string
-	Timeout       time.Duration
-	MaxRetries    int
-	ProxyURL      string
-	NoProxy       string
+	// LoginUser / LoginPass · 网页后台账密（`/api/user/*` 端点用 · 如 ledger txns）·
+	// 跟 APIKey 是**两套独立鉴权**：APIKey 只管 /openapi/* · 登录 token 只管 /api/user/*。
+	// 空 = 不启用 /api/user/* 相关能力（如 LedgerLister）。
+	LoginUser  string
+	LoginPass  string
+	Timeout    time.Duration
+	MaxRetries int
+	ProxyURL   string
+	NoProxy    string
 }
 
 type Adapter struct {
 	cfg    Config
 	client *httpx.Client
+
+	// 网页 session token 缓存（/api/user/* 用）· 登录无验证码 · 可自动重登
+	sessionMu    sync.Mutex
+	sessionToken string
 }
 
 func New(cfg Config) (*Adapter, error) {
