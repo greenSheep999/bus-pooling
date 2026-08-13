@@ -144,7 +144,7 @@ type VendorLedgerEntry struct {
 
 // LedgerLister 可选接口 · vendor 有积分流水端点就实现。
 //
-// **⚠️ 上线纪律**（2026-08-14 · 吸取 kiroappcc webhook 100% 丢的教训）：
+// **⚠️ 上线纪律**（2026-08-14 · 吸取某家 webhook 100% 丢的教训）：
 // vendor 不公开响应 schema 时 · adapter 用**容错解析**（多字段名 fallback）+ **永远
 // 存 Raw** · 上线后**必须**对着真实响应核一遍字段（看 vendor_ledger.raw）· 别信文档推断。
 type LedgerLister interface {

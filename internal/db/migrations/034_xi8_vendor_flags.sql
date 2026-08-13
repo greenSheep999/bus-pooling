@@ -12,7 +12,7 @@
 -- **纯内部**（CLAUDE.md §0.1）· 不出前端。
 --
 -- **最新快照**（不是历史）：每 vendor+zone 一行 · upsert 覆盖 · 全表最多 6×2=12 行。
--- xi8 只覆盖 5 家（kiroappcc 不在 xi8）· 查不到 flag 的 vendor **默认不拦**（fail-open ·
+-- xi8 只覆盖 5 家（有一家不在 xi8）· 查不到 flag 的 vendor **默认不拦**（fail-open ·
 -- 宁可多试一次 · 不要因为聚合源没数据把能抢的也拦了）。
 
 CREATE TABLE IF NOT EXISTS xi8_vendor_flags (

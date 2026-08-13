@@ -59,9 +59,18 @@
   kiroappcc `/api/user/txns` · kirodrop 订单列表 · kiroceo 用已接的 purchase-orders）
   —— **必须先拿真实响应核字段再写**（别信文档推断 · kiroappcc webhook 100% 丢的教训）
 
-**⚠️ kiro91 ledger 上线纪律**：响应 schema 是文档推断的（vendor 只给了 reason 列表）·
-上线后**第一件事**是 `sqlite3 ... "SELECT raw FROM vendor_ledger WHERE vendor_id='kiro91' LIMIT 3"`
-核字段名 · 对不上就按真实形状收紧 `ledger.go` 的 `ledgerRow`。
+**✅ 抓真实形状工具化 `bus-pooling vendor-probe <slug> <path>`**（2026-08-14）：
+只读探测 · 抓 vendor 端点真实响应（脱敏）· **institutionalize "写 adapter 前先抓真形状"**
+—— 这是本项目反复弄错形状的根治（文档只有字段猜测 · §19.3 那批"高价值未接"都没实测 JSON）。
+**只读铁律**：只发 GET · 危险词（purchase/reservation/…）拒发。
+
+**本轮抓到的真实形状**（本地 · keys 在 .dev.env）：
+- 某家 `/api/my/ledger` → `{entries:[...],total}`（验证了已提交的 ledger adapter 外层对）
+- 某家 `/api/my/stock/rounds` → `{rounds:[],incoming:[],total,warranty_minutes}`（当前空 · 内层待有数据再核）
+- kirooo `/api/my/credits` → **真实 ledger 形状**：`{credits,ledger:[{id,kind,amount(带符号),balance_after,ref_id,note,created_at}]}` ·
+  kind 实测 `claim_key`/`recharge` · created_at 北京墙钟（时区坑）· **已据此写 kirooo ledger adapter**
+- kirooo `key-price-tiers` → **文档路径 `/my/` 错 · 真实是 `/api/my/key-price-tiers`** · 返 `{bands:[{lower,upper,price}],base,tiers}` ·
+  文档路径会返 HTML 登录页（盲写必炸）· 真形状已备 · 待做 vendor_price_tier
 
 **对账现状**：`pull_round` 生产/本地都空（还没真实拉号）· 对账逻辑已就位测过（8 个单测覆盖
 四类差异）· 等真拉号一发生就能 `reconcile` 出结果。
@@ -135,7 +144,8 @@ webhook · xi8 这两个补掉盲区（`16-buy-race.md` 的多路信号里 xi8 �
 3. **kirodrop `reservation`**（维度 A② · 前端定价从"估"转"真" · 填 `vendor_price_tier`）← 下一个
 4. **kiro91 `stock/rounds` + kirooo `key-price-tiers`**（维度 A③ · Prices 页逐车次真价）
 5. **号明细/寿命一批**（维度 A②③ · 喂 quality）—— dispatch-log / keys/export / usage / created-at
-6. **其余 5 家 ledger adapter**（维度 A① · 拿真实响应核字段后接）
+6. **其余 ledger adapter**（维度 A①）· kirooo `/api/my/credits` ✅ 已接（真实形状）·
+   剩 kiroappio/kiroappcc/kirodrop（用 vendor-probe 抓真形状后接 · 别猜）
 
 ---
 

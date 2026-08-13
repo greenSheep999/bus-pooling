@@ -118,8 +118,10 @@ func run(cmd, cfgPath string, args []string) error {
 		return runBackfillStockDelta(ctx, cfg, args)
 	case "reconcile":
 		return runReconcile(ctx, cfg, args)
+	case "vendor-probe":
+		return runVendorProbe(ctx, cfg, args)
 	default:
-		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem | seed-vendor | list-vendors | xi8-backfill | xi8-audit | backfill-probe-zone | backfill-stock-delta | reconcile）", cmd)
+		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem | seed-vendor | list-vendors | xi8-backfill | xi8-audit | backfill-probe-zone | backfill-stock-delta | reconcile | vendor-probe）", cmd)
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 // ListLedger · GET /api/my/ledger · vendor 侧积分流水（交叉对账 · docs/20 §1）。
 //
 // **⚠️ 响应 schema 是文档推断的**（vendor 档 §2.8 只列了 7 种 reason · 没给 JSON 形状）。
-// 吸取 kiroappcc webhook 100% 丢的教训（照猜字段名写 parser）· 这里用**容错解析**：
+// 吸取某家 webhook 100% 丢的教训（照猜字段名写 parser）· 这里用**容错解析**：
 //   - 外层包装名试多个（ledger / entries / items / data）· 都不中当裸数组
 //   - 每笔字段名试多个（amount / credits / amount_fen …）
 //   - **永远存 Raw** —— 上线后对着 vendor_ledger.raw 核字段 · 再收紧
@@ -165,7 +165,7 @@ func ledgerRowToEntry(r ledgerRow) providers.VendorLedgerEntry {
 	}
 }
 
-// normalizeReason · vendor 7 种 → 我方 6 类（docs/vendors/91kiro.md §2.8）。
+// normalizeReason · vendor 7 种 → 我方 6 类（本 vendor 档 §2.8）。
 func normalizeReason(raw string) string {
 	switch raw {
 	case "purchase":

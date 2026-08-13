@@ -90,7 +90,7 @@ func TestFlagStore_UpsertIdempotent(t *testing.T) {
 	_ = fs.UpsertFlags(ctx, []VendorFlag{{VendorID: "kiro91", Zone: "us", Blocked: false}})
 
 	var cnt int
-	_ = fs.db.QueryRow(`SELECT COUNT(*) FROM xi8_vendor_flags WHERE vendor_id='kiro91'`).Scan(&cnt)
+	_ = fs.db.QueryRow(`SELECT COUNT(*) FROM xi8_vendor_flags WHERE vendor_id=?`, "kiro91").Scan(&cnt)
 	if cnt != 1 {
 		t.Fatalf("幂等应 1 行 · 得 %d", cnt)
 	}
