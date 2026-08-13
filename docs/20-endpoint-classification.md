@@ -39,14 +39,19 @@
 六家都有同类端点 · **缺一家 = 那家的扣费无法验证是否多扣/漏退**。生产已开 `dry_run=false`
 真实扣费 · 这是当前最实的缺口。
 
-| vendor | 待接端点 | 我方已有 | 缺口 |
-|---|---|---|---|
-| kiro91 | `GET /api/my/ledger`（7 种 reason）| purchase-orders（订单 · 无逐笔流水）| 逐笔积分流水 |
-| kiroappio | `GET /api/me/ledger`（8+ type）| purchase-orders | 逐笔积分流水 |
-| kirooo | `GET /my/credits`（余额+流水）| purchase-orders | 逐笔积分流水 + 余额 |
-| kiroappcc | `GET /api/user/orders` + `/txns` | `/openapi/orders`（已接）| 交易流水 txns |
-| kiroceo | `GET /api/my/purchase-orders`（**已接**）| ✅ | 无独立流水端点 · 现状够 |
-| kirodrop | 订单历史列表 | 只接单笔 keys 补拉 | 订单列表 |
+**对账源全摸清（2026-08-14 · vendor-probe 逐家实测 · 不是文档猜）**：
+
+| vendor | 对账源（实测）| 状态 |
+|---|---|---|
+| kiro91 | `GET /api/my/ledger` → `{entries,total}` | ✅ 已接（外层实测 · items 空 · 内层推断+存 raw）|
+| kirooo | `GET /api/my/credits` → `{credits,ledger:[{id,kind,amount,ref_id,created_at}]}` | ✅ 已接 · **真实数据实测**（claim_key/recharge · 北京墙钟）|
+| kiroappio | `GET /api/me/ledger` → `{items,page,summary,total}` 分页 | ✅ 已接（外层实测 · items 空 · 内层推断+存 raw）|
+| kiroceo | `GET /api/my/purchase-orders`（OrderHistoryLister 已接）| ✅ 无独立流水 · 用订单做 count-recon |
+| kirodrop | **无 ledger / 无订单列表**（实测 ledger/transactions/orders/credits 全 404）| ⚠️ **只能按单核对**（pull_round.vendor_order_id → `/orders/{id}/keys` 验号在不在）· 无批量源 |
+| kiroappcc | `GET /api/user/txns`（隐藏 · 未验）| ⏳ vendor-probe 抓真形状后接 |
+
+**三家三个外层形状**（kiro91 `{entries}` · kirooo `{ledger}` · kiroappio `{items,summary}`）
+—— 照一家套另一家必错 · 这就是"逐家实测别猜"的硬证据。
 
 **落地进度**（2026-08-14）：
 - ✅ 基础设施：`providers.LedgerLister` + `VendorLedgerEntry`（reason 归一 6 类）·
