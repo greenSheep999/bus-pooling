@@ -43,11 +43,11 @@ type ProbeSample struct {
 	// ── pricing 标准化（docs/18 §1.2 · migration 028）──
 	//
 	// 上游原样字段 · 拿到就存 · 没有则零值（SQL 层用 nullIfZero 转 NULL）：
-	VendorCurrency      string // credit / CNY / USD
-	VendorUnitRaw       int64  // microunit · vendor 报价原值
-	VendorExchangeRate  float64 // vendor 侧汇率（UI 有 · API 无 · 保留字段）
-	VendorPriceUSDRaw   int64  // USD 原值 microunit（部分 vendor 单独 USD 字段时填）
-	VendorPriceCNYRaw   int64  // CNY 原值 microunit（UI 有 · API 无 · 保留字段）
+	VendorCurrency     string  // credit / CNY / USD
+	VendorUnitRaw      int64   // microunit · vendor 报价原值
+	VendorExchangeRate float64 // vendor 侧汇率（UI 有 · API 无 · 保留字段）
+	VendorPriceUSDRaw  int64   // USD 原值 microunit（部分 vendor 单独 USD 字段时填）
+	VendorPriceCNYRaw  int64   // CNY 原值 microunit（UI 有 · API 无 · 保留字段）
 	// 我方计算 · 唯一权威积分（docs/18 §1.3 换算路径）：
 	OurUnitCredits int64  // ★ microunit · 1_000_000 = 1 积分 = 1 RMB
 	OurUnitSource  string // vendor_native / computed_from_usd / fallback_last_rate
@@ -55,21 +55,25 @@ type ProbeSample struct {
 
 	// PublicStatus 相关字段 · vendor 自报的 fleet 累计数据（可选 · vendor 不支持时全 nil）
 	// 独立于 Alive/StockTotal —— 探针会同时打 Stock 和 PublicStatus 两个端点
-	PSKeysActive    *int    // vendor 侧当前活跃 key
-	PSKeysAlive     *int    // 部分 vendor 才有 · active + suspect
-	PSKeysDead      *int    // vendor 侧当前失效 key
-	PSKeysStock     *int    // vendor 侧当前可购买库存
-	PSKeysSuspect   *int    // 部分 vendor 才有
-	PSKeysTotal     *int    // 历史累计
-	PSGenerating    *bool   // vendor 是否正在生成新 key
+	PSKeysActive    *int  // vendor 侧当前活跃 key
+	PSKeysAlive     *int  // 部分 vendor 才有 · active + suspect
+	PSKeysDead      *int  // vendor 侧当前失效 key
+	PSKeysStock     *int  // vendor 侧当前可购买库存
+	PSKeysSuspect   *int  // 部分 vendor 才有
+	PSKeysTotal     *int  // 历史累计
+	PSGenerating    *bool // vendor 是否正在生成新 key
 	PSStartedAt     *time.Time
-	PSUptimeSeconds *int64  // vendor 自报运行时长
-	PSRaw           []byte  // 原始 /api/status 响应
-	PSErrorKind     string  // PublicStatus 端点独立错误
+	PSUptimeSeconds *int64 // vendor 自报运行时长
+	PSRaw           []byte // 原始 /api/status 响应
+	PSErrorKind     string // PublicStatus 端点独立错误
 }
 
 // RegionStock 落 stock_by_region 字段的一条 entry
 type RegionStock struct {
+	// Zone · 归一后的地区标识（us / eu / general · providers.ZoneOf 出口）·
+	// **stock-delta 对比的键用它** —— 部分 vendor 不返 region 原文（Region 恒空）·
+	// 拿 Region 当键会让多 zone 塌成一条 · 整区的 delta 被漏掉。
+	Zone           string `json:"zone"`
 	Region         string `json:"region"`
 	Available      int    `json:"available"`
 	UnitPriceMicro int64  `json:"unit_price_micro,omitempty"`
@@ -372,10 +376,10 @@ func (s *ProbeStore) TrendBuckets(ctx context.Context, vendorID string, windowHo
 	var out []TrendBucket
 	for rows.Next() {
 		var (
-			bucketNo   int64
-			alivePct   float64
-			stockAvg   float64
-			samples    int
+			bucketNo int64
+			alivePct float64
+			stockAvg float64
+			samples  int
 		)
 		if err := rows.Scan(&bucketNo, &alivePct, &stockAvg, &samples); err != nil {
 			return nil, err

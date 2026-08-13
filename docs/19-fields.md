@@ -95,10 +95,34 @@ our_unit_credits = UnitPrice.Amount × vendor_pricing.credits_per_unit / 1_000_0
 1. **kirooo** · `Zone: providers.Zone(r.Region)` 直接转 → 落 `"us-east-1"` · 应改 `providers.ZoneOf(r.Region)`
 2. **kirodrop** · 完全没归一 → 落空 · 应改 `Zone: providers.ZoneOf(sr.Region)`
 
-**⚠️ `ZoneStock.Region` 是死冗余**（`docs/19-fields.md §9` 待清）：
-- 只 kiro91 / kirooo / kirodrop 三家给原文 · kiroceo / kiroappio / kiroappcc 三家空
-- 原文在 `vendor_probe.raw_snapshot` 里已全存 · 单独抠一列出来让"一半空"看着像数据有洞
-- **决定**：删字段 + 侧表列停写
+### 3.1 `zone` vs `region` 的分工（**定死 · 别再混**）
+
+| 列 | 语义 | 谁填 | 允许空 | 参与匹配 |
+|---|---|---|---|---|
+| **`zone`** | ★ **我方唯一地区标准** · `us` / `eu` / `general` | `providers.ZoneOf()` 归一 | ❌ 有货就该有值 | ✅ **所有匹配 / 查询 / 对比都用它** |
+| `region` | vendor **原文快照**（`us-east-1` / 空）| adapter 原样抄 | ✅ **3 家给 3 家不给 · 空是上游没给的事实** | ❌ **不参与任何逻辑** |
+
+**⚠️ 曾误判**：初稿把 `region` 当"死冗余"打算删掉（migration 031 初版要 `UPDATE region=NULL`）。**查完发现判断错了**：
+1. `region` 是那 3 家的**唯一原文留痕** —— 删了对账时想核"vendor 当时管这区叫什么"就没了
+2. 真 bug 在别处 —— **stock-delta 拿 `region` 当对比键**（见下）· 不是这列该不该存在
+
+**已改**：migration 031 改成只补 zone 索引 · `region` 列保留原样。
+
+**⚠️ 真 bug（2026-08-13 修）· stock-delta 键塌陷**：
+
+`vendorview.deriveStockDelta()` 老代码用 `RegionStock.Region` 当"上一轮 vs 这一轮"的对比键。对**不返 region 的 3 家 vendor**：
+
+```
+prev: [{Region:"", Available:0}(us), {Region:"", Available:5}(eu)]
+      → prevByRegion[""] = 5    ← us 那条被 eu 覆盖 · 丢了
+
+cur:  [{Region:"", Available:5}(us), {Region:"", Available:5}(eu)]
+      → us: delta = 5 - 5 = 0   ← 真实是 0→5 的 restock · 被漏掉
+      → dispatch_key 也撞（两条都是 "delta--<ts>"）· 只落一条
+```
+
+**后果**：这 3 家的 restock 事件**整区漏报** → 抢号链收不到唤醒。
+**修法**：键改用归一后的 `zone`（`deltaKeyOf()` · 老样本回落 region 保平滑）。
 
 **⚠️ AWS 端点对照**（kiro91 明确警告 · 其他家没说但同理）：
 
@@ -454,7 +478,7 @@ our_unit_credits = UnitPrice.Amount × vendor_pricing.credits_per_unit / 1_000_0
 |---|---|---|---|
 | 1 | **kirooo `Zone` 落 `us-east-1`** 不是 `us` | `kirooo/mapper.go` | `Zone: providers.ZoneOf(r.Region)` |
 | 2 | **kirodrop `Zone` 落空** | `kirodrop/mapper.go` | `Zone: providers.ZoneOf(sr.Region)` |
-| 3 | **`ZoneStock.Region` 死冗余** | `providers/vendor.go` + 侧表 | 删字段 + migration 031 停写 |
+| 3 | ~~`ZoneStock.Region` 死冗余~~ → **改判**：不是冗余 · 真 bug 是 **stock-delta 拿 region 当对比键** · 不返 region 的 3 家 vendor 两个 zone 塌成一条 · 整区 restock 漏报 | `vendorview/prober.go:deriveStockDelta` | ✅ **已修** · 键改用 zone（`deltaKeyOf`）· `region` 列保留（vendor 原文留痕）|
 | 4 | **kiroappcc 质保只判时间** · 缺 7000 积分维度 | 我方质保逻辑 | 加用量维度 |
 
 ### 19.2 待查项的结论（**2026-08-13 查完 · 全是真问题**）

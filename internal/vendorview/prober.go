@@ -210,6 +210,30 @@ func (p *Prober) computeCreditsFromMoney(ctx context.Context, vendorID string, m
 	return m.Amount * perUnit / 1_000_000
 }
 
+// zoneKeyOf · 从一个 ZoneStock 取归一后的 zone 标识（唯一一处规则 · 主表侧表都走它）
+//
+// 优先 z.Zone · 空则从 z.Region 兜 —— 各 vendor 给的地区字段形态不一样：
+// 有的只给短名 · 有的只给完整 region 名 · 有的两个都给（docs/19-fields.md §3）。
+// 两个都认不出时返空串 · **不瞎猜**。
+func zoneKeyOf(z providers.ZoneStock) providers.Zone {
+	if zk := providers.ZoneOf(string(z.Zone)); zk != "" {
+		return zk
+	}
+	return providers.ZoneOf(z.Region)
+}
+
+// deltaKeyOf · stock-delta 对比用的键。
+//
+// 优先 Zone（归一后 · 每家都有值）· 空则回落 Region —— **回落是为了兼容老样本**：
+// migration 029 之前落的 stock_by_region JSON 没有 zone 字段 · 反序列化出来 Zone 是空 ·
+// 那时的键还是 region。回落让"新样本 vs 老样本"这一轮对比不会因为键变了而误判成全量 restock。
+func deltaKeyOf(r RegionStock) string {
+	if r.Zone != "" {
+		return r.Zone
+	}
+	return r.Region
+}
+
 // classifyPriceSource · 标 our_unit_credits 是怎么算的 · 便于对账
 func (p *Prober) classifyPriceSource(cur string) string {
 	switch cur {
@@ -289,6 +313,8 @@ func (p *Prober) probeOnce(ctx context.Context, v providers.Vendor) {
 			regions := make([]RegionStock, 0, len(snap.Zones))
 			for _, z := range snap.Zones {
 				regions = append(regions, RegionStock{
+					// Zone 归一后的值 · stock-delta 拿它当键（见 RegionStock 注释）
+					Zone:           string(zoneKeyOf(z)),
 					Region:         z.Region,
 					Available:      z.Available,
 					UnitPriceMicro: z.UnitPrice.Amount,
@@ -385,11 +411,7 @@ func (p *Prober) probeOnce(ctx context.Context, v providers.Vendor) {
 	if p.zoneStore != nil && sample.Alive && snap != nil && len(snap.Zones) > 0 {
 		zones := make([]ProbeZoneSample, 0, len(snap.Zones))
 		for _, z := range snap.Zones {
-			// zone 归一 · 优先用 z.Zone（部分 vendor 空）· 空则用 z.Region 归一
-			zoneKey := providers.ZoneOf(string(z.Zone))
-			if zoneKey == "" {
-				zoneKey = providers.ZoneOf(z.Region)
-			}
+			zoneKey := zoneKeyOf(z)
 			credits := p.computeCreditsFromMoney(ctx, sample.VendorID, z.UnitPrice)
 			zones = append(zones, ProbeZoneSample{
 				VendorID:       sample.VendorID,
@@ -431,23 +453,30 @@ func (p *Prober) deriveStockDelta(ctx context.Context, cur ProbeSample) {
 		return
 	}
 
-	// prev region → available 映射
-	prevByRegion := make(map[string]int, len(prev.StockByRegion))
+	// prev zone → available 映射
+	//
+	// **键用 zone 不用 region**（2026-08-13 修）：部分 vendor 不返 region 原文（恒空串）·
+	// 拿 region 当键会让该家的 us / eu 两条**塌成一条**（后写的覆盖前面的）·
+	// 结果整个区的 restock delta 被漏掉 · dispatch_key 也会撞（都是 "delta--<ts>"）。
+	// zone 是归一后的标准字段 · 每家都有值（docs/19-fields.md §3）。
+	prevByZone := make(map[string]int, len(prev.StockByRegion))
 	for _, r := range prev.StockByRegion {
-		prevByRegion[r.Region] = r.Available
+		prevByZone[deltaKeyOf(r)] = r.Available
 	}
 
 	var dispatches []providers.VendorDispatch
 	for _, r := range cur.StockByRegion {
-		p0 := prevByRegion[r.Region]
+		zk := deltaKeyOf(r)
+		p0 := prevByZone[zk]
 		delta := r.Available - p0
 		if delta <= 0 {
 			continue
 		}
-		// dispatch_key = "delta-{region}-{cur_probed_at_unix}" · 幂等 · 同一探测点只落一次
-		key := "delta-" + r.Region + "-" + cur.ProbedAt.UTC().Format("20060102T150405Z")
+		// dispatch_key = "delta-{zone}-{cur_probed_at}" · 幂等 · 同一探测点每 zone 只落一次
+		key := "delta-" + zk + "-" + cur.ProbedAt.UTC().Format("20060102T150405Z")
 		raw, _ := json.Marshal(map[string]any{
 			"kind":        "stock_delta",
+			"zone":        r.Zone,
 			"region":      r.Region,
 			"prev_stock":  p0,
 			"cur_stock":   r.Available,
@@ -456,7 +485,8 @@ func (p *Prober) deriveStockDelta(ctx context.Context, cur ProbeSample) {
 			"probed_at":   cur.ProbedAt.UTC().Format(time.RFC3339),
 		})
 		dispatches = append(dispatches, providers.VendorDispatch{
-			DispatchKey:  key,
+			DispatchKey: key,
+			// Region 字段仍存 vendor 原文（vendor_dispatch 表语义没变）· 空就空
 			Region:       r.Region,
 			DispatchedAt: cur.ProbedAt.UTC(),
 			Count:        delta,
