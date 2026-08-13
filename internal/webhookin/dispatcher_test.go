@@ -164,3 +164,143 @@ func TestOnNewKeys_BothEmpty_Skips(t *testing.T) {
 		t.Error("skip 时不该通知抢号链")
 	}
 }
+
+// ── 两个"不处理就出事"的独家事件（2026-08-13 补 · docs/19-fields.md §10）──
+
+// mockSweeper · 记 deathwatch 触发次数
+type mockSweeper struct {
+	mu     sync.Mutex
+	sweeps int
+}
+
+func (m *mockSweeper) SweepOnce(_ context.Context) SweepReport {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sweeps++
+	return SweepReport{Scanned: 3, MarkedDead: 1}
+}
+
+func (m *mockSweeper) RefundOnce(_ context.Context, _ int) RefundReport {
+	return RefundReport{}
+}
+
+func (m *mockSweeper) count() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sweeps
+}
+
+// **reserved_keys_delivered · 包量预留已交付 · 钱已扣 · 号已是我方的**
+//
+// 漏处理的后果（上游档案明确警告）：钱扣了 · 号记在我方名下 · 但上游 keys 列表
+// 只给前缀 —— **这条通知里的 order_id 是取到正文的唯一入口** · 漏了就永远拿不到。
+//
+// 老代码：providers.EventType 枚举里都没定义 · 走 dispatchByType 的 default 只 log。
+func TestDispatchByType_ReservedKeysDelivered(t *testing.T) {
+	store := &mockDispatchStore{}
+	notifier := &mockNotifier{}
+	d := New(Config{DispatchStore: store, Notifier: notifier, Logger: slog.Default()})
+
+	evt := &providers.WebhookEvent{
+		VendorID:   providers.Vendor91Kiro,
+		EventID:    "evt-reserved-1",
+		OrderID:    "ord-reserved-abc", // ★ 取正文的唯一入口
+		NewKeys:    3,
+		Zone:       providers.ZoneUS,
+		ReceivedAt: time.Now().UTC(),
+		EventType:  providers.EventReservedKeysDelivered,
+	}
+
+	status, err := d.dispatchByType(context.Background(), evt)
+	if err != nil {
+		t.Fatalf("dispatchByType: %v", err)
+	}
+	if status != "ok" {
+		t.Fatalf("应处理成功 · 得 %q（老代码走 default 返 skipped）", status)
+	}
+
+	// 落了 dispatch · key 带 reserved- 前缀（跟普通开号批次区分开）
+	keys := store.dispatchKeys()
+	if len(keys) != 1 {
+		t.Fatalf("应落 1 条 dispatch · 得 %d", len(keys))
+	}
+	if keys[0] != "reserved-ord-reserved-abc" {
+		t.Errorf("dispatch_key = %q · want reserved-ord-reserved-abc", keys[0])
+	}
+
+	// **绝不能唤醒抢号链** —— 这批号已经是我方的了 · 不是"有货可抢"
+	// 通知抢号链会让挂单去 Purchase · 那是按公共价再买一批（上游明确警告）
+	if notifier.count() != 0 {
+		t.Errorf("包量预留不该唤醒抢号链 · 得 %d 次通知", notifier.count())
+	}
+}
+
+// 缺 order_id · 号可能永久拿不到 · 必须报错（不能静默 skip）
+func TestDispatchByType_ReservedKeysDelivered_MissingOrderID(t *testing.T) {
+	store := &mockDispatchStore{}
+	d := New(Config{DispatchStore: store, Logger: slog.Default()})
+
+	evt := &providers.WebhookEvent{
+		VendorID:   providers.Vendor91Kiro,
+		EventID:    "evt-reserved-2",
+		OrderID:    "", // ← 缺
+		NewKeys:    3,
+		ReceivedAt: time.Now().UTC(),
+		EventType:  providers.EventReservedKeysDelivered,
+	}
+
+	status, err := d.dispatchByType(context.Background(), evt)
+	if err == nil {
+		t.Error("缺 order_id 该返 error（钱扣了拿不到号 · 要告警）· 得 nil")
+	}
+	if status != "error" {
+		t.Errorf("status = %q · want error", status)
+	}
+}
+
+// **key_revoked_abuse · 上游收回已售号**
+//
+// 漏处理的后果：号已被上游作废 · 我方 credential 还是 alive → **用户拿到废号**。
+//
+// 老代码：枚举有 EventKeyRevokedAbuse · 但 dispatchByType 无 case 分支 · 走 default 只 log。
+func TestDispatchByType_KeyRevokedAbuse(t *testing.T) {
+	sweeper := &mockSweeper{}
+	d := New(Config{Deathwatch: sweeper, Logger: slog.Default()})
+
+	evt := &providers.WebhookEvent{
+		VendorID:   providers.VendorKiroAppIO,
+		EventID:    "evt-revoked-1",
+		ReceivedAt: time.Now().UTC(),
+		EventType:  providers.EventKeyRevokedAbuse,
+	}
+
+	status, err := d.dispatchByType(context.Background(), evt)
+	if err != nil {
+		t.Fatalf("dispatchByType: %v", err)
+	}
+	if status != "ok" {
+		t.Fatalf("应处理成功 · 得 %q（老代码走 default 返 skipped）", status)
+	}
+
+	// **触发了 deathwatch 探活** —— 这是让废号被标 dead 的唯一路径
+	if sweeper.count() != 1 {
+		t.Errorf("应触发 1 次 deathwatch 扫描 · 得 %d（老 bug 是 0 · 废号一直 alive）",
+			sweeper.count())
+	}
+}
+
+// deathwatch 未装配时不 panic · 返 skipped
+func TestDispatchByType_KeyRevokedAbuse_NoDeathwatch(t *testing.T) {
+	d := New(Config{Logger: slog.Default()})
+	evt := &providers.WebhookEvent{
+		VendorID:  providers.VendorKiroAppIO,
+		EventType: providers.EventKeyRevokedAbuse,
+	}
+	status, err := d.dispatchByType(context.Background(), evt)
+	if err != nil {
+		t.Errorf("未装配 deathwatch 不该报错 · 得 %v", err)
+	}
+	if status != "skipped" {
+		t.Errorf("status = %q · want skipped", status)
+	}
+}

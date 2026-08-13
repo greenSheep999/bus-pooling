@@ -387,6 +387,9 @@ func (a *Adapter) Parse(rawBody []byte, _ http.Header) (*providers.WebhookEvent,
 		evt.EventType = providers.EventWarrantyRefund
 		m := credits(wp.RefundedQuota)
 		evt.RefundAmount = &m
+	case "reserved_keys_delivered":
+		// 包量预留已交付 · 钱已扣 · OrderID 是取正文的唯一入口（见 EventType 注释）
+		evt.EventType = providers.EventReservedKeysDelivered
 	case "webhook_test":
 		evt.EventType = providers.EventTest
 	default:

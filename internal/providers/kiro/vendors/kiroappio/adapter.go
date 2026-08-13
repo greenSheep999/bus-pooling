@@ -353,7 +353,12 @@ func (a *Adapter) Parse(rawBody []byte, _ http.Header) (*providers.WebhookEvent,
 		evt.EventType = providers.EventWarrantyRefund
 		m := credits(wp.RefundedQuota)
 		evt.RefundAmount = &m
-	case "webhook_test":
+	case "key_revoked_abuse":
+		// 本 vendor 独家事件 · 上游主动收回已售号（判定用量滥用）· 且不退积分。
+		// 显式列出而不是靠 default 的字符串透传 —— 那样依赖"事件名恰好等于枚举值"
+		// 这个巧合 · 上游改名就静默失效（漏处理 = 用户拿废号）。
+		evt.EventType = providers.EventKeyRevokedAbuse
+	case "test", "webhook_test":
 		evt.EventType = providers.EventTest
 	default:
 		evt.EventType = providers.EventType(wp.Event)

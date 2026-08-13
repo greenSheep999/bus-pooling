@@ -174,6 +174,10 @@ func (d *Dispatcher) dispatchByType(ctx context.Context, e *providers.WebhookEve
 		return d.onAllKeysDead(ctx, e)
 	case providers.EventWarrantyRefund:
 		return d.onWarrantyRefund(ctx, e)
+	case providers.EventReservedKeysDelivered:
+		return d.onReservedKeysDelivered(ctx, e)
+	case providers.EventKeyRevokedAbuse:
+		return d.onKeyRevokedAbuse(ctx, e)
 	case providers.EventTest:
 		d.logger.Info("webhookin: test 事件 · 只 log", "vendor", e.VendorID, "event_id", e.EventID)
 		return "skipped", nil
@@ -205,7 +209,7 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 		return "skipped", nil
 	}
 	dispatch := providers.VendorDispatch{
-		DispatchKey:  dispatchKey, // vendor 侧稳定 · 幂等主键（order_id 优先 · fallback purchase_order_id）
+		DispatchKey:  dispatchKey,  // vendor 侧稳定 · 幂等主键（order_id 优先 · fallback purchase_order_id）
 		DispatchedAt: e.ReceivedAt, // 精度到我方收到时刻 · vendor finished_at 不同家不一样
 		Count:        e.NewKeys,
 		Alive:        e.NewKeys, // 刚开号 · 假设全 alive
@@ -238,6 +242,87 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 			d.logger.Warn("webhookin: 唤醒抢号链失败",
 				"vendor", e.VendorID, "dispatch_key", dispatchKey, "err", err)
 		}
+	}
+	return "ok", nil
+}
+
+// onReservedKeysDelivered · 包量预留已按合约单价交付 · **钱已扣 · 号已是我方的**。
+//
+// ⚠️ **绝不能调 Purchase** —— 那会按公共价再买一批（上游档案明确警告）。
+// 这条通知里的 `order_id` 是取到 key 正文的**唯一入口**（上游 keys 列表只给前缀）·
+// 漏处理的后果是：钱扣了 · 号记在我方名下 · 但程序永远拿不到。
+//
+// **当前策略：落 dispatch + 高声告警 · 不自动补拉**。理由：
+//   - 包量预留是**运营侧签协议**触发的 · 不对应任何 pull_intent · 拿到 key 也不知道该进谁的车
+//   - 自动补拉再自动派发 = 在没有用户意图的情况下动号池 · 风险高于收益
+//   - 我方当前**没签包量协议** · 这条事件不该出现；真出现了说明协议生效了 · 需要人接手
+//
+// 所以这里用 ERROR 级别 log（会进告警）· 把 order_id 留在 vendor_dispatch 里 ·
+// 运维拿它调 `GET /api/my/orders/{order_id}/keys` 手工取号。
+// 未来若常态化跑包量协议 · 再把补拉 + 派发接成自动的。
+func (d *Dispatcher) onReservedKeysDelivered(ctx context.Context, e *providers.WebhookEvent) (string, error) {
+	// order_id 是这条事件的关键 —— 没它就永远拿不到号 · 必须喊出来
+	if e.OrderID == "" {
+		d.logger.Error("webhookin: 包量预留交付但缺 order_id · 号可能永久拿不到 · 立即人工介入",
+			"vendor", e.VendorID, "event_id", e.EventID, "new_keys", e.NewKeys)
+		return "error", fmt.Errorf("reserved_keys_delivered 缺 order_id（vendor=%s event=%s）",
+			e.VendorID, e.EventID)
+	}
+
+	// 落 dispatch 留痕 · source 标 reserved 区分于普通开号批次
+	if d.dispatchStore != nil {
+		dispatch := providers.VendorDispatch{
+			DispatchKey:  "reserved-" + e.OrderID,
+			DispatchedAt: e.ReceivedAt,
+			Count:        e.NewKeys,
+			Alive:        e.NewKeys,
+			Region:       string(providers.ZoneOf(string(e.Zone))),
+			Status:       "running",
+			Raw:          e.RawPayload,
+		}
+		if err := d.dispatchStore.UpsertDispatches(ctx, string(e.VendorID),
+			"vendor_self", []providers.VendorDispatch{dispatch}); err != nil {
+			return "error", fmt.Errorf("upsert reserved dispatch: %w", err)
+		}
+	}
+
+	// **ERROR 级别** —— 这是"钱已经扣了 · 号在上游等着取"的状态 · 必须有人看到
+	d.logger.Error("webhookin: 包量预留已交付 · 钱已扣 · 需人工补拉取号",
+		"vendor", e.VendorID,
+		"order_id", e.OrderID,
+		"new_keys", e.NewKeys,
+		"zone", e.Zone,
+		"how_to", "GET /api/my/orders/{order_id}/keys 取正文 · 再手工入池",
+	)
+	return "ok", nil
+}
+
+// onKeyRevokedAbuse · 上游主动收回已售 key（用量异常判定滥用）· **且不退积分**。
+//
+// **为什么必须处理**：号已经被上游作废 · 但我方 credential 还是 alive ·
+// 用户去用就是废号。漏处理 = 用户拿到不能用的号还以为是我方的问题。
+//
+// 处理方式跟 all_keys_dead 一样触发 deathwatch 全池扫描 —— 让探活确认这把号已死 ·
+// 走正常的 dead 标记链路（同时会评估质保退款 · 虽然上游对 revoked 不退 ·
+// 我方对乘客的质保是我方自己的承诺 · 由 deathwatch 按我方规则判）。
+//
+// **不做精确到单把 key 的处理**：载荷只给 `key_prefix`（不给完整 key 或我方 credential id）·
+// 按前缀反查要扫全池 · 跟直接触发全池扫描等价 · 后者还能顺带发现同批其他死号。
+func (d *Dispatcher) onKeyRevokedAbuse(ctx context.Context, e *providers.WebhookEvent) (string, error) {
+	// 先把事件本身喊出来 —— 滥用判定是个信号：说明有号被公开分发了
+	d.logger.Warn("webhookin: 上游收回已售号（判定用量滥用）· 触发全池探活",
+		"vendor", e.VendorID, "event_id", e.EventID,
+		"note", "上游对 revoked 不退积分 · 我方质保按自己规则判")
+
+	if d.deathwatch == nil {
+		return "skipped", nil
+	}
+	rep := d.deathwatch.SweepOnce(ctx)
+	d.logger.Info("webhookin: key_revoked_abuse · deathwatch 扫描完成",
+		"vendor", e.VendorID,
+		"scanned", rep.Scanned, "marked_dead", rep.MarkedDead, "errors", rep.Errors)
+	if rep.Errors > 0 {
+		return "error", fmt.Errorf("deathwatch.SweepOnce 有 %d 个错误", rep.Errors)
 	}
 	return "ok", nil
 }
