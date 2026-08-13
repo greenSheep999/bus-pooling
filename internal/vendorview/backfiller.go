@@ -20,7 +20,8 @@ import (
 type Backfiller struct {
 	registry    *providers.Registry
 	store       *OrderKeyStore
-	ledgerStore *LedgerStore // 可 nil（老装配 / 测试）· 非 nil 才拉 ledger
+	ledgerStore *LedgerStore  // 可 nil（老装配 / 测试）· 非 nil 才拉 ledger
+	tierStore   *TierStore    // 可 nil · 非 nil 才拉数量分档（docs/20 阶梯价格）
 	interval    time.Duration // 全量间隔（默认 5min）
 	timeout     time.Duration // 单家 vendor 单次 backfill 超时
 	logger      *slog.Logger
@@ -34,9 +35,11 @@ type BackfillerConfig struct {
 	Store    *OrderKeyStore
 	// LedgerStore 交叉对账用（docs/20 §1）· 传 nil = 不拉 ledger（vendor 无端点时也不影响）
 	LedgerStore *LedgerStore
-	Interval    time.Duration
-	Timeout     time.Duration
-	Logger      *slog.Logger
+	// TierStore 数量分档（阶梯价格 · docs/20）· 传 nil = 不拉分档
+	TierStore *TierStore
+	Interval  time.Duration
+	Timeout   time.Duration
+	Logger    *slog.Logger
 }
 
 func NewBackfiller(cfg BackfillerConfig) *Backfiller {
@@ -54,7 +57,8 @@ func NewBackfiller(cfg BackfillerConfig) *Backfiller {
 	}
 	return &Backfiller{
 		registry: cfg.Registry, store: cfg.Store, ledgerStore: cfg.LedgerStore,
-		interval: interval, timeout: timeout, logger: logger,
+		tierStore: cfg.TierStore,
+		interval:  interval, timeout: timeout, logger: logger,
 	}
 }
 
@@ -179,6 +183,23 @@ func (b *Backfiller) backfillVendor(ctx context.Context, v providers.Vendor) {
 			} else if len(entries) > 0 {
 				if err := b.ledgerStore.UpsertLedger(ctx, vid, entries); err != nil {
 					b.logger.Warn("upsert ledger 失败", "vendor", vid, "err", err)
+				}
+			}
+		}
+	}
+
+	// 5. 数量分档（阶梯价格 · docs/20 · 若实现了 KeyTierLister · 如 kirooo key-price-tiers）
+	if b.tierStore != nil {
+		if lister, ok := v.(providers.KeyTierLister); ok {
+			callCtx, cancel := context.WithTimeout(ctx, b.timeout)
+			bands, err := lister.ListKeyTiers(callCtx)
+			cancel()
+			if err != nil {
+				b.logger.Warn("backfill 数量分档失败", "vendor", vid, "err", err)
+			} else {
+				// 整表覆盖（含空 · 空=当前无分档也要清掉旧的）
+				if err := b.tierStore.ReplaceQtyBands(ctx, vid, bands); err != nil {
+					b.logger.Warn("落数量分档失败", "vendor", vid, "err", err)
 				}
 			}
 		}

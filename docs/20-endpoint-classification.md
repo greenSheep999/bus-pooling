@@ -151,7 +151,10 @@ webhook · xi8 这两个补掉盲区（`16-buy-race.md` 的多路信号里 xi8 �
    **纯对账参考 · 不接采购**（用户拍板 · 前一版误接 fire 已撤）· xi8 webhook 不接
 3. ~~**kirodrop `reservation`**~~ —— **实测拿不到**（401 · 网页 session + 验证码 · 见 §2 注）·
    转走 **kirooo `key-price-tiers`**（真形状已抓 · API key 可达）填 `vendor_price_tier`
-4. **kiro91 `stock/rounds` + kirooo `key-price-tiers`**（维度 A③ · Prices 页逐车次真价）
+4. ✅ **kirooo `key-price-tiers` → 数量分档已落地**（阶梯价格）· migration 035 扩
+   `vendor_price_tier`（tier_kind='qty_band' + qty_lower/upper）· backfiller 拉 · 真形状
+   `{bands:[{lower,upper,price}]}`（实测 · 当前 flat 全 100 · 结构真实一开分档就反映）·
+   kirodrop 时间降价形状已抓（token-gated · 见 §2 注）· kiro91 `stock/rounds`（当前空）待有数据接
 5. **号明细/寿命一批**（维度 A②③ · 喂 quality）—— dispatch-log / keys/export / usage / created-at
 6. **其余 ledger adapter**（维度 A①）· kirooo `/api/my/credits` ✅ 已接（真实形状）·
    剩 kiroappio/kiroappcc/kirodrop（用 vendor-probe 抓真形状后接 · 别猜）

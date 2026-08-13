@@ -639,8 +639,10 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		Store:    orderKeyStoreForView,
 		// 交叉对账（docs/20 §1）· 拉 vendor 侧流水落 vendor_ledger · 实现了 LedgerLister 的家才拉
 		LedgerStore: vendorview.NewLedgerStore(database.DB),
-		Interval:    5 * time.Minute,
-		Timeout:     20 * time.Second,
+		// 阶梯价格（docs/20）· 拉数量分档落 vendor_price_tier · 实现了 KeyTierLister 的家才拉
+		TierStore: vendorview.NewTierStore(database.DB),
+		Interval:  5 * time.Minute,
+		Timeout:   20 * time.Second,
 	})
 	backfiller.Start(ctx)
 	defer backfiller.Stop(5 * time.Second)

@@ -159,6 +159,31 @@ type TierSchedule struct {
 	UnitPriceUSDRaw  int64     // microunit · 这档 USD 原值（有则存 · 部分 vendor 独家）
 }
 
+// ── 数量分档（quantity band · docs/20 · migration 035）─────────────
+//
+// 跟 TieredPricing（时间降价）是两种不同的"阶梯"模型：
+//   - 时间降价：价随时间降（kirodrop timed_pricing）
+//   - 数量分档：价按产量/购买量档位（kirooo key-price-tiers 的 bands）
+// 数量分档端点通常 API key 可直达（无需 session）· 能进 backfiller 稳定拉。
+
+// QtyPriceBand · 一个数量档（价按落在哪个数量区间定）
+type QtyPriceBand struct {
+	// Lower / Upper 数量区间 · Upper=0 表示"及以上"（最高档无上限）
+	Lower int
+	Upper int
+	// UnitPriceCredits microunit · 这档单价（我方积分 · adapter 换算好）
+	UnitPriceCredits int64
+	// Region us / eu / "" 全区
+	Region string
+}
+
+// KeyTierLister 可选接口 · vendor 有"数量分档"端点就实现（如 kirooo key-price-tiers）。
+// backfiller 拉进来落 vendor_price_tier（tier_kind='qty_band'）。
+type KeyTierLister interface {
+	// ListKeyTiers 拉当前数量分档表 · 空 slice = 无分档（当前 flat）
+	ListKeyTiers(ctx context.Context) ([]QtyPriceBand, error)
+}
+
 type ZoneStock struct {
 	Zone      Zone
 	Region    string
