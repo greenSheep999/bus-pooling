@@ -556,8 +556,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	modeMgr.Start(ctx)
 	defer modeMgr.Stop(2 * time.Second)
 
-	// xi8 可买性 flag（blocked/floating）· 抢号 fire-guard 用（docs/20 §3）·
-	// xi8 backfiller 每 5min 写 · stockWatcher fire 前查 blocked。
+	// xi8 可买性 flag（buyable/blocked/floating）· **纯内部对账 / 参考**（看 xi8 怎么对齐上游）·
+	// xi8 backfiller 每 5min 写。**不介入采购决策** —— 采购一律直接打 vendor（用户 2026-08-14 拍板）。
 	xi8FlagStore := vendorview.NewFlagStore(database.DB)
 
 	stockWatcher := stockwatch.New(stockwatch.Config{
@@ -566,8 +566,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		Mode:   modeMgr,
 		Kill:   killFlag,
 		Turbo:  turboFlag,
-		Guard:  xi8FlagStore, // blocked 的别 fire · fail-open（查不到不拦）
 		// Firer 稍后 SetFirer 补 —— 构造环
+		// **不接 xi8 guard**：能不能买以直接打 vendor 为准 · xi8 只做对账不进钱路
 	})
 	// TTL sweeper · 不扫的话过期挂单会让 demand 虚高 · mode 永远判 tight
 	stockWatcher.StartSweeper(ctx, time.Minute)

@@ -8,11 +8,13 @@ import (
 
 // FlagStore 读写 xi8_vendor_flags 表（migration 034）· 聚合源的 buyable/blocked/floating。
 //
-// 用途：抢号 fire-guard（docs/20 §3）· blocked 的别 fire。**纯内部**（CLAUDE.md §0.1）。
+// 用途：**纯内部对账 / 参考**（看 xi8 怎么对齐上游 · CLAUDE.md §0.1）·
+// **不介入采购决策**（用户 2026-08-14 拍板：采购一律直接打 vendor · xi8 不进钱路）。
+// IsBlocked 是对账 / 诊断查询（"xi8 说这家停售 · 我方直连时是什么情况"）· 不接抢号 fire。
 type FlagStore struct {
 	db *sql.DB
-	// staleAfter · flag 超过这个时长没更新就不信（默认 30min）。
-	// xi8 backfiller 5min 拉一轮 · 30min 没更新说明 xi8 挂了或没数据 · 这时 fail-open。
+	// staleAfter · flag 超过这个时长没更新就当无效（默认 30min）。
+	// xi8 backfiller 5min 拉一轮 · 30min 没更新说明 xi8 挂了或没数据。
 	staleAfter time.Duration
 }
 
@@ -72,13 +74,14 @@ func (s *FlagStore) UpsertFlags(ctx context.Context, flags []VendorFlag) error {
 	return tx.Commit()
 }
 
-// IsBlocked · 抢号 fire 前查 · 实现 stockwatch.BlockGuard。
+// IsBlocked · **对账 / 诊断查询**（不接采购）· xi8 是否把该 vendor+zone 标了停售。
 //
 // 返回 blocked=true 只在：**有新鲜数据** 且 blocked=1。
-//   - 查不到该 vendor+zone（xi8 不覆盖 / 没数据）→ 不拦（fail-open）
-//   - 数据太旧（> staleAfter）→ 不拦（xi8 可能挂了 · 别误伤）
+//   - 查不到该 vendor+zone（xi8 不覆盖 / 没数据）→ false
+//   - 数据太旧（> staleAfter）→ false（xi8 可能挂了）
 //
-// zone 空 = 按 vendor 任一 zone blocked 就算（保守：任一区停售就别抢该 vendor）。
+// zone 空 = 按 vendor 任一 zone blocked 就算。
+// 用途举例：对账时比"xi8 说停售 vs 我方直连能不能买" · 看 xi8 对齐上游的准确度。
 func (s *FlagStore) IsBlocked(ctx context.Context, vendorID, zone string) (blocked bool, reason string) {
 	if s.db == nil || vendorID == "" {
 		return false, ""
