@@ -97,8 +97,15 @@ kiroappio + kirodrop 无 fleet 端点 · 靠 webhook + xi8 兜底（**注意这�
 webhook 到现在没进过我方 · 要么上游没配好要么没到货 · 新鲜度监控会盯**）。
 
 **prod env（后端 only · 不出前端）**：`BP_VENDOR_KIROAPPCC_LOGIN_USER/PASS`（kiroappcc 对账登录）·
-`BP_VENDOR_KIRODROP_SESSION_TOKEN`（kirodrop 时间档 · **会过期 · 401 时监控报警 → 人工重 seed**）·
-`BP_ADMIN_KEY`（data-health 端点鉴权）· 均 2026-08-14 已配。
+`BP_VENDOR_KIRODROP_SESSION_TOKEN`（kirodrop 时间档）· `BP_ADMIN_KEY`（data-health 端点鉴权）·
+均 2026-08-14 已配。
+
+**kirodrop token 自动刷新**（`scripts/kirodrop-refresh/` · 2026-08-14）：token 会过期且登录带图形
+验证码不能像 kiroappcc 那样后端自动重登。方案：一个 ddddocr（离线 OCR）容器 —— 拉验证码 → 去噪
+（只留暗像素二值化，把重噪点阵洗清晰）→ 数字约束识别 → 登录换新 token。vps22 cron 每小时跑
+`refresh.sh`：**先拿当前 token 打 `/api/v1/reservation`，200 就跳过**（免无谓重启）· 401 才登录换新写
+`.env` + `docker compose up -d`。登录端点**限流很凶**（~12 次/窗口）· 脚本连续 3 次 429 就早退等下轮。
+kiroappcc 反之是**无码登录 · adapter 自动重登 · 零维护**（见 `docs/vendors/*`）。
 
 ---
 
