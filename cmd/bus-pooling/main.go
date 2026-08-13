@@ -617,6 +617,12 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	prober.Start(ctx)
 	defer prober.Stop(3 * time.Second)
 
+	// DailyRollupper · 把 vendor_probe 明细聚合进 vendor_daily（/status 的 7d 事故读它）
+	// 启动回补存量日期 · 之后每小时滚今天+昨天 · 纯内部滚动不打上游
+	dailyRollupper := vendorview.NewDailyRollupper(probeStore, time.Hour, slog.Default())
+	dailyRollupper.Start(ctx)
+	defer dailyRollupper.Stop(3 * time.Second)
+
 	// Backfiller · 每 5 分钟拉一次 vendor 侧全量订单 + key 历史
 	// 落 vendor_order + vendor_key · 是 /api/vendors/status + /api/vendors/prices 共同数据源
 	backfiller := vendorview.NewBackfiller(vendorview.BackfillerConfig{

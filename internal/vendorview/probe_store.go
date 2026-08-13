@@ -303,10 +303,15 @@ func (s *ProbeStore) StockoutMinutes24h(ctx context.Context, vendorID string, pr
 
 // Incidents7d 返回过去 7 天内 incident_flag=1 的日期（YYYY-MM-DD）。
 func (s *ProbeStore) Incidents7d(ctx context.Context, vendorID string) ([]string, error) {
+	return s.Incidents7dFrom(ctx, vendorID, time.Now())
+}
+
+// Incidents7dFrom 同 Incidents7d · 但以传入时刻为"今天"（测试注入 / 回放用）。
+func (s *ProbeStore) Incidents7dFrom(ctx context.Context, vendorID string, now time.Time) ([]string, error) {
 	if s.db == nil {
 		return nil, nil
 	}
-	cutoff := time.Now().UTC().AddDate(0, 0, -7).Format("2006-01-02")
+	cutoff := now.UTC().AddDate(0, 0, -7).Format("2006-01-02")
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT date FROM vendor_daily
 		 WHERE vendor_id = ? AND date >= ? AND incident_flag = 1
