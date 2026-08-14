@@ -62,7 +62,22 @@ export const handlers = [
     await delay(400);
     return HttpResponse.json({ ...fx.buses[0], id: `bus_${Date.now()}`, name: body.name ?? "新车" }, { status: 201 });
   }),
-  http.put("/api/me/buses/:id/strategy", () => ok({ ok: true }, 300)),
+  /* PUT /me/buses/{id}/strategy · 1f-B 支持 null 值(跟随全局)· 直接落到 fx.buses 里那份对象
+     所有覆盖字段(auto_refill_enabled / refill_watermark / refill_min_count / per_round_count /
+     preferred_vendor / max_unit_price) 都接受 null · null = 跟随全局默认 */
+  http.put("/api/me/buses/:id/strategy", async ({ params, request }) => {
+    const bus = fx.buses.find((b) => b.id === params.id);
+    if (!bus) return HttpResponse.json({ error: "not_found" }, { status: 404 });
+    const body = (await request.json()) as Record<string, unknown>;
+    for (const k of [
+      "auto_refill_enabled", "refill_watermark", "refill_min_count",
+      "per_round_count", "max_unit_price",
+      "daily_round_limit", "daily_spend_limit", "preferred_vendor",
+    ] as const) {
+      if (k in body) (bus.strategy as any)[k] = body[k];
+    }
+    return ok({ ok: true }, 300);
+  }),
   http.put("/api/me/buses/:id", () => ok({ ok: true }, 300)),
   http.post("/api/me/buses/:id/pull", () => ok({ round_id: "rd_new", status: "initiated" }, 600)),
   http.delete("/api/me/buses/:id", () => ok({ ok: true }, 400)),
@@ -231,16 +246,18 @@ export const handlers = [
   }),
 
   // ── 全局策略（06-db-schema §16 · 提取 key 的限额就走这里）
+  //    1f-B 加 default_auto_refill_enabled / default_refill_watermark / default_refill_min_count 三字段
   http.get("/api/me/strategy", () => ok(fx.globalStrategy)),
   http.put("/api/me/strategy", async ({ request }) => {
     const body = (await request.json()) as Record<string, unknown>;
     for (const k of [
       "daily_round_limit", "daily_spend_limit", "per_round_count",
       "max_unit_price", "preferred_vendor", "default_zone",
+      "default_auto_refill_enabled", "default_refill_watermark", "default_refill_min_count",
     ] as const) {
       if (k in body) (fx.globalStrategy as any)[k] = body[k];
     }
-    return ok({ ok: true }, 300);
+    return ok(fx.globalStrategy, 300);
   }),
 
   // ── 配置

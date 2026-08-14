@@ -69,37 +69,40 @@ const meMember = (joinedAgoH: number): BusMember => ({
 
 export const buses: Bus[] = [
   {
+    /* 周末拼车局 · 演示"全覆盖"态 —— 所有覆盖字段都有值,不跟随全局 */
     id: "bus_weekend", name: "周末拼车局", kind: "single", status: "active",
     member_count: 1, invite_code: null, created_at: ago(24 * 8),
     alive_count: 12, dead_count: 1, spend_today: C(28),
     avg_lifespan_seconds: 42 * 3600,
     strategy: {
       auto_refill_enabled: true, refill_watermark: 3, refill_min_count: 5,
-      per_round_count: 3, max_unit_price: C(25), daily_round_limit: 20,
-      daily_spend_limit: C(200), preferred_vendor: null,
+      per_round_count: 3, max_unit_price: C(25), daily_round_limit: null,
+      daily_spend_limit: null, preferred_vendor: null,
     },
     members: [meMember(24 * 8)],
   },
   {
+    /* 日常一号 · 演示"混合"态 —— auto/watermark 覆盖 · min_count/perRound 跟随全局 */
     id: "bus_daily", name: "日常一号", kind: "single", status: "active",
     member_count: 1, invite_code: null, created_at: ago(24 * 15),
     alive_count: 4, dead_count: 0, spend_today: C(12),
     avg_lifespan_seconds: 36 * 3600,
     strategy: {
-      auto_refill_enabled: true, refill_watermark: 2, refill_min_count: 3,
-      per_round_count: 2, max_unit_price: C(22), daily_round_limit: 10,
-      daily_spend_limit: C(100), preferred_vendor: null,
+      auto_refill_enabled: true, refill_watermark: 2, refill_min_count: null,
+      per_round_count: null, max_unit_price: C(22), daily_round_limit: null,
+      daily_spend_limit: null, preferred_vendor: null,
     },
     members: [meMember(24 * 15)],
   },
   {
+    /* Kiro 常驻车 · 演示"全跟随全局"态 —— auto/watermark/min_count/perRound 全 null · 只覆盖 preferred_vendor */
     id: "bus_kiro", name: "Kiro 常驻车", kind: "team", status: "active",
     member_count: 4, invite_code: "K7X-2M4", created_at: ago(24 * 30),
     alive_count: 6, dead_count: 1, spend_today: C(5),
     avg_lifespan_seconds: 28 * 3600,
     strategy: {
-      auto_refill_enabled: false, refill_watermark: 2, refill_min_count: null,
-      per_round_count: 2, max_unit_price: null, daily_round_limit: null,
+      auto_refill_enabled: null, refill_watermark: null, refill_min_count: null,
+      per_round_count: null, max_unit_price: null, daily_round_limit: null,
       daily_spend_limit: null, preferred_vendor: "91kiro",
     },
     /* 多人车 · 分摊比例加起来 100 · decisions §8.18 §8.23 §8.26
@@ -809,7 +812,10 @@ export const webhookDeliveries: WebhookDelivery[] = [
 ];
 
 /** 全局策略 · 06-db-schema §16 passenger_strategy_default
- *  daily_* 是**硬上限**（跨所有车累加 + 提取 key 也受它管）· 其余是新车默认值 */
+ *  daily_* / max_unit_price 是**硬上限**(跨所有车累加 / 取严 + 提取 key 也受它管)
+ *  per_round_count / preferred_vendor / default_zone 是新车默认值 + 车级 null 时的 fallback
+ *  default_auto_refill_enabled / default_refill_watermark / default_refill_min_count · 1f-B 新加
+ *   —— 建新车 seed + 车级 auto/refill 三字段 null 时的运行时 fallback(§4.3.5.4) */
 export const globalStrategy: GlobalStrategy = {
   /* 30 积分 · mock 里各 vendor 单价 15-26，所以默认不触发拦截；
      想看拦截态把它调到 5 左右（提取确认窗会禁用确认按钮） */
@@ -819,6 +825,11 @@ export const globalStrategy: GlobalStrategy = {
   per_round_count: 3,
   preferred_vendor: null,
   default_zone: "auto",
+  /* 1f-B 新加 · bus_kiro 在 fixtures 里 auto_refill_enabled = null 会 fallback 到这里
+     所以给个 true + 水位 2 · UI 展示"跟随全局 · 已开启 · 水位 2" · 让"跟随"态可见 */
+  default_auto_refill_enabled: true,
+  default_refill_watermark: 2,
+  default_refill_min_count: null,      // null = 按 gap 补差额(§4.3.2c 选项 X)
   /* 今日已用 · 拿 mock 里今天的拉号轮次和消费凑，别硬编一个跟别处矛盾的数 */
   used_today: {
     rounds: pullRounds.filter((r) => Date.now() - new Date(r.created_at).getTime() < 24 * 3600_000).length,
