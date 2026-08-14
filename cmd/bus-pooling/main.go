@@ -688,6 +688,12 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	// StalenessChecker · 定时扫 pipeline_health · 陈旧管线大声打 ERROR（系统自己盯）·
 	// 5min 一轮 · 首查延后一个间隔（等采集先盖上戳）
 	stalenessChecker := vendorview.NewStalenessChecker(healthStore, 5*time.Minute, slog.Default())
+	// v3.5 · 告警外发 · BP_ALERT_WEBHOOK 未设 = 只留 ERROR 日志（不外发）
+	if alertURL := os.Getenv("BP_ALERT_WEBHOOK"); alertURL != "" {
+		notifier := vendorview.NewWebhookNotifier(alertURL, 30*time.Minute, slog.Default())
+		stalenessChecker.SetNotifier(notifier)
+		slog.Info("StalenessChecker 装配告警外发", "cooldown", "30m")
+	}
 	stalenessChecker.Start(ctx)
 	defer stalenessChecker.Stop(2 * time.Second)
 

@@ -16,9 +16,13 @@ type StalenessChecker struct {
 	health   *HealthStore
 	interval time.Duration
 	logger   *slog.Logger
+	notifier AlertNotifier
 
 	cancel context.CancelFunc
 	done   chan struct{}
+
+	// 上一轮陈旧的管线集合 · 用于识别"恢复"（本轮不再陈旧 → recovered）
+	lastStale map[AlertKey]struct{}
 }
 
 func NewStalenessChecker(health *HealthStore, interval time.Duration, logger *slog.Logger) *StalenessChecker {
@@ -28,7 +32,18 @@ func NewStalenessChecker(health *HealthStore, interval time.Duration, logger *sl
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &StalenessChecker{health: health, interval: interval, logger: logger}
+	return &StalenessChecker{
+		health:    health,
+		interval:  interval,
+		logger:    logger,
+		lastStale: make(map[AlertKey]struct{}),
+	}
+}
+
+// SetNotifier 装配告警外发接口 · 传 nil 即禁用外发（只保留 ERROR 日志）。
+// 必须在 Start 前调用。
+func (c *StalenessChecker) SetNotifier(n AlertNotifier) {
+	c.notifier = n
 }
 
 func (c *StalenessChecker) Start(ctx context.Context) {
@@ -87,12 +102,16 @@ func (c *StalenessChecker) check(ctx context.Context) {
 		return
 	}
 	now := time.Now().UTC()
-	stale := 0
+
+	staleRows := make([]PipelineHealthRow, 0)
+	currStale := make(map[AlertKey]struct{})
 	for _, r := range rows {
 		if !r.Stale(now) {
 			continue
 		}
-		stale++
+		staleRows = append(staleRows, r)
+		currStale[AlertKey{VendorID: r.VendorID, Pipeline: r.Pipeline}] = struct{}{}
+
 		age := "从未成功"
 		if !r.LastOKAt.IsZero() {
 			age = now.Sub(r.LastOKAt).Round(time.Second).String()
@@ -105,10 +124,29 @@ func (c *StalenessChecker) check(ctx context.Context) {
 			"last_err", r.LastErr,
 		)
 	}
-	if stale == 0 {
-		c.logger.Info("数据管线全部新鲜", "checked", len(rows))
+
+	// 识别"恢复"：上轮陈旧 · 本轮已不陈旧
+	recovered := make([]AlertKey, 0)
+	for k := range c.lastStale {
+		if _, still := currStale[k]; !still {
+			recovered = append(recovered, k)
+		}
+	}
+	c.lastStale = currStale
+
+	if c.notifier != nil {
+		if len(staleRows) > 0 {
+			c.notifier.Notify(ctx, staleRows, now)
+		}
+		if len(recovered) > 0 {
+			c.notifier.NotifyRecovered(ctx, recovered, now)
+		}
+	}
+
+	if len(staleRows) == 0 {
+		c.logger.Info("数据管线全部新鲜", "checked", len(rows), "recovered", len(recovered))
 	} else {
-		c.logger.Error("数据管线新鲜度体检", "stale", stale, "total", len(rows))
+		c.logger.Error("数据管线新鲜度体检", "stale", len(staleRows), "total", len(rows), "recovered", len(recovered))
 	}
 }
 
