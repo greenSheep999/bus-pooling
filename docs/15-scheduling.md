@@ -205,12 +205,16 @@ xi8 是数据补齐 · **不参与抢号**。
 
 | 触发源 | 谁触发 | 说明 |
 |---|---|---|
-| `death` | 号死了 | deathwatch 标死后立刻调 |
+| `death_refill` | 号死了 · 判是否补 | deathwatch 标死后立刻调 · **走完整决策器 · 受 auto 开关约束** |
 | `webhook` | vendor 有新号了 | 收到 webhook 立刻调 |
 | `probe` | 我方探针发现 vendor 库存涨了 | 60s 采样对比后调 |
 | `scheduler` | 5min 兜底扫 | 遍历所有开了自动补的车 |
-| `manual` | 用户手动点拉号 | HTTP API 调 |
-| `usage` | 号快用光了(未来) | 用量数据采集后启用 |
+| `manual` | 用户手动点拉号 | HTTP API 调 · **绕过 auto 检查** |
+| `usage` | 号快用光了 | 用量数据采集后启用(阶段 1d 后期) |
+
+**不进决策器的路径**(独立走·不算触发源):
+- **死号退款** · deathwatch 走 vendor 政策退款 · 是天赋权利 · 跟决策器无关
+- **建车向导首次拉号** · 用户在 UI 明说要 · 直接调 decider.Pull · 不进决策器
 
 ### 5.2 Decide 六步串行(一步拒直接返)
 
@@ -228,16 +232,20 @@ xi8 是数据补齐 · **不参与抢号**。
 
 **Step 2 · 用户 auto 开关**
 
-- `manual` / `death` → 跳过 · 直进 Step 5(手动是用户明说·死号退款是天赋)
-- 其他触发源:读 `AutoRefillEnabled`
+- `manual` → 跳过 · 直进 Step 5(手动是用户明说 · 系统不该拦)
+- 其他触发源(含 `death_refill`) → 读 `AutoRefillEnabled`:
   - false → 【拒·auto off】
   - true → 继续
+
+**关键**:`death_refill` **不再跳过** auto 检查 —— 号死退款是天赋(deathwatch 独立走)·**号死后是否补车**是自动行为·必须受 auto 约束。用户关了 auto 就是说"死了就死了·别自动补"·系统就该听。
 
 **注**:抢号不是独立触发源 —— 用户主动动作只有两个:手动拉号 or 开 `PrebuyEnabled`。没有"POST 临时抢一次"这种 API。
 
 ---
 
-**Step 3 · 多 vendor 备胎判据**
+**Step 3 · 目标 + 多 vendor 备胎判据**
+
+**前置**:`RefillTarget ≤ 0` → 【拒·未设目标】(用户没配"补到几个"·视同不启用自动补 · 手动 pull 例外) · 直接返
 
 按 vendor 分组数活号 · 判"有没有 vendor 撑得住":
 
@@ -251,7 +259,7 @@ xi8 是数据补齐 · **不参与抢号**。
 
 **四种情况**:
 
-- **整车 alive == 0** → 档 = 急 · 直跳 Step 4 · 强 output
+- **整车 alive == 0** → 档 = 急 · 直跳 Step 4 · **强 output**(按 Case A 特殊规则·见 Step 4 底)
 - **有任一 vendor 撑得住** → 【拒·有备胎】(那家撑着·等它也见底再动)
 - **所有 vendor 都撑不住·但 alive_total < RefillTarget** → 档 = 常规 · 继续 Step 4
 - **alive_total ≥ RefillTarget** → 【拒·已达目标】
@@ -260,34 +268,43 @@ xi8 是数据补齐 · **不参与抢号**。
 
 **Step 4 · 上游 mode × 触发源 → 决定 output**
 
+**Case A(整车挂 alive=0)强制规则**·**优先于下表**·忽略触发源:
+- Cool → 【下单】(vendor 有货直拉)
+- Balance/Tight → 【挂单】(紧俏时下单必 ErrNoStock)
+
+**Case C(常规 · alive > 0 但撑不住)** · 按下表:
+
 | 触发源 \ mode | Cool(号多) | Balance(一般) | Tight(号少) |
 |---|---|---|---|
-| `webhook` | 【拒·cool 不响应】 | 【下单】vendor 说有货 | 【下单】(除非车里也慢 · 改挂) |
+| `webhook` | 【拒·cool 不响应】 | 【下单】vendor 说有货 | 【下单】 |
 | `probe` | 【拒·cool 不响应】 | 【拒·balance 只 webhook fire】 | 【下单】关键补位 |
-| `death` | 【下单】vendor 有货直拉 | 【下单】 | 【挂单】紧俏时下单会 ErrNoStock |
+| `death_refill` | 【下单】vendor 有货直拉 | 【下单】 | 【挂单】紧俏时下单会 ErrNoStock |
 | `scheduler` | 【下单】号多下单不亏 | 【下单】 | 【挂单】兜底扫改挂不 Pull |
-| `manual` | 【下单】用户明说要 | 【下单】 | 【下单】 |
-| `usage`(未来) | 【下单】 | 【下单】 | 【挂单】 |
+| `usage` | TBD · 阶段 1d 后期数据采集完再定 | TBD | TBD |
 
-**Case A(整车挂)强制**:
-- Cool → 【下单】(有货直拉)
-- Balance/Tight → 【挂单】
+`manual` **不进这层** —— Step 2 已跳到 Step 5 · 用户明说要 · 有货就下单 · 没货 decider.Pull 内部返 ErrNoStock(挂单是 decider.Pull 内部的 `maybeEnqueueOnNoStock` 行为·不由决策器决定)。
 
 ---
 
 **Step 5 · 参数解析**(按 §4.3 三类规则)
 
 ```
-count = min(RefillBatchMin, RefillTarget - alive_total)
-  · 且 config.pull.MinCount ≤ count ≤ config.pull.MaxCount
-  · 且 count ≤ vendor.MaxPerOrder
+【count · 这次拉几个】
+gap    = RefillTarget - alive_total                    · 差多少号
+raw    = max(RefillBatchMin, gap)                       · 至少补 RefillBatchMin·差得多就补差量
+count  = clamp(raw, config.pull.MinCount, min(config.pull.MaxCount, vendor.MaxPerOrder))
+  · 若 raw > 上限 → 截断到上限 · 差额下轮触发再补(不重触发·等 death/scheduler 自然触发)
+  · 若 raw < config.pull.MinCount → 提升到 MinCount(避免 vendor 拒小单)
 
-maxPrice = min(bus.MaxUnitPrice ?? +∞, passenger.MaxUnitPrice ?? +∞)   · 类①
+【maxPrice · 单价上限】     · 类① 取最严
+maxPrice = min(bus.MaxUnitPrice ?? +∞, passenger.MaxUnitPrice ?? +∞)
 
+【preferredVendor · 选哪家】· 类② 车级 > 全局 > 系统
 preferredVendor = bus.PreferredVendor
                ?? passenger.PreferredVendor
-               ?? AutoPick(比价选)                                     · 类②
+               ?? AutoPick(比价选)
 
+【加价栈】
 加价栈 = 号价 × vendor × zone × retail × [capability if PrebuyEnabled]
        × service × [single_pull if count==1]
 
@@ -300,108 +317,38 @@ preferredVendor = bus.PreferredVendor
 
 - `passenger.DailyRoundLimit` 累计已用 + 1 超 → 【拒·当日轮次到顶】
 - `passenger.DailySpendLimit` 累计已用 + est 超 → 【拒·当日花费到顶】
-- `vendorbalance.Enough(vendor, est)` 不够 → 切下一家(PickBestVendorExcluding) · 都不够 → 【拒·vendor 侧全没钱】
-- 并发满 → 【拒·并发到顶】
+- `vendorbalance.Enough(preferredVendor, est)` 不够 → 排除该 vendor · 走 `PickBestVendorExcluding` 找下一家 · 都不够 → 【拒·vendor 侧全没钱】
+- 并发满(每 vendor / 每乘客在飞上限) → 【拒·并发到顶】
 
 **都过 → 按 Step 4 的 output 执行**:
 - 【下单】→ `decider.Pull(count, vendor, maxPrice)`
 - 【挂单】→ 记入 `stock_watcher` · 状态 watching · TTL 10min
 
-**每日限额是乐观判定** —— 两辆车同时触发都过关时·靠 `wallet.Reserve` 事务兜底防超限。
-
----
-
-### 5.3 已识别的边界漏洞(2026-08-15 压测)
-
-**说明**:2026-08-15 用户压测四个场景(号少 / 涨价 / 降价 / 号快死)时暴露的边界。按严重度分层。**未标"❌ 已否决"的都要在落码时处理**。
-
-**🔴 严重 · 落码前必须解**
-
-**A · 备胎判据单价数据滞后**
-Step 3 Case B 读的"该 vendor 当前单价"来自 `vendor_probe_zone` · 最新采样可能是 60s 前。vendor 刚涨价探针未采到 → 决策器基于旧价判"撑得住"·实际用户已超价拉不动。
-- **处理**:Step 3 Case B 加"数据新鲜度"判据 —— 单价来源老于 2min 保守认为撑不住 · 或加 ±10% 价格 buffer
-
-**B · 上游降价 · 系统不主动囤**
-六种触发源里没"降价触发"·`probe` 只看 stock 数量变化不看价格。vendor 大降价时车里号够用 · 系统不主动多囤。
-- **处理**:**明写"不做"** —— 号有寿命·主动囤有风险(囤几小时死了退款白折腾)·违反 pass-through 人设。降价只在**已有挂单 fire 时受益**(现单价 ≤ maxPrice 更容易 fire 到)。
-
-**C · 号预死不触发 · 无号窗口**
-号还没死但快到寿命(vendor 平均 24h·当前号已存 22h) · deathwatch 等真死才触发 · 中间有短暂无号窗口。
-- **处理**:§5.1 触发源加 `lifespan_predict` · 判据 = `credential.pulled_at + vendor.平均寿命 × 0.9 ≤ now` → 提前触发 Decide · 决策器 Step 3 判备胎撑不撑
-
-**D · 两辆车并发抢同批号**
-Alice 和 Bob 同时缺号 · 决策器都返"下单" · vendor 就 3 个号 · Alice 抢到 · Bob ErrNoStock 白跑。**决策器 Step 3 单车视角**·无全局协调。
-- **处理**:决策器 Step 4 输出"下单"前 · 加"全局在飞数"检查(同 vendor 同 zone 已有 N 个在 Pull)·超阈值改挂单
-
-**E · 同车 death + scheduler 同刻触发**
-号死立即补 + 恰好 5min tick · 两个 Decide 并发跑 · 都读到 alive=2 · 都决定拉 3 → 实际拉 6 个。
-- **处理**:决策器 Step 3 前加"车级 in-flight" · 同 bus 已有拉号在跑就拒(bus_id 层幂等)。**幂等靠 `pending_purchase` UNIQUE(vendor_id, client_order_id)** 已经防"重复扣款"·但**同车重复触发要在决策器层挡住**·不能都走到 Pull 再靠 UNIQUE 兜。
-
-**F · 挂单等的 vendor 被 admin 关掉**
-Alice 挂 stockwatch 等 vendor01 · admin `SetEnabled('vendor01', false)` · 挂单永远不 fire · 用户视角"抢号系统没反应"。
-- **处理**:`Registry.SetEnabled(vid, false)` 时·触发一次 stockwatch 扫 · 该 vendor 挂单批量标 expired · 用户可选切他 vendor 重挂
-
----
-
-**🟡 中 · 落码时对齐**
-
-**G · 挂单期间用户改 maxPrice**
-挂单里 max_unit_price 是快照 · 用户改设置不同步。改高了挂单该跟着放宽·改低了该拒 fire。
-- **处理**:用户改 `bus.MaxUnitPrice` 或 `passenger.MaxUnitPrice` 时·UPDATE 该 bus 所有 watching 挂单的 max_unit_price(取新的 AND 值)
-
-**H · 挂单期间用户关 AutoRefillEnabled**
-Alice 挂单后关了自动 · 现代码挂单仍会 fire · 违反"关了 auto 不主动"约定。
-- **处理**:关 auto 时 · 该 bus 所有 watching 挂单立即标 cancelled
-
-**I · 多人 bus 成员挂起时的决策**
-车里 3 人 · 1 人 suspended · 决策器 Step 3 只看整车 alive · 没看成员状态。`planSplit` 内部会跳挂起的人 · 但决策器"这辆车还该拉吗"没判 —— 如果只剩发起人一个能付 · 是否仍 auto 补？
-- **处理**:Step 3 前加"活跃成员数 ≥ 1"判据·全挂起则【拒·无人可付】
-
-**J · 上游频繁涨跌 · 挂单反复被拒 fire**
-vendor 10min 内涨跌 5 次 · 挂单反复 fire → 判超价 → 回退 watching。现代码 `fire_count` 计数防 spam · 但决策器不知道。
-- **处理**:`fire_count ≥ 3` 时挂单标 expired · 用户视角"这次抢不到 · 请调高 max 或稍后再试"
-
-**K · 单车挂单堆积上限**
-Alice 一辆车缺货 10 次触发 10 单挂着。
-- **处理**:同车 `status='watching'` 挂单数 ≥ 3 时·新触发不再挂单·直接【拒·挂单已满】
-
----
-
-**🟢 低 · 边落码边定**
-
-**L · 所有 vendor 都关了** · admin 全关时决策器应【拒·无 vendor 可用】·不循环挂单
-
-**M · 多人 bus daily limit 判谁** · Step 6 daily limit 判**发起人**(现代码即如此)·非发起人成员的 daily 不算在这轮(他们的 daily 会在他们自己发起的轮里判)
-
-**N · DailyLimit 跨零点** · 按 UTC 日切(现代码 `substr(created_at, 1, 10)` 按日期字符串比)·零点前 9 轮零点后清零
-
-**O · anon 车 anon_max_unit_price 语义** · **只用于撮合匹配**(匹配对方 bus 的 max 兼容)·**不参与拉号定价**·拉号定价读 `bus.MaxUnitPrice`
-
-**P · RefillBatchMin < vendor.MinPerOrder 冲突** · Step 5 count = max(RefillBatchMin, vendor.MinPerOrder)·取更大的一方·避免 vendor 拒
-
-**Q · 部分成交(ErrPartialFill)** · vendor 只给 3/5 · 差额已退 · 决策器**下次触发时会自然重判**(alive 涨了 3 · 还差)·**不做立即重触发**·防连击 vendor
-
-**R · 决策器"拒"落 log** · 所有 Decide 结果落 `scheduling_decision_log` 表(新)·字段:bus_id / source / step_rejected / reason / decided_at · 运营排查用 · 保留 7 天
+**两处判据都是"乐观 + 兜底"设计**:
+- **每日限额**:决策器 Step 6 提前判(省 decider.Pull 开销) · 但两辆车并发都过关时靠 `wallet.Reserve` 事务原子兜底防超限
+- **vendor 侧余额**:决策器 Step 6 判 `vendorbalance.Cache`(5min 陈旧数据·乐观) · decider.Pull 内部真调 vendor 时若返 `ErrVendorInsufficient` 会再走 `PickBestVendorExcluding` 兜底切下一家
 
 ---
 
 ## 6 · 抢号能力(PrebuyEnabled) · 用户场景故事
 
-**Alice 开了抢号开关**:
+**Alice 开了抢号开关 · 车里号少**:
 
-> Alice 车里号少了(所有 vendor 都撑不住) · 系统按 §5 决策器决定:tight 时挂单 / balance 时下单。
+> Alice 车里号从 5 掉到 2 · RefillTarget=5 · 所有 vendor 撑不住(Step 3 常规)。
 >
-> **不管下单还是挂单**·因为 Alice 开了 PrebuyEnabled·加价栈里叠一层**占坑费**(固定小额·跟服务费一个量级)。
+> **触发场景**:
+> - 若号死触发(death_refill):Step 4 表 → Cool 下单 / Balance 下单 / **Tight 挂单**
+> - 若 5min 兜底扫触发(scheduler):Cool 下单 / Balance 下单 / **Tight 挂单**
+> - 若 vendor 新号 webhook 触发(webhook):Cool 拒(号多不响应) / **Balance 下单** / **Tight 下单**
+> - 若探针触发(probe):Cool/Balance 拒 / **Tight 下单**
 >
-> **优先级** —— 挂单场景下·vendor 有新号 fire 时·**开了 PrebuyEnabled 的车排在没开的车前面**·先拿到号。
+> **不管下单还是挂单**·因为 Alice 开了 PrebuyEnabled · 加价栈叠一层**占坑费**(固定小额)。
 >
-> Alice 视角:每次拉号多花一小笔占坑费 · 换来的是"号少时优先分到"。
+> **挂单场景下的优先级** —— vendor 有新号 fire 时·**开了 PrebuyEnabled 的车排在没开的车前面**先拿到号。
 
 **Bob 没开抢号开关**:
 
-> Bob 号少了 · 系统同样按决策器工作 · **只是**挂单 fire 时排在 Alice 后面。加价栈不叠占坑费。
->
-> Bob 视角:少付一层 · 但号少时可能抢不到(Alice 先拿)。
+> 同触发同 mode 下 · Bob 车走一样的决策器流程 · **加价栈不叠占坑费**。挂单 fire 时排在 Alice 后面。
 
 **关键**:
 - 抢号 = **付费享优先级** · 不是"额外触发一种拉号"
@@ -410,18 +357,26 @@ Alice 一辆车缺货 10 次触发 10 单挂着。
 
 ---
 
-## 7 · 三层兜底 · 时间粒度递进
+## 7 · 四层兜底 · 时间粒度递进
 
-主链路失败或漏时:
+**"vendor 有新号"信号的兜底**(号少时 · 抢货):
 
 ```
 ① webhook   200ms-2s     vendor 主动 push
      ↓ 漏了(vendor 挂 / 网络抖 / 我方接收挂)
 ② 探针      60s          我方主动 GET /stock 采样对比 · 关键补位
      ↓ 漏了(服务重启窗口)
-③ scheduler 5min         bus.Scheduler 兜底扫水位
+③ scheduler 5min         bus.Scheduler 兜底扫车里还剩几个号
      ↓ 触发了但被 Step 3 拒(有备胎撑着)
 ④ 下一轮    等 vendor02 也见底再判
+```
+
+**"号死了要补"信号的兜底**(独立链路):
+
+```
+① deathwatch webhook  vendor 主动 push 号死    (立即入 pending_refill 队列)
+② deathwatch 探活     5min 扫号池主动确认      (webhook 漏了兜底)
+③ RefillTick          1min 扫 pending_refill · 触发 death_refill 走决策器
 ```
 
 **号少时等 webhook 就晚了** —— 因此 Tight 时探针必须 fire · 抢在其他平台 / 手速快用户之前。
@@ -445,16 +400,19 @@ Alice 一辆车缺货 10 次触发 10 单挂着。
 
 | 场景 | Step 1 | Step 2 | Step 3 | Step 4 | 结果 |
 |---|---|---|---|---|---|
-| 号死·一家死一家活 6·min=3 | 过 | death 跳 | Case B 备胎撑着 | - | **拒·有备胎** |
-| 号死·两家都见底 | 过 | death 跳 | 常规 | 视 mode | **执行** |
-| 号死·整车挂 | 过 | death 跳 | Case A 急 | Cool 下单 / 其他挂单 | **执行** |
-| vendor 新号·Alice 开抢号 | 过 | webhook · auto on | 常规 | Balance/Tight 下单 · 叠占坑费 | **执行 + 收占坑费** |
-| vendor 新号·Bob 没开 | 过 | 同上 | 常规 | 同上 · 不叠 | **执行·Alice 排前面** |
-| 保底扫·剩号少于紧急线 | 过 | scheduler | 常规 | Tight 挂单 | **挂单** |
-| 用户没开 auto·上游有货 | 过 | auto off | - | - | **拒·手动才动** |
-| 新建拼车·空车·auto 默认关 | 过 | auto off | - | - | **不动 · 第一批手动** |
-| 用户手动点拉号·有货 | 过 | manual 跳 | - | Cool/Balance/Tight 都下单 | **执行** |
-| 用户手动点拉号·没货 | 过 | manual 跳 | - | 直接返 ErrNoStock · 挂 stockwatch 等 | **挂单** |
+| 号死·一家死一家活 6·min=3·auto on | 过 | death_refill · auto on | Case B 备胎撑着 | - | **拒·有备胎** |
+| 号死·两家都见底·auto on | 过 | 同上 | 常规 | 视 mode | **执行** |
+| 号死·整车挂·auto on·Cool | 过 | 同上 | Case A 急 | 强制 Cool → 下单 | **执行 · 下单** |
+| 号死·整车挂·auto on·Tight | 过 | 同上 | Case A 急 | 强制 Tight → 挂单 | **执行 · 挂单** |
+| **号死·auto off** | 过 | **拒·auto off** | - | - | **拒·用户关了自动补·死了就死了**(退款照走) |
+| vendor 新号·Alice 开抢号·auto on | 过 | webhook · auto on | 常规 | Balance/Tight 下单 · 叠占坑费 | **执行 + 收占坑费** |
+| vendor 新号·Bob 没开·auto on | 过 | 同上 | 常规 | 同上 · 不叠 | **执行·Alice 排前面** |
+| 保底扫·剩号少于紧急线·Tight | 过 | scheduler · auto on | 常规 | Tight → 挂单 | **挂单** |
+| 用户没开 auto·上游有货 | 过 | 【拒·auto off】 | - | - | **拒·手动才动** |
+| 新建拼车·空车·RefillTarget=0 | 过 | auto off(默认) | - | - | **不动·第一批用户手动拉** |
+| 用户开 auto·空车·RefillTarget=5 | 过 | scheduler · auto on | Case A 急 · 视 mode | Cool 下单 / 其他挂单 | **执行** |
+| 用户手动点拉号·有货 | 过 | manual 跳 | 不判 | 不进 | **调 decider.Pull 直下单** |
+| 用户手动点拉号·没货 | 过 | manual 跳 | 不判 | 不进 | **decider.Pull 返 ErrNoStock · 内部挂 stockwatch** |
 
 ---
 
@@ -465,7 +423,7 @@ Alice 一辆车缺货 10 次触发 10 单挂着。
 | 改这个 | 立即感知 |
 |---|---|
 | `AutoRefillEnabled` | 决策器 Step 2 · 号死立即补 · 5min 兜底扫 |
-| `RefillTarget` | 决策器 Step 3 判"达标了吗" |
+| `RefillTarget` | 决策器 Step 3 前置 · 0 = 未启用自动补 · > 0 才判达标 |
 | `RefillBatchMin` | 决策器 Step 3 备胎判据 + Step 5 拉几个 |
 | `PrebuyEnabled` | 决策器 Step 5 加价栈叠占坑费 + 挂单 fire 排优先 |
 | `MaxUnitPrice`(车级) | Step 5 · 与全局 AND 取严 |
@@ -492,6 +450,7 @@ Alice 一辆车缺货 10 次触发 10 单挂着。
 - **加新用户字段** → 加一行到 §4 + §4.3 分类 + §10 反查表
 - **加系统开关** → 加到 §3 对应小节 + §10 反查表底行
 - **改字段语义** → 更新 §4 + §10 + 落 `decisions.md §12`
-- **发现新边界漏洞** → 加到 §5.3 · 按严重度分层 · 严重的必须落码前解
+- **边界漏洞 / 讨论 / 待决策 / 未拍板** → 落 `decisions.md §12` · **不进本文**
+- **产品决策** → 落 `decisions.md §12` · 拍完把最终态回落本文相应位置
 
-**本文永远是"完整设计" · 不含待决策**(那些落 `decisions.md §12`)。
+**本文永远是"完整设计"** —— 只写"最终该怎么运作" · 不含讨论 / 待决策 / 边界漏洞清单。
