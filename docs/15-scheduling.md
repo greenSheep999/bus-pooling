@@ -244,10 +244,11 @@ ratio ≤ 0.3     → ModeCool     冷 · 都不 fire · 用户来了现打 vend
 **Step 2 · 用户 auto 开关**（用户没授权就不主动）
 - 触发源 == `manual`（用户点手动拉号）→ 跳过 · 直进 Step 5
 - 触发源 == `death`（号死质保退款）→ 跳过 · 直进 Step 5（退款是天赋权利·不受 auto 影响）
-- 触发源 == 用户主动 API POST prebuy → 跳过 · 直进 Step 5（用户明说要 · 但 Step 5/6 仍要过参数解析和限额）
 - 其他触发源：读 `bus.Strategy.AutoRefillEnabled`
   - false → 【拒·auto off】
   - true → 继续
+
+**注**：抢号是自动 / 手动拉号**之外的附加能力** · 不是独立触发源。用户只有两种主动动作 —— 手动拉号（走 `manual` 分支）· 或开 `prebuy_enabled`（订阅式能力 · 之后系统在合适时机替他抢）。**没有"用户主动 POST prebuy"这条 API**。
 
 **Step 3 · 车里活号快照 + 多 vendor 备胎判据**
 
@@ -353,15 +354,50 @@ auto=on         →  同 auto on          webhook 时优先接      同 auto on(
 
 **"号少的时候等 webhook 就晚了"**（用户 S7 原话）—— 因此 Tight 时探针必须 fire（`stock_delta`）· 抢在其他家平台 / 手速快用户之前。
 
-### 5.6 五处待定 · 边落码边定
+### 5.6 边角定案（2026-08-15 用户拍板）
 
-未拍板的边角 · 拍板后在本节改：
+**① 备胎判据 = 数量 AND 价格 双条件**（拍板：复用 `RefillMinCount` + 加价格上限过滤）
 
-1. **备胎阈值 vs 每次补几个** —— 现在决策器用 `RefillMinCount` 同时表达两件事："这次拉几个"和"至少剩几个才算撑得住"。要不要新字段 `refill_backup_threshold`？倾向复用 · 简化但语义模糊。
-2. **prebuy 加价怎么收** —— 订阅式（开了就每次加）or 按次式（只在 tight 场景 fire 时加）？倾向订阅式（"你付的是能力资格·不是能力次数"）。
-3. **stockwatch 挂单 TTL** —— 现代码默认几分钟需查 · 决策器 Step 6 挂单时用多长？
-4. **usage 见底阈值** —— 号累计用量 ≥ 多少 % 才算"见底"？数据没采集 · 先在决策器里留 `usage` 触发源位。
-5. **用户主动 POST prebuy 的能力费** —— Step 2 允许 skip auto 检查 · 但 Step 5 rates 里 capability_fee 该按普通拉号叠 · 还是"用户主动付更多"叠更高？
+"某 vendor 撑得住"的定义：
+```
+撑得住 = (该 vendor 活号数 ≥ RefillMinCount)
+       AND (该 vendor 当前单价 ≤ min(bus.MaxUnitPrice, passenger.MaxUnitPrice))
+```
+
+**为什么加价格过滤**（用户原话）："这个还要受价格上限影响·先要把价格上线的过滤掉吧"。
+
+意思是：判"备胎能不能撑"时·先按价格上限**排除**掉超价的 vendor —— 就算它数字够·**用户超价拉不动它** · 用它做备胎没意义。
+
+Step 3 Case B 判据修正为：`存在 vendor v · v.alive ≥ RefillMinCount AND v.currentPrice ≤ userMaxPrice` → 【拒·有备胎】。
+
+**② prebuy 加价 = 服务费的变体**（拍板：订阅式 · 每次拉都加 · 抢不到不退）
+
+- 用户开 `prebuy_enabled` → 每次拉号在加价栈里叠一层 `capability_fee`（新的一层）
+- **不看抢没抢到**·"没抢到不退"·属于服务费变体
+- 服务费和 capability_fee 是**两件事**：服务费永远收（普通拉号也收）· capability_fee 只在 `prebuy_enabled=true` 时叠
+
+**③ 占坑费**（新概念 · 拍板：stockwatch 挂单时冻结占坑费 · TTL 到没抢到不退 · 归我方）
+
+用户原话："冻结抢车费·没说要退·相当于优先列队"·"就是占坑费啊"。
+
+- 用户开了 prebuy → auto 场景下决策器决定挂 stockwatch 时·**冻结的是占坑费**·不是号价+服务费全部
+- 排队等 vendor 上新号·**抢到** → 号进车·收号价+服务费+capability_fee（服务费和 capability_fee 现收）· 占坑费转正扣走
+- **抢不到**（TTL 到期）→ 号价没花·**占坑费归我方**·不退
+- **占坑费金额 = 一小笔固定金额**（用户原话："这个也不贵·跟服务费一样啊·我们就收一点点的·可能是个固定金额")。**不按号价比例算**·跟服务费一个量级·加价栈里作为 `capability` 层的固定值·具体金额在 `surcharge_rule` 表配
+
+**代码改造** —— 现有 `stock_watcher.reserved_amount` 冻结的是号价+服务费全部·需改成**只冻占坑费**。这是一次 stockwatch 机制改造·细节见 `decisions §12`。
+
+**④ stockwatch 挂单 TTL = 10 分钟**（拍板：保留现默认值）
+
+现代码 `internal/stockwatch/store.go:117` 已经是 10min。不改。
+
+**⑤ 没有"用户主动 POST prebuy" API**（拍板：删掉这个概念）
+
+用户原话："抢号是手动 / 自动拉号之外的附加能力"·不是独立触发源。用户只有两种主动动作 —— 手动拉号或开 `prebuy_enabled` 订阅。§5.2 Step 2 中"用户主动 API POST prebuy skip auto"那条已删。
+
+**⑥ usage 见底阈值 · 待数据采集后再定**（不阻塞）
+
+`credential_usage_snapshot` 表存在但数据没采集·`usage` 触发源在决策器里留位·上线后按实测阈值定。
 
 ---
 
