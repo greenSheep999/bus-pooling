@@ -7,7 +7,7 @@ import {
   X, Zap, ZapOff,
 } from "lucide-react";
 import {
-  useBus, useBusCredentials, useBusPulls, useDownstream, useMe,
+  useBus, useBusCredentials, useBusPulls, useDownstream, useGlobalStrategy, useMe,
   useRegenInviteCode, useRemoveMember, useSetMemberSuspended,
 } from "@/api/hooks";
 import {
@@ -51,6 +51,7 @@ export default function BusDetail() {
   const { id } = useParams();
   const nav = useNavigate();
   const { data: bus } = useBus(id);
+  const { data: gs } = useGlobalStrategy();
   const [tab, setTab] = useState<TabKey>("credentials");
   const [headerCopied, setHeaderCopied] = useState(false);
   const [pullOpen, setPullOpen] = useState(false);
@@ -192,18 +193,25 @@ export default function BusDetail() {
           value={fmtLifespan(bus.avg_lifespan_seconds)}
           sub={t("kpi.lifespan.sub")}
         />
-        <KpiCard
-          icon={bus.strategy.auto_refill_enabled ? Zap : ZapOff}
-          label={t("kpi.refill.label")}
-          value={bus.strategy.auto_refill_enabled ? t("kpi.refill.auto") : t("kpi.refill.manual")}
-          sub={
-            bus.strategy.auto_refill_enabled ? (
-              <Trans t={t} i18nKey="kpi.refill.watermark" values={{ count: bus.strategy.refill_watermark }} components={{ 1: <span className="font-semibold tnum" /> }} />
-            ) : (
-              t("kpi.refill.manual-sub")
-            )
-          }
-        />
+        {/* 1f-B · auto/watermark 可为 null · null = 跟随全局 · 显示实际生效值 */}
+        {(() => {
+          const effAuto = bus.strategy.auto_refill_enabled ?? gs?.default_auto_refill_enabled ?? false;
+          const effWatermark = bus.strategy.refill_watermark ?? gs?.default_refill_watermark ?? 0;
+          return (
+            <KpiCard
+              icon={effAuto ? Zap : ZapOff}
+              label={t("kpi.refill.label")}
+              value={effAuto ? t("kpi.refill.auto") : t("kpi.refill.manual")}
+              sub={
+                effAuto ? (
+                  <Trans t={t} i18nKey="kpi.refill.watermark" values={{ count: effWatermark }} components={{ 1: <span className="font-semibold tnum" /> }} />
+                ) : (
+                  t("kpi.refill.manual-sub")
+                )
+              }
+            />
+          );
+        })()}
       </div>
 
       {/* Tab · 3 段 · 只保留运行时数据（配置类走 ⚙ 设置 modal） */}

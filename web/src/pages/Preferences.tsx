@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Info, Loader2, Save, ShieldAlert } from "lucide-react";
+import { Info, Loader2, Save, ShieldAlert, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useGlobalStrategy, useMe, useSaveGlobalStrategy } from "@/api/hooks";
@@ -8,6 +8,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Card, Em, Meter, SectionHead } from "@/components/ui/primitives";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -36,6 +37,10 @@ export default function Preferences() {
   const [maxPrice, setMaxPrice] = useState("");
   const [vendor, setVendor] = useState("auto");
   const [zone, setZone] = useState("auto");
+  /* 1f-B · 自动补车三字段全局默认(§4.3.5.4) · 新车 seed + 车级 null 时 fallback */
+  const [autoRefill, setAutoRefill] = useState(false);
+  const [watermark, setWatermark] = useState("");
+  const [minCount, setMinCount] = useState("");
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -46,6 +51,9 @@ export default function Preferences() {
     setMaxPrice(gs.max_unit_price == null ? "" : String(toCredits(gs.max_unit_price)));
     setVendor(gs.preferred_vendor ?? "auto");
     setZone(gs.default_zone);
+    setAutoRefill(gs.default_auto_refill_enabled);
+    setWatermark(String(gs.default_refill_watermark));
+    setMinCount(gs.default_refill_min_count == null ? "" : String(gs.default_refill_min_count));
     setLoaded(true);
   }, [gs, loaded]);
 
@@ -57,6 +65,10 @@ export default function Preferences() {
       max_unit_price: numOrNull(maxPrice) == null ? null : numOrNull(maxPrice)! * MICRO,
       preferred_vendor: vendor === "auto" ? null : vendor,
       default_zone: zone,
+      /* 1f-B · auto/watermark 非空(required-like) · min_count 允许 null(按 gap 补) */
+      default_auto_refill_enabled: autoRefill,
+      default_refill_watermark: numOrNull(watermark) ?? 0,
+      default_refill_min_count: numOrNull(minCount),
     });
 
   return (
@@ -144,7 +156,7 @@ export default function Preferences() {
         </Alert>
       </Card>
 
-      {/* ── 新车默认值 · 只影响以后建的车 ── */}
+      {/* ── 新车默认值 · 建新车 seed + 车级"跟随全局"时的运行时值(§4.3.5.4) ── */}
       <Card className="p-7">
         <SectionHead
           title={t("defaults.title")}
@@ -152,7 +164,7 @@ export default function Preferences() {
         />
 
         <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <Field label={t("defaults.count.label")}>
+          <Field label={t("defaults.count.label")} hint={t("defaults.hint-runtime")}>
             <Input
               type="number"
               min={1}
@@ -162,7 +174,7 @@ export default function Preferences() {
             />
           </Field>
 
-          <Field label={t("defaults.vendor.label")}>
+          <Field label={t("defaults.vendor.label")} hint={t("defaults.hint-runtime")}>
             <Select value={vendor} onValueChange={setVendor}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -190,6 +202,59 @@ export default function Preferences() {
 
         <Alert tone="neutral" icon={Info} className="mt-4">
           {t("defaults.alert.pre")}<Em plain>{t("defaults.alert.em")}</Em>{t("defaults.alert.post")}
+        </Alert>
+      </Card>
+
+      {/* ── 自动补车全局默认(1f-B · §4.3.5.4)· 建新车 seed + 车级 null 时 fallback ── */}
+      <Card className="p-7">
+        <SectionHead
+          title={t("defaults-auto.title")}
+          sub={t("defaults-auto.sub")}
+        />
+
+        {/* 主开关 */}
+        <div
+          className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-hairline bg-bg p-4 transition-colors hover:bg-bg-elevated/40"
+          onClick={() => setAutoRefill((v) => !v)}
+        >
+          <Zap className={autoRefill ? "size-4 text-brand-strong" : "size-4 text-fg-tertiary"} />
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold">{t("defaults-auto.enabled.label")}</div>
+            <div className="mt-0.5 text-label text-fg-tertiary">
+              {t("defaults-auto.enabled.hint")}
+            </div>
+          </div>
+          <Switch
+            checked={autoRefill}
+            onCheckedChange={setAutoRefill}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
+          <Field label={t("defaults-auto.watermark.label")} hint={t("defaults-auto.watermark.hint")}>
+            <Input
+              type="number"
+              min={0}
+              value={watermark}
+              onChange={(e) => setWatermark(e.target.value)}
+              placeholder="0"
+            />
+          </Field>
+
+          <Field label={t("defaults-auto.min-count.label")} hint={t("defaults-auto.min-count.hint")}>
+            <Input
+              type="number"
+              min={1}
+              value={minCount}
+              onChange={(e) => setMinCount(e.target.value)}
+              placeholder={t("defaults-auto.min-count.placeholder")}
+            />
+          </Field>
+        </div>
+
+        <Alert tone="neutral" icon={Info} className="mt-4">
+          {t("defaults-auto.alert")}
         </Alert>
       </Card>
     </div>

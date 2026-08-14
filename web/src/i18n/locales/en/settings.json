@@ -26,7 +26,8 @@
       "eu": "EU",
       "label": "Default region",
       "us": "US"
-    }
+    },
+    "hint-runtime": "Also used at runtime when a bus opts to follow global"
   },
   "head": {
     "crumb": "Pull preferences",
@@ -409,5 +410,23 @@
   "index": {
     "title": "Settings",
     "subtitle": "Pool connection · notifications · API access"
+  },
+  "defaults-auto": {
+    "title": "Auto refill defaults",
+    "sub": "Prefilled for new buses + used at runtime when a bus selects \"Follow global\"",
+    "enabled": {
+      "label": "Enable auto refill by default",
+      "hint": "New buses start with this on. Existing buses set to \"Follow global\" track this value."
+    },
+    "watermark": {
+      "label": "Default watermark",
+      "hint": "Auto refill kicks in when live keys drop below this. 0 = disabled."
+    },
+    "min-count": {
+      "label": "Default minimum keys per refill",
+      "hint": "Auto refill pulls at least this many keys each time",
+      "placeholder": "blank = auto-fill the gap each round"
+    },
+    "alert": "Each bus can override these. Global values only apply when a bus selects \"Follow global\"."
   }
 }

@@ -2,7 +2,7 @@ import { Trans, useTranslation } from "react-i18next";
 import { ArrowUpRight, Bus as BusIcon, Zap, ZapOff } from "lucide-react";
 import type { Bus } from "@/types";
 import {
-  useBusCredentials, useMe,
+  useBusCredentials, useGlobalStrategy, useMe,
 } from "@/api/hooks";
 import { Card, Chip, Em } from "./ui/primitives";
 import { OwnerBadge } from "./ui/tags";
@@ -19,8 +19,13 @@ import {
 export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) {
   const { t, i18n } = useTranslation("buses");
   const { data: me } = useMe();
+  const { data: gs } = useGlobalStrategy();
   const { data: creds } = useBusCredentials(bus.id);
   const s = bus.strategy;
+  /* 1f-B · auto/watermark/per_round 可为 null · null = 跟随全局 · 卡片显示实际生效值 */
+  const effAuto = s.auto_refill_enabled ?? gs?.default_auto_refill_enabled ?? false;
+  const effWatermark = s.refill_watermark ?? gs?.default_refill_watermark ?? 0;
+  const effPerRound = s.per_round_count ?? gs?.per_round_count ?? null;
   // 一辆车就是一辆车（CLAUDE.md §2）· label 按当前人数
   // - anon 搭车池 · 显示"搭车 · N 车友"
   // - 用户建的车（team/single 遗留）· 1 人显示"独享"·多人显示"N 人拼车"
@@ -110,7 +115,7 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
       {/* 策略区 · mt-auto 沉底贴分隔线 · 号池行数不同时中间空档自然变化 */}
       <div className="mt-auto space-y-1.5 rounded-xl bg-bg-elevated p-3">
         <div className="flex items-center gap-1.5 text-label">
-          {s.auto_refill_enabled ? (
+          {effAuto ? (
             <>
               <Zap className="size-3.5 text-brand-strong" />
               <span className="font-semibold text-brand-strong">{t("card.refill.auto")}</span>
@@ -118,16 +123,16 @@ export function BusCard({ bus, role }: { bus: Bus; role?: "owner" | "member" }) 
                 <Trans
                   t={t}
                   i18nKey="card.refill.watermark"
-                  values={{ count: s.refill_watermark }}
+                  values={{ count: effWatermark }}
                   components={{ 1: <Em /> }}
                 />
-                {s.per_round_count && (
+                {effPerRound != null && (
                   <>
                     {" "}
                     <Trans
                       t={t}
                       i18nKey="card.refill.per-round"
-                      values={{ count: s.per_round_count }}
+                      values={{ count: effPerRound }}
                       components={{ 1: <Em /> }}
                     />
                   </>

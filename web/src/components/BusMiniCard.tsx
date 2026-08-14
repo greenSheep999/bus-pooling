@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import { Bus as BusIcon, Zap, ZapOff } from "lucide-react";
 import type { Bus } from "@/types";
+import { useGlobalStrategy } from "@/api/hooks";
 import { Chip, Em } from "@/components/ui/primitives";
 import { OwnerBadge } from "@/components/ui/tags";
 import { avatarColor, avatarLetter, fmtCredits } from "@/lib/utils";
@@ -16,6 +17,7 @@ export function BusMiniCard({
   role?: "owner" | "member";
 }) {
   const { t } = useTranslation("buses");
+  const { data: gs } = useGlobalStrategy();
 
   // label 按当前人数（一辆车就是一辆车·CLAUDE.md §2 · anon 是系统撮合池）
   const kindLabel =
@@ -29,7 +31,10 @@ export function BusMiniCard({
   const { bg, fg } = avatarColor(seed);
   const letter = avatarLetter(seed);
 
-  const auto = bus.strategy.auto_refill_enabled;
+  /* 1f-B · auto_refill_enabled / refill_watermark 可为 null · null = 跟随全局
+     卡片上显示的是"实际生效值"(§4.3.5.1) —— 车级 null 就读全局 */
+  const auto = bus.strategy.auto_refill_enabled ?? gs?.default_auto_refill_enabled ?? false;
+  const watermark = bus.strategy.refill_watermark ?? gs?.default_refill_watermark ?? 0;
 
   return (
     <Link
@@ -84,7 +89,7 @@ export function BusMiniCard({
               <Trans
                 t={t}
                 i18nKey="card.refill.watermark"
-                values={{ count: bus.strategy.refill_watermark }}
+                values={{ count: watermark }}
                 components={{ 1: <Em /> }}
               />
             </span>

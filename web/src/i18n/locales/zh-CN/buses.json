@@ -505,13 +505,15 @@
       "off-desc": "号少时只提醒 · 不自动拉 · 你手动决定何时拉号"
     },
     "field": {
-      "watermark": "保活数（正常号少于此数就补）",
+      "watermark": "保活数",
       "per-round": "每轮补几个",
-      "max-price": "单价上限（积分）",
+      "max-price": "单价上限(积分)",
       "daily-round": "日轮次上限",
       "daily-spend": "日花费上限（积分）",
       "preferred-vendor": "首选 vendor",
-      "unlimited-placeholder": "不限"
+      "unlimited-placeholder": "不限",
+      "auto": "自动补车",
+      "min-count": "每轮至少拉几个"
     },
     "preferred": {
       "auto": "让系统比价选"
@@ -519,6 +521,15 @@
     "tip": {
       "chip": "Tip",
       "text": "策略变更点保存后立即生效 · 下次自动补车 / 手动拉号都按新策略走"
-    }
+    },
+    "follow-global": "跟随全局默认",
+    "override-bus": "覆盖本车",
+    "follow-global-chip": "跟随",
+    "follow-global-on": "已开启",
+    "follow-global-off": "未开启",
+    "current-global-value": "全局当前值:{{value}}",
+    "current-global-gap-fallback": "未设 · 按每轮差额自动补齐",
+    "hard-limit-note": "实际生效 {{value}} · min(车级, 全局)",
+    "credits-unit": "积分"
   }
 }

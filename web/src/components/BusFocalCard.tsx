@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import { ArrowUpRight, Bus as BusIcon, Download, UserPlus, Zap, ZapOff } from "lucide-react";
-import { useBusCredentials } from "@/api/hooks";
+import { useBusCredentials, useGlobalStrategy } from "@/api/hooks";
 import { Card, Chip, Em } from "./ui/primitives";
 import { OwnerBadge } from "./ui/tags";
 import { Button } from "./ui/button";
@@ -26,6 +26,9 @@ export function BusFocalCard({
 }) {
   const { t } = useTranslation("buses");
   const { data: creds } = useBusCredentials(bus.id);
+  const { data: gs } = useGlobalStrategy();
+  /* 1f-B · null 时 fallback 到全局 · 卡片显示"实际生效值"(§4.3.5.1) */
+  const effAuto = bus.strategy.auto_refill_enabled ?? gs?.default_auto_refill_enabled ?? false;
 
   // 一辆车就是一辆车（CLAUDE.md §2）· label 按当前人数
   const kindLabel =
@@ -132,7 +135,7 @@ export function BusFocalCard({
           )}
         </div>
 
-        {bus.strategy.auto_refill_enabled ? (
+        {effAuto ? (
           <span className="flex items-center gap-1.5 rounded-full border border-hairline bg-bg/60 px-3 py-1 text-label font-medium text-fg-secondary">
             <Zap className="size-3.5 text-brand-strong" />
             <span className="font-semibold text-brand-strong">{t("card.refill.auto")}</span>

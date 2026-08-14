@@ -505,13 +505,15 @@
       "off-desc": "Only notify when keys run low · no auto pull · you decide when to fetch"
     },
     "field": {
-      "watermark": "Watermark (refill when live keys drop below this)",
+      "watermark": "Watermark",
       "per-round": "Keys per refill",
       "max-price": "Max unit price (credits)",
       "daily-round": "Daily refill limit",
       "daily-spend": "Daily spend limit (credits)",
       "preferred-vendor": "Preferred vendor",
-      "unlimited-placeholder": "no limit"
+      "unlimited-placeholder": "no limit",
+      "auto": "Auto refill",
+      "min-count": "Min keys per refill"
     },
     "preferred": {
       "auto": "Let us pick the best price"
@@ -519,6 +521,15 @@
     "tip": {
       "chip": "Tip",
       "text": "Changes take effect on save · the next auto refill or manual pull uses the new strategy"
-    }
+    },
+    "follow-global": "Follow global",
+    "override-bus": "Override for this bus",
+    "follow-global-chip": "inherited",
+    "follow-global-on": "enabled",
+    "follow-global-off": "disabled",
+    "current-global-value": "Global value: {{value}}",
+    "current-global-gap-fallback": "Not set - auto-fills the gap each round",
+    "hard-limit-note": "Effective {{value}} - min(bus, global)",
+    "credits-unit": "credits"
   }
 }

@@ -63,14 +63,33 @@ export interface LedgerEntry {
 export type BusKind = "single" | "anon" | "team";
 export type BusStatus = "active" | "dissolved"; // UI: 活跃 / 已解散
 
+/** 车级策略 · docs/15-scheduling §4.3.5.3 前端契约(1f-B 落地)
+ *
+ *  **两类字段** —— 语义完全不同,别混:
+ *
+ *  **类② 覆盖字段** —— `null` = 跟随全局默认 · 非 null(含 `0` / `false`) = 覆盖本车:
+ *    `auto_refill_enabled` / `refill_watermark` / `refill_min_count` / `per_round_count` / `preferred_vendor`
+ *
+ *  **类① 硬上限字段** —— `null` = 车级不加严(取全局) · 非 null = 车级追加更严的约束(实际生效 = min(车级, 全局)):
+ *    `max_unit_price`
+ *
+ *  **车级 daily_* 已废弃**(§4.1) —— 后端只读全局 · 前端保留只读展示不再暴露编辑入口 */
 export interface BusStrategy {
-  auto_refill_enabled: boolean;
-  refill_watermark: number;
+  /** null = 跟随全局 `default_auto_refill_enabled` · 非 null = 覆盖本车 */
+  auto_refill_enabled: boolean | null;
+  /** null = 跟随全局 `default_refill_watermark` · 非 null(含 0) = 覆盖本车 */
+  refill_watermark: number | null;
+  /** null = 跟随全局 `default_refill_min_count`(全局若也 null 则按 gap 补差额 · §4.3.2c 选项 X) */
   refill_min_count: number | null;
+  /** null = 跟随全局 `per_round_count` */
   per_round_count: number | null;
+  /** 硬上限 · null = 车级不加严 · 实际生效 = min(车级, 全局) */
   max_unit_price: Money | null;
+  /** 车级 daily_* 已废弃(§4.1) · 后端只读全局 · 保留字段只用于显示历史值 */
   daily_round_limit: number | null;
+  /** 同上 · 废弃 */
   daily_spend_limit: Money | null;
+  /** null = 跟随全局 `preferred_vendor`(全局若也 null 则系统 AutoPick 比价选) */
   preferred_vendor: string | null;
 }
 
@@ -563,25 +582,35 @@ export interface RedeemResult {
 /* ── 全局策略（`06-db-schema §16 passenger_strategy_default`）──
    跟"每车策略"（BusStrategy）是两回事，别混：
    - 每车策略（decisions §8.6）· 跟 bus 绑 · 在车详情页配 · 只管那辆车的自动补车
-   - 这个全局的 · 两种作用：
-     ① **硬上限**（daily_round_limit / daily_spend_limit）· 跨所有车累加 ·
-        跟车级限额是 **AND**（两个都不超才让拉）· 且**提取 key 只受这个管**
-     ② **新车默认值**（per_round_count / max_unit_price / preferred_vendor / zone）·
-        建新车时的初值，改它不影响已有的车 */
+   - 这个全局的 · **三种作用**（docs/15-scheduling §4.3.1）：
+     ① **硬上限**（daily_round_limit / daily_spend_limit / max_unit_price）· 跨所有车累加/取严 ·
+        跟车级是 **AND / min**（两个都不超才让拉）· 且**提取 key 只受这个管**
+     ② **新车默认值 seed**（建车向导预填 UI）
+     ③ **车级"跟随全局"时的运行时 fallback**（1f-B 起）· 车级字段 null 时读全局当前值 */
 export interface GlobalStrategy {
   /** 单价超过这个数就不拉 · null = 不限
    *  **硬上限**（不是"新车默认值"）· 手动拉号也拦（确认窗里超了就不给点确认）
    *  跟车级 max_unit_price 是 AND —— 取更严的那个 */
   max_unit_price: Money | null;
-  /** 每天最多拉几轮 · null = 不限 */
+  /** 每天最多拉几轮 · null = 不限 · 车级已废弃,只在这里 */
   daily_round_limit: number | null;
-  /** 每天最多花多少 · null = 不限 */
+  /** 每天最多花多少 · null = 不限 · 车级已废弃,只在这里 */
   daily_spend_limit: Money | null;
-  /** 以下是建新车时的默认值 */
+  /** 建新车时的默认 · 车级 per_round_count = null 时的运行时 fallback */
   per_round_count: number;
+  /** 建新车时的默认 · 车级 preferred_vendor = null 时的运行时 fallback · null = 系统比价 */
   preferred_vendor: string | null;
   /** us | eu | auto */
   default_zone: string;
+  /** 1f-B · 建新车时的默认 auto_refill_enabled · 车级 null 时的运行时 fallback
+   *  非空(bool) —— 想"关"就传 false */
+  default_auto_refill_enabled: boolean;
+  /** 1f-B · 建新车时的默认 refill_watermark · 车级 null 时的运行时 fallback
+   *  非空(int) —— 0 = 该乘客默认不启用水位触发 */
+  default_refill_watermark: number;
+  /** 1f-B · 建新车时的默认 refill_min_count · 车级 null 时的运行时 fallback
+   *  null = 按 gap 补差额(§4.3.2c 选项 X) · 非 null = 每轮至少拉这么多 */
+  default_refill_min_count: number | null;
   /** 今日已用 · 只读，用来在 UI 上显示"还剩多少" */
   used_today: {
     rounds: number;
