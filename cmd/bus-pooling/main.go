@@ -711,6 +711,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		killFlag:  killFlag,
 		turboFlag: turboFlag,
 		probeZone: probeZoneStore,
+		picker:    vendorSvc,
 		logger:    slog.Default(),
 	})
 	// ActionEnqueue 分支 · 挂 stockwatch · 挂意图不预冻结
@@ -777,6 +778,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 			killFlag:  killFlag,
 			turboFlag: turboFlag,
 			probeZone: probeZoneStore,
+			picker:    vendorSvc,
 			logger:    slog.Default(),
 		})
 		// RefillEnqueue 分支 · 挂 stockwatch · 挂意图不预冻结
@@ -1051,6 +1053,7 @@ type refillDecideBridge struct {
 	killFlag  *stockwatch.FileFlag
 	turboFlag *stockwatch.FileFlag
 	probeZone *vendorview.ProbeZoneStore
+	picker    *vendorview.Service // Enqueue 分支 vendor 空时兜底选一家
 	logger    *slog.Logger
 }
 
@@ -1169,29 +1172,58 @@ func (b *refillDecideBridge) Decide(ctx context.Context, req deathwatch.RefillRe
 	}
 
 	verdict := deathwatch.RefillVerdict{Reason: out.RejectReason}
+	// count · pending_refill 里的通常是补该辆死号一个 · minCount 兜底 · 两条分支共用
+	count := req.Count
+	if count < 1 {
+		count = 1
+	}
+	if minCountVal > count {
+		count = minCountVal
+	}
+	// vendor · pending_refill 明说的 vendor 优先(号死通常想补同家) · 兜底走 preferred / AutoPick
+	chosenVendor := req.VendorID
+	if chosenVendor == "" {
+		chosenVendor = pickVendorForEnqueue(ctx, preferredVal, passengerPreferredVendor(ctx, b.db, req.BusID), b.picker)
+	}
+	maxPrice := strictestMaxPrice(busMaxVal, passengerMax)
+
 	switch out.Verdict {
 	case decider.VerdictReject:
 		verdict.Action = deathwatch.RefillReject
 	case decider.VerdictEnqueue:
 		verdict.Action = deathwatch.RefillEnqueue
+		verdict.PullCount = count
+		verdict.PullVendor = chosenVendor
+		verdict.PullMaxPrice = maxPrice
+		if chosenVendor == "" {
+			// vendor 三级都空 · Enqueue 会因 VendorID="" 挂不上 · 保守转 Reject
+			verdict.Action = deathwatch.RefillReject
+			verdict.Reason = "no_vendor_for_enqueue · 三级降级都空"
+		}
 	case decider.VerdictPull:
 		verdict.Action = deathwatch.RefillPull
-		// count · 用 pending_refill 里的 · 通常是补该辆死号一个 · minCount 兜底
-		count := req.Count
-		if count < 1 {
-			count = 1
-		}
-		if minCountVal > count {
-			count = minCountVal
-		}
 		verdict.PullCount = count
-		verdict.PullVendor = preferredVal
-		if verdict.PullVendor == "" {
-			verdict.PullVendor = req.VendorID // 用 pending_refill 里指定的 vendor
-		}
-		verdict.PullMaxPrice = strictestMaxPrice(busMaxVal, passengerMax)
+		verdict.PullVendor = chosenVendor
+		verdict.PullMaxPrice = maxPrice
 	}
 	return verdict
+}
+
+// passengerPreferredVendor · 读乘客全局默认 preferred_vendor(bus 无 bus_id 时可能拿不到)
+func passengerPreferredVendor(ctx context.Context, db *sql.DB, busID string) string {
+	if db == nil || busID == "" {
+		return ""
+	}
+	var v sql.NullString
+	_ = db.QueryRowContext(ctx,
+		`SELECT COALESCE(psd.preferred_vendor, '')
+		   FROM bus b JOIN passenger_strategy_default psd
+		     ON psd.passenger_id = b.creator_passenger_id
+		  WHERE b.id = ?`, busID).Scan(&v)
+	if v.Valid {
+		return v.String
+	}
+	return ""
 }
 
 // autoRefillBridge · 1d · 把 orch 转成 bus.AutoRefiller
@@ -1227,12 +1259,13 @@ func (b *autoRefillBridge) Refill(ctx context.Context, req bus.AutoRefillRequest
 //
 // 装配层给 SchedulerDecider 注入 · nil-safe(bus.Scheduler 未装配 decider 时走老路径)。
 type schedulerDecideBridge struct {
-	db           *sql.DB
-	modeMgr      *stockwatch.ModeMgr
-	killFlag     *stockwatch.FileFlag
-	turboFlag    *stockwatch.FileFlag
-	probeZone    *vendorview.ProbeZoneStore // 读 vendor 单价新鲜度
-	logger       *slog.Logger
+	db        *sql.DB
+	modeMgr   *stockwatch.ModeMgr
+	killFlag  *stockwatch.FileFlag
+	turboFlag *stockwatch.FileFlag
+	probeZone *vendorview.ProbeZoneStore // 读 vendor 单价新鲜度
+	picker    *vendorview.Service        // Enqueue 分支 vendor 空时兜底选一家
+	logger    *slog.Logger
 }
 
 func (b *schedulerDecideBridge) Decide(ctx context.Context, busID string, cand bus.SchedulerCandidate) bus.SchedulerVerdict {
@@ -1292,26 +1325,40 @@ func (b *schedulerDecideBridge) Decide(ctx context.Context, busID string, cand b
 	}
 
 	verdict := bus.SchedulerVerdict{Reason: out.RejectReason}
+	// Pull / Enqueue 共用的参数(§5 Step 5)
+	gap := cand.Watermark - sumAlive(cand.AliveByVendor)
+	count := cand.MinCount
+	if count <= 0 {
+		count = gap
+	}
+	if count < 1 {
+		count = 1
+	}
+	maxPrice := strictestMaxPrice(cand.MaxUnitPrice, passengerMax)
+	// vendor 三级降级 · Enqueue 前必须非空(stockwatch.Enqueue 要求)
+	// 读乘客全局 preferred_vendor 兜底(bus preferred 空时)
+	passengerPreferred := passengerPreferredVendor(ctx, b.db, busID)
+	chosenVendor := pickVendorForEnqueue(ctx, cand.PreferredVendor, passengerPreferred, b.picker)
+
 	switch out.Verdict {
 	case decider.VerdictReject:
 		verdict.Action = bus.ActionReject
 	case decider.VerdictEnqueue:
 		verdict.Action = bus.ActionEnqueue
+		verdict.PullCount = count
+		verdict.PullVendor = chosenVendor
+		verdict.PullMaxPrice = maxPrice
+		if chosenVendor == "" {
+			// vendor 三级都空 · Enqueue 会因 VendorID="" 挂不上 · 保守转 Reject
+			verdict.Action = bus.ActionReject
+			verdict.Reason = "no_vendor_for_enqueue · 三级降级都空"
+		}
 	case decider.VerdictPull:
 		verdict.Action = bus.ActionPull
-		// 组装 Pull 参数(§5 Step 5)
-		gap := cand.Watermark - sumAlive(cand.AliveByVendor)
-		count := cand.MinCount
-		if count <= 0 {
-			count = gap
-		}
-		if count < 1 {
-			count = 1
-		}
 		verdict.PullCount = count
-		verdict.PullVendor = cand.PreferredVendor
-		// maxPrice · 取车级和乘客级严的
-		verdict.PullMaxPrice = strictestMaxPrice(cand.MaxUnitPrice, passengerMax)
+		// Pull 分支 vendor 允许空(decider.Pull 内部会再 AutoPick 一次) · 但填上更精确
+		verdict.PullVendor = chosenVendor
+		verdict.PullMaxPrice = maxPrice
 	}
 	return verdict
 }
@@ -1323,6 +1370,29 @@ func sumAlive(m map[string]int) int {
 		s += v
 	}
 	return s
+}
+
+// pickVendorForEnqueue · Enqueue 前选一家 vendor(stockwatch.Enqueue 要求 VendorID 非空)
+//
+// 三级降级:bus preferred → passenger preferred → picker.PickBestVendor(AutoPick 比价)
+// 全空返 "" · 上层判空 skip Enqueue。
+func pickVendorForEnqueue(
+	ctx context.Context,
+	busPreferred, passengerPreferred string,
+	picker *vendorview.Service,
+) string {
+	if busPreferred != "" {
+		return busPreferred
+	}
+	if passengerPreferred != "" {
+		return passengerPreferred
+	}
+	if picker != nil {
+		if pv, _, ok := picker.PickBestVendor(ctx, ""); ok {
+			return string(pv)
+		}
+	}
+	return ""
 }
 
 // strictestMaxPrice · 硬上限取最严 · 0 视为不限
@@ -1501,9 +1571,15 @@ func (b *webhookAutoScanBridge) decideAndAct(
 		if count < 1 {
 			count = 1
 		}
+		// vendor · webhook 推的最优先(反正是刚来货) · 再走三级降级
 		v := webhookVendor
 		if v == "" {
-			v = preferredVendor
+			passengerPreferred := passengerPreferredVendor(ctx, b.db, busID)
+			v = pickVendorForEnqueue(ctx, preferredVendor, passengerPreferred, nil) // webhook 时不再走 picker(webhook 已明说是哪家)
+			if v == "" {
+				b.logger.Info("webhookAutoScanBridge: 无 vendor 可用 · skip Enqueue", "bus", busID)
+				return
+			}
 		}
 		cid, err := newAutoScanIdemID()
 		if err != nil {

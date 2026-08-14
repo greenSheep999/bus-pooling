@@ -109,7 +109,7 @@ func nullableStr(s string) any {
 	return s
 }
 
-// RefillTick · 消费 pending_refill · **Step 1 只 log 不真 fire**（P6 拆两步的第一步）。
+// RefillTick · 消费 pending_refill · 装配 refillPuller 后真调拉号 · 装配 refillDecider 后过决策器 · 装配 refillEnqueuer 后 Enqueue 分支真挂 stockwatch。
 //
 // 上层可以在 janitor / ticker 里定期调 · 未来 Step 2 会在这里真调 decider.Pull。
 //

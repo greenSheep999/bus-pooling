@@ -101,7 +101,7 @@ type SchedulerAction int
 const (
 	ActionReject  SchedulerAction = iota // 不动
 	ActionPull                            // 调 puller.Refill 下单
-	ActionEnqueue                         // 挂 stockwatch(第五刀接 · 暂 log)
+	ActionEnqueue                         // 挂 stockwatch(装配 AutoEnqueuer 时真调 · 未装配只 log)
 )
 
 // Scheduler · 定时扫水位 · 过 Decide · 触发 decider.Pull 或挂 stockwatch
