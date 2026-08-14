@@ -14,6 +14,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/housepool"
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 	"github.com/bus-pooling/bus-pooling/internal/stockwatch"
+	"github.com/bus-pooling/bus-pooling/internal/strategy"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 	"github.com/google/uuid"
 )
@@ -328,6 +329,24 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 	// 估价基准 · 优先按 zone 读 vendor_probe_zone.our_unit_credits · 精确到区（docs/18 §1.4）·
 	// 读不到才按本轮快照现算（冷启动兜底）。实扣不看这个值 —— 走 settle 里 vendor 的 TotalCost。
 	unitCostHint, _ := o.unitCreditsFor(ctx, vendor.ID(), in.Zone, rawUnitPrice)
+
+	// **单价上限硬拦（积分口径 · 2026-08-14 P2 修）**：
+	//
+	// 老代码只把 MaxUnitPrice 折成 vendorCap（vendor 币种）传给 adapter 的 max_total_cny ·
+	// **但只有其中一家 vendor 原生支持这个参数** · 其他 5 家 adapter 直接无视 —— 涨价保护形同虚设。
+	//
+	// 这里在积分口径下再硬拦一次：unitCostHint 是我方权威积分单价（vendor_probe_zone.our_unit_credits）·
+	// 超过用户设的 MaxUnitPrice 就直接返 LimitError · 不发下单请求 · 也不冻结钱包。
+	//
+	// **为什么在这里做而不在 canpull**：canpull 阶段 API 层没传 UnitPriceHint（恒 0）·
+	// 判不了。到 decider 里才拿到真实积分单价 · 是护栏的最后一道防线（真钱在这里出去）。
+	if priceCapExceeded(in.MaxUnitPrice, unitCostHint) {
+		return nil, &strategy.LimitError{
+			Kind:    strategy.LimitUnitPrice,
+			Cap:     in.MaxUnitPrice,
+			Current: unitCostHint,
+		}
+	}
 
 	// 冻结按估价的上限；实扣多退少补
 	// 1b P1-2B · 按本次拉号上下文实时求 Rates（surcharge_rule 表） · nil resolver 走 env
@@ -764,4 +783,11 @@ func (o *Orchestrator) VendorStock(ctx context.Context, vendorID providers.Vendo
 // 对外只返 Total / UnitPrice / ServiceFee（其它分层由 Breakdown 私有字段承）。
 func (o *Orchestrator) PriceEstimate(unitCost int64, count int) Breakdown {
 	return Price(unitCost, count, o.rates)
+}
+
+// priceCapExceeded · 单价上限判据 · 抽出来是为了可单测（P2 · 2026-08-14）
+//
+// 语义：MaxUnitPrice==0 = 不设 · unitCost==0 = 未知不拦 · 严格 > 才拦
+func priceCapExceeded(maxUnitPrice, unitCost int64) bool {
+	return maxUnitPrice > 0 && unitCost > 0 && unitCost > maxUnitPrice
 }
