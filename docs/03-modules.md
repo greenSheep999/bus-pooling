@@ -81,13 +81,17 @@
 
 ### `internal/webhookin/` (业务包 2/15)
 
-- **目的**：接收 6 家 vendor 的 webhook，验签，归一化为内部 `WebhookEvent`，转发给 `deathwatch` / `strategy`（触发新一轮）
+- **定位**：**事件适配层** —— vendor webhook 入口 · 验签 / 解析 / 归一化 / 落 `inbound_webhook_event` / 分派事件到各下游 · **不做业务决策**
 - **输入**：HTTP POST（来自各家 vendor）
-- **输出**：内部事件（含 `vendor_id, event_type, order_id, event_id, ...`）
-- **依赖**：`providers/*`（各家 adapter 提供签名验证与解析）, `deathwatch`, `strategy`
+- **输出**：归一化的 `providers.WebhookEvent` + 调用下游接口（`SweepTrigger` / `RestockNotifier` / `DispatchStore` / `ProbeZoneSink`）
+- **依赖**：`providers/*`（各家 adapter 的 `Parse` / `VerifySignature`）· 下游接口由装配层注入（**不硬 import deathwatch/stockwatch**）
 - **谁调它**：`internal/api` 路由 `POST /webhook/vendor/<vendor_id>`
-- **P 标签**：1d（阶段 1 里 webhook 归一化，跟自动策略一起上）
+- **P 标签**：1d
 - **幂等**：以 `(vendor_id, event_id)` 去重
+- **不做**：
+  - **不做决策**（是否补车 / 是否 fire 挂单 → 交给 `decider.Decide`）
+  - **不自己扣钱 / 不改钱包 / 不落 credential 状态**（交给 deathwatch / decider）
+  - **不 import `strategy`**（webhookin → strategy 是老思路 · 已废）
 
 ---
 
@@ -143,7 +147,12 @@
 - **依赖**：`passenger`, `wallet`（查余额）, `bus`（查 bus 归属）, `infra/db`
 - **谁调它**：手动拉号从 `api` 触发；自动拉号由 `deathwatch`（补车）/ 时钟 / vendor webhook 触发
 - **P 标签**：1a（手动）→ 1d（自动）
-- **不做**：不选 vendor / 不动 housepool
+- **谁读它的字段**：
+  - 手动拉号：`api/bus.go:handleBusPull` → `strategy.CanPull` → `decider.Pull`
+  - 自动拉号：`decider.Decide` 读 `AutoRefillEnabled` / `RefillWatermark` / `RefillMinCount` / `MaxUnitPrice` / `PreferredVendor` 等（见 `docs/15-scheduling.md §5`）
+- **不做**：
+  - **不选 vendor / 不动 housepool / 不调 Pull**（那是 decider）
+  - **不做系统调度决策**（是否补车 / mode 判断 / vendor mode 都是 `decider.Decide`）
 
 ### `internal/coalescer/` (业务包 8/15)
 
@@ -188,14 +197,21 @@
 
 ### `internal/deathwatch/` (业务包 10/15)
 
-- **目的**：号死监控 + 质保退款；探活 housepool + 收 vendor `all_keys_dead` / `warranty_refund` webhook → 从 bus 踢死号 → 分组跌破水位触发补车意图
-- **输入**：housepool 探活轮询 / 归一化的 webhook 事件
-- **输出**：补车意图（发回 `strategy` 意图池）；退款事务（走 `wallet.warranty_refund`）
-- **依赖**：`housepool`, `bus`, `strategy`, `wallet`
-- **谁调它**：定时器 + `webhookin`
+- **定位**：**号死监控 + 质保退款** —— 探活 housepool + 收号死 webhook → 标 `credential_ledger.status='dead'` · 走 vendor 政策退款 · 号死后是否补车**不由自己决定**（交给 `decider.Decide(death_refill)`）
+- **输入**：housepool 探活轮询 / 归一化的 webhook 事件（`webhookin` 通过 `SweepTrigger` 接口调）
+- **输出**：
+  - `credential_ledger` 标死 + `pending_refill` 入队（号死路径）
+  - 退款事务（走 `wallet.warranty_refund`）
+  - `RefillTick` 扫 pending_refill → 调 `decider.Decide(death_refill)` → 输出为下单则调 `decider.Pull`
+- **依赖**：`housepool`, `wallet`, `decider`（RefillTick 通过 puller 接口调用 · 装配层桥接）
+- **谁调它**：定时器（`Sweep` / `RefundTick` / `RefillTick`）+ `webhookin`（SweepTrigger）
 - **平均寿命统计**：`credential.dead_at - created_at` 聚合成 `(vendor, 窗口)→ 平均寿命`，供 `decider` 使用
 - **死活信号 3 路**：housepool 探活 / vendor webhook / vendor 死活端点轮询（兜底）
 - **P 标签**：1a 基础（探活 + 踢死号）→ 1d（webhook 归一化 + 自动补车 + 寿命统计）
+- **不做**：
+  - **不 import `strategy`**（deathwatch → strategy 意图池是老思路 · 已废）
+  - **不自己决定要不要补车**（现代码 `RefillTick` 直接 Pull 是漂移 · 待第二刀改成调 `decider.Decide`）
+  - **不选 vendor / 不动加价栈**（那是 decider 的活）
 - **规则 A**：见 §00.7.5
 
 ### `internal/webhookout/` (业务包 11/15)
@@ -222,6 +238,7 @@
 
 ### `internal/bus/` (业务包 13/15)
 
+- **定位**：**车实体管理** —— 车的 CRUD / 成员 / 邀请码 / 车级策略字段存储 / anon 撮合 / 5min 兜底 `Scheduler`（水位巡检 · 但**不自己判**是否补 · 调 `decider.Decide(scheduler)`）
 - **目的**：bus 实体管理（成员 / 邀请码 / 补车规则 / 目标水位）
 - **子概念**（1c 定稿 · `kind` 只分"谁建的"·不分行为·见 `06-db-schema.md §车 kind 语义`）：
   - **用户建的车**（`kind: single` / `team` · 两者行为完全一致）—— 一律带邀请码 · 1 人时独享 · 邀朋友进来就是多人拼车
@@ -233,6 +250,10 @@
 - **谁调它**：`strategy`, `coalescer`, `deathwatch`, `pullrecord`（用户从拉号记录派号进车）
 - **P 标签**：1a（single）→ 1c（anon）→ 2a（team）
 - **housepool 映射**：每个 bus 对应一个 group `bus-<bus_id>`
+- **不做**：
+  - **不选 vendor / 不算价 / 不做加价栈**（那是 decider）
+  - **不感知 vendor mode / stockwatch / vendorbalance**（那是 decider 的调度支撑包）
+  - **不自己判要不要补车**（Scheduler 只负责巡检 + 调 `decider.Decide` · 输出决定动作）
 
 ---
 
@@ -361,9 +382,10 @@
 - **P 标签**：2c
 - **备注**：管理端 UI 靠后，登录能力也靠后
 
-### `internal/vendorview/`
+### `internal/vendorview/`（策略支撑层 · 不占业务包编号）
 
-- **目的**：`providers.Registry` 的**对外视图层**——把 registry 的原始能力按调用者身份翻译成脱敏 + 已计价的展示数据。**不是**新业务包（在 CLAUDE.md §4 的 15 包上限外），是 view/aggregation。
+- **定位**：**服务 `decider` 的策略支撑层** —— 不是纯 read-model。既是`providers.Registry` 的对外视图（脱敏 + 已计价数据给 API 用），又是**采集层**（Prober / Backfiller 主动打 vendor）和**决策数据源**（`PickBestVendor` / `PickBestVendorExcluding` 供 `decider.Decide` 用）。
+- **为什么不算业务包**：本文档 CLAUDE.md §4 的 15 包上限是给**业务域**留的。vendorview 是给 decider 提供 vendor 侧原料的支撑层（跟 stockwatch / vendorbalance / pricing 一样），不代表一个独立业务域。
 - **组件**：
   - `Service` · aggregate stock / prices / auto-pick / stats（api 层直接调这里）
   - `Prober` · 每 60s 打每家 vendor 的 `Stock()` + `PublicStatus()` · 结果落 `vendor_probe`
