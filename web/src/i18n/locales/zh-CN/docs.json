@@ -19,13 +19,13 @@
         "body": "没 confirm 的话号不会被删 —— 所以第 2 步断线了可以重来 · confirm 之后明文就再也拿不到了",
         "title": "第 3 步之前号还在"
       },
-      "code": "# 1. 起单 → 拿 token\nPOST /api/me/pull-records/<id>/handoff-init\n\n# 2. 用 token 取明文（TTL 内可以重试）\nGET /api/me/handoff/<token>\n\n# 3. 确认收到 → 我方才真正删号\nPOST /api/me/handoff/<token>/confirm",
+      "code": "# 1. 起单 → 拿 token\nPOST /api/me/handoff\n{ \"credential_ids\": [\"01H8...\"] }\n\n# 2. 用 token 取明文（TTL 内可以重试）\nGET /api/me/handoff/<token>\n\n# 3. 确认收到 → 我方才真正删号\nPOST /api/me/handoff/<token>/confirm",
       "sub": "防止「我方已删号、你却没收到明文」",
-      "title": "拿走是两阶段的"
+      "title": "拿走是三段式的"
     },
     "request-code": "// 请求\n{\n  \"credential_ids\": [\"01H8...\", \"01H9...\"],\n  \"destination\": \"into_bus\",\n  \"bus_id\": \"01HA...\"          // destination=into_bus 时必填\n}",
     "section": {
-      "sub-suffix": " · 3 种去向",
+      "sub-suffix": " · 2 种去向（拿走走独立端点）",
       "title": "派去向"
     }
   },
@@ -44,31 +44,115 @@
     "item": {
       "bad-bus-id": "车不存在，或不是你的车",
       "bad-count": "count 超范围",
+      "bad-idempotency-key": "幂等键格式不对（要 32 位十六进制）",
       "bad-json": "请求体不是合法 JSON，或带了未知字段",
-      "bad-vendor": "vendor_id 不认识",
-      "housepool-unavailable": "号池暂时不可用",
+      "bad-vendor": "vendor 不认识",
+      "daily-limit-reached": "今天的轮数或消费达到你设的上限",
       "idempotency-conflict": "同一个幂等键，但请求体不一样",
       "insufficient-balance": "余额不够，先充值",
       "internal": "我方的问题，可以报给我们",
       "invalid-api-key": "key 无效或已吊销",
       "no-stock": "上游缺货，过会儿再试",
       "not-found": "资源不存在",
+      "price-over-cap": "单价超过你在偏好里设的上限",
       "rate-limited": "限流了，看 retry_after 秒数",
+      "service-unavailable": "我方服务暂时不可用",
       "session-required": "这个操作只能浏览器登录做（改密码 / 建 key）",
-      "vendor-error": "上游挂了或网络不通"
+      "token-expired": "拿走 token 过期，重新发起即可",
+      "upstream-error": "上游临时不可用"
     },
     "sub-prefix": "按 ",
     "sub-suffix": " 分派逻辑 · message 是给人看的，会改",
     "title": "错误码"
+  },
+  "fields": {
+    "assign-req": {
+      "sub": "POST /api/me/pull-records/assign 的请求体",
+      "title": "派去向 · 请求"
+    },
+    "assign-resp": {
+      "sub": "同上端点的响应体 · 部分失败时 errors 里列具体号 id",
+      "title": "派去向 · 响应"
+    },
+    "apikey-create": {
+      "sub": "POST /api/me/api-keys · 明文 `key` 只此一次返回",
+      "title": "创建 API key · 响应"
+    },
+    "apikey-list": {
+      "sub": "GET /api/me/api-keys · 纯数组 · 已吊销的 key 也在列表里",
+      "title": "列表 API key · 响应"
+    },
+    "bus-pull-req": {
+      "sub": "POST /api/me/buses/{bus_id}/pull 的请求体",
+      "title": "给车拉号 · 请求"
+    },
+    "bus-strategy-put": {
+      "sub": "PUT /api/me/buses/{bus_id}/strategy · 车级覆盖 · null=跟随全局默认",
+      "title": "车级策略 · 请求"
+    },
+    "downstream-put": {
+      "sub": "PUT /api/me/downstream/passengerpool · partial update · 三项都可选",
+      "title": "配我的号池 · 请求"
+    },
+    "handoff-init": {
+      "sub": "POST /api/me/handoff · 请求 + 响应（不含明文）",
+      "title": "拿走 · 起 token"
+    },
+    "header": {
+      "code": "字段",
+      "meaning": "含义",
+      "required": "必填",
+      "type": "类型"
+    },
+    "hero-sub": "字段来自真后端 struct · 类型是 TS 端形状 · 出入以 web/src/types/index.ts 为准",
+    "hero-title": "请求 / 响应字段全表",
+    "pull-req": {
+      "sub": "POST /api/me/pull 的请求体",
+      "title": "单独拉号 · 请求"
+    },
+    "pull-resp": {
+      "sub": "拉号响应体（POST /api/me/pull 和 POST /api/me/buses/{bus_id}/pull 一致）· 只暴露最终三项金额",
+      "title": "拉号 · 响应"
+    },
+    "webhook-put": {
+      "sub": "PUT /api/me/downstream/webhook · **不接收 secret 明文**",
+      "title": "配 webhook · 请求"
+    }
   },
   "hero": {
     "desc": "用 API key 调我方接口 · 拉号、派去向、收 webhook 都能脚本化",
     "manage-key": "管理 API key",
     "title": "对接文档"
   },
+  "matrix": {
+    "footnote-1": "**session** = 只能浏览器登录 · **API key** = 支持 X-API-Key 或 Authorization: Bearer · 大多数端点两种都行",
+    "footnote-2": "**幂等**列打 ✓ 的端点必须带 32 位十六进制的 `X-Idempotency-Key` header · 重放返字节一致响应",
+    "footnote-3": "**分页**列打 ✓ 的端点返 `{ items, total, page, page_size, pages }` 信封 · 支持 `?page=&page_size=`（上限 500）",
+    "footnote-4": "**一次性明文**列打 ✓ 的响应含只在这一次能拿到的敏感字段（如 API key 明文、webhook secret、拿走的号 key）· 关闭响应就再也拿不回",
+    "header": {
+      "auth": "鉴权",
+      "endpoint": "端点",
+      "idempotency": "幂等",
+      "one-shot": "一次性明文",
+      "paginated": "分页"
+    },
+    "hero-sub": "每个端点的鉴权 / 幂等 / 分页 / 一次性明文一览表 · 打 ✓ = 要 / 有 · 打 — = 不要 / 没有",
+    "hero-title": "端点矩阵",
+    "sec": {
+      "account": "账号 / API Key",
+      "bus": "拼车 / 车级策略",
+      "downstream": "下游配置",
+      "handoff": "拿走 · 三段式",
+      "pull": "拉号 / 派去向 / 拉号记录",
+      "strategy": "全局策略",
+      "vendors": "Vendor 只读"
+    }
+  },
   "nav": {
     "assign": "派去向",
     "errors": "错误码",
+    "fields": "字段全表",
+    "matrix": "端点矩阵",
     "pull": "拉号",
     "start": "开始",
     "webhook": "Webhook"
@@ -76,13 +160,13 @@
   "pull": {
     "bus": {
       "alert": "拉 1 个的单价比批量高 · 多拉几个更划算 · 返回体里的金额都是最终值，直接记账即可 · 拉号不涉及通道费，那个只在充值时收",
-      "request-code": "// 请求\n{\n  \"count\": 5,\n  \"vendor_id\": \"<vendor_id>\",   // 不传 = 让系统比价选（可选值见 /api/vendors/stock）\n  \"constraints\": {\n    \"max_unit_price\": 30000000  // 30 积分\n  }\n}",
-      "response-code": "// 响应\n{\n  \"pull_round_id\": \"01H8...\",\n  \"vendor_id\": \"<vendor_id>\",\n  \"purchased\": 5,\n  \"key_cost\": 100000000,        // 号价 · 原样转给上游\n  \"single_pull_fee\": 0,          // 只拉 1 个时才有\n  \"service_fee_total\": 5000000,  // 按号数\n  \"total_debit\": 105000000,\n  \"balance_remaining\": 895000000\n}",
+      "request-code": "// 请求\n{\n  \"count\": 5,\n  \"vendor_id\": \"<vendor_id>\",   // 不传 = 让系统比价选（可选值见 /api/vendors/stock）\n  \"zone\": \"us\",                 // us | eu | 空 = 让系统挑\n  \"coupon_code\": \"\"             // 阶段 1a 收但不消费，防 decodeStrict 拒未知字段\n}",
+      "response-code": "// 响应\n{\n  \"pull_round_id\": \"01H8...\",\n  \"vendor_id\": \"<vendor_id>\",\n  \"purchased\": 5,\n  \"credential_ids\": [\"01H8a\", \"...\"],\n  \"unit_price\": 21000000,        // microunit · 单价（所有分项已算入，一口价）\n  \"service_fee\": 5000000,        // microunit · 服务费一项显式列出\n  \"total_debit\": 105000000,      // = unit_price × purchased\n  \"balance_remaining\": 895000000\n}",
       "title": "给车拉号"
     },
     "solo": {
       "code": "curl -X POST https://<base-url>/api/me/pull \\\n  -H \"X-API-Key: usr-<你的 key>\" \\\n  -H \"X-Idempotency-Key: $(openssl rand -hex 16)\" \\\n  -d '{\"count\": 2, \"zone\": \"us\"}'",
-      "sub-suffix": " · 号进「待派」等你决定去向",
+      "sub-suffix": " · 号进「拉号记录」等你决定去向",
       "title": "不进车 · 单独拉"
     }
   },
@@ -93,9 +177,18 @@
         "body-2": " · 不能改登录密码，也不能创建新的 API key —— 免得 key 泄露后被人反锁你自己",
         "title": "API key 的权限是收窄的"
       },
-      "code": "curl https://<base-url>/api/me/profile \\\n  -H \"X-API-Key: usr-<你的 key>\"\n\n# 或者用 Bearer\ncurl https://<base-url>/api/me/profile \\\n  -H \"Authorization: Bearer usr-<你的 key>\"",
+      "code": "curl https://<base-url>/api/me \\\n  -H \"X-API-Key: usr-<你的 key>\"\n\n# 或者用 Bearer\ncurl https://<base-url>/api/me \\\n  -H \"Authorization: Bearer usr-<你的 key>\"",
       "sub": "脚本用 API key · 浏览器登录后自动带 cookie",
       "title": "鉴权"
+    },
+    "api-keys": {
+      "alert": {
+        "body": "明文 key 只在创建响应里出现一次 · 关闭后再也拿不回 · 吊销走 DELETE · 库里保留台账行（revoked=true），列表里还看得到",
+        "title": "一次性明文 · soft delete"
+      },
+      "code": "# 建（只能浏览器 session · API key 建不了新 key）\nPOST /api/me/api-keys\n{ \"name\": \"my-bot\" }\n\n# 列（API key 也能列 · 已吊销的行也在）\nGET /api/me/api-keys\n\n# 吊销（soft delete · 库里保留台账）\nDELETE /api/me/api-keys/<id>",
+      "sub": "3 个端点 · 权限收窄 · 明文一次性",
+      "title": "API key 管理"
     },
     "convention": {
       "error": {
