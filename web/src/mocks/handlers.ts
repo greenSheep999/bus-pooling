@@ -274,8 +274,10 @@ export const handlers = [
   }),
   http.post("/api/me/downstream/webhook/secret", () => {
     const tail = crypto.randomUUID().replace(/-/g, "").slice(0, 4);
-    fx.webhook.secret_masked = `whsec_${"•".repeat(23)}${tail}`;
-    return ok({ secret: `whsec_${crypto.randomUUID().replace(/-/g, "")}` }, 400);
+    // 打码格式跟后端 maskFromEncrypted 对齐:whsec_(前缀) + 16 个 • + 尾 4 hex
+    fx.webhook.secret_masked = `whsec_${"•".repeat(16)}${tail}`;
+    // 明文格式 = whsec_ + 64 hex(跟后端 downstream.generateSecretHex 一致)
+    return ok({ secret: `whsec_${crypto.randomUUID().replace(/-/g, "")}${crypto.randomUUID().replace(/-/g, "")}` }, 400);
   }),
   http.get("/api/me/downstream/webhook/deliveries", () => ok(fx.webhookDeliveries)),
 
@@ -285,11 +287,12 @@ export const handlers = [
     const { name } = (await request.json()) as { name: string };
     const raw = crypto.randomUUID().replace(/-/g, "");
     const id = `k_${Date.now()}`;
-    fx.apiKeys.unshift({
-      id, name: name || "未命名", prefix: `sk_live_${raw.slice(0, 4)}`,
+    const item = {
+      id, name: name || "未命名", prefix: `usr-${raw.slice(0, 8)}`,
       last_used_at: null, created_at: new Date().toISOString(), revoked: false,
-    });
-    return ok({ id, plaintext: `sk_live_${raw}` }, 400);
+    };
+    fx.apiKeys.unshift(item);
+    return ok({ key: `usr-${raw}`, item }, 400);
   }),
   http.delete("/api/me/api-keys/:id", ({ params }) => {
     const k = fx.apiKeys.find((x) => x.id === params.id);

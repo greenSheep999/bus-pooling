@@ -353,6 +353,7 @@
         "body": "记得同步更新你机器人那边的验签配置，否则收到的事件会验签失败",
         "title": "旧密钥已失效"
       },
+      "secret-hint-empty": "还没生成 · 点右下【重新生成密钥】开始",
       "secret-hint-masked": "只存打码版 · 要换就重新生成",
       "secret-hint-visible": "这是唯一一次可见，请立即复制",
       "secret-label": "签名密钥",

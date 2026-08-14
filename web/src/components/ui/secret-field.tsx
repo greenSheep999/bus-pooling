@@ -23,7 +23,9 @@ export function SecretField({
 }) {
   const [copied, setCopied] = useState(false);
   const { t } = useTranslation();
-  const shown = plaintext ?? masked ?? "-";
+  // 空字符串也走"未配置"分支 —— nullish 兜底对 "" 不生效(P0-4 修 · 1e-2 收尾)
+  const hasMasked = !!(masked && masked.length > 0);
+  const shown = plaintext ?? (hasMasked ? masked : "-");
 
   return (
     <div className={cn("flex items-center gap-2", className)}>

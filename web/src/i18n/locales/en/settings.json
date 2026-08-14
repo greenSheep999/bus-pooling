@@ -353,6 +353,7 @@
         "body": "Update the verify config on your bot side too, otherwise incoming events will fail signature check",
         "title": "Old secret is now invalid"
       },
+      "secret-hint-empty": "Not generated yet · click [Regenerate] on the bottom right",
       "secret-hint-masked": "Only the masked version is stored · regenerate to rotate",
       "secret-hint-visible": "This is the only time it's visible, copy it now",
       "secret-label": "Signing secret",

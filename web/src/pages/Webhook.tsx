@@ -115,10 +115,14 @@ export default function Webhook() {
             <div className="flex flex-wrap items-baseline gap-x-3">
               <span className="text-label font-semibold text-fg-secondary">{t("webhook.endpoint.secret-label")}</span>
               <span className="text-label text-fg-tertiary">
-                {newSecret ? t("webhook.endpoint.secret-hint-visible") : t("webhook.endpoint.secret-hint-masked")}
+                {newSecret
+                  ? t("webhook.endpoint.secret-hint-visible")
+                  : cfg?.secret_masked
+                    ? t("webhook.endpoint.secret-hint-masked")
+                    : t("webhook.endpoint.secret-hint-empty")}
               </span>
             </div>
-            <SecretField masked={cfg?.secret_masked ?? "-"} plaintext={newSecret} />
+            <SecretField masked={cfg?.secret_masked} plaintext={newSecret} />
           </div>
 
           {newSecret && (

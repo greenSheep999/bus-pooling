@@ -784,7 +784,7 @@ export const ledger: LedgerEntry[] = [
 
 export const downstream: DownstreamConfig = {
   passengerpool_url: "https://kiro-my.example.com",
-  passengerpool_token_masked: "kiro_admin_••••••••••••••••a3f2",
+  passengerpool_token_masked: "••••••••••••••••a3f2",
   connected: true,
   last_heartbeat_at: ago(0.03),
   push_success_rate: 0.982,
@@ -795,7 +795,7 @@ export const downstream: DownstreamConfig = {
 
 export const webhook: WebhookConfig = {
   url: "https://bot.example.com/kiro-events",
-  secret_masked: "whsec_•••••••••••••••••••••••3f2a",
+  secret_masked: "whsec_••••••••••••••••3f2a",
   enabled: true,
   events: ["new_keys_available", "all_keys_dead", "warranty_refund", "boarded"],
 };
@@ -827,7 +827,7 @@ export const globalStrategy: GlobalStrategy = {
 };
 
 export const apiKeys: ApiKey[] = [
-  { id: "k1", name: "生产 · N8N 机器人", prefix: "sk_live_a3f2", last_used_at: ago(0.03), created_at: ago(24 * 18), revoked: false },
-  { id: "k2", name: "CI 脚本", prefix: "sk_live_8c1b", last_used_at: ago(3), created_at: ago(24 * 54), revoked: false },
-  { id: "k3", name: "临时测试", prefix: "sk_test_5f9d", last_used_at: null, created_at: ago(24 * 10), revoked: true },
+  { id: "k1", name: "生产 · N8N 机器人", prefix: "usr-a3f2c901", last_used_at: ago(0.03), created_at: ago(24 * 18), revoked: false },
+  { id: "k2", name: "CI 脚本", prefix: "usr-8c1b4d20", last_used_at: ago(3), created_at: ago(24 * 54), revoked: false },
+  { id: "k3", name: "临时测试", prefix: "usr-5f9de762", last_used_at: null, created_at: ago(24 * 10), revoked: true },
 ];
