@@ -762,8 +762,18 @@ func runServe(ctx context.Context, cfg config.Config) error {
 			DB:      database.DB,
 			Pool:    poolClient,
 			Refunds: deathwatch.NewSQLRefundStore(database.DB),
-			// 号死后真调 decider.Pull 补车（Step 2）· puller 用 decider.RefillAdapter 桥接
+			// 号死后真调 decider.Pull 补车 · puller 用 decider.RefillAdapter 桥接
 			RefillPuller: &refillPullerBridge{orch: orch},
+		})
+		// v1d-3 · 第三刀 · 装配 decider.Decide 适配器 · RefillTick 每条 pending_refill 过统一决策器
+		// 关键:AutoRefillEnabled=false 时 · Decide 会拒 · 号死不自动补(退款照走)
+		deathwatchWatcher.SetRefillDecider(&refillDecideBridge{
+			db:        database.DB,
+			modeMgr:   modeMgr,
+			killFlag:  killFlag,
+			turboFlag: turboFlag,
+			probeZone: probeZoneStore,
+			logger:    slog.Default(),
 		})
 	}
 
@@ -992,10 +1002,11 @@ func (b *refillPullerBridge) Refill(ctx context.Context, req deathwatch.RefillRe
 		return false, nil
 	}
 	_, err := b.orch.Pull(ctx, decider.PullInput{
-		PassengerID: req.PassengerID,
-		BusID:       req.BusID,
-		Count:       req.Count,
-		VendorID:    providers.VendorID(req.VendorID),
+		PassengerID:  req.PassengerID,
+		BusID:        req.BusID,
+		Count:        req.Count,
+		VendorID:     providers.VendorID(req.VendorID),
+		MaxUnitPrice: req.MaxUnitPrice, // 第三刀 · Decide 输出的护栏
 	})
 	if err == nil {
 		return true, nil
@@ -1005,6 +1016,165 @@ func (b *refillPullerBridge) Refill(ctx context.Context, req deathwatch.RefillRe
 		return false, nil
 	}
 	return false, err
+}
+
+// refillDecideBridge · 第三刀 · 把 decider.Decide 接进 deathwatch.RefillTick
+//
+// 负责:
+//   1. 读 bus.Strategy(auto/watermark/min_count/max_price/preferred_vendor)
+//   2. 读 passenger_strategy_default(max_price)
+//   3. 组装 DecideInput(source=death_refill · 单车视角)
+//   4. 调 decider.Decide
+//   5. 输出翻译成 deathwatch.RefillVerdict
+//
+// 只处理有 bus_id 的 pending_refill · 无 bus_id(record group 单独号)直接放行。
+type refillDecideBridge struct {
+	db        *sql.DB
+	modeMgr   *stockwatch.ModeMgr
+	killFlag  *stockwatch.FileFlag
+	turboFlag *stockwatch.FileFlag
+	probeZone *vendorview.ProbeZoneStore
+	logger    *slog.Logger
+}
+
+func (b *refillDecideBridge) Decide(ctx context.Context, req deathwatch.RefillRequest) deathwatch.RefillVerdict {
+	// 单独号(record group · 无 bus_id)不过 Decide · 直接 Pull(号死退款是天赋)
+	if req.BusID == "" {
+		return deathwatch.RefillVerdict{
+			Action:     deathwatch.RefillPull,
+			PullCount:  req.Count,
+			PullVendor: req.VendorID,
+		}
+	}
+
+	// 读车级策略
+	var (
+		autoEnabled     int
+		watermark       int
+		minCount        sql.NullInt64
+		busMax          sql.NullInt64
+		preferredVendor sql.NullString
+	)
+	if err := b.db.QueryRowContext(ctx,
+		`SELECT auto_refill_enabled, refill_watermark,
+		        refill_min_count, max_unit_price, preferred_vendor
+		   FROM bus WHERE id = ?`, req.BusID).Scan(
+		&autoEnabled, &watermark, &minCount, &busMax, &preferredVendor); err != nil {
+		b.logger.Warn("refillDecideBridge: 读 bus 策略失败·保守跳过",
+			"bus", req.BusID, "err", err)
+		return deathwatch.RefillVerdict{Action: deathwatch.RefillReject, Reason: "bus_lookup_failed"}
+	}
+
+	// 读乘客全局 max_price
+	var passengerMax int64
+	if err := b.db.QueryRowContext(ctx,
+		`SELECT COALESCE(psd.max_unit_price, 0)
+		   FROM bus b JOIN passenger_strategy_default psd
+		     ON psd.passenger_id = b.creator_passenger_id
+		  WHERE b.id = ?`, req.BusID).Scan(&passengerMax); err != nil {
+		passengerMax = 0
+	}
+
+	// 读车里活号按 vendor 分组
+	aliveByVendor := make(map[string]int)
+	rows, err := b.db.QueryContext(ctx,
+		`SELECT vendor_id, COUNT(*)
+		   FROM credential_ledger
+		  WHERE owner_bus_id = ? AND status = 'alive'
+		  GROUP BY vendor_id`, req.BusID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var vid string
+			var n int
+			if err := rows.Scan(&vid, &n); err == nil && vid != "" {
+				aliveByVendor[vid] = n
+			}
+		}
+	}
+
+	// 读 vendor 单价
+	prices := make(map[string]decider.VendorPriceSnapshot, len(aliveByVendor))
+	if b.probeZone != nil {
+		for vid := range aliveByVendor {
+			credits, at, ok := b.probeZone.LatestZoneCredits(ctx, vid, providers.Zone(""))
+			if !ok {
+				prices[vid] = decider.VendorPriceSnapshot{}
+				continue
+			}
+			stale := time.Since(at) > 2*time.Minute
+			prices[vid] = decider.VendorPriceSnapshot{
+				UnitPriceMicro: credits,
+				ObservedAt:     at,
+				Stale:          stale,
+			}
+		}
+	}
+
+	mode := ""
+	if b.modeMgr != nil {
+		mode = b.modeMgr.Current().String()
+	}
+	kill := b.killFlag != nil && b.killFlag.Engaged()
+	turbo := b.turboFlag != nil && b.turboFlag.Engaged()
+
+	busMaxVal := int64(0)
+	if busMax.Valid {
+		busMaxVal = busMax.Int64
+	}
+	minCountVal := 0
+	if minCount.Valid {
+		minCountVal = int(minCount.Int64)
+	}
+	preferredVal := ""
+	if preferredVendor.Valid {
+		preferredVal = preferredVendor.String
+	}
+
+	out, err := decider.Decide(ctx, decider.DecideInput{
+		Source:            decider.SourceDeathRefill,
+		BusID:             req.BusID,
+		AliveByVendor:     aliveByVendor,
+		AutoRefillEnabled: autoEnabled == 1,
+		RefillWatermark:   watermark,
+		RefillMinCount:    minCountVal,
+		BusMaxUnitPrice:   busMaxVal,
+		PassengerMaxPrice: passengerMax,
+		PreferredVendor:   preferredVal,
+		Mode:              mode,
+		KillPulls:         kill,
+		Turbo:             turbo,
+		PricesByVendor:    prices,
+	})
+	if err != nil {
+		b.logger.Warn("refillDecideBridge: Decide 报错", "bus", req.BusID, "err", err)
+		return deathwatch.RefillVerdict{Action: deathwatch.RefillReject, Reason: err.Error()}
+	}
+
+	verdict := deathwatch.RefillVerdict{Reason: out.RejectReason}
+	switch out.Verdict {
+	case decider.VerdictReject:
+		verdict.Action = deathwatch.RefillReject
+	case decider.VerdictEnqueue:
+		verdict.Action = deathwatch.RefillEnqueue
+	case decider.VerdictPull:
+		verdict.Action = deathwatch.RefillPull
+		// count · 用 pending_refill 里的 · 通常是补该辆死号一个 · minCount 兜底
+		count := req.Count
+		if count < 1 {
+			count = 1
+		}
+		if minCountVal > count {
+			count = minCountVal
+		}
+		verdict.PullCount = count
+		verdict.PullVendor = preferredVal
+		if verdict.PullVendor == "" {
+			verdict.PullVendor = req.VendorID // 用 pending_refill 里指定的 vendor
+		}
+		verdict.PullMaxPrice = strictestMaxPrice(busMaxVal, passengerMax)
+	}
+	return verdict
 }
 
 // autoRefillBridge · 1d · 把 orch 转成 bus.AutoRefiller

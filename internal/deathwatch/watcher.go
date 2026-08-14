@@ -47,6 +47,17 @@ type Watcher struct {
 	// refillPuller · Step 2 真调拉号· nil = 走 Step 1 只 log 不真拉
 	// 装配层实现 · 避免 deathwatch → decider 硬依赖
 	refillPuller RefillPuller
+	// refillDecider · 第三刀 · Decide 前置判据 · nil = 老行为(直接 puller)
+	// 装配层实现 · 避免 deathwatch → decider 硬依赖
+	refillDecider RefillDecide
+}
+
+// SetRefillDecider · 装配层注入 · 必须在 Start 前调用。
+func (w *Watcher) SetRefillDecider(d RefillDecide) {
+	if w == nil {
+		return
+	}
+	w.refillDecider = d
 }
 
 // RefillPuller · 号死后触发新一轮拉号的抽象
@@ -69,7 +80,40 @@ type RefillRequest struct {
 	BusID        string             // 空 = 单独提取
 	Count        int
 	VendorID     string             // 可空 · 让 decider auto-pick
+	// v1d-3 · 从 Decide 传下来的护栏字段
+	MaxUnitPrice int64              // microunit · 0 = 不限
 }
+
+// RefillDecide · 第三刀 · Decide 接口注入(避免 deathwatch → decider 硬依赖)
+//
+// 装配层实现:调 decider.Decide(source=death_refill) 并返 verdict。
+// nil = 老行为(直接 puller.Refill · 不过决策器) · 保 1a-1c 回归。
+//
+// 语义:
+//   - Verdict=Reject → RefillTick 跳过这条 · 标 skipped · 记 reason
+//   - Verdict=Pull   → RefillTick 用 verdict 里的 Count/VendorID/MaxPrice 调 puller
+//   - Verdict=Enqueue → 第五刀接 · 现在跟 Reject 一样跳过(号死场景通常紧俏·挂单是合理选)
+type RefillDecide interface {
+	Decide(ctx context.Context, req RefillRequest) RefillVerdict
+}
+
+// RefillVerdict · Decide 输出给 RefillTick 的结果
+type RefillVerdict struct {
+	Action       RefillAction
+	Reason       string
+	PullCount    int
+	PullVendor   string
+	PullMaxPrice int64
+}
+
+// RefillAction · 三态
+type RefillAction int
+
+const (
+	RefillReject  RefillAction = iota
+	RefillPull
+	RefillEnqueue
+)
 
 // Config 装配参数。零值全部走默认。
 type Config struct {

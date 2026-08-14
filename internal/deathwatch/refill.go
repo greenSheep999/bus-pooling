@@ -178,14 +178,44 @@ func (w *Watcher) RefillTick(ctx context.Context, limit int) (processed int, err
 			continue
 		}
 
-		// 真调 decider.Pull
-		fulfilled, perr := w.refillPuller.Refill(ctx, RefillRequest{
+		// 第三刀 · 装配了 Decide 就先过判据(受 AutoRefillEnabled 约束等)
+		req := RefillRequest{
 			RefillID:    r.ID,
 			PassengerID: r.PassengerID,
 			BusID:       r.BusID,
 			Count:       r.Count,
 			VendorID:    r.VendorID,
-		})
+		}
+		if w.refillDecider != nil {
+			verdict := w.refillDecider.Decide(ctx, req)
+			switch verdict.Action {
+			case RefillReject:
+				w.log.Info("deathwatch: Decide 拒补车 · 标 skipped",
+					"refill_id", r.ID, "bus", r.BusID, "reason", verdict.Reason)
+				w.markRefillResolved(ctx, r.ID, "skipped", verdict.Reason)
+				processed++
+				continue
+			case RefillEnqueue:
+				// 第五刀待接 · 号死场景通常紧俏挂单更合理·但现无 stockwatch 通路·先跳
+				w.log.Info("deathwatch: Decide 判挂单 · 第五刀待接 · 保 pending 等下轮",
+					"refill_id", r.ID, "bus", r.BusID, "reason", verdict.Reason)
+				w.rescheduleRefill(ctx, r.ID, "enqueue_deferred")
+				processed++
+				continue
+			case RefillPull:
+				// 用 Decide 输出覆盖 req 里的 count/vendor · 加上 MaxUnitPrice
+				if verdict.PullCount > 0 {
+					req.Count = verdict.PullCount
+				}
+				if verdict.PullVendor != "" {
+					req.VendorID = verdict.PullVendor
+				}
+				req.MaxUnitPrice = verdict.PullMaxPrice
+			}
+		}
+
+		// 真调 decider.Pull
+		fulfilled, perr := w.refillPuller.Refill(ctx, req)
 
 		// 落终态
 		switch {
