@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bus-pooling/bus-pooling/internal/delivery/passengerpool"
 	"github.com/bus-pooling/bus-pooling/internal/housepool"
 	"github.com/bus-pooling/bus-pooling/internal/pullrecord"
 	"github.com/google/uuid"
@@ -296,7 +298,7 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	resp := assignResponse{
-		Assigned: len(req.CredentialIDs),
+		Assigned: len(req.CredentialIDs), // 后面 push_pool 部分失败会减
 		Errors:   []assignErrItem{},
 	}
 	// respBody 在清算跑完后才序列化（清算结果要进响应体 + 幂等快照）
@@ -386,8 +388,18 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	// ── tx 外 · 外部动作（housepool 迁 group）──
+	// ── tx 外 · 外部动作（into_bus: housepool 迁 group · push_pool: 双写乘客号池） ──
 	// 崩溃发生在这里 · initial 行留在 DB · janitor 扫 → 查 housepool 决定 forward/rollback
+	//
+	// **push_pool 分支** · s.pusher == nil 时走 dry-run(只标 pushed_at)· nil 兜底跟 into_bus
+	// 无 s.pool 时一致(mock 环境不装 housepool 也不装 pusher) · handler 不能因此崩。
+	//
+	// **push_pool 部分失败** · pushResult 拆开 · 成功号走 tx2 MarkPushSuccessTx · 失败号
+	// 用独立事务落 push_error_* 六字段 + pending_assignment 保 initial 让 janitor 兜。
+	// 响应体走 errors[] · 跟 into_bus 归错结构一致。
+	var pushResult *passengerpool.PushResult
+	pushErrItems := []assignErrItem{}
+	successIDs := req.CredentialIDs // 默认：全部成功 (dry-run / into_bus)
 	if dest == "into_bus" && s.pool != nil {
 		krIDs, err := s.pullRecords.LookupKiroRSCredentialIDs(r.Context(), req.CredentialIDs, p.ID)
 		if err != nil {
@@ -407,6 +419,61 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 					cid, krID, err)
 			}
 		}
+	} else if dest == "push_pool" && s.pusher != nil {
+		// 拉每号的元数据(vendor_id / region)喂给 pusher · 让对家看到打码 label
+		metas, err := s.selectPushMeta(r.Context(), req.CredentialIDs, p.ID)
+		if err != nil {
+			return fmt.Errorf("assign push_pool · 查号 meta: %w", err)
+		}
+		creds := make([]passengerpool.PushCredential, 0, len(req.CredentialIDs))
+		for _, cid := range req.CredentialIDs {
+			m := metas[cid]
+			creds = append(creds, passengerpool.PushCredential{
+				CredentialID: cid,
+				Region:       m.region,
+				VendorLabel:  m.vendorLabel, // 打码后的 · 不带真名
+			})
+		}
+		pushResult, err = s.pusher.Push(r.Context(), p.ID, creds)
+		if err != nil {
+			// 顶层 error = 拉配置 / 解密失败 = 没配对家 · 走 dry-run
+			if errors.Is(err, passengerpool.ErrNoTarget) {
+				slogWarn("passengerpool.dryrun", "mode", "no_target", "passenger", p.ID)
+				// fallthrough → 走原 MarkPushedTx dry-run 路径
+			} else {
+				return fmt.Errorf("assign push_pool · Push: %w", err)
+			}
+		} else if pushResult != nil {
+			// 有 pushResult · 拆开成功 / 失败
+			ok := map[string]bool{}
+			for _, id := range pushResult.Success {
+				ok[id] = true
+			}
+			for _, id := range pushResult.Duplicate {
+				ok[id] = true // duplicate 视为成功
+			}
+			successIDs = successIDs[:0]
+			for _, id := range req.CredentialIDs {
+				if ok[id] {
+					successIDs = append(successIDs, id)
+				}
+			}
+			// 失败号 · 独立事务落 push_error_* + pending_assignment 保 initial
+			if len(pushResult.Failed) > 0 {
+				if err := s.recordPushFailures(r.Context(), pushResult.Failed, p.ID); err != nil {
+					return fmt.Errorf("assign push_pool · 落 push_error: %w", err)
+				}
+				for _, f := range pushResult.Failed {
+					pushErrItems = append(pushErrItems, assignErrItem{
+						CredentialID: f.CredentialID,
+						Code:         string(f.Err.Kind),
+						Message:      f.Err.Message,
+					})
+				}
+			}
+		}
+	} else if dest == "push_pool" {
+		slogWarn("passengerpool.dryrun", "mode", "nopusher", "passenger", p.ID)
 	}
 
 	// ── tx2 · 台账更新 + 状态推 completed + 幂等响应 ──
@@ -440,12 +507,24 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		}
 		settlement = st
 	case "push_pool":
-		if err := pullrecord.MarkPushedTx(r.Context(), tx, req.CredentialIDs, p.ID); err != nil {
-			if errors.Is(err, pullrecord.ErrNotFound) {
-				return newFail(http.StatusConflict, "bad_assignment_plan",
-					"这批号里有一个不属于你或已被派出，请刷新后重试")
+		if pushResult == nil {
+			// dry-run 路径(s.pusher nil / ErrNoTarget)· 全部号只标时间戳
+			if err := pullrecord.MarkPushedTx(r.Context(), tx, req.CredentialIDs, p.ID); err != nil {
+				if errors.Is(err, pullrecord.ErrNotFound) {
+					return newFail(http.StatusConflict, "bad_assignment_plan",
+						"这批号里有一个不属于你或已被派出，请刷新后重试")
+				}
+				return err
 			}
-			return err
+		} else if len(successIDs) > 0 {
+			// 真推路径 · 成功号走 MarkPushSuccessTx(清 push_error_* + attempts+1 + 时间戳)
+			if err := pullrecord.MarkPushSuccessTx(r.Context(), tx, successIDs, p.ID); err != nil {
+				if errors.Is(err, pullrecord.ErrNotFound) {
+					return newFail(http.StatusConflict, "bad_assignment_plan",
+						"这批号里有一个不属于你或已被派出，请刷新后重试")
+				}
+				return err
+			}
 		}
 	}
 
@@ -453,7 +532,17 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 	// 以前有 initial → external_done → status_updated → completed 三次 UPDATE ·
 	// 但同 tx 提交本质是一次原子写 · 那三次 UPDATE 是"给审计看的假状态机" · 移除。
 	// 真的分步是 tx1（initial）+ tx 外（pool）+ tx2（completed）· 现在已经三段。
-	for _, aid := range assignIDs {
+	//
+	// **push_pool 部分失败** · 成功号走 completed · 失败号已在 recordPushFailures
+	// 里独立事务标 need_manual · 这里跳过它们(assignIDs 顺序跟 req.CredentialIDs 一致)。
+	failedCredIDs := map[string]bool{}
+	for _, f := range pushErrItems {
+		failedCredIDs[f.CredentialID] = true
+	}
+	for i, aid := range assignIDs {
+		if i < len(req.CredentialIDs) && failedCredIDs[req.CredentialIDs[i]] {
+			continue // 失败号的 pending_assignment 由 recordPushFailures 处理 · 别推 completed
+		}
 		res, err := tx.ExecContext(r.Context(), `
 			UPDATE pending_assignment
 			   SET status = 'completed', updated_at = ?
@@ -465,6 +554,12 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		if n, _ := res.RowsAffected(); n == 0 {
 			return fmt.Errorf("assign: 状态推进 rows=0（并发或已推过）")
 		}
+	}
+
+	// push_pool 失败号进响应 errors[] · assigned 减去失败数
+	if len(pushErrItems) > 0 {
+		resp.Errors = append(resp.Errors, pushErrItems...)
+		resp.Assigned = len(req.CredentialIDs) - len(pushErrItems)
 	}
 
 	// 清算结果拼进响应（多人车才有 · 单人车 settlement.Solo=true 时省略）
@@ -497,4 +592,119 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(respBody)
 	return nil
+}
+
+// pushMeta 是 push_pool 分支拉的号元数据。**不含明文** — 明文由 Pusher 自己拿。
+type pushMeta struct {
+	region      string
+	vendorLabel string
+}
+
+// selectPushMeta 拉一批号的 region + vendor_id · 只返对家可见的元数据。
+//
+// **vendor_id 不出 label** — 用 anon 打码(跟 vendorview 一致) · CLAUDE.md §0.1。
+// 校验归属由 tx1 的 GetOwnershipsTx 保证 · 这里不重做。
+func (s *Server) selectPushMeta(ctx context.Context, credIDs []string, passengerID string) (map[string]pushMeta, error) {
+	out := make(map[string]pushMeta, len(credIDs))
+	if len(credIDs) == 0 {
+		return out, nil
+	}
+	placeholders := ""
+	args := make([]any, 0, len(credIDs)+1)
+	args = append(args, passengerID)
+	for i, id := range credIDs {
+		if i > 0 {
+			placeholders += ","
+		}
+		placeholders += "?"
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, COALESCE(vendor_id, ''), COALESCE(region, '')
+		  FROM credential_ledger
+		 WHERE owner_record_passenger_id = ?
+		   AND owner_bus_id IS NULL
+		   AND status != 'handed_off'
+		   AND id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, vendorID, region string
+		if err := rows.Scan(&id, &vendorID, &region); err != nil {
+			return nil, err
+		}
+		out[id] = pushMeta{
+			region: region,
+			// vendor label 走脱敏 · 不给对家看 vendor 真名
+			// 阶段 1e-1 简化：直接给一个通用 tag · 未来接 vendorview.anon 映射
+			vendorLabel: "provider",
+		}
+	}
+	return out, rows.Err()
+}
+
+// recordPushFailures 独立事务落六字段 + 把对应 pending_assignment 转 need_manual。
+//
+// **不合到 tx2**：tx2 里成功号要落 completed · 失败号要落 need_manual · 混一个 tx
+// 里语义混乱。独立事务保证：即使 tx2 崩了 · push_error_* 也已经落库 · janitor 兜。
+func (s *Server) recordPushFailures(ctx context.Context, failed []passengerpool.FailedItem, passengerID string) error {
+	if len(failed) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// 六字段
+	credIDs := make([]string, 0, len(failed))
+	fields := make(map[string]pullrecord.PushFailureFields, len(failed))
+	for _, f := range failed {
+		credIDs = append(credIDs, f.CredentialID)
+		var st *int
+		if f.Err.Status > 0 {
+			st = &f.Err.Status
+		}
+		fields[f.CredentialID] = pullrecord.PushFailureFields{
+			Code:      string(f.Err.Kind),
+			Status:    st,
+			Message:   f.Err.Message,
+			Retriable: f.Err.Retriable(),
+		}
+	}
+	if err := pullrecord.MarkPushFailureTx(ctx, tx, credIDs, passengerID, fields); err != nil {
+		// 号不存在等 - 落 log 别炸 · 归属校验在 tx1 已过 · 这里出错基本是并发
+		slogWarn("push_failures.mark_failed",
+			"passenger", passengerID, "err", err)
+	}
+
+	// pending_assignment 转 need_manual(可重试的话 janitor 后续会重试)
+	// **不删 initial 行** — 保留让 janitor 走 reconcile 路径
+	failedSet := ""
+	fargs := []any{}
+	for i, id := range credIDs {
+		if i > 0 {
+			failedSet += ","
+		}
+		failedSet += "?"
+		fargs = append(fargs, id)
+	}
+	fargs = append(fargs, passengerID, "to-passengerpool")
+	_, err = tx.ExecContext(ctx, `
+		UPDATE pending_assignment
+		   SET status = 'need_manual',
+		       error = 'passengerpool_push_failed',
+		       updated_at = ?
+		 WHERE status = 'initial'
+		   AND credential_id IN (`+failedSet+`)
+		   AND passenger_id = ?
+		   AND target = ?`,
+		append([]any{nowRFC3339()}, fargs...)...)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }

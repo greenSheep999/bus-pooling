@@ -34,6 +34,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/deathwatch"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
 	"github.com/bus-pooling/bus-pooling/internal/delivery/handoff"
+	"github.com/bus-pooling/bus-pooling/internal/delivery/passengerpool"
 	"github.com/bus-pooling/bus-pooling/internal/downstream"
 	"github.com/bus-pooling/bus-pooling/internal/housepool"
 	"github.com/bus-pooling/bus-pooling/internal/housepool/kirors"
@@ -824,6 +825,36 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	webhookHealth.Start(ctx)
 	defer webhookHealth.Stop(2 * time.Second)
 
+	// passengerpool.Pusher · 推乘客号池的双写(sprint-1e-1)。
+	//
+	// 装配条件：cipher 非 nil(要解密 admin_token) + downstream store 建了 + httpx 装了。
+	// pool 是 nil 时也能装(pool 是 housepool · 推的对家跟 housepool 不同实例)。
+	// **nil 兜底**：handler 会走 dry-run(只标 pushed_at) · 跟 1a 一致。
+	//
+	// **PlaintextLookup 明文缺口**(等 housepool 后端 reveal 端点 · docs/08 §12.1)：
+	// 当前 housepool 后端 无 reveal 端点 · 装配层传 nil · Pusher 内部走 BP_ALLOW_PASSENGERPOOL_PLACEHOLDER
+	// 兜底 · 生产禁用。**PLACEHOLDER_PLAINTEXT** · grep 定位这里·未来接了替换。
+	downstreamStore := downstream.NewStore(database.DB, cipher)
+	poolHTTPX, err := httpx.New(httpx.Config{
+		Timeout: 15 * time.Second, MaxRetries: 0, // BatchImport 是 SSE · 不走重试
+	})
+	if err != nil {
+		return fmt.Errorf("httpx(passengerpool): %w", err)
+	}
+	var pusher passengerpool.Pusher
+	if downstreamStore != nil && cipher != nil {
+		pusher = passengerpool.NewPusher(passengerpool.PusherDeps{
+			Downstreams: downstreamStore,
+			// Plaintext nil = 走 placeholder · PLACEHOLDER_PLAINTEXT
+			HTTPX:  poolHTTPX,
+			DB:     database.DB,
+			Logger: slog.Default(),
+		})
+		slog.Info("passengerpool.Pusher 已装配")
+	} else {
+		slog.Warn("passengerpool.Pusher 未装配 · handler 走 dry-run", "cipher_nil", cipher == nil)
+	}
+
 	apiSrv := api.NewServer(api.ServerDeps{
 		DB:                  database.DB,
 		Passengers:          passenger.NewStore(database.DB),
@@ -838,7 +869,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		Pool:                poolClient, // 可能为 nil（mock 模式）· handler 有 nil 兜底
 		VendorView:          vendorSvc,
 		Insights:            insight.NewStore(database.DB),
-		Downstreams:         downstream.NewStore(database.DB, cipher),
+		Downstreams:         downstreamStore,
 		TopupChannels:       topupChannelRegistry(),
 		PendingTopups:       topup.NewPendingStore(database.DB),
 		PaymentGW:           pgw,
@@ -851,6 +882,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		Health:              healthStore,                                                                   // 数据管线心跳（migration 036）· data-health 端点用
 		Reconciler:          vendorview.NewReconciler(database.DB, vendorview.NewLedgerStore(database.DB)), //  对账
 		AdminKey:            os.Getenv("BP_ADMIN_KEY"),
+		Pusher:              pusher, // nil 时 handler 走 dry-run · 跟 1a 一致
 	})
 	apiSrv.Routes(mux)
 

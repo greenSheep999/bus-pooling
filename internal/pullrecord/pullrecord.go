@@ -363,6 +363,105 @@ func MarkPushedTx(ctx context.Context, tx *sql.Tx, credentialIDs []string, passe
 	return nil
 }
 
+// PushFailureFields 是 MarkPushFailureTx 的入参 · 每号一份·跟 credential_ledger
+// 六字段(migration 001 第 220-227 行)对齐。
+//
+// **不带**对家协议名 / vendor 真名 —— Code 只有 unauthorized / not_found / conflict /
+// timeout / duplicate / bad_request / stream_broken 六种通用词(CLAUDE.md §0.1)。
+type PushFailureFields struct {
+	Code      string
+	Status    *int
+	Message   string
+	Retriable bool
+}
+
+// MarkPushSuccessTx 标一批号"推送成功" · 清 push_error_* + attempts+1 + 打时间戳。
+//
+// **幂等重推友好**：首次成功打时间戳·再次成功不改时间戳(coalesce 保留首次时刻)。
+// 从失败态恢复的 · 清掉六字段+更新时间戳。
+//
+// **不校验归属** —— 由 handler 在 tx1 里做过归属 · handler 传进来的都是自己名下的号。
+func MarkPushSuccessTx(ctx context.Context, tx *sql.Tx, credentialIDs []string, passengerID string) error {
+	if len(credentialIDs) == 0 {
+		return nil
+	}
+	now := time.Now().UTC().Format(timeLayout)
+	for _, cid := range credentialIDs {
+		res, err := tx.ExecContext(ctx, `
+			UPDATE credential_ledger
+			   SET pushed_to_passengerpool_at = COALESCE(pushed_to_passengerpool_at, ?),
+			       push_error_code            = NULL,
+			       push_error_status          = NULL,
+			       push_error_message         = NULL,
+			       push_error_retriable       = NULL,
+			       push_attempts              = COALESCE(push_attempts, 0) + 1,
+			       push_last_attempt_at       = ?
+			 WHERE id = ?
+			   AND owner_record_passenger_id = ?
+			   AND owner_bus_id IS NULL
+			   AND status != 'handed_off'`,
+			now, now, cid, passengerID)
+		if err != nil {
+			return fmt.Errorf("pullrecord: 标推送成功 %s: %w", cid, err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrNotFound
+		}
+	}
+	return nil
+}
+
+// MarkPushFailureTx 标一批号"推送失败" · 写六字段 + attempts+1 + last_attempt_at。
+//
+// **每号可能不同的 fields** —— 401 时全批一样·SSE 断流时每号 kind 不同·传 map[cid]fields。
+// 缺失 map 里的 id 视为"未失败"·跳过·不写。
+//
+// **不动 pushed_to_passengerpool_at** —— 首次成功后再次失败不该抹掉成功时间戳。
+func MarkPushFailureTx(
+	ctx context.Context, tx *sql.Tx,
+	credentialIDs []string, passengerID string,
+	fields map[string]PushFailureFields,
+) error {
+	if len(credentialIDs) == 0 {
+		return nil
+	}
+	now := time.Now().UTC().Format(timeLayout)
+	for _, cid := range credentialIDs {
+		f, ok := fields[cid]
+		if !ok {
+			continue
+		}
+		retri := 0
+		if f.Retriable {
+			retri = 1
+		}
+		var status any
+		if f.Status != nil {
+			status = *f.Status
+		}
+		res, err := tx.ExecContext(ctx, `
+			UPDATE credential_ledger
+			   SET push_error_code       = ?,
+			       push_error_status     = ?,
+			       push_error_message    = ?,
+			       push_error_retriable  = ?,
+			       push_attempts         = COALESCE(push_attempts, 0) + 1,
+			       push_last_attempt_at  = ?
+			 WHERE id = ?
+			   AND owner_record_passenger_id = ?
+			   AND owner_bus_id IS NULL
+			   AND status != 'handed_off'`,
+			f.Code, status, f.Message, retri, now, cid, passengerID)
+		if err != nil {
+			return fmt.Errorf("pullrecord: 标推送失败 %s: %w", cid, err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrNotFound
+		}
+	}
+	return nil
+}
+
 // withTx 事务小工具·省得每个 method 都写 begin/rollback/commit。
 func withTx(ctx context.Context, db *sql.DB, fn func(*sql.Tx) error) error {
 	tx, err := db.BeginTx(ctx, nil)

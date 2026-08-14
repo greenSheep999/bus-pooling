@@ -16,6 +16,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/config"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
 	"github.com/bus-pooling/bus-pooling/internal/delivery/handoff"
+	"github.com/bus-pooling/bus-pooling/internal/delivery/passengerpool"
 	"github.com/bus-pooling/bus-pooling/internal/downstream"
 	"github.com/bus-pooling/bus-pooling/internal/housepool"
 	"github.com/bus-pooling/bus-pooling/internal/insight"
@@ -76,6 +77,8 @@ type Server struct {
 	reconciler *vendorview.Reconciler
 	// adminKey · BP_ADMIN_KEY · 非空才挂 /api/admin/* · 且请求要带 X-Admin-Key 匹配
 	adminKey string
+	// pusher · 推 passengerpool 双写 · nil = handler 走 dry-run(只标时间戳)
+	pusher passengerpool.Pusher
 }
 
 // ServerDeps 装配 Server 需要的依赖。decider 允许为 nil（migrate 之类的
@@ -115,6 +118,9 @@ type ServerDeps struct {
 	Reconciler *vendorview.Reconciler
 	// AdminKey BP_ADMIN_KEY · 非空才挂 /api/admin/* 运维端点（X-Admin-Key 头校验）
 	AdminKey string
+	// Pusher · 推 passengerpool 的双写 pusher · nil = handler 走 dry-run
+	// (只标 pushed_to_passengerpool_at 时间戳 · 不真推 · 跟 1a 一致)
+	Pusher passengerpool.Pusher
 }
 
 func NewServer(d ServerDeps) *Server {
@@ -150,6 +156,7 @@ func NewServer(d ServerDeps) *Server {
 		health:              d.Health,
 		reconciler:          d.Reconciler,
 		adminKey:            d.AdminKey,
+		pusher:              d.Pusher,
 	}
 }
 
