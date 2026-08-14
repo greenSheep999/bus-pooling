@@ -89,10 +89,29 @@ func eventAllowed(cfg DownstreamConfig, evt EventType, hasBusID bool) bool {
 	if cfg.WebhookURL == "" || !cfg.WebhookSecretConfigured {
 		return false
 	}
+	if !cfg.Enabled {
+		return false // 用户显式关了(1e-2 P0-1)
+	}
 	if cfg.BusOnly && !hasBusID {
 		return false
 	}
-	_ = evt // 目前所有事件类型都开(白名单由前端 UI 控制 · 后端不筛 · 前端愿意收啥就收啥)
+	// 订阅事件白名单(1e-2 P0-2) · Events==nil 视为全订阅兜底(defaults / 未设)
+	// test 事件永远走(handleTestWebhook 独立入口 · 不受订阅白名单控制)
+	if evt == EventTest {
+		return true
+	}
+	if len(cfg.Events) > 0 {
+		found := false
+		for _, e := range cfg.Events {
+			if e == string(evt) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
 	return true
 }
 

@@ -3,6 +3,7 @@ package downstream
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bus-pooling/bus-pooling/internal/db"
@@ -134,7 +135,7 @@ func TestSavePassengerpoolEmptyTokenKeepsExisting(t *testing.T) {
 	}
 }
 
-// RotateWebhookSecret 生成新 secret · 每次不同 · 明文长度 = 64（32 字节 hex）。
+// RotateWebhookSecret 生成新 secret · 每次不同 · 明文长度 = 70（whsec_ + 64 hex）。
 func TestRotateWebhookSecret(t *testing.T) {
 	s, pid := newTestStore(t)
 	ctx := context.Background()
@@ -143,8 +144,12 @@ func TestRotateWebhookSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(first) != 64 {
-		t.Errorf("secret 长度 = %d, want 64", len(first))
+	// 1e-2 起加统一 whsec_ 前缀 · 长度 = 6 + 64 = 70
+	if len(first) != 70 {
+		t.Errorf("secret 长度 = %d, want 70", len(first))
+	}
+	if !strings.HasPrefix(first, "whsec_") {
+		t.Errorf("secret 缺 whsec_ 前缀: %q", first)
 	}
 
 	second, err := s.RotateWebhookSecret(ctx, pid)

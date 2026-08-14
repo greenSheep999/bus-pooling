@@ -61,6 +61,10 @@ type mockStore struct {
 	secret     string
 	configured bool
 	busOnly    bool
+	// enabled/events · 1e-2 P0-1/2 落库开关 + 订阅白名单
+	// 默认 enabled=true(跟 downstream.Defaults 一致) · 测试构造时想关就显式 false
+	disabled bool     // 反向命名(零值 false = enabled) 减少构造模板负担
+	events   []string // nil = 全订阅兜底
 	// InsertDelivery 记录的行 · 测试断言用
 	deliveries []DeliveryAttempt
 	getErr     error
@@ -75,6 +79,8 @@ func (m *mockStore) Get(_ context.Context, pid string) (DownstreamConfig, error)
 		WebhookURL:              m.url,
 		WebhookSecretEncrypted:  []byte(m.secret),
 		WebhookSecretConfigured: m.configured,
+		Enabled:                 !m.disabled,
+		Events:                  m.events,
 		BusOnly:                 m.busOnly,
 	}, nil
 }

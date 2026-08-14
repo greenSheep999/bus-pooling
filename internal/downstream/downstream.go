@@ -15,6 +15,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -44,6 +45,8 @@ type Config struct {
 	WebhookURL              string
 	WebhookSecretEncrypted  []byte
 	WebhookSecretConfigured bool
+	WebhookEnabled          bool     // migration 038 · UI 顶部开关 · 未配 URL/secret 时 UI 视为 false
+	WebhookEvents           []string // migration 038 · nil = 未配(全订阅兜底) · 用户勾了什么就是什么
 
 	// 4 条推送策略（decisions §8.25 · 前端「我的号池」页）
 	PushOnPull     bool
@@ -57,6 +60,7 @@ type Config struct {
 // Defaults 是从没配过时的那份。
 //
 // 4 条推送策略默认全开 · bus_only 关（跟 001_init.sql 的 DEFAULT 一致）。
+// webhook 默认启用(需要有 URL + secret 才真发)· events=nil 视为全订阅 4 事件(dispatcher 内部兜底)。
 func Defaults(passengerID string) Config {
 	return Config{
 		PassengerID:    passengerID,
@@ -64,6 +68,8 @@ func Defaults(passengerID string) Config {
 		ResyncOnDead:   true,
 		RetryOnFailure: true,
 		BusOnly:        false,
+		WebhookEnabled: true,
+		WebhookEvents:  nil,
 	}
 }
 
@@ -81,25 +87,29 @@ func NewStore(db *sql.DB, cipher *secrets.Cipher) *Store {
 func (s *Store) Get(ctx context.Context, passengerID string) (Config, error) {
 	out := Defaults(passengerID)
 	var (
-		poolURL      sql.NullString
-		poolToken    []byte
-		hookURL      sql.NullString
-		hookSecret   []byte
-		pushOnPull   int64
-		resyncOnDead int64
-		retryOnFail  int64
-		busOnly      int64
-		updatedAtRaw string
+		poolURL       sql.NullString
+		poolToken     []byte
+		hookURL       sql.NullString
+		hookSecret    []byte
+		pushOnPull    int64
+		resyncOnDead  int64
+		retryOnFail   int64
+		busOnly       int64
+		hookEnabled   int64
+		hookEventsRaw sql.NullString
+		updatedAtRaw  string
 	)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT passengerpool_url, secret_passengerpool_token_encrypted,
 		       webhook_url, secret_webhook_secret_encrypted,
 		       push_on_pull, resync_on_dead, retry_on_failure, bus_only,
+		       webhook_enabled, webhook_events_json,
 		       updated_at
 		  FROM passenger_downstream
 		 WHERE passenger_id = ?`, passengerID).
 		Scan(&poolURL, &poolToken, &hookURL, &hookSecret,
-			&pushOnPull, &resyncOnDead, &retryOnFail, &busOnly, &updatedAtRaw)
+			&pushOnPull, &resyncOnDead, &retryOnFail, &busOnly,
+			&hookEnabled, &hookEventsRaw, &updatedAtRaw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, ErrNotFound
 	}
@@ -125,6 +135,13 @@ func (s *Store) Get(ctx context.Context, passengerID string) (Config, error) {
 	out.ResyncOnDead = resyncOnDead != 0
 	out.RetryOnFailure = retryOnFail != 0
 	out.BusOnly = busOnly != 0
+	out.WebhookEnabled = hookEnabled != 0
+	if hookEventsRaw.Valid && hookEventsRaw.String != "" {
+		var evs []string
+		if jsonErr := json.Unmarshal([]byte(hookEventsRaw.String), &evs); jsonErr == nil {
+			out.WebhookEvents = evs
+		}
+	}
 	out.UpdatedAt = parseTime(updatedAtRaw)
 	return out, nil
 }
@@ -208,6 +225,60 @@ func (s *Store) SaveWebhookURL(ctx context.Context, passengerID, url string) err
 	return nil
 }
 
+// SaveWebhookEnabled 更新 webhook 启用开关(1e-2 补 · P0-1)。
+//
+// **前端 UI 顶部的启用开关** · 之前只在前端 state 里改 · 后端 PUT 直接扔字段 ·
+// 现在真落库 · dispatcher 派发前查这个字段决定发不发。
+func (s *Store) SaveWebhookEnabled(ctx context.Context, passengerID string, enabled bool) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	flag := int64(0)
+	if enabled {
+		flag = 1
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO passenger_downstream
+		  (passenger_id, webhook_enabled, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT (passenger_id) DO UPDATE SET
+		  webhook_enabled = excluded.webhook_enabled,
+		  updated_at      = excluded.updated_at`,
+		passengerID, flag, now)
+	if err != nil {
+		return fmt.Errorf("downstream: 写 webhook enabled: %w", err)
+	}
+	return nil
+}
+
+// SaveWebhookEvents 更新订阅事件白名单(1e-2 补 · P0-2)。
+//
+// **events == nil 或空数组** → 写 NULL(视为"未设置" · dispatcher 兜底当全订阅)。
+// 用户主动清空所有事件 · 落 NULL 语义等同"跟没设一样" —— 若用户想彻底不收 ·
+// 应该关 webhook_enabled 而不是清空 events(那样测试事件也能收到 · 更符合心智)。
+// 白名单校验(必须是 4 个事件之一) · 在 api 层做 · Store 只落值。
+func (s *Store) SaveWebhookEvents(ctx context.Context, passengerID string, events []string) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	var raw any = nil
+	if len(events) > 0 {
+		b, err := json.Marshal(events)
+		if err != nil {
+			return fmt.Errorf("downstream: 编码 webhook events: %w", err)
+		}
+		raw = string(b)
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO passenger_downstream
+		  (passenger_id, webhook_events_json, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT (passenger_id) DO UPDATE SET
+		  webhook_events_json = excluded.webhook_events_json,
+		  updated_at          = excluded.updated_at`,
+		passengerID, raw, now)
+	if err != nil {
+		return fmt.Errorf("downstream: 写 webhook events: %w", err)
+	}
+	return nil
+}
+
 // RotateWebhookSecret 生成一份新 secret · 加密落库 · 返回明文（**只返一次**）。
 //
 // 旧 secret 立即失效 —— 调用方必须提示用户"手抄一份，之后再也拿不到"。
@@ -261,14 +332,22 @@ func (s *Store) DecryptWebhookSecret(encrypted []byte) (string, error) {
 
 // ── 工具 ────────────────────────────────────────────
 
-// generateSecretHex 生成 32 字节 = 64 位 hex 的 webhook secret。
-// 跟 vendor 侧 HMAC 长度一致（SHA-256）。
+// WebhookSecretPrefix · secret 明文的固定前缀。跟 Stripe / GitHub 的做法一致
+// (Stripe: whsec_ · GitHub: ghs_) —— 用户在自己代码里看到前缀就知道"这是 webhook
+// 签名密钥" · 用错地方(比如粘到 passengerpool token 栏)时能一眼识别。
+//
+// **落库存整串**(含前缀) · 打码 / 明文格式一致 · 别再在 api 层人为拼前缀 ·
+// 那样会造成明文态跟打码态"看着不是一个东西"的错觉(1e 收尾 bug 修正)。
+const WebhookSecretPrefix = "whsec_"
+
+// generateSecretHex 生成 32 字节 = 64 位 hex 的 webhook secret · 前缀 whsec_。
+// 跟 vendor 侧 HMAC 长度一致（SHA-256）· 前缀跟行业规范(Stripe / GitHub)对齐。
 func generateSecretHex() (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return "", fmt.Errorf("downstream: 生成 secret: %w", err)
 	}
-	return hex.EncodeToString(buf), nil
+	return WebhookSecretPrefix + hex.EncodeToString(buf), nil
 }
 
 func nullIfEmpty(s string) any {

@@ -92,6 +92,11 @@ type DownstreamConfig struct {
 	WebhookURL              string
 	WebhookSecretEncrypted  []byte
 	WebhookSecretConfigured bool
+	// 1e-2 P0-1/2 · 用户显式启用开关 + 订阅事件白名单
+	//   Enabled=false → 不发(不管其它条件)
+	//   Events==nil → 全订阅(兜底) · 有值 → 只发列在里面的
+	Enabled bool
+	Events  []string
 	// PushOnPull / BusOnly · 事件白名单过滤用
 	PushOnPull   bool
 	ResyncOnDead bool

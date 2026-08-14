@@ -61,8 +61,10 @@ func TestPutPassengerpoolStoresTokenMasked(t *testing.T) {
 		t.Errorf("url = %v", got["passengerpool_url"])
 	}
 	mask, _ := got["passengerpool_token_masked"].(string)
-	if !strings.HasPrefix(mask, "kiro_admin_") {
-		t.Errorf("mask 缺前缀: %q", mask)
+	// P1-6 (1e 收尾) · passengerpool token 是**用户填的** · 明文格式我方不控 ·
+	// mask 只显示纯打码 + 尾 4 位 · 不再加 kiro_admin_ 假前缀
+	if !strings.HasPrefix(mask, "••••") || len(mask) < 16 {
+		t.Errorf("mask 格式不对: %q", mask)
 	}
 	assertNoPlaintextTokens(t, body)
 }
@@ -102,8 +104,12 @@ func TestRotateWebhookSecretReturnsPlaintextOnce(t *testing.T) {
 	}
 	rot := decode[map[string]string](t, body)
 	secret := rot["secret"]
-	if len(secret) != 64 {
-		t.Fatalf("secret 长度 = %d, want 64（32 字节 hex）", len(secret))
+	// secret = whsec_ (6) + 32 字节 hex (64) = 70 · 1e-2 起加统一前缀 · 明文/打码格式一致
+	if len(secret) != 70 {
+		t.Fatalf("secret 长度 = %d, want 70（whsec_ + 64 hex）", len(secret))
+	}
+	if !strings.HasPrefix(secret, "whsec_") {
+		t.Fatalf("secret 缺 whsec_ 前缀: %q", secret)
 	}
 
 	// 后续 GET 不再吐明文

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -83,8 +84,41 @@ type putPassengerpoolRequest struct {
 }
 
 type putWebhookRequest struct {
-	URL    *string  `json:"url,omitempty"`
-	Events []string `json:"events,omitempty"`
+	URL     *string  `json:"url,omitempty"`
+	Enabled *bool    `json:"enabled,omitempty"`
+	Events  []string `json:"events,omitempty"`
+	// eventsPresent · 区分 "字段没传" vs "传了空数组" · 后者会清空订阅
+	// 由 UnmarshalJSON 填 · 应用层用它决定要不要 SaveWebhookEvents
+	eventsPresent bool `json:"-"`
+}
+
+// UnmarshalJSON · 让 Events 区分 "字段没出现" 和 "传了 []"
+// events:null / events 缺席 → eventsPresent=false · 不动库
+// events:[] → eventsPresent=true + Events=nil · 落 NULL(全订阅兜底 · 见 Store.SaveWebhookEvents)
+// events:["boarded"] → eventsPresent=true + Events=["boarded"] · 落该数组
+func (r *putWebhookRequest) UnmarshalJSON(data []byte) error {
+	type alias struct {
+		URL     *string          `json:"url,omitempty"`
+		Enabled *bool            `json:"enabled,omitempty"`
+		Events  *json.RawMessage `json:"events,omitempty"`
+	}
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	r.URL = a.URL
+	r.Enabled = a.Enabled
+	if a.Events != nil {
+		r.eventsPresent = true
+		// null 视为清空(等价空数组)
+		if string(*a.Events) == "null" {
+			return nil
+		}
+		if err := json.Unmarshal(*a.Events, &r.Events); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ── 事件列表（阶段 1a 固定值，跟 fixtures.ts 对齐）──────
@@ -306,8 +340,26 @@ func (s *Server) handlePutWebhook(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 	}
-	// 阶段 1a：events 白名单目前是全量固定 · 不落库
-	// （前端能自定义要订阅哪些的功能等 2a 事件源更全再做 —— 先返 ok 让 UI 通）
+	if req.Enabled != nil {
+		if err := s.downstreams.SaveWebhookEnabled(r.Context(), p.ID, *req.Enabled); err != nil {
+			return err
+		}
+	}
+	if req.eventsPresent {
+		// 白名单校验 · 只接受 4 个官方事件
+		allowed := map[string]bool{}
+		for _, e := range defaultWebhookEvents {
+			allowed[e] = true
+		}
+		for _, e := range req.Events {
+			if !allowed[e] {
+				return ErrBadRequest("不支持的事件: " + e)
+			}
+		}
+		if err := s.downstreams.SaveWebhookEvents(r.Context(), p.ID, req.Events); err != nil {
+			return err
+		}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	return nil
@@ -449,7 +501,9 @@ func dtoOf(cfg downstream.Config) downstreamResponse {
 	if cfg.PassengerpoolTokenConfigured {
 		// mask 用密文最后 4 字节的 hex 替代明文尾 4 位 —— 拿不到明文，
 		// 但保证同一 token 每次显示同样的 mask（换 token 时用户能识别到"变了"）
-		out.PassengerpoolTokenMasked = maskFromEncrypted("kiro_admin_", cfg.PassengerpoolTokenEncrypted)
+		// passengerpool token 是**用户自己填的** · 明文格式我方不控 · 打码不加假前缀 ·
+		// 只显示纯打码 + 尾 4 位(1e-2 收尾 · P1-6 修正 · 避免"看着不像用户填的那个"错觉)
+		out.PassengerpoolTokenMasked = maskFromEncrypted("", cfg.PassengerpoolTokenEncrypted)
 	}
 	// connected / heartbeat / 统计：阶段 1e 后台推送 worker 起来之后才有真值。
 	// 阶段 1a 返 zero-value 让 UI 显示"未连接"，别造假数据。
@@ -460,10 +514,20 @@ func dtoOf(cfg downstream.Config) downstreamResponse {
 }
 
 func webhookDTOOf(cfg downstream.Config) webhookResponse {
+	// Enabled 是**派生态** + **用户显式开关**的组合:
+	//   URL/secret 未配 → 强制 false(有开关也发不出去 · 别误导用户)
+	//   URL/secret 已配 → 看用户开关(WebhookEnabled · 默认 true)
+	// 这样用户配好后开关能真正生效 · 未配时开关也是 false 免得点了没反应(P0-1 修正)
+	configured := cfg.WebhookURL != "" && cfg.WebhookSecretConfigured
 	out := webhookResponse{
 		URL:     cfg.WebhookURL,
-		Enabled: cfg.WebhookURL != "" && cfg.WebhookSecretConfigured,
-		Events:  defaultWebhookEvents,
+		Enabled: configured && cfg.WebhookEnabled,
+		// events 落库为 nil 表示"未设" · 兜底展示全 4 个订阅态(defaultWebhookEvents)
+		// 用户明确清空过 · 就展示空数组
+		Events: cfg.WebhookEvents,
+	}
+	if out.Events == nil {
+		out.Events = append([]string{}, defaultWebhookEvents...)
 	}
 	if cfg.WebhookSecretConfigured {
 		out.SecretMasked = maskFromEncrypted("whsec_", cfg.WebhookSecretEncrypted)
@@ -490,6 +554,13 @@ func webhookDeliveryDTOOf(d downstream.Delivery) webhookDeliveryDTO {
 //
 // 用密文尾字节做展示 —— 每次加密的 nonce 不同，但只要密文完整就有稳定的尾字节；
 // 保留 4 个 hex 字符（2 字节）· 变更 token 时用户能立刻看到 mask 不同。
+//
+// **prefix 参数**只是显示用 · **不是**真前缀 —— 明文本身可能有 / 没有前缀 ·
+// 这里的 prefix 只让 UI 一眼看出"这是 webhook secret / kiro admin token" ·
+// 别把它当"明文头几个字符"用。webhook secret 走 whsec_ 前缀是因为
+// downstream.generateSecretHex 生成时就带了(1e-2 收尾对齐) ·
+// passengerpool token 是用户自己填的、明文可能任意前缀 · UI 展示的 kiro_admin_
+// 只是提示语义 · 不代表明文头字节。
 func maskFromEncrypted(prefix string, blob []byte) string {
 	if len(blob) < 2 {
 		return prefix + "••••"

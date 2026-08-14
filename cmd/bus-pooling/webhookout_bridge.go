@@ -46,6 +46,8 @@ func (a *downstreamStoreAdapter) Get(ctx context.Context, pid string) (webhookou
 		WebhookURL:              cfg.WebhookURL,
 		WebhookSecretEncrypted:  cfg.WebhookSecretEncrypted,
 		WebhookSecretConfigured: cfg.WebhookSecretConfigured,
+		Enabled:                 cfg.WebhookEnabled, // 1e-2 P0-1
+		Events:                  cfg.WebhookEvents,  // 1e-2 P0-2 · nil = 全订阅兜底
 		PushOnPull:              cfg.PushOnPull,
 		ResyncOnDead:            cfg.ResyncOnDead,
 		BusOnly:                 cfg.BusOnly,
