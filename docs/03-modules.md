@@ -170,6 +170,15 @@
 - **归一算价**：跨 vendor 单价 → 一个"每 key 有效积分成本"，含通道费/手续费在内
 - **附加费引擎**：可选注入 `RatesResolver`（由 `internal/pricing.SurchargeResolver` 实现）· 按本次拉号 `EvalContext`（vendor_id / zone / count / passenger.invited / bus.avg_lifespan_h）从 `surcharge_rule` 表命中规则求 `Rates` · 每轮命中细节留痕到 `pull_round_surcharge` · nil resolver 走 env 兜底
 
+#### `decider/decide.go` · 统一系统调度决策入口
+
+- **目的**：实现 `docs/15-scheduling.md §5` 的 `Decide(input) → output`
+- **谁调它**：`bus.Scheduler`（水位巡检）· `deathwatch.RefillTick`（号死后是否补）· `stockwatch.Notify`（webhook/探针唤醒时判要不要 fire · 待第五刀）
+- **输入**：触发源 / bus_id / 当刻 mode / 车里活号快照(按 vendor 分组)
+- **输出**：`{拒·原因}` / `{下单 → 交给 decider.Pull}` / `{挂单 → 交给 stockwatch.Enqueue}`
+- **不做**：不直接调 Pull / Enqueue —— 调用方按输出触发
+- **落点理由**：调度输出只有两类（Pull / Enqueue），Pull 本来就在 `decider` · 落这里最内聚 · 不新开顶层业务包
+
 #### 调度支撑包（服务 `decider`，不单独占业务包编号）
 
 - `internal/stockwatch/`：缺货挂单队列；`Enqueue` / `Notify` / `Sweep` / `ModeMgr` / `FileFlag`；webhook / 探针唤醒后回到 `decider.Pull`

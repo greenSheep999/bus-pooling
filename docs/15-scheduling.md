@@ -206,6 +206,8 @@ xi8 是数据补齐 · **不参与抢号**。
 
 **核心**:六种触发源共享同一套判据 —— 一个函数 `Decide(input)` · 六处都调它。
 
+**代码落点**:`internal/decider/decide.go`(不新开业务包 · 见 `CLAUDE.md §4.1` + `03-modules.md decider/decide.go`)。`decider` 本来就是跨 vendor 决策 + Pull 出口·Decide 只是把 bus.Scheduler / deathwatch.RefillTick / stockwatch 触发路径的判据收口到一处。
+
 ### 5.1 触发源(什么时候调 Decide)
 
 | 触发源 | 谁触发 | 说明 |

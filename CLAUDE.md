@@ -208,6 +208,7 @@
 - `internal/` 顶层业务包**不超过 15 个**
 - **加新包必须写清"为什么不能放进已有包"**（在 `03-modules.md §5 目录规划` 里说明）
 - **基础设施包**（`api / config / db / httpx / secrets / authpassenger / authadmin / web`）不算业务包
+- **调度收口不得新开顶层业务包**·系统主动拉号的决策入口(见 `docs/15-scheduling.md §5`)统一归入 `internal/decider/` —— 不要造 `internal/scheduling/` 之类新包
 
 ### 4.2 当前 15 业务包（见 `03-modules.md`）
 
