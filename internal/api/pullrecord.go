@@ -591,6 +591,12 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(respBody)
+
+	// 1e-2 · 通知对外 webhook · push_pool 成功后喊一声 boarded
+	// **响应已发** · 通知失败也不影响用户看到的结果
+	if dest == "push_pool" && len(successIDs) > 0 && s.webhookOut != nil {
+		s.webhookOut.NotifyBoarded(r.Context(), p.ID, successIDs, "push_pool")
+	}
 	return nil
 }
 

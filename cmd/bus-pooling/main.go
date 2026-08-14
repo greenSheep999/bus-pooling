@@ -855,6 +855,33 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		slog.Warn("passengerpool.Pusher 未装配 · handler 走 dry-run", "cipher_nil", cipher == nil)
 	}
 
+	// webhookout.Dispatcher · 对外 webhook 出向(sprint-1e-2)
+	//
+	// 装配条件跟 pusher 类似:cipher 非 nil(解密 secret) + downstream store 建了。
+	// **nil 兜底**：handleTestWebhook 走 1a 兼容分支(裸 POST) · 主链触发源判 nil 跳过。
+	//
+	// 四种触发源(装配后):
+	//   ① decider.settle 成功 · new_keys_available
+	//   ② deathwatch.markDead 车全灭 · all_keys_dead
+	//   ③ deathwatch.RefundOnce 每笔退款 · warranty_refund
+	//   ④ handoff.Complete / pullrecord.Assign push_pool 成功 · boarded
+	//
+	// **静默失败不阻塞主链** - Dispatch 是非阻塞入队 · 内部消费失败只 log · 不回滚主 tx。
+	webhookOutDisp := buildWebhookout(database.DB, downstreamStore)
+	if webhookOutDisp != nil {
+		webhookOutDisp.Start(ctx)
+		defer webhookOutDisp.Stop(3 * time.Second)
+		// 桥接到 decider / deathwatch(handoff 桥在 handoff janitor 装配点)
+		orch.SetPullNotifier(&pullSuccessBridge{disp: webhookOutDisp, db: database.DB, logger: slog.Default()})
+		if deathwatchWatcher != nil {
+			deathwatchWatcher.SetDeathNotifier(&deathBridge{disp: webhookOutDisp, db: database.DB, logger: slog.Default()})
+			deathwatchWatcher.SetRefundNotifier(&refundBridge{disp: webhookOutDisp, db: database.DB})
+		}
+		slog.Info("webhookout.Dispatcher 已装配 · retrier 已启动 · 3 触发源已桥")
+	} else {
+		slog.Warn("webhookout.Dispatcher 未装配 · handleTestWebhook 走 1a 兼容分支")
+	}
+
 	apiSrv := api.NewServer(api.ServerDeps{
 		DB:                  database.DB,
 		Passengers:          passenger.NewStore(database.DB),
@@ -882,7 +909,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		Health:              healthStore,                                                                   // 数据管线心跳（migration 036）· data-health 端点用
 		Reconciler:          vendorview.NewReconciler(database.DB, vendorview.NewLedgerStore(database.DB)), //  对账
 		AdminKey:            os.Getenv("BP_ADMIN_KEY"),
-		Pusher:              pusher, // nil 时 handler 走 dry-run · 跟 1a 一致
+		Pusher:              pusher,         // nil 时 handler 走 dry-run · 跟 1a 一致
+		WebhookOut:          webhookOutDisp, // nil 时 handleTestWebhook 走裸 POST
 	})
 	apiSrv.Routes(mux)
 
@@ -903,7 +931,14 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	if poolClient != nil {
 		completeDeps := handoff.CompleteDeps{DB: database.DB, Pool: poolClient}
 		handoffJanitorCfg.CompleteFn = func(ctx context.Context, p handoff.Pending) error {
-			return handoff.Complete(ctx, completeDeps, p.CredentialIDs)
+			// 每次卡单重试都带上当前 pending 的 passenger + notifier
+			// (webhookOutDisp nil 时 Notifier nil · handoff.Complete 内部判 nil 跳过)
+			deps := completeDeps
+			deps.PassengerID = p.PassengerID
+			if webhookOutDisp != nil {
+				deps.Notifier = &janitorBoardedBridge{disp: webhookOutDisp}
+			}
+			return handoff.Complete(ctx, deps, p.CredentialIDs)
 		}
 	}
 	handoffJanitor := handoff.NewJanitor(handoffJanitorCfg)

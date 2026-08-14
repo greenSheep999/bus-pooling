@@ -243,7 +243,7 @@ func (s *Server) handleHandoffConfirm(w http.ResponseWriter, r *http.Request) er
 
 	// ② 做外部动作：housepool 侧 DELETE + credential_ledger.status='handed_off'
 	//    顺序：先 housepool，再 DB（CLAUDE.md §7.1 · 先外后内）
-	if err := s.completeHandoff(r.Context(), pending.CredentialIDs); err != nil {
+	if err := s.completeHandoff(r.Context(), pending.PassengerID, pending.CredentialIDs); err != nil {
 		return err
 	}
 
@@ -331,6 +331,26 @@ func (s *Server) selectHandoffMeta(ctx context.Context, credIDs []string) ([]han
 
 // completeHandoff · 委托给 handoff.Complete 做 confirm 之后的收尾。
 // 两处调用（api / janitor）共用 · 消 Standards duplication。
-func (s *Server) completeHandoff(ctx context.Context, credIDs []string) error {
-	return handoff.Complete(ctx, handoff.CompleteDeps{DB: s.db, Pool: s.pool}, credIDs)
+//
+// **notifier 通过 handoff.CompleteDeps 传** · 让 handoff 主 tx commit 后自己喊 ·
+// 装配层 janitor 也把 notifier 装上 · 卡单重试成功也能触发 boarded。
+func (s *Server) completeHandoff(ctx context.Context, passengerID string, credIDs []string) error {
+	deps := handoff.CompleteDeps{DB: s.db, Pool: s.pool, PassengerID: passengerID}
+	if s.webhookOut != nil {
+		deps.Notifier = &handoffBoardedAdapter{sender: s.webhookOut}
+	}
+	return handoff.Complete(ctx, deps, credIDs)
+}
+
+// handoffBoardedAdapter · 把 WebhookOutSender.NotifyBoarded 转成 handoff.BoardedNotifier
+// (handoff 包定义了自己的接口 · api 层做 adapter)
+type handoffBoardedAdapter struct {
+	sender WebhookOutSender
+}
+
+func (a *handoffBoardedAdapter) NotifyBoarded(ctx context.Context, passengerID string, credentialIDs []string, route string) {
+	if a.sender == nil {
+		return
+	}
+	a.sender.NotifyBoarded(ctx, passengerID, credentialIDs, route)
 }

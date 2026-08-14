@@ -50,9 +50,29 @@ type Orchestrator struct {
 	picker VendorPicker
 	// balanceChecker · 上游余额预检（P5）· nil = 不预检
 	balanceChecker BalanceChecker
+	// pullNotifier · 1e-2 · settle 成功后通知对外 webhook · nil = 不通知(1a 兼容)
+	pullNotifier PullSuccessNotifier
 	// now / newID 可注入，测试里用来控时钟和 id 生成
 	now   func() time.Time
 	newID func() string
+}
+
+// PullSuccessNotifier · 拉号成功事件通知(避免 decider → webhookout 硬依赖)。
+//
+// 装配层实现: webhookout.Dispatcher.Dispatch(EventNewKeysAvailable, ...)。
+// **失败不影响主链** — settle tx 已 commit 才 call Notifier。
+//
+// 多人车 fanout 由装配层实现 · decider 只喊一声"这轮成了"。
+type PullSuccessNotifier interface {
+	OnPullSucceeded(ctx context.Context, passengerID, busID, vendorID, pullRoundID string, credentialIDs []string, newKeys int)
+}
+
+// SetPullNotifier · 装配后补设(解构造环 · 跟 SetPicker / SetBalanceChecker 一致)。
+func (o *Orchestrator) SetPullNotifier(n PullSuccessNotifier) {
+	if o == nil {
+		return
+	}
+	o.pullNotifier = n
 }
 
 // StockEnqueuer · 缺货挂单的抽象 · 避免 decider → stockwatch 硬依赖（也便于测试 mock）。
@@ -566,6 +586,12 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 	out, err := o.settle(ctx, pendingID, pending, purchase, credIDs, reservePlan)
 	if err != nil {
 		return nil, err
+	}
+	// 通知对外 webhook · 主 tx 提交成功后异步喊一声 · 失败不影响拉号本身。
+	// 多人车 fanout 由装配层实现(遍历 participants) · decider 只带发起人。
+	if o.pullNotifier != nil {
+		o.pullNotifier.OnPullSucceeded(ctx, in.PassengerID, in.BusID,
+			string(vendor.ID()), out.PullRoundID, out.CredentialIDs, out.Purchased)
 	}
 	return out, nil
 }

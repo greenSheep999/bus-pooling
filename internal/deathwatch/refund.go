@@ -225,6 +225,18 @@ func (w *Watcher) refundOne(
 	}
 	w.log.Info("质保退款完成",
 		"cred", c.CredentialLedgerID, "credits", credited, "people", len(ids))
+
+	// 1e-2 · 通知对外 webhook · 每退款一个 passenger 一条(账户视角)
+	// 主 tx 已 commit 才通知 · 失败不 rollback
+	if w.refundNotifier != nil {
+		for _, pid := range ids {
+			amt := plan[pid]
+			if amt <= 0 {
+				continue
+			}
+			w.refundNotifier.OnRefundIssued(ctx, pid, amt, c.CredentialLedgerID, c.OwnerBusID)
+		}
+	}
 	return credited, nil
 }
 

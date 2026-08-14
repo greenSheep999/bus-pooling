@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -79,6 +80,16 @@ type Server struct {
 	adminKey string
 	// pusher · 推 passengerpool 双写 · nil = handler 走 dry-run(只标时间戳)
 	pusher passengerpool.Pusher
+	// webhookOut · 对外 webhook 出向 · nil = handleTestWebhook 走裸 POST(1a 兼容)
+	webhookOut WebhookOutSender
+}
+
+// WebhookOutSender · webhookout.Dispatcher 的对外接口(避免 api → webhookout 硬依赖)。
+// 装配层实现:webhookout.Dispatcher.SendTest + Dispatch。
+type WebhookOutSender interface {
+	SendTest(ctx context.Context, passengerID string) (delivered bool, statusCode int, latencyMs int, errMsg string)
+	// NotifyBoarded · push_pool 成功后通知乘客 · route 只有 "push_pool" / "handoff"
+	NotifyBoarded(ctx context.Context, passengerID string, credentialIDs []string, route string)
 }
 
 // ServerDeps 装配 Server 需要的依赖。decider 允许为 nil（migrate 之类的
@@ -121,6 +132,8 @@ type ServerDeps struct {
 	// Pusher · 推 passengerpool 的双写 pusher · nil = handler 走 dry-run
 	// (只标 pushed_to_passengerpool_at 时间戳 · 不真推 · 跟 1a 一致)
 	Pusher passengerpool.Pusher
+	// WebhookOut · 对外 webhook 出向 · nil = handleTestWebhook 走裸 POST(1a 兼容)
+	WebhookOut WebhookOutSender
 }
 
 func NewServer(d ServerDeps) *Server {
@@ -157,6 +170,7 @@ func NewServer(d ServerDeps) *Server {
 		reconciler:          d.Reconciler,
 		adminKey:            d.AdminKey,
 		pusher:              d.Pusher,
+		webhookOut:          d.WebhookOut,
 	}
 }
 

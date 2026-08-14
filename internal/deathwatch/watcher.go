@@ -53,6 +53,41 @@ type Watcher struct {
 	// refillEnqueuer · 挂 stockwatch 桥 · nil = Enqueue 分支只 reschedule
 	// 装配层实现 · 避免 deathwatch → stockwatch 硬依赖
 	refillEnqueuer RefillEnqueuer
+	// deathNotifier · 1e-2 · markDead 触发 · 装配层桥到 webhookout · nil = 不通知
+	deathNotifier DeathNotifier
+	// refundNotifier · 1e-2 · RefundOnce 每笔退款触发 · 装配层桥到 webhookout · nil = 不通知
+	refundNotifier RefundNotifier
+}
+
+// DeathNotifier · 号死事件通知(装配层桥到 webhookout · 避免包依赖循环)。
+//
+// **只在**某 bus 全灭时才发对外 webhook(all_keys_dead) · 装配层判"某 bus 是否全灭" ·
+// 单号死不发(单号死走 credential.dead · 阶段 1e-2 简化不发单号事件)。
+type DeathNotifier interface {
+	OnCredentialDead(ctx context.Context, credentialLedgerID string, vendorID string)
+}
+
+// RefundNotifier · 质保退款事件通知。
+//
+// RefundOnce 里每笔退款(每号)一次调用 · plan 里每个 passenger 一份。
+type RefundNotifier interface {
+	OnRefundIssued(ctx context.Context, passengerID string, amount int64, credentialLedgerID, busID string)
+}
+
+// SetDeathNotifier · 装配层注入。
+func (w *Watcher) SetDeathNotifier(n DeathNotifier) {
+	if w == nil {
+		return
+	}
+	w.deathNotifier = n
+}
+
+// SetRefundNotifier · 装配层注入。
+func (w *Watcher) SetRefundNotifier(n RefundNotifier) {
+	if w == nil {
+		return
+	}
+	w.refundNotifier = n
 }
 
 // SetRefillDecider · 装配层注入 · 必须在 Start 前调用。
@@ -340,6 +375,18 @@ func (w *Watcher) markDead(ctx context.Context, cred *housepool.Credential, rep 
 	}
 	rep.MarkedDead++
 	w.log.Info("deathwatch 标死", "cred_id", uint64(cred.ID), "reason", cred.DisabledReason)
+
+	// **1e-2** · 通知对外 webhook(装配层判是否 bus 全灭 · 只发 all_keys_dead)
+	// 通知失败只 log · 不影响标死本身
+	if w.deathNotifier != nil {
+		// 查我方 credential.id + vendor 让装配层能反查 bus + 判全灭
+		var ourID, vendorID string
+		if err := w.db.QueryRowContext(ctx,
+			`SELECT id, COALESCE(vendor_id, '') FROM credential_ledger WHERE kiro_rs_credential_id = ?`,
+			uint64(cred.ID)).Scan(&ourID, &vendorID); err == nil && ourID != "" {
+			w.deathNotifier.OnCredentialDead(ctx, ourID, vendorID)
+		}
+	}
 
 	// **P6 · 自动补车**（2026-08-14）：标死后往 pending_refill 塞一条待补记录 ·
 	// worker 消费真拉（Step 1 只 log · Step 2 真 fire · 见 refill.go 注释）。

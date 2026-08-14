@@ -89,13 +89,15 @@ type putWebhookRequest struct {
 
 // ── 事件列表（阶段 1a 固定值，跟 fixtures.ts 对齐）──────
 
-// defaultWebhookEvents 阶段 1a 支持的事件类型。跟前端 mock 展示保持同顺序，
-// 让 UI 复选框顺序稳定。
+// defaultWebhookEvents · 对齐 docs/05-api-contract §11 的四种事件类型。
+//
+// 前端复选框按这个顺序渲染 · 用户勾选后前端存 index。
+// 阶段 1e-2 定稿 · 不加不减。
 var defaultWebhookEvents = []string{
-	"round.completed",
-	"round.failed",
-	"credential.dead",
-	"wallet.low",
+	"new_keys_available",
+	"all_keys_dead",
+	"warranty_refund",
+	"boarded",
 }
 
 // ── 端点 ────────────────────────────────────────────
@@ -353,12 +355,21 @@ func (s *Server) handleTestWebhook(w http.ResponseWriter, r *http.Request) error
 		return ErrBadRequest("请先配置 webhook 地址")
 	}
 
-	// 阶段 1a：只发一次带 timeout 的 POST，body 里就一个 event=test。
-	// 签名逻辑（HMAC-SHA256 secret + timestamp + body）阶段 1e 出向 worker 里再写 —— 这里
-	// 复用它是让 handler 依赖后台服务的循环依赖，先只做"通不通"探测。
-	probe := s.probeReachabilityPost(r.Context(), cfg.WebhookURL, `{"event":"test"}`)
+	// **1e-2 起** · 走 webhookout.SendTest(真签名 + 真台账) ·
+	// nil 兜底走 1a 的裸 POST(mock 环境不装 webhookout · handler 别炸)
+	if s.webhookOut != nil {
+		ok, statusCode, latency, errMsg := s.webhookOut.SendTest(r.Context(), p.ID)
+		writeJSON(w, http.StatusOK, webhookTestResult{
+			OK:         ok,
+			StatusCode: statusCode,
+			LatencyMs:  latency,
+			Error:      errMsg,
+		})
+		return nil
+	}
 
-	// 落一条投递台账（阶段 1a 简化：test 事件 attempt 恒为 1）
+	// **1a 兼容分支** · webhookOut 未装配 · 走裸 POST + 落台账
+	probe := s.probeReachabilityPost(r.Context(), cfg.WebhookURL, `{"event":"test"}`)
 	statusText := downstream.StatusFailed
 	if probe.OK {
 		statusText = downstream.StatusDelivered

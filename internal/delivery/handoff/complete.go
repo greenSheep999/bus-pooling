@@ -29,6 +29,19 @@ import (
 type CompleteDeps struct {
 	DB   *sql.DB
 	Pool housepool.HousePool // 允许 nil（DRY_RUN） · 那时只更新台账·不做 housepool DELETE
+	// Notifier · 1e-2 · handed_off 落定后主动喊一声 · 装配层桥到 webhookout。
+	// nil = 不通知(1a 兼容 · 测试 mock 也可 nil)
+	Notifier BoardedNotifier
+	// PassengerID · handoff 归属的乘客 · Notifier 派发时用
+	PassengerID string
+}
+
+// BoardedNotifier · 号已交付事件的通知接口(避免 handoff → webhookout 硬依赖)。
+//
+// 装配层实现: webhookout.Dispatcher.Dispatch(EventBoarded, BoardedPayload{...})。
+// **失败不影响主链** — Complete 已经 tx commit 了才 call Notifier。
+type BoardedNotifier interface {
+	NotifyBoarded(ctx context.Context, passengerID string, credentialIDs []string, route string)
 }
 
 // Complete 收尾一批 credential。返回 error 就说明还没完成·调用方决定是要重试还是转 need_manual。
@@ -87,7 +100,14 @@ func Complete(ctx context.Context, deps CompleteDeps, credIDs []string) error {
 		// n==0 表示已经是 handed_off（幂等）· 不算错
 		_, _ = res.RowsAffected()
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// 通知对外 webhook · 主 tx 成功后异步喊一声 · 失败不 rollback
+	if deps.Notifier != nil && deps.PassengerID != "" {
+		deps.Notifier.NotifyBoarded(ctx, deps.PassengerID, credIDs, "handoff")
+	}
+	return nil
 }
 
 type completeMeta struct {
