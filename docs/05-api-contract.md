@@ -573,7 +573,7 @@ await POST(`/handoff/${download_token}/confirm`)
 
 ```json
 // req
-{ "url": "https://your-server.com/hook", "events": ["round.completed", "credential.dead"] }
+{ "url": "https://your-server.com/hook", "events": ["new_keys_available", "all_keys_dead"] }
 // resp（不返 secret · secret 只在 POST /secret 轮换那一刻返回）
 { "ok": true }
 ```

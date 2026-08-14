@@ -360,12 +360,11 @@
 - Secret（HMAC 签名密钥 · 打码 + 复制 + 重新生成）
 - 右上「启用中」绿 chip
 
-**订阅事件卡**：5 个 event 卡带 toggle
-- `round.completed` 拉号轮次完成
-- `round.failed` 拉号失败
-- `credential.dead` 号死了
-- `bus.refilled` 补车触发
-- `wallet.low` 余额低
+**订阅事件卡**：4 个 event 卡带 toggle(1e-2 定稿 · `docs/05-api-contract §11`)
+- `new_keys_available` 拉号成功 · 号进车或进你的号池
+- `all_keys_dead` 车里所有号都失效了
+- `warranty_refund` 号在质保期内失效已按份额退款
+- `boarded` 号已交付 · 复制到你的号池成功 或 handoff 明文已发
 
 **投递记录卡**：时间 · 成功/失败 chip · event · HTTP code · retry 次数 · 延迟 + 筛选
 

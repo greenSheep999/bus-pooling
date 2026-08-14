@@ -133,7 +133,7 @@
   },
   "webhook": {
     "event": {
-      "code": "// What we send you\n{\n  \"event\": \"round.completed\",\n  \"created_at\": \"2026-08-08T12:34:56.789Z\",\n  \"data\": {\n    \"pull_round_id\": \"01H8...\",\n    \"bus_id\": \"01HA...\",\n    \"purchased\": 3,\n    \"total_debit\": 63000000\n  }\n}",
+      "code": "// What we send you\n{\n  \"event\": \"new_keys_available\",\n  \"event_id\": \"01H8...\",\n  \"timestamp\": 1755273296,\n  \"passenger_id\": \"01HA...\",\n  \"bus_id\": \"01HA...\",\n  \"vendor_label\": \"provider\",\n  \"new_keys\": 3,\n  \"pull_round_id\": \"01H8...\",\n  \"credential_ids\": [\"01H8...\", \"01H8...\", \"01H8...\"]\n}",
       "link": "Bot notifications",
       "link-prefix": "Head to ",
       "link-suffix": " to set the endpoint and pick which events to subscribe",
