@@ -697,6 +697,13 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	stalenessChecker.Start(ctx)
 	defer stalenessChecker.Stop(2 * time.Second)
 
+	// 1d · 自动补车 scheduler · 5min 扫水位低于阈值的 auto_refill bus · 走 decider.Pull
+	// 补的号自动进 bus-<id> group · 下次循环看得到。**这是 1d 阶段最关键的活的部件** ——
+	// 老代码只支持乘客手动点拉号 · scheduler 装上后车挂着就能自己补。
+	autoRefill := bus.NewScheduler(database.DB, &autoRefillBridge{orch: orch}, 5*time.Minute, slog.Default())
+	autoRefill.Start(ctx)
+	defer autoRefill.Stop(2 * time.Second)
+
 	// xi8 后台 backfill · 30s 拉 signals 增量 · 5min 拉 restock-log 全量
 	// 服务停跑期 xi8 侧继续记 · 重启自动补 · 落 source='xi8' 不出前端（CLAUDE.md §0.1）
 	// BP_XI8_API_KEY 未设置时 Start 是 no-op（本地 dev 无 xi8 也能跑）
@@ -988,4 +995,25 @@ func (b *refillPullerBridge) Refill(ctx context.Context, req deathwatch.RefillRe
 		return false, nil
 	}
 	return false, err
+}
+
+// autoRefillBridge · 1d · 把 orch 转成 bus.AutoRefiller
+//
+// 跟 refillPullerBridge 平行 · 只是接口签名不同（bus 包不 import deathwatch · 单独一个）。
+// scheduler 5min 一轮 · 常见 err（余额不足 / 缺货 / 上限）都被吞成 nil · 下轮再试。
+type autoRefillBridge struct {
+	orch *decider.Orchestrator
+}
+
+func (b *autoRefillBridge) Refill(ctx context.Context, req bus.AutoRefillRequest) error {
+	if b.orch == nil {
+		return nil
+	}
+	_, err := b.orch.Pull(ctx, decider.PullInput{
+		PassengerID:         req.InitiatorPassengerID,
+		BusID:               req.BusID,
+		Count:               req.Count,
+		IdempotencyRecordID: req.IdempotencyRecordID,
+	})
+	return err
 }
