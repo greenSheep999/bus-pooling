@@ -2387,6 +2387,128 @@ vendor 供给（6 家 + xi8 聚合站）
 - ❌ 拉号相关新开 `docs/2N-xxx.md` —— 归本节 §12
 - ❌ 代码注释 / commit 里出现"v3.2" / "v4.4" —— 全是私造马甲 · 见 09-15 sed 清理
 
+
+## §13 1e 收官后 · 用户全量审计出的新差距（2026-08-15）
+
+**背景**：1e 后端(passengerpool 双写 + webhookout 出向)代码 8 个 commit 落完之后 · 用户实测过一轮 · 发现 **策略模型没有收口** —— 不是某个页面 bug · 是**多处前后端契约漂移 + 全局/车级策略层没设计好 + 015 调度文档还没成权威入口**。
+
+**这一节只做记录 · 不改代码**。1e 分支先 push 收官 · 这几条差距下一个 sprint(暂命名 **1f 策略收口**)一并处理。
+
+---
+
+### 13.1 API key 页面契约漂移 ✅（已修）
+
+**已在本次 push 里修好**(commit `5284495`)：
+- `types/index.ts` · `ApiKeyCreated` 从 `{id, plaintext}` 改为 `{key, item: ApiKey}` · 对齐后端 `handleCreateAPIKey` 返值
+- `ApiKeys.tsx` · 回车提交 + 按钮提交 · 走同一个 `submit()` · 都进入一次性明文态
+- `Docs.tsx` · start 段加 API key 生命周期说明卡
+
+**没改的**（吊销语义是对的 · 用户确认后决定不动）：
+- 后端 `DELETE /api-keys/{id}` = `revoke`(保留台账行 · revoked=true) · 不是物理删除
+- UI 目前叫"吊销" · 语义正确 · 不改
+
+### 13.2 /docs 对接文档太薄 ⏸（1f 补）
+
+现有 `/docs` 页只覆盖"怎么带 key / 拉号 / 派去向 / webhook / 错误码"。**缺**：
+
+- API key 生命周期：创建 → 一次性明文 → 列表只返 prefix → 吊销 → API key 权限收窄(不能建新 key、改密码)
+- 真实 endpoint matrix：**哪些接口支持 API key / 哪些必须 session / 哪些必须 idempotency key**
+- request/response 全字段：现在只有例子 · 不适合真实对接方直接用
+
+**做在哪**：`docs/05-api-contract §2` API key 段扩 + `web/src/pages/Docs.tsx` 加两卡(matrix + 生命周期)
+
+### 13.3 全局拉号策略字段没对齐 ⏸（1f 补）
+
+**症状**：全局默认策略字段散在 4 处 · **每处字段集不完全一样**：
+- `docs/06-db-schema.md` `passenger_strategy_default` 表
+- `docs/05-api-contract.md` `GET/PUT /me/strategy` 端点
+- `docs/03-modules.md` `strategy` 包
+- `web/src/types/index.ts` `GlobalStrategy` type
+
+必须逐字段对表 · 每字段标清六项：
+1. **来源** —— 谁写谁读
+2. **默认值**
+3. **是否可空** —— NULL 语义是啥
+4. **是否硬上限** —— 能不能被更低优先级放宽
+5. **是否参与自动调度** —— decider 会不会读
+6. **是否展示给用户** —— UI 上有没有
+
+**关键字段**：`preferred_vendor / zone / max_unit_price / per_round_count / daily_round_limit / daily_spend_limit / auto_refill_enabled / refill_watermark / refill_min_count`
+
+### 13.4 缺"车级拉号配置"覆盖层 ⏸（1f 补 · 高优）
+
+**症状**：现在只有全局策略 · 建车时 `EditStrategyPanel` 让用户改车级字段 · 但**没写清楚"车级 vs 全局"的关系**。
+
+**产品诉求**（用户原话)：
+> 全局策略只能作为**新车默认值**。每辆车必须有自己的**策略覆盖层** · 否则多车/拼车/自动调度无法表达真实产品诉求。
+
+比如"这辆车贵一点也拉 / 那辆车只拉某区 / 某辆车固定 vendor"。
+
+**做在哪**：
+- DB 已有 `bus.max_unit_price / bus.preferred_vendor / bus.auto_refill_enabled / bus.refill_watermark` 字段 · 需要**明确它跟 passenger_strategy_default 的关系**
+- API `GET/PUT /me/buses/{id}/strategy` 端点存在 · 但**没有优先级文档**
+- decider 入参需要支持"当前 bus 的策略 + 兜底到全局默认"
+- 前端 `EditStrategyPanel` 需要有"跟随全局默认 / 覆盖"的 UI 语义
+
+### 13.5 缺策略优先级铁律 ⏸（1f 补 · 最高优）
+
+**症状**：现在**没有一份写死的优先级文档** · 前端、API、decider 各自解释 · 迟早出 bug。
+
+**推荐固定顺序**（用户提议 · 采纳）：
+```
+本次请求约束  >  车级策略  >  全局默认策略  >  系统默认值
+```
+
+**"覆盖" vs "硬上限"**：
+- `max_unit_price / daily_spend_limit / daily_round_limit` 是**硬上限** · **不能**被更低优先级**放宽**
+  - 例：全局 max_unit_price=20 · 车级设 max_unit_price=30 · 车级仍受**全局 20** 卡(取更严的)
+  - 反之全局 20 · 车级 15 · 走车级 15
+  - 硬上限规则:**取 min · 不是取更晚设置的那个**
+- `preferred_vendor / zone / per_round_count` 是**覆盖** · 后者直接盖前者
+- `auto_refill_enabled / refill_watermark` 是**覆盖**(想关就关 · 全局开车里关也行)
+
+**自动触发**（webhook / deathwatch / scheduler / probe / coalescer）没有"本次请求" · 就走 "车级 > 全局 > 系统默认"。
+
+**做在哪**：
+- `docs/15-scheduling.md` 新增 §6 · 策略优先级铁律 · 附字段类型表(硬上限 / 覆盖)
+- `CLAUDE.md §1` 铁律段引用 · 未来 AI 别再重讨论
+- `internal/strategy/` 加一个 `Effective(passengerID, busID, requestOverride) → EffectiveStrategy` 函数收口
+
+### 13.6 015 调度文档还没成权威入口 ⏸（1f 补）
+
+**症状**：`docs/15-scheduling.md` 现在只写了系统缺货挂单调度 · 没**收口整个拼车链路**。
+
+- 三条车路径(single / anon / team)如何进入**同一个调度模型** · 散在 `docs/04-scenarios.md / 12-frontend-pages.md / 03-modules.md / 06-db-schema.md`
+- 6 个触发源(webhook / deathwatch / scheduler / probe / coalescer / manual)输入什么 · 调用谁 · 输出边界 —— 分散在 3 份文档
+- `stockwatch.Enqueue / decider.Pull / assign / refund` 的边界 · 没有一张图能一眼看清
+
+**做在哪**：`docs/15-scheduling.md` 从"系统缺货挂单文档"升级为**权威调度入口** · 三部分：
+1. **三条车路径 → 统一调度模型** · 图 + 一段话
+2. **6 触发源输入/调用/输出边界表**
+3. **`stockwatch.Enqueue / decider.Pull / assign / refund` 状态机 + 时序** · 引 09-transactions 已有的
+
+**别用"已接通"这种模糊词**：必须按 API/DB/state/test 逐项对齐。
+
+### 13.7 全局策略字段来源统一入口 ⏸（1f 补 · 跟 §13.5 一起做）
+
+**症状**：现在**没有一个函数**把"用户在这个车里的有效策略"计算出来 · decider / autoscheduler / deathwatch 各自读 DB 拼字段 · 拼错就漂移。
+
+**做在哪**：
+- `internal/strategy/effective.go` 加 `Effective(ctx, passengerID, busID, override) → EffectiveStrategy`
+- 所有需要读策略的地方都走这一个函数
+- 返值是**已经算好优先级的最终值** · 调用方不用再拼
+
+---
+
+**下一 sprint 命名**：暂命名 **1f 策略收口** · 不是 2a(1e 之后要先补漏才能开新范围) · 阶段号严格接 `CLAUDE §7 阶段表`。
+
+**做的顺序**（用户按优先级排）：
+1. **§13.5** 策略优先级铁律(最高优 · 别的都依赖它)
+2. **§13.3** 全局策略字段对齐 + **§13.4** 车级覆盖层(一起做 · 一个 sprint 内)
+3. **§13.7** Effective() 函数收口
+4. **§13.6** 015 调度文档权威入口
+5. **§13.2** /docs 对接文档扩
+
 ## 记录约定（未来加决策时）
 
 - 每条格式：`### N.M 提议 [❌ / ⏸ / ✅]` + 提议 + 状态说明 + 参考（若有）
