@@ -156,15 +156,19 @@
 
 ### `internal/coalescer/` (业务包 8/15)
 
-- **目的**：**bus 维度**集单调度；同 bus 内多成员意图在窗口内合流成一次拉号意图
+- **状态**：**骨架 · 未接生产**(2026-08-15 codex 审计确认)
+  · `coalescer.go` / `window.go` 有实现 + 单测 · 但 API 层未装配 `SetDefaultWindow`
+  · `internal/api/bus.go` 拉号入口仍直发 `decider.Pull` · 未走窗口合流
+  · 不能宣称'生产集单已完成' · 只是库层能力就绪等接线
+- **目的**(接线后)：**bus 维度**集单调度；同 bus 内多成员意图在窗口内合流成一次拉号意图
 - **子文件**：
   - `coalescer.go` · 定义 Intent / BatchIntent · Single 直发 pass-through
   - `window.go` · 单进程同步窗口，按 `(bus_id, zone, vendor_id)` 合流，默认 200ms / MaxBatch 8
 - **输入**：意图流（`Intent`）
 - **输出**：合流后的**批量意图** `BatchIntent { bus_id, participants[], count_total }`
 - **依赖**：`strategy`, `bus`
-- **谁调它**：API / 调度层把多人 bus 意图送进窗口；窗口关闭后由 executor 调 `decider`
-- **P 标签**：1c
+- **谁调它**(接线后)：API / 调度层把多人 bus 意图送进窗口；窗口关闭后由 executor 调 `decider`
+- **P 标签**：1c 骨架已建 · **真接线 = 2a/2b**
 - **不做**：不选 vendor / 不算价；1 人 bus 意图**绕过**（直发 decider）；跨进程意图池 / 后台异步 fire 留后续
 
 ### `internal/decider/` (业务包 9/15)

@@ -13,19 +13,32 @@
 - [x] 号寿命 + 存活率喂 AutoPick · `QualityStore` 真数据（不再是 50% 常数）
 - [x] webhook 带的 price/available 落 vendor_probe_zone · source='webhook'
 - [x] 陈旧管线告警外发 · `StalenessChecker` + `AlertNotifier`
-- [ ] 自动模式 scheduler · `bus.Scheduler` 已 commit 但需按 `decisions §12` 六条位置改造：
-    - [ ] 位置 0 · `death_refill` 补车必须受 `AutoRefillEnabled` 约束（`15-scheduling §5.2` 已定；现代码 `decider.RefillAdapter` 仍直接 `Pull`）
-    - [ ] 位置 1 · vendor 新号 webhook 唤醒范围（谁被喂）
-    - [ ] 位置 2 · prebuy-pool 抢到无主号的分配路径
-    - [ ] 位置 3 · 多 vendor 同车判据（"另一家撑得住就不拉"）
-    - [ ] 位置 4 · 建拼车后第一次一律手动 · **由 UI 保证**（建车向导 + AutoRefillEnabled 默认 false · 见 decisions §12.已定 2026-08-15）
-    - [ ] 位置 5 · 保底触发挂 stockwatch 不是硬下单
-    - [x] 位置 6 · 用户字段命名对齐（`RefillWatermark` = 水位线；`RefillMinCount` = 本轮最少拉几个；见 `docs/15-scheduling.md §4/§5`）
+- [x] 自动模式 scheduler · **codex 六步收敛已完成 2026-08-15**：
+    - [x] 位置 0 · `death_refill` 受 `AutoRefillEnabled` 约束(第三刀 · `deathwatch.SetRefillDecider` + `refillDecideBridge`)
+    - [x] 位置 1 · vendor 新号 webhook 唤醒范围(第五刀 · `webhookin.AutoScanNotifier` + `webhookAutoScanBridge`)
+    - [ ] 位置 2 · prebuy-pool 抢到无主号的分配路径 · **待决策(付费优先能力·见 `decisions.md §12`)**
+    - [x] 位置 3 · 多 vendor 同车判据(第一刀 Decide Step 3 · 备胎判据 = 数量 AND 价格 AND 新鲜度)
+    - [x] 位置 4 · 建拼车后第一次一律手动 · **由 UI 保证**(建车向导 + AutoRefillEnabled 默认 false · 见 decisions §12.已定 2026-08-15)
+    - [x] 位置 5 · 保底触发挂 stockwatch 不是硬下单(第一刀 Decide Step 4 · mode×source 表 · Tight/整车挂时输出 Enqueue)
+    - [x] 位置 6 · 用户字段命名对齐(`RefillWatermark` = 水位线；`RefillMinCount` = 本轮最少拉几个；见 `docs/15-scheduling.md §4/§5`)
+- [x] auto-pick 缺货挂单 bug(第四刀 · `maybeEnqueueOnNoStock` 用 `requestedVendorID` 判 auto·而非 `in.VendorID`)
+- [ ] coalescer 生产接线 · **不做**(第六刀 · 骨架标记 · 见 `docs/03-modules.md § coalescer`)
+
+## codex 六步收敛记录(2026-08-15)
+
+按 codex 审计建议·把系统主动拉号收口到统一决策入口:
+- 第一刀 · 建 `internal/decider/decide.go` 纯决策骨架
+- 第二刀 · `bus.Scheduler` 接 `Decide(source=scheduler)`
+- 第三刀 · `deathwatch.RefillTick` 接 `Decide(source=death_refill)`
+- 第四刀 · 修 `maybeEnqueueOnNoStock` auto-pick bug
+- 第五刀 · vendor 新号 webhook 触发 `Decide(source=webhook)` · 扫低水位 auto 车
+- 第六刀 · coalescer 明确骨架 · 未接生产
 
 ## 依赖 / 阻塞
 
 - 1c 完成（拼车分摊已通）
-- 位置 1/2/3/5 仍需落码验证；位置 4/6 已完成文档拍板
+- 位置 2 待用户决策付费优先能力方向
+- **可上线**:自动补车链路(1a-1d)已全部收口到 `decider.Decide`
 
 ## 上线判据
 
