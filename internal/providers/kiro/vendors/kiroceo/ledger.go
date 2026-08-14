@@ -12,7 +12,7 @@ import (
 // 编译期保证 *Adapter 满足 LedgerLister · backfiller 靠 runtime 断言接线（签名错这里先炸）。
 var _ providers.LedgerLister = (*Adapter)(nil)
 
-// ListLedger · GET /api/me/ledger · vendor 侧积分流水（交叉对账 · docs/20 §1）。
+// ListLedger · GET /api/me/ledger · vendor 侧积分流水（交叉对账 · docs/23-endpoints-todo §1）。
 //
 // **外层形状实测确认**（vendor-probe）：分页信封 · 跟本家 orders 列表同源：
 //

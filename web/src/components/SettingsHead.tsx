@@ -6,7 +6,7 @@ import { Link } from "react-router-dom";
 /** 设置类页面统一的头 · 面包屑 +（hero 标题 + 描述）+ 右侧动作
  *
  *  4 个设置页共用 —— 别各写一遍，间距会飘（hero 8px / 描述 text-fg-tertiary，
- *  见 docs/13-design-principles.md §5.2b）
+ *  见 docs/13-frontend-design.md §5.2b）
  */
 export function SettingsHead({
   crumb,

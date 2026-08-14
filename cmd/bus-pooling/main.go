@@ -466,7 +466,7 @@ func buildDecider(
 		Pool:    pool,
 		Rates:   rates,
 		Pricing: pricingAdapter,
-		// 估价基准读 vendor_probe.our_unit_credits（docs/18 §1.4）·
+		// 估价基准读 vendor_probe.our_unit_credits（docs/10-pricing §1.4）·
 		// 探针还没落过数时自动退回按快照现算
 		Credits:       pricing.NewProbeCredits(sqldb.DB),
 		RatesResolver: surchargeResolver,
@@ -609,7 +609,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		ProbeStore:    probeStore,
 		ProbeInterval: probeInterval,
 		OrderKeyStore: orderKeyStoreForView,
-		// 展示价换算 · USD 家不换会把展示价算成实际的 1/6.8（docs/18 §1.3）
+		// 展示价换算 · USD 家不换会把展示价算成实际的 1/6.8（docs/10-pricing §1.3）
 		Pricing: pricing.NewVendorViewLookup(pricing.NewStore(database.DB)),
 		// Task 65 · 从 vendor_key 聚合号寿命 / 30d 存活率喂 AutoPick 打分
 		// 没数据的家降级 50 常数（老行为 · 等价纯价格排序）
@@ -654,7 +654,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		OrderKeyStore: orderKeyStoreForView,
 		// 抢号链：stock-delta 推出 restock 时唤醒挂单（只在 tight / turbo 时真 fire）
 		Notifier: stockWatcher,
-		// pricing 标准化（docs/18 §1.3 · migration 028）· 落库前把 vendor 报价换算成积分
+		// pricing 标准化（docs/10-pricing §1.3 · migration 028）· 落库前把 vendor 报价换算成积分
 		Pricing:     pricing.NewVendorViewLookup(pricing.NewStore(database.DB)),
 		HealthStore: healthStore,
 		Interval:    probeInterval,
@@ -674,9 +674,9 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	backfiller := vendorview.NewBackfiller(vendorview.BackfillerConfig{
 		Registry: vendorRegistry,
 		Store:    orderKeyStoreForView,
-		// 交叉对账（docs/20 §1）· 拉 vendor 侧流水落 vendor_ledger · 实现了 LedgerLister 的家才拉
+		// 交叉对账（docs/23-endpoints-todo §1）· 拉 vendor 侧流水落 vendor_ledger · 实现了 LedgerLister 的家才拉
 		LedgerStore: vendorview.NewLedgerStore(database.DB),
-		// 阶梯价格（docs/20）· 拉数量分档落 vendor_price_tier · 实现了 KeyTierLister 的家才拉
+		// 阶梯价格（docs/23-endpoints-todo）· 拉数量分档落 vendor_price_tier · 实现了 KeyTierLister 的家才拉
 		TierStore:   vendorview.NewTierStore(database.DB),
 		HealthStore: healthStore, // 每步盖管线心跳（migration 036）
 		Interval:    5 * time.Minute,
@@ -715,7 +715,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 			xi8Client := xi8.New(xi8Key, xi8HTTP)
 			xi8Backfiller := xi8.NewBackfiller(xi8Client, orderKeyStoreForView, slog.Default())
 			xi8Backfiller.SetZoneStore(probeZoneStore) // 逐 zone 单价 → 侧表 · docs/decisions §11.11
-			xi8Backfiller.SetFlagStore(xi8FlagStore)   // buyable/blocked/floating → 抢号 guard · docs/20 §3
+			xi8Backfiller.SetFlagStore(xi8FlagStore)   // buyable/blocked/floating → 抢号 guard · docs/23-endpoints-todo §3
 			xi8Backfiller.Start(ctx, 30*time.Second, 5*time.Minute)
 			defer xi8Backfiller.Stop(5 * time.Second)
 			slog.Info("xi8 backfiller 已启动 · 30s signals + 5min full")

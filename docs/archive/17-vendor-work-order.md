@@ -322,7 +322,7 @@ UPDATE vendor_dispatch SET dispatched_at = datetime(dispatched_at,'-8 hours')
 
 **现状**：
 - ✅ 页面在（`Preferences.tsx` / `BusDetail.tsx` 策略 tab）
-- ⚠️ 4 个讨论缺口（`docs/16-buy-race.md`）· 全是配置类：
+- ⚠️ 4 个讨论缺口（`docs/22-buy-race.md`）· 全是配置类：
   - 缺口 1 · 单价上限白天/夜间两档 · **未做**
   - 缺口 2 · 预留开关分摊风险 · **未做**
   - 缺口 3 · 车级 daily 死字段清 · **未做**

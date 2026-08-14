@@ -133,11 +133,11 @@ type StockSnapshot struct {
 	Raw             json.RawMessage
 
 	// TieredPricing · 阶梯降价规则 · 只部分 vendor 有 · 其他恒 nil。
-	// 拿到就填 · Prober 落 vendor_price_tier 表 · docs/18 §1.2 · §1.6 Q3。
+	// 拿到就填 · Prober 落 vendor_price_tier 表 · docs/10-pricing §1.2 · §1.6 Q3。
 	TieredPricing *TieredPricing
 }
 
-// TieredPricing · vendor 侧的阶梯降价 schedule（docs/18 §1.2）
+// TieredPricing · vendor 侧的阶梯降价 schedule（docs/10-pricing §1.2）
 //
 // 目前只部分 vendor 支持（返 timed_pricing 的端点通常需 cookie · 我方 API key
 // 不能直接调）· 现阶段 TieredPricing 恒 nil。留字段供未来 vendor 开放时接入。
@@ -152,7 +152,7 @@ type TieredPricing struct {
 	Schedule      []TierSchedule // 每档一条
 }
 
-// TierSchedule · 阶梯的每一档（docs/18 §1.2 vendor_price_tier 表对齐）
+// TierSchedule · 阶梯的每一档（docs/10-pricing §1.2 vendor_price_tier 表对齐）
 type TierSchedule struct {
 	Index            int       // 0 = base · 1 = 第一次降 · ...
 	EffectiveAt      time.Time // 这档生效时刻
@@ -160,7 +160,7 @@ type TierSchedule struct {
 	UnitPriceUSDRaw  int64     // microunit · 这档 USD 原值（有则存 · 部分 vendor 独家）
 }
 
-// ── 数量分档（quantity band · docs/20 · migration 035）─────────────
+// ── 数量分档（quantity band · docs/23-endpoints-todo · migration 035）─────────────
 //
 // 跟 TieredPricing（时间降价）是两种不同的"阶梯"模型：
 //   - 时间降价：价随时间降（部分 vendor 的 timed pricing）
@@ -204,7 +204,7 @@ type ZoneStock struct {
 	// 同区可能有多辆车混价（vendor 档案 §7 明确警告过）。
 	//
 	// **注意** · 这个字段是 vendor 侧的**原始报价**（可能 USD / CNY / credit）·
-	// 落库时经 vendor_pricing.credits_per_unit 换算成积分（our_unit_credits · docs/18 §1.3）。
+	// 落库时经 vendor_pricing.credits_per_unit 换算成积分（our_unit_credits · docs/10-pricing §1.3）。
 	// 之后所有读方（decider / vendorview / PricedFor）**读积分列 · 不再算**。
 	UnitPrice Money
 }

@@ -2,7 +2,7 @@ package providers_test
 
 // zone 归一回归测试 · 锁「所有 vendor 的 ZoneStock.Zone 必须是归一后的值」
 //
-// **为什么单独一份**：每家 vendor 上游给的地区字段形态都不一样（docs/19-fields.md §3）·
+// **为什么单独一份**：每家 vendor 上游给的地区字段形态都不一样（docs/11-fields.md §3）·
 // 有的给短名（"us"）· 有的只给完整 region 名（"us-east-1"）· 有的只给中文 label（"美国区"）·
 // 有的两个都不给（平铺 _us/_eu 后缀）· 有的完全无区概念。
 //

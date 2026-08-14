@@ -34,7 +34,7 @@ type Prober struct {
 	zoneStore     *ProbeZoneStore // migration 029 · 每探针每 zone 一行 · 精确定价的权威源
 	orderKeyStore *OrderKeyStore  // 用于 stock-delta 落 vendor_dispatch · 可 nil（测试）
 	notifier      RestockNotifier // 抢号链通知口 · nil = 不通知（老装配 / 测试）
-	pricing       PricingLookup   // vendor 报价换算入口（migration 028 · docs/18 §1.3）· nil 时走 fallback
+	pricing       PricingLookup   // vendor 报价换算入口（migration 028 · docs/10-pricing §1.3）· nil 时走 fallback
 	health        *HealthStore    // 管线心跳 · 每轮探测盖戳（migration 036）· 可 nil
 	interval      time.Duration   // baseline 探测间隔（默认 60s）
 	hotInterval   time.Duration   // hot 模式间隔（默认 10s · 探到 delta / fleet_active 后启用）
@@ -54,7 +54,7 @@ type Prober struct {
 //
 // 每次探针落库前查一次 · 用 vendor 报价的原始 microunit × credits_per_unit / 1_000_000
 // 换算成我方积分（唯一权威 our_unit_credits）· 之后所有读方（decider / vendorview /
-// PricedFor）**读积分列 · 不再算**（docs/18 §1.3）。
+// PricedFor）**读积分列 · 不再算**（docs/10-pricing §1.3）。
 type PricingLookup interface {
 	// QuoteFor 返换算规则 · rawUnits 是 vendor 报价 microunit
 	// 返值：quote_currency / credits_per_unit
@@ -79,7 +79,7 @@ type ProberConfig struct {
 	OrderKeyStore *OrderKeyStore
 	// Notifier 抢号链通知口 · stock-delta 推出 restock 时唤醒挂单 · nil = 不通知
 	Notifier RestockNotifier
-	// Pricing · vendor_pricing 表换算入口（docs/18 §1.3）· nil = fallback (credit 1:1)
+	// Pricing · vendor_pricing 表换算入口（docs/10-pricing §1.3）· nil = fallback (credit 1:1)
 	Pricing PricingLookup
 	// HealthStore 管线心跳（migration 036）· nil = 不盖戳（测试 / 老装配）
 	HealthStore *HealthStore
@@ -192,7 +192,7 @@ func (p *Prober) Start(ctx context.Context) {
 //
 // 逻辑：hotUntil[vendor] > now → 用 hotInterval · 否则 baseline interval。
 // hot 状态由 deriveStockDelta 里检测到 delta > 0 时 bump（延到 now + hotDuration）。
-// computeCreditsFromMoney · 把 vendor 原始报价换成我方积分 microunit（docs/18 §1.3）
+// computeCreditsFromMoney · 把 vendor 原始报价换成我方积分 microunit（docs/10-pricing §1.3）
 //
 // 规则：
 //
@@ -217,7 +217,7 @@ func (p *Prober) computeCreditsFromMoney(ctx context.Context, vendorID string, m
 // zoneKeyOf · 从一个 ZoneStock 取归一后的 zone 标识（唯一一处规则 · 主表侧表都走它）
 //
 // 优先 z.Zone · 空则从 z.Region 兜 —— 各 vendor 给的地区字段形态不一样：
-// 有的只给短名 · 有的只给完整 region 名 · 有的两个都给（docs/19-fields.md §3）。
+// 有的只给短名 · 有的只给完整 region 名 · 有的两个都给（docs/11-fields.md §3）。
 // 两个都认不出时返空串 · **不瞎猜**。
 func zoneKeyOf(z providers.ZoneStock) providers.Zone {
 	if zk := providers.ZoneOf(string(z.Zone)); zk != "" {
@@ -328,7 +328,7 @@ func (p *Prober) probeOnce(ctx context.Context, v providers.Vendor) {
 			sample.SamplePriceMicro = snap.Zones[0].UnitPrice.Amount
 			sample.SamplePriceRegion = snap.Zones[0].Region
 
-			// ── pricing 标准化（docs/18 §1.3 · migration 028）──
+			// ── pricing 标准化（docs/10-pricing §1.3 · migration 028）──
 			// 上游原样 · 拿到就存
 			z0 := snap.Zones[0]
 			sample.VendorCurrency = string(z0.UnitPrice.Currency)
@@ -423,7 +423,7 @@ func (p *Prober) probeOnce(ctx context.Context, v providers.Vendor) {
 		_ = p.health.Mark(ctx, sample.VendorID, "probe", markErr)
 	}
 
-	// 侧表 · 逐 zone 落权威积分（docs/18 §5 未收口补齐 · migration 029）
+	// 侧表 · 逐 zone 落权威积分（docs/10-pricing §5 未收口补齐 · migration 029）
 	if p.zoneStore != nil && sample.Alive && snap != nil && len(snap.Zones) > 0 {
 		zones := make([]ProbeZoneSample, 0, len(snap.Zones))
 		for _, z := range snap.Zones {
@@ -474,7 +474,7 @@ func (p *Prober) deriveStockDelta(ctx context.Context, cur ProbeSample) {
 	// **键用 zone 不用 region**（2026-08-13 修）：部分 vendor 不返 region 原文（恒空串）·
 	// 拿 region 当键会让该家的 us / eu 两条**塌成一条**（后写的覆盖前面的）·
 	// 结果整个区的 restock delta 被漏掉 · dispatch_key 也会撞（都是 "delta--<ts>"）。
-	// zone 是归一后的标准字段 · 每家都有值（docs/19-fields.md §3）。
+	// zone 是归一后的标准字段 · 每家都有值（docs/11-fields.md §3）。
 	prevByZone := make(map[string]int, len(prev.StockByRegion))
 	for _, r := range prev.StockByRegion {
 		prevByZone[deltaKeyOf(r)] = r.Available
@@ -538,7 +538,7 @@ func (p *Prober) deriveStockDelta(ctx context.Context, cur ProbeSample) {
 	// 逐 region 通知 · 让挂了特定 region 的挂单能精确匹配。
 	if p.notifier != nil {
 		for _, d := range dispatches {
-			// **region 归一化**（docs/16 缺口 5）· d.Region 是 vendor region 名（us-east-1）·
+			// **region 归一化**（docs/22-buy-race 缺口 5）· d.Region 是 vendor region 名（us-east-1）·
 			// 挂单存的是 zone 名（us）· 走 ZoneOf 归一保 SQL 匹配
 			if err := p.notifier.Notify(ctx, stockwatch.NotifyParams{
 				VendorID: cur.VendorID,

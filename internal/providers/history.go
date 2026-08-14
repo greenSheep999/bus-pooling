@@ -103,7 +103,7 @@ type FleetLister interface {
 	ListDispatches(ctx context.Context, limit int) ([]VendorDispatch, error)
 }
 
-// ── 交叉对账（维度 A① · docs/20 §1）──────────────────────────
+// ── 交叉对账（维度 A① · docs/23-endpoints-todo §1）──────────────────────────
 //
 // vendor 侧的**积分流水**（recharge / purchase / refund / …）· 拿来跟我方
 // `pull_round` + `wallet_ledger` 双向核对：我方记的扣费能不能在 vendor 账本里对上 ·

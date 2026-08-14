@@ -21,7 +21,7 @@ type Backfiller struct {
 	registry    *providers.Registry
 	store       *OrderKeyStore
 	ledgerStore *LedgerStore  // 可 nil（老装配 / 测试）· 非 nil 才拉 ledger
-	tierStore   *TierStore    // 可 nil · 非 nil 才拉数量分档（docs/20 阶梯价格）
+	tierStore   *TierStore    // 可 nil · 非 nil 才拉数量分档（docs/23-endpoints-todo 阶梯价格）
 	health      *HealthStore  // 可 nil · 每步盖管线心跳（migration 036）
 	interval    time.Duration // 全量间隔（默认 5min）
 	timeout     time.Duration // 单家 vendor 单次 backfill 超时
@@ -34,9 +34,9 @@ type Backfiller struct {
 type BackfillerConfig struct {
 	Registry *providers.Registry
 	Store    *OrderKeyStore
-	// LedgerStore 交叉对账用（docs/20 §1）· 传 nil = 不拉 ledger（vendor 无端点时也不影响）
+	// LedgerStore 交叉对账用（docs/23-endpoints-todo §1）· 传 nil = 不拉 ledger（vendor 无端点时也不影响）
 	LedgerStore *LedgerStore
-	// TierStore 数量分档（阶梯价格 · docs/20）· 传 nil = 不拉分档
+	// TierStore 数量分档（阶梯价格 · docs/23-endpoints-todo）· 传 nil = 不拉分档
 	TierStore *TierStore
 	// HealthStore 管线心跳（migration 036）· 传 nil = 不盖戳
 	HealthStore *HealthStore
@@ -183,7 +183,7 @@ func (b *Backfiller) backfillVendor(ctx context.Context, v providers.Vendor) {
 		b.markHealth(ctx, vid, "dispatch", err)
 	}
 
-	// 4. Ledger（vendor 侧积分流水 · 交叉对账 · docs/20 §1 · 若实现了 LedgerLister）
+	// 4. Ledger（vendor 侧积分流水 · 交叉对账 · docs/23-endpoints-todo §1 · 若实现了 LedgerLister）
 	if b.ledgerStore != nil {
 		if lister, ok := v.(providers.LedgerLister); ok {
 			entries, err := b.collectLedger(ctx, lister)
@@ -199,7 +199,7 @@ func (b *Backfiller) backfillVendor(ctx context.Context, v providers.Vendor) {
 		}
 	}
 
-	// 5. 数量分档（阶梯价格 · docs/20 · 若实现了 KeyTierLister · 如 key-price-tiers 端点）
+	// 5. 数量分档（阶梯价格 · docs/23-endpoints-todo · 若实现了 KeyTierLister · 如 key-price-tiers 端点）
 	if b.tierStore != nil {
 		if lister, ok := v.(providers.KeyTierLister); ok {
 			callCtx, cancel := context.WithTimeout(ctx, b.timeout)
@@ -218,7 +218,7 @@ func (b *Backfiller) backfillVendor(ctx context.Context, v providers.Vendor) {
 		}
 	}
 
-	// 6. 时间降价 schedule（阶梯价格 · docs/20 · 若实现了 TimeDecayLister · 如 reservation 端点）
+	// 6. 时间降价 schedule（阶梯价格 · docs/23-endpoints-todo · 若实现了 TimeDecayLister · 如 reservation 端点）
 	// 返 nil = 未配置 token / 拿不到 · **保留上次落库值不清空**（token 会过期 · 别把旧值抹了）。
 	if b.tierStore != nil {
 		if lister, ok := v.(providers.TimeDecayLister); ok {

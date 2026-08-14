@@ -1,6 +1,6 @@
 -- migration 029 · vendor_probe_zone · 每次探针每 zone 一行
 --
--- **为什么单开侧表**（docs/18 §5 未收口那条 · 2026-08-12 补齐）：
+-- **为什么单开侧表**（docs/10-pricing §5 未收口那条 · 2026-08-12 补齐）：
 -- vendor_probe 主键 (vendor_id, probed_at) 每探针一行 · 8 新列采样首个 zone ·
 -- US / EU 差价被压平（部分 vendor US 比 EU 贵 30~50% · 计费不该按"大概"）。
 --

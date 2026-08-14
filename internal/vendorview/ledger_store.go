@@ -11,7 +11,7 @@ import (
 
 // LedgerStore 读写 vendor_ledger 表（migration 033）· vendor 侧积分流水。
 //
-// 用途：交叉对账（docs/20 §1）· 拿 vendor 自报流水跟我方 pull_round 双向核对。
+// 用途：交叉对账（docs/23-endpoints-todo §1）· 拿 vendor 自报流水跟我方 pull_round 双向核对。
 // **纯内部**（CLAUDE.md §0.1）· 不出前端。
 type LedgerStore struct {
 	db *sql.DB

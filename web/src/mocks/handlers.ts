@@ -319,7 +319,7 @@ export const handlers = [
   }),
   http.post("/api/register", async ({ request }) => {
     const body = (await request.json()) as { invite_code?: string };
-    // 填码 → tier 升到批发商（mock 简化 · 后端按 grants_tier 分社群/批发商 · docs/18 §2.1）
+    // 填码 → tier 升到批发商（mock 简化 · 后端按 grants_tier 分社群/批发商 · docs/10-pricing §2.1）
     const hasCode = !!body.invite_code?.trim();
     fx.passenger.tier = hasCode ? "wholesale" : "retail";
     fx.passenger.invited = hasCode; // 兼容字段（下版删）

@@ -40,7 +40,7 @@ type ProbeSample struct {
 	ErrorKind         string // 空 = 成功
 	RawSnapshot       []byte // 完整 StockSnapshot JSON
 
-	// ── pricing 标准化（docs/18 §1.2 · migration 028）──
+	// ── pricing 标准化（docs/10-pricing §1.2 · migration 028）──
 	//
 	// 上游原样字段 · 拿到就存 · 没有则零值（SQL 层用 nullIfZero 转 NULL）：
 	VendorCurrency     string  // credit / CNY / USD
@@ -48,7 +48,7 @@ type ProbeSample struct {
 	VendorExchangeRate float64 // vendor 侧汇率（UI 有 · API 无 · 保留字段）
 	VendorPriceUSDRaw  int64   // USD 原值 microunit（部分 vendor 单独 USD 字段时填）
 	VendorPriceCNYRaw  int64   // CNY 原值 microunit（UI 有 · API 无 · 保留字段）
-	// 我方计算 · 唯一权威积分（docs/18 §1.3 换算路径）：
+	// 我方计算 · 唯一权威积分（docs/10-pricing §1.3 换算路径）：
 	OurUnitCredits int64  // ★ microunit · 1_000_000 = 1 积分 = 1 RMB
 	OurUnitSource  string // vendor_native / computed_from_usd / fallback_last_rate
 	OurComputedAt  time.Time
@@ -100,7 +100,7 @@ func (s *ProbeStore) InsertProbe(ctx context.Context, p ProbeSample) error {
 			psGen = sql.NullInt64{Int64: 0, Valid: true}
 		}
 	}
-	// 标准化字段（docs/18 §1.3 · migration 028）· ComputedAt 空则用 ProbedAt
+	// 标准化字段（docs/10-pricing §1.3 · migration 028）· ComputedAt 空则用 ProbedAt
 	computedAt := p.OurComputedAt
 	if computedAt.IsZero() {
 		computedAt = p.ProbedAt

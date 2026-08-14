@@ -1,6 +1,6 @@
 package pricing
 
-// probe_credits · 读 vendor_probe_zone.our_unit_credits（migration 029 · docs/18 §1.4 权威源）·
+// probe_credits · 读 vendor_probe_zone.our_unit_credits（migration 029 · docs/10-pricing §1.4 权威源）·
 // 侧表缺数据时退回主表 vendor_probe.our_unit_credits（首个 zone 采样 · 单 zone vendor 够用）
 //
 // **fallback 链**（按 source 权威度 · 每级内部再按 zone 精确度）：

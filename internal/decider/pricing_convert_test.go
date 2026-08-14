@@ -33,7 +33,7 @@ func (m *mockCredits) LatestCredits(_ context.Context, vendorID string, _ string
 	return 0, time.Time{}, false
 }
 
-// ── 估价基准优先读库（docs/18 §1.4）─────────────────────
+// ── 估价基准优先读库（docs/10-pricing §1.4）─────────────────────
 
 // 库里有 our_unit_credits · 就用它 · **不看本轮快照单价**
 func TestUnitCreditsFor_PrefersDB(t *testing.T) {
@@ -86,7 +86,7 @@ func TestUnitCreditsFor_NilLookupFallsBack(t *testing.T) {
 	}
 }
 
-// ── 快照兜底的换算式 · 跟 Prober 落库时同一条（docs/18 §1.3）──
+// ── 快照兜底的换算式 · 跟 Prober 落库时同一条（docs/10-pricing §1.3）──
 
 // USD 家 · 7.35 USD × 6.8 = 49.98 积分
 func TestConvertSnapshotPrice_USDAppliesRate(t *testing.T) {

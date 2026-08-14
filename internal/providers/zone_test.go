@@ -2,7 +2,7 @@ package providers
 
 import "testing"
 
-// ZoneOf · docs/16 缺口 5 · 3 套命名归一测试
+// ZoneOf · docs/22-buy-race 缺口 5 · 3 套命名归一测试
 func TestZoneOf(t *testing.T) {
 	cases := []struct {
 		in   string

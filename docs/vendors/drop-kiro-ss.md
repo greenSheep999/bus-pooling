@@ -131,7 +131,7 @@
 
 **⚠️ 数据缺口**：`balance`（CNY 余额）解析出来但**不落 vendor_probe** —— 其他家的 balance 也一样不落。
 
-**⚠️ EU 定价完全拿不到**：xi8 报该家 EU = 36.34 CNY · 我方 stock 端点只返 us-east-1 · **EU 那一半定价我方从来不知道**（`docs/19-fields.md` 里 xi8 补漏就是为这个）。
+**⚠️ EU 定价完全拿不到**：xi8 报该家 EU = 36.34 CNY · 我方 stock 端点只返 us-east-1 · **EU 那一半定价我方从来不知道**（`docs/11-fields.md` 里 xi8 补漏就是为这个）。
 
 ---
 
@@ -286,7 +286,7 @@ Webhook 超时 **8s** · 重试 **3 次**（1s 间隔）。
 | **价格保护参数** | **CNY** | `max_total_cny` |
 | **退款金额** | **CNY** | `refunded_amount_cny` |
 
-**我方换算链**（`docs/18 §1.3`）：
+**我方换算链**（`docs/10-pricing §1.3`）：
 ```
 price "7.35" (USD)
   → Money{Amount: 7_350_000, Currency: "USD"}

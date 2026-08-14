@@ -9,7 +9,7 @@
 --   3. 清了 region 就丢了那 3 家的原文 · 对账时想核"vendor 当时管这区叫什么"就没了
 --
 -- **所以本迁移只做一件事**：给 zone 列补索引 · 让"按 zone 查最近价"这条主查询走索引。
--- region 列**保留原样** · 语义写进 docs/19-fields.md §3。
+-- region 列**保留原样** · 语义写进 docs/11-fields.md §3。
 --
 -- 地区字段的唯一标准是 `zone`（'us' / 'eu' / 'general' · providers.ZoneOf 出口）·
 -- `region` 只是 vendor 原文快照 · 允许空 · **不参与任何匹配逻辑**。

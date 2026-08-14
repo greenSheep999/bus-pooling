@@ -1,6 +1,6 @@
 package vendorview
 
-// 减免栈（docs/18 §3）· 跟 tier 正交 · 有时效额度 · 用完/到期自动恢复
+// 减免栈（docs/10-pricing §3）· 跟 tier 正交 · 有时效额度 · 用完/到期自动恢复
 //
 // 4 种减免（跟静态计费栈的 4 层一一对应）：
 //   channel_fee    · 充值时的通道费 · 走独立科目 · 不在本文处理（充值流水那侧）
@@ -113,7 +113,7 @@ func computeSubsidyDelta(kind, amountJSON string, bd Breakdown) int64 {
 
 // GrantSubsidy · 发一份减免给用户 · 邀请奖励 / 促销码兑换 / 优惠码使用 时调
 //
-// 三种 kind + 4 种 source（docs/18 §3）· amount_rule 传 JSON
+// 三种 kind + 4 种 source（docs/10-pricing §3）· amount_rule 传 JSON
 func (s *Service) GrantSubsidy(ctx context.Context, in GrantSubsidyInput) (string, error) {
 	if s == nil || s.probeStore == nil {
 		return "", ErrPriceMissing

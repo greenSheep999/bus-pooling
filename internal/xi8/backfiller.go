@@ -21,7 +21,7 @@ type ZoneStore interface {
 	InsertZoneBatch(ctx context.Context, samples []ZoneSample) error
 }
 
-// FlagStore · xi8_vendor_flags 落库接口（buyable/blocked/floating · 抢号 fire-guard · docs/20 §3）
+// FlagStore · xi8_vendor_flags 落库接口（buyable/blocked/floating · 抢号 fire-guard · docs/23-endpoints-todo §3）
 type FlagStore interface {
 	UpsertVendorFlags(ctx context.Context, flags []VendorFlagSample) error
 }
@@ -325,7 +325,7 @@ func (b *Backfiller) RunOnce(ctx context.Context, limit int) (int, int, error) {
 // pushVendorsToZone · 把 xi8 逐 zone 单价 → vendor_probe_zone（source='xi8'）
 //
 // xi8 定价一律 CNY 计价（分 → microunit 换算：×10000）· pass-through 到我方积分
-// （1 CNY = 1 积分 · docs/18 §1.4）· 不做 vendor_pricing 换算（那条是给 USD 家的）。
+// （1 CNY = 1 积分 · docs/10-pricing §1.4）· 不做 vendor_pricing 换算（那条是给 USD 家的）。
 func (b *Backfiller) pushVendorsToZone(ctx context.Context, resp *VendorsResp) int {
 	if resp == nil || len(resp.Vendors) == 0 {
 		return 0

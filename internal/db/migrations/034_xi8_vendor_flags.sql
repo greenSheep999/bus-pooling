@@ -1,6 +1,6 @@
 -- +migrate up
 
--- 034 · xi8_vendor_flags · 聚合源的 buyable/blocked/floating 快照（抢号决策 · docs/20 §3）
+-- 034 · xi8_vendor_flags · 聚合源的 buyable/blocked/floating 快照（抢号决策 · docs/23-endpoints-todo §3）
 --
 -- **为什么**：xi8 `/api/vendors` 每 5min 拉的 VendorRegion 里带 buyable/blocked/
 -- block_reason/floating —— 这几个探针给不了（探针只看得到"我方账户能买几个"·

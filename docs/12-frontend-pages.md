@@ -7,8 +7,8 @@
 > **视觉基线**：概览页 v7（commit `15ff2b1`）· 24 张 Pencil mockup 已废弃转真代码
 >
 > **⚠️ 写新页面前必读**：
-> 1. `docs/13-design-principles.md` —— 数据表达 + 交互 + 组件用法（**从概览页 v7 沉淀，是硬约束**）
-> 2. `docs/13-frontend-research.md` —— 品牌色系 / 字号 / 阴影 token（外观规范）
+> 1. `docs/13-frontend-design.md` —— 数据表达 + 交互 + 组件用法（**从概览页 v7 沉淀，是硬约束**）
+> 2. `docs/13-frontend-design.md` —— 品牌色系 / 字号 / 阴影 token（外观规范）
 > 3. `CLAUDE.md §12` —— 术语双分离铁律
 >
 > **核心原则**（`CLAUDE.md §12`）：

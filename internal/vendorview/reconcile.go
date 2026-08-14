@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// 交叉对账（docs/20 §1）· 拿我方 pull_round 跟 vendor 侧账本双向核对。
+// 交叉对账（docs/23-endpoints-todo §1）· 拿我方 pull_round 跟 vendor 侧账本双向核对。
 //
 // **为什么**：生产已开 dry_run=false 真实扣费 · 只有我方账本时 · 被多扣 / 漏退都发现
 // 不了。对账在三个层面比：

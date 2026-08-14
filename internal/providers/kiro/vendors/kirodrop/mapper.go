@@ -130,7 +130,7 @@ func toStockSnapshot(sr *stockResp, raw json.RawMessage) *providers.StockSnapsho
 	}
 	// 新形状无 zones 数组 · 但 sr.Region 有值时补一个默认 zone
 	//
-	// **单价字段修复（docs/18 §1.3 落码 · 2026-08-12）**：新形状顶层有 `price:"7.35"` 字符串 ·
+	// **单价字段修复（docs/10-pricing §1.3 落码 · 2026-08-12）**：新形状顶层有 `price:"7.35"` 字符串 ·
 	// 单位 USD · 老 mapper 完全忽略 · 导致 decider 拿到 UnitPrice.Amount=0 · Prices 页显示 0。
 	// 现在解析成 microunit USD Money · Prober 落库时经 vendor_pricing 换算成积分（唯一权威）。
 	//

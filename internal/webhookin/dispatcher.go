@@ -212,7 +212,7 @@ func (d *Dispatcher) RecordRejected(ctx context.Context, vendorID, reason string
 	d.logger.Error("webhook 被丢弃 · 上游推了但我方没接住",
 		"vendor", vendorID, "reason", reason,
 		"body_fingerprint", eventID, "body_bytes", len(rawBody),
-		"how_to", "对着 docs/19-fields.md §11 核这家的载荷字段名")
+		"how_to", "对着 docs/11-fields.md §11 核这家的载荷字段名")
 }
 
 // dispatchByType · 按 EventType 走不同分支 · 返 (status, err)。
@@ -293,7 +293,7 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 	// 而 dispatch 已经落库了 · 重推会走幂等 upsert 但也会重复 Notify（可接受 ·
 	// 挂单侧有 conditional UPDATE 保证只 fire 一次）。
 	if d.notifier != nil {
-		// **region 归一化**（docs/16 缺口 5）· e.Zone 可能是 "us"/"us-east-1"/"美国区" ·
+		// **region 归一化**（docs/22-buy-race 缺口 5）· e.Zone 可能是 "us"/"us-east-1"/"美国区" ·
 		// stock_watcher.region 语义定死 zone 名 · 走 ZoneOf 归一保 SQL 匹配一致
 		if err := d.notifier.Notify(ctx, stockwatch.NotifyParams{
 			VendorID: string(e.VendorID),

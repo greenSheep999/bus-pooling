@@ -15,7 +15,7 @@ export const passenger: Passenger = {
   email: "danlio@example.com",
   email_verified: true,
   created_at: ago(24 * 54),
-  /* 用户档次 · docs/18 §2.1 · 改这里切视角
+  /* 用户档次 · docs/10-pricing §2.1 · 改这里切视角
      retail = 零售 · community = 社群 · wholesale = 批发商（唯一看真名 + 最低价的档） */
   tier: "retail",
   /* 兼容字段 · 跟 tier 保持一致 · 下版后端删这个字段后前端一起删 */

@@ -11,7 +11,7 @@ import (
 // 这是**静默出错高危**的换算：传错了会把涨价保护设成几倍宽松（等于没保护）·
 // 或者几倍严格（一直 409 拉不到号）。所以每种币种组合都要锁住。
 //
-// 换算走 vendor_pricing.credits_per_unit 的逆式（docs/18 §1.3）·
+// 换算走 vendor_pricing.credits_per_unit 的逆式（docs/10-pricing §1.3）·
 // 不再依赖"本轮快照的 raw/hint 等比映射"（估价基准现在可能来自库里上一轮探针）。
 func TestVendorMaxTotal(t *testing.T) {
 	const micro = 1_000_000

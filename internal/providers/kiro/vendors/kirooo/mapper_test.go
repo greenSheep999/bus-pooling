@@ -5,7 +5,7 @@ package kirooo
 // 本 vendor 的 /my/stock/regions 只给 `region:"us-east-1"` · **不给 zone 短名** ·
 // 老 mapper 写的是 `Zone: providers.Zone(r.Region)` 直接强转 → zone 列落成
 // "us-east-1" · 跟其他 vendor 的 "us" 对不上 → PricedFor 按 zone 查匹配不到
-// （docs/19-fields.md §3 组 3 · 区域标识）。
+// （docs/11-fields.md §3 组 3 · 区域标识）。
 //
 // 修复：过 providers.ZoneOf 归一。
 

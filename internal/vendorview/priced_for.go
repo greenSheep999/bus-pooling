@@ -1,6 +1,6 @@
 package vendorview
 
-// PricedFor · 唯一定价查询入口（docs/18 §4）
+// PricedFor · 唯一定价查询入口（docs/10-pricing §4）
 //
 // 拉号 / 拼车 / Pricing 页 / Status 页 全部走它 · 不再有第二处算价：
 //
@@ -94,7 +94,7 @@ func (s *Service) PricedFor(ctx context.Context, in PricedForInput) (*PricedView
 	rates := s.rates
 	bd := computeBreakdown(credits, in.Count, in.Viewer.Tier, rates)
 
-	// 3. 减免栈（docs/18 §3）· 查 user_subsidy · 有 remaining_uses/expires_at 才生效
+	// 3. 减免栈（docs/10-pricing §3）· 查 user_subsidy · 有 remaining_uses/expires_at 才生效
 	bd.SubsidyWaived = s.applySubsidies(ctx, in.Viewer.PassengerID, bd)
 
 	// 4. 组合价 = base + vendor + region + single_pull + service - subsidy
@@ -135,7 +135,7 @@ func (s *Service) latestCredits(ctx context.Context, vendorID, region string) (i
 	return credits, at, nil
 }
 
-// tierLabel · docs/18 §2.1 · 只 wholesale 看真名
+// tierLabel · docs/10-pricing §2.1 · 只 wholesale 看真名
 func (s *Service) tierLabel(vendorID string, v Viewer) (label, anon string) {
 	vid := providers.VendorID(vendorID)
 	anon = anonIDOf(vid)
@@ -148,7 +148,7 @@ func (s *Service) tierLabel(vendorID string, v Viewer) (label, anon string) {
 	return anonLabelOf(vid), anon
 }
 
-// computeBreakdown · 静态计费栈（docs/18 §2.2 · 逐层乘 · §8.34 铁律）
+// computeBreakdown · 静态计费栈（docs/10-pricing §2.2 · 逐层乘 · §8.34 铁律）
 //
 // **计费栈**：
 //

@@ -15,7 +15,7 @@ export interface Paged<T> {
 }
 
 // ── 乘客 / 钱包
-/** 用户档次 · docs/18 §2.1 · 每档"多减一层"
+/** 用户档次 · docs/10-pricing §2.1 · 每档"多减一层"
  *   retail    = 零售   · 无系统邀请码 · Vendor 0N 匿名 + 全套分项
  *   community = 社群   · 社群码（TG/Discord）· Vendor 0N 匿名 + 免区域分项
  *   wholesale = 批发商 · 批发商码（B2B 定向）· vendor 真名（唯一可见的档）+ 免 vendor + 区域分项
@@ -29,7 +29,7 @@ export interface Passenger {
   email: string;
   email_verified: boolean;
   created_at: ISOTime;
-  /** 用户档次（docs/18 §2.1）· 决定分项链和 vendor 显示名 */
+  /** 用户档次（docs/10-pricing §2.1）· 决定分项链和 vendor 显示名 */
   tier: PassengerTier;
   /** 兼容字段（下版删）· 等同 tier != "retail" · 新代码一律用 tier */
   invited: boolean;
@@ -260,7 +260,7 @@ export interface VendorHistory {
   total_pulled_30d: number;                 // 30 天累计拉过多少号
 }
 
-/** vendor 的一轮车 · decisions §8.22 · docs/15-prices-page-design.md
+/** vendor 的一轮车 · decisions §8.22 · docs/21-page-prices.md
  *  上游一天发多轮车，每轮单价按整车产出量查阶梯表 —— 所以价格是**轮次级**数据
  *  存轮次不存每日聚合：聚合值（min/max/avg/轮数）前端派生，信息不丢 */
 export interface VendorRound {

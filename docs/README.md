@@ -38,9 +38,11 @@
 
 ---
 
-## 当前分类清单（08-15）
+## 当前分类清单（08-15 重编号后 · 编号连续 · 主题分组清晰）
 
-**A 契约层**（20 份 · 长期锚点）：
+### A 契约层 · 15 份 · 长期锚点
+
+**00-09 · 后端核心契约**：
 
 ```
 00-values-and-phases.md       项目定位 + 阶段表（1a/1b/1c/1d/1e/2a/2b/3a/3b/3c/3d）
@@ -52,39 +54,55 @@
 06-db-schema.md               数据库表
 07-provider-contract.md       Provider/Vendor Go interface
 08-housepool-contract.md      Housepool 客户端
-09-transactions.md            状态机 + 补偿
-12-frontend-pages.md          前端页面清单
-13-deployment.md              部署 runbook
-13-design-principles.md       前端视觉/交互硬约束
-13-frontend-research.md       主题 + token
-18-pricing-normalization.md   pricing 权威（覆盖多条老决策）
-19-fields.md                  跨 vendor 字段对齐表
-vendors/README.md             vendor 档案骨架
-vendors/*.md                  各 vendor 官方 API 档案
+09-transactions.md            状态机 + 补偿规则
 ```
 
-**B 主线**（当前阶段交付 · 上线后归档）：
+**10-14 · pricing + 前端 + 部署契约**：
 
 ```
-sprint-1a-backend.md          阶段 1a 后端交付（1a 已上线 · 待归档）
-sprint-1a-frontend.md         阶段 1a 前端交付（1a 已上线 · 待归档）
-sprint-1b-*.md                阶段 1b · 待建
-sprint-1c-*.md                阶段 1c · 待建
-sprint-1d-*.md                阶段 1d · 待建
+10-pricing.md                 pricing 一整套(观测 → 换算 → 三档 → 减免)· 权威
+11-fields.md                  跨 vendor 字段对齐表 · 权威
+12-frontend-pages.md          前端页面清单 + 路由
+13-frontend-design.md         前端设计规范(调研 + 主题 + token + 用法)· 新页面必读
+14-deployment.md              部署 runbook
 ```
 
-**C 衍生**（4 份 · 待合并回 A）：
+**vendors/ · 上游 API 档案**：
 
 ```
-14-extract-page-plan.md       提取页方案 → 落码后合并回 12-frontend-pages
-15-prices-page-design.md      价格页设计 → 落码后合并回 12-frontend-pages
-16-buy-race.md                抢号链 → 落码后合并回 09-transactions + decisions
-20-endpoint-classification.md 端点补接优先级 → 消化完删
+vendors/README.md             vendor 档案骨架规范
+vendors/91kiro.md · kiro-*.md 各 vendor 官方 API 档案
+vendors/xi8.md                聚合站(非 vendor · 内部数据源)
 ```
 
-**D 决策**：`decisions.md`
+### B 主线 · sprint · 每阶段一份 · 上线后归档
 
-**E 归档**：`docs/archive/`（含老旧 vendor-work-order · diagnostics · e2e 手验记录）
+```
+sprint-1a-backend.md          阶段 1a 后端(已上线 · 待归档)
+sprint-1a-frontend.md         阶段 1a 前端(已上线 · 待归档)
+sprint-1b-backend.md          阶段 1b · 交付清单 + 上线判据
+sprint-1c-backend.md          阶段 1c · 主体已通生产
+sprint-1d-backend.md          阶段 1d · 六条位置待用户拍板
+```
+
+### C 衍生 · 4 份 · 独立子系统方案 · 落码后合回 A
+
+```
+20-page-extract.md            提取页方案 → 落码后合回 12-frontend-pages
+21-page-prices.md             价格页设计 → 落码后合回 12-frontend-pages
+22-buy-race.md                抢号链子系统 → 落码后合回 09-transactions + decisions §11.15
+23-endpoints-todo.md          端点补接施工蓝图 → 消化完删
+```
+
+**C 类文件顶端**应标"归回目标 + 到期日"· 到期未归档 = 触发重整。
+
+### D 决策 · 唯一
+
+`docs/decisions.md`。
+
+### E 归档
+
+`docs/archive/`（老旧 vendor-work-order · diagnostics · e2e · endpoints-audit 等）
 
 ---
 

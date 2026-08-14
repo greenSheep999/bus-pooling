@@ -1,6 +1,6 @@
 -- +migrate up
 
--- 027 · stock_watcher · 抢号链核心表（docs/16-buy-race.md · decisions §11.7）
+-- 027 · stock_watcher · 抢号链核心表（docs/22-buy-race.md · decisions §11.7）
 --
 -- 场景：拉号时 vendor 缺货 · 不直接失败退款 · auto 模式下挂 watcher · 等 restock 事件
 -- （vendor webhook new_keys / xi8 signals / 探针 stock-delta 推算）唤醒 → 立即 fire

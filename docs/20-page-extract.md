@@ -1,5 +1,8 @@
 # 提取 key 页方案 · v1
 
+
+> **[C 衍生]** · 独立子系统方案 · 落码后应合回 `docs/12-frontend-pages.md § 提取页` · 到期未合并 = 触发重整。
+>
 > **前置阅读**：`CLAUDE.md §1.2 §12` · `docs/vendors/*.md` 六家 API 档案 · `12-frontend-pages.md § 6-7`（旧 · 待作废）· `decisions.md §8.9 §8.17-8.19`
 >
 > **状态**：方案讨论中 · 落码前需车主 review

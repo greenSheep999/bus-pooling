@@ -36,7 +36,7 @@ type Orchestrator struct {
 	// pricing · vendor 报价换算规则（vendor_pricing 表 · 1b P1-2A）·
 	// nil = 全 vendor 走 fallback（1a 兼容·CNY 1:1）
 	pricing PricingLookup
-	// credits · vendor_probe.our_unit_credits 读取器（docs/18 §1.4）·
+	// credits · vendor_probe.our_unit_credits 读取器（docs/10-pricing §1.4）·
 	// 估价基准优先读它 · nil / 无数据时退回按本轮快照现算
 	credits CreditsLookup
 	// ratesResolver · surcharge_rule 实时求值（1b P1-2B）· nil = 用 o.rates（env 兜底）
@@ -94,7 +94,7 @@ type BalanceChecker interface {
 	Enough(vendorID providers.VendorID, estCredits int64) (ok bool, remain int64)
 }
 
-// CreditsLookup · 读 vendor_probe / vendor_probe_zone 的积分（docs/18 §1.4）·
+// CreditsLookup · 读 vendor_probe / vendor_probe_zone 的积分（docs/10-pricing §1.4）·
 // 实现方 pricing.ProbeCredits · 装配层注入 · nil = 退回按快照现算（冷启动 / 测试）
 //
 // zone 参数：内部已归一（"us" / "eu" / ""）· 空 = 跨 zone 找该 vendor 最近一条。
@@ -124,7 +124,7 @@ type Config struct {
 	Rates   Rates
 	// Pricing · vendor_pricing 表的换算规则（1b P1-2A）·nil = 全走 fallback
 	Pricing PricingLookup
-	// Credits · vendor_probe.our_unit_credits 读取器（docs/18 §1.4）·
+	// Credits · vendor_probe.our_unit_credits 读取器（docs/10-pricing §1.4）·
 	// nil = 退回按快照现算（测试 / 冷启动）
 	Credits CreditsLookup
 	// RatesResolver · surcharge_rule 表的实时求值（1b P1-2B）· nil = 用 env Rates
@@ -196,7 +196,7 @@ func (o *Orchestrator) quoteFor(ctx context.Context, vendorID providers.VendorID
 
 // unitCreditsFor · 拿这一轮的**估价基准**（我方积分 microunit）。
 //
-// **优先读库**（docs/18 §1.4 · 机制 A）：`vendor_probe.our_unit_credits` 是入库时
+// **优先读库**（docs/10-pricing §1.4 · 机制 A）：`vendor_probe.our_unit_credits` 是入库时
 // 一次换算好的权威积分 · 下游只读结果 · 不再各自拿汇率反推。
 //
 // 读不到才按本轮快照现算（冷启动 · 探针还没跑完第一轮 · 新接入 vendor）——
@@ -219,7 +219,7 @@ func (o *Orchestrator) unitCreditsFor(
 
 // convertSnapshotPrice · 冷启动兜底 · 按 vendor_pricing 规则换算本轮快照单价。
 //
-// 换算式跟 Prober 落库时**同一条**（docs/18 §1.3）：
+// 换算式跟 Prober 落库时**同一条**（docs/10-pricing §1.3）：
 //
 //	credits = Amount × credits_per_unit / 1_000_000
 //
@@ -402,7 +402,7 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 		o.maybeEnqueueOnNoStock(ctx, in, vendor.ID())
 		return nil, ErrNoStock
 	}
-	// 估价基准 · 优先按 zone 读 vendor_probe_zone.our_unit_credits · 精确到区（docs/18 §1.4）·
+	// 估价基准 · 优先按 zone 读 vendor_probe_zone.our_unit_credits · 精确到区（docs/10-pricing §1.4）·
 	// 读不到才按本轮快照现算（冷启动兜底）。实扣不看这个值 —— 走 settle 里 vendor 的 TotalCost。
 	unitCostHint, _ := o.unitCreditsFor(ctx, vendor.ID(), in.Zone, rawUnitPrice)
 
@@ -774,7 +774,7 @@ func groupFor(busID, passengerID string) string {
 // **为什么要换算**：用户填的上限是"我方积分/个"（`strategy.decide` 已取过全局跟车级
 // 更严的那个）· vendor 的涨价保护参数用的是**它自己的币种**。直接把积分数传过去会把上限设错几倍。
 //
-// **换算走 vendor_pricing 同一条规则的逆式**（docs/18 §1.3）——
+// **换算走 vendor_pricing 同一条规则的逆式**（docs/10-pricing §1.3）——
 // 入库时 `credits = raw × credits_per_unit / 1_000_000` · 这里反过来：
 //
 //	vendor 侧单价上限 = maxUnitPrice × 1_000_000 / credits_per_unit
@@ -813,7 +813,7 @@ func vendorMaxTotal(
 // 对不上说明表没配对 · 换算会挂错币种标签（例：USD 家表里记 CNY · 算出来的数字
 // 按 CNY 传给 vendor · vendor 当 USD 读 → 上限放大 6.8 倍 · 涨价保护形同虚设）。
 //
-// `credit` 和 `CNY` 视为同一族（我方积分口径 1:1 · docs/18 §1.3）。
+// `credit` 和 `CNY` 视为同一族（我方积分口径 1:1 · docs/10-pricing §1.3）。
 func quoteCurrencyMatches(quoteCurrency string, snapshot providers.Money) bool {
 	if snapshot.Currency == "" || quoteCurrency == "" {
 		// 任一侧没标币种 · 无从校验 · 交给调用方的其他护栏

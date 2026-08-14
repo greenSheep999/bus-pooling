@@ -51,7 +51,7 @@ type Passenger struct {
 	EmailVerified bool
 	Role          string
 	Status        string
-	// Tier · 用户档次（retail / community / wholesale · docs/18 §2.1）·
+	// Tier · 用户档次（retail / community / wholesale · docs/10-pricing §2.1）·
 	// 决定计费链免哪几个分项 + 能不能看 vendor 展示名（只 wholesale 能）
 	Tier string
 	// Invited · **兜底字段** · 下次 schema 变更删。
@@ -180,7 +180,7 @@ func (s *Store) Register(ctx context.Context, in RegisterInput) (*Passenger, err
 	return &Passenger{
 		ID: id, Username: username, Email: email,
 		Role: "user", Status: "active",
-		// 注册一律落 retail · 升档只走 system_invite_code.grants_tier 那条路（docs/18 §2.1）·
+		// 注册一律落 retail · 升档只走 system_invite_code.grants_tier 那条路（docs/10-pricing §2.1）·
 		// 这里不按 invited 直接升 —— 任何非空码都能置 invited=1 · 拿它升档等于白送最优档
 		Tier:           TierRetail,
 		Invited:        invited,

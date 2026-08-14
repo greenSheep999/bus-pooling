@@ -503,13 +503,13 @@
 
 **参考**：`web/src/pages/Profile.tsx`（新 Me 布局）· `web/src/pages/AccountSettings.tsx`（拆出来的设置子页）· `web/src/pages/Settings.tsx`（索引卡从 4 变 5）· `web/src/router.tsx`
 
-### 8.39 三档定价 · 零售 / 批发 / 同行 · 两种码分身份 ⚠️ **已被 `docs/18` 覆盖**（保留讨论历史）
+### 8.39 三档定价 · 零售 / 批发 / 同行 · 两种码分身份 ⚠️ **已被 `docs/10-pricing` 覆盖**（保留讨论历史）
 
-> **⚠️ 本条的 tier 命名和倍率已作废** —— 读定价**只读 `docs/18-pricing-normalization.md`**。
+> **⚠️ 本条的 tier 命名和倍率已作废** —— 读定价**只读 `docs/10-pricing.md`**。
 >
 > **命名改了**（用户 2026-08-12 拍板 · 三档 = 零售 / 社群 / 批发商）：
 >
-> | 本条旧命名 | `docs/18` 现命名 | 谁 |
+> | 本条旧命名 | `docs/10-pricing` 现命名 | 谁 |
 > |---|---|---|
 > | `retail`（零售）| `retail`（零售）| 散客 · 不变 |
 > | `wholesale`（批发 · 中间档）| **`community`**（社群）| TG/Discord 社群码 |
@@ -517,7 +517,7 @@
 >
 > **注意 `wholesale` 在两套命名里含义不同** —— 老的是中间档、新的是最优档。改代码 / 迁数据时**别直接字符串替换**。
 >
-> **倍率也变了**（`docs/18 §2.2` 定 `single_pull` 20% 三档都加 · 本条的算例没算这层）：
+> **倍率也变了**（`docs/10-pricing §2.2` 定 `single_pull` 20% 三档都加 · 本条的算例没算这层）：
 > 零售 2.10× / 社群 1.75× / 批发商 1.05×（批量）· 单拉各再 ×1.20。
 >
 > **本条下文保留原文** —— 只作讨论历史（为什么从双层扩到三档 · 为什么批发档不居中）。
@@ -1409,7 +1409,7 @@ CREATE TABLE invite_reward (
 
 **文档修正**：`14-extract-page-plan §5.4` 说这条记到 `decisions §8.21`，但 §8.21 后来被"通道费只在充值展示"占用了 —— 三层策略分工的记录当时**丢了**，本条补回。
 
-**优先级总原则**（`docs/16 缺口 3` 定 · 2026-08-12）：把"全局 vs 车级"的关系收敛成两条 · 覆盖所有策略字段：
+**优先级总原则**（`docs/22-buy-race 缺口 3` 定 · 2026-08-12）：把"全局 vs 车级"的关系收敛成两条 · 覆盖所有策略字段：
 
 - **护栏类**（会拦下操作）· `MaxUnitPrice` / `DailyRoundLimit` / `DailySpendLimit` → **AND · 取更严** · 任一层拦住就拦
 - **偏好类**（只影响默认选择）· `PerRoundCount` / `PreferredVendor` / `DefaultZone` → **就近优先** · 车级 > 全局 > 系统默认
@@ -1540,7 +1540,7 @@ CREATE TABLE invite_reward (
 
 ### 8.22 vendor 价格走势页 ⏸（需求待定 · 前端 UI 已做）
 - **入口**：Extract 页顶部 focal card 左下角「查看历史价格趋势」链接 → `/prices`
-- **完整设计见 `docs/15-prices-page-design.md`**（v2 箱线矩阵 · 推翻了 v1 折线图）
+- **完整设计见 `docs/21-page-prices.md`**（v2 箱线矩阵 · 推翻了 v1 折线图）
 - **核心结论**：数据是三层（`vendor → 每天 → 每轮`），**一根曲线表达不了**
   - 上游一天发多轮车，每轮单价按整车产出量查阶梯表（产量大 → 单价低）
   - v1 试过把一天压成单值画曲线（均价 / 阶梯 / 平滑），三种画法全不对
@@ -1625,7 +1625,7 @@ card 左下角常驻灰色小字：**「价格受市场波动影响，会有波�
   - 这条规则就叫 `region_markup`（**区域附加费**）· 有系统邀请码 → 免掉它（`§8.32`）
 - 定价 API 返回**最终价**，不下发原价和加价明细
 
-**参考**：`docs/14-extract-page-plan.md §4` · `web/src/components/UpstreamStatusPanel.tsx`
+**参考**：`docs/20-page-extract.md §4` · `web/src/components/UpstreamStatusPanel.tsx`
 
 ### 8.19 数据 tab · BusDetail 第 5 个 tab · 时间维度先做 · 成员维度阶段 2a 补 ⏸（骨架 · 阶段 1a）
 - **决定**：BusDetail 加第 5 个 tab **「数据」**（tab 顺序：号列表 / 拉号历史 / 推送记录 / 补车策略 / **数据**）
@@ -2134,7 +2134,7 @@ ssh vps22 'touch /opt/bus-pooling/data/KILL_PULLS' # 急停
 - ✅ 两个信号源接上：`webhookin.onNewKeys`（最快）+ `prober.deriveStockDelta`（兜底）
 - ✅ main.go 装配闭环（`SetFirer` 解构造环）+ TTL sweeper
 - ⏳ 加速预存池 · housepool `prebuy-pool` group（单独一轮 · 未开始）
-- ⏳ 三个待讨论缺口见 `docs/16-buy-race.md` 尾部（时段上限 / 预留分摊 / 两层优先级）
+- ⏳ 三个待讨论缺口见 `docs/22-buy-race.md` 尾部（时段上限 / 预留分摊 / 两层优先级）
 
 **落码时修正的两个设计错**（初稿踩的坑 · 记下来防重犯）：
 

@@ -63,7 +63,7 @@
 
 **编码起手前尚待写**：`10-secrets.md`（阶段 1 落码时）· `11-testing-strategy.md`（首 e2e 前）。
 
-**首上线前**：见 `docs/13-deployment.md`（systemd + Caddy + smoke test + backup）。
+**首上线前**：见 `docs/14-deployment.md`（systemd + Caddy + smoke test + backup）。
 
 ## 快速定位
 

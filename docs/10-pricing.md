@@ -1,4 +1,4 @@
-# 18 · Pricing 一整套 · 观测 → 换算 → 三档定价 → 减免
+# 10 · Pricing 一整套 · 观测 → 换算 → 三档定价 → 减免
 
 **2026-08-12 · 用户拍板 · 一份文档说清整个逻辑** · 不再散写。
 
@@ -368,7 +368,7 @@ func (s *Service) PricedFor(ctx, vendorID, region, count, viewer) (*PricedView, 
 
 - `docs/vendors/*.md` · 6 家 API 详情
 - `docs/17-vendor-work-order.md` · 全套编排 · A 层
-- `docs/16-buy-race.md` · 抢号链
+- `docs/22-buy-race.md` · 抢号链
 - `internal/pricing/*.go` · 换算实现（本文档 §1.3 落码后重写）
 - `internal/decider/orchestrator.go` · 加价栈实现（本文档 §2.2 落码后重写）
 - `CLAUDE.md §0.1` · 内部术语不出前端

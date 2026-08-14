@@ -33,7 +33,7 @@ CREATE TABLE passenger (
   password_hash          TEXT NOT NULL,                  -- Argon2id
   role                   TEXT NOT NULL DEFAULT 'user',   -- user | admin
   status                 TEXT NOT NULL DEFAULT 'active', -- active | disabled
-  -- 用户档次（docs/18 §2.1 · 三档 · 一档多减一层）
+  -- 用户档次（docs/10-pricing §2.1 · 三档 · 一档多减一层）
   --   retail    = 零售   · 无系统邀请码 · 全套加价
   --   community = 社群   · 社群码注册（TG/Discord）· 免区域附加费
   --   wholesale = 批发商 · 批发商码注册（B2B 定向）· 免 vendor + 区域附加费 · 唯一能看 vendor 真名的档
@@ -736,7 +736,7 @@ capability_slot / pull_round_capability （阶段 2c 起写）
 | `personal_invite_code` | 每人一个 · 只给**手续费减免额度**·**不改 tier** | `passenger_id` UNIQUE（一人一码） |
 | `invite_referral` | 谁邀请了谁 · 防刷 + 溯源 | 主键 = 被邀请人（**一人只能被邀一次**）· CHECK 挡自己邀自己 |
 
-**`system_invite_code` 加 `grants_tier` 列**（`docs/18 §2.1`）：
+**`system_invite_code` 加 `grants_tier` 列**（`docs/10-pricing §2.1`）：
 
 ```sql
 grants_tier TEXT NOT NULL CHECK(grants_tier IN ('community','wholesale'))

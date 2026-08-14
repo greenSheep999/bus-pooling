@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { toCredits } from "@/lib/utils";
 import type { VendorDayRounds, VendorRound } from "@/types";
 
-/** 单家 vendor 的箱线行 · docs/15-prices-page-design.md
+/** 单家 vendor 的箱线行 · docs/21-page-prices.md
  *  每根竖条 = 某天全部轮次的价格范围（顶=最高轮价 底=最低轮价）
  *  一天只 1 轮 → 画短横线（没有区间）· 那天没发车 → 灰点
  *  颜色深浅 = 那天几轮车（紫色系深浅 · 不用杂色 —— 每行独立不需要区分色相）

@@ -40,7 +40,7 @@ type Service struct {
 	// nil 时 backfill 数据字段返空 · 前端展示"数据采集中"
 	orderKeyStore *OrderKeyStore
 
-	// pricing · vendor_pricing 换算规则（docs/18 §1.3）·
+	// pricing · vendor_pricing 换算规则（docs/10-pricing §1.3）·
 	// 展示价换算的兜底路径用（库里 our_unit_credits 还没落时）· nil 走 1:1
 	pricing PricingLookup
 
@@ -97,7 +97,7 @@ func New(cfg Config) (*Service, error) {
 
 // Viewer 描述调用者身份，用来做**匿名化** + **是否减免**决策。
 //
-// Viewer · 请求者视角（docs/18 §2.1 三档定价）
+// Viewer · 请求者视角（docs/10-pricing §2.1 三档定价）
 //
 // Tier + PassengerID 决定 PricedFor 返啥：
 //   - retail    · 匿名 label · 全套分项
@@ -113,7 +113,7 @@ type Viewer struct {
 	WaiveMarkup bool   // **DEPRECATED**
 }
 
-// 三档常量（对齐 passenger.tier CHECK · docs/18 §2.1）
+// 三档常量（对齐 passenger.tier CHECK · docs/10-pricing §2.1）
 const (
 	TierRetail    = "retail"
 	TierCommunity = "community"
@@ -655,7 +655,7 @@ func (s *Service) lookupAny(id string) (providers.VendorEntry, bool) {
 // USD 家的 7_350_000 是 7.35 USD 不是 7.35 积分 · 直接当积分喂给 finalUnitPrice
 // 会把展示价算成实际的 1/6.8（用户看到的比真实扣费低几倍）。
 //
-// 换算式跟 Prober 落库 our_unit_credits 时**同一条**（docs/18 §1.3）：
+// 换算式跟 Prober 落库 our_unit_credits 时**同一条**（docs/10-pricing §1.3）：
 //
 //	credits = Amount × credits_per_unit / 1_000_000
 //
@@ -682,7 +682,7 @@ func (s *Service) baseCredits(ctx context.Context, vendorID providers.VendorID, 
 // 计费链见 decisions §8.34（逐层乘）。这里**只对外暴露最终价** ——
 // 分层已经在 decider.Breakdown 里私有化了，vendorview 不再回头拆分。
 //
-// **档次决定免哪层**（docs/18 §2.2）：
+// **档次决定免哪层**（docs/10-pricing §2.2）：
 //   - retail    · 全套
 //   - community · 免 region_markup
 //   - wholesale · 免 vendor_markup + region_markup
@@ -714,7 +714,7 @@ func (s *Service) finalUnitPrice(unit int64, v Viewer) int64 {
 //   - 其他档          → "AWS-Q Kiro Vendor 0N" + anon
 //
 // **别用 Invited 判** —— community 档也是 Invited=true · 拿它当门会把真名漏给社群档
-// （docs/18 §2.1 定死只 wholesale 可见）。
+// （docs/10-pricing §2.1 定死只 wholesale 可见）。
 //
 // 1a 简化：AnonID 用 VendorID sha256 前 6 位（稳定编号，前端可用）。
 // 前端约定：优先渲染 VendorLabel；VendorID 只用于取色（vendorColor）不直接展示。

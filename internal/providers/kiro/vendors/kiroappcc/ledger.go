@@ -12,7 +12,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// ListLedger · GET /api/user/txns · vendor 侧积分流水（交叉对账 · docs/20 §1）。
+// ListLedger · GET /api/user/txns · vendor 侧积分流水（交叉对账 · docs/23-endpoints-todo §1）。
 //
 // **鉴权特殊**（2026-08-14 实测）：`/api/user/*` 不认 API key（API key 只管 /openapi/*）·
 // 要**网页登录 session token**。本 vendor 登录**无验证码**（`POST /api/user/login

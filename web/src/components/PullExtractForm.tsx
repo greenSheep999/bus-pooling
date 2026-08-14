@@ -35,7 +35,7 @@ export function PullExtractForm({
   const { data: vendors } = useVendorStats();
   const availableVendors = (vendors?.stats ?? []).filter((v) => !v.out_of_stock);
 
-  /** 档次 · 决定 vendor 显示真名还是匿名编号（只 wholesale 看真名 · docs/18 §2.1） */
+  /** 档次 · 决定 vendor 显示真名还是匿名编号（只 wholesale 看真名 · docs/10-pricing §2.1） */
   const tier = me?.tier;
 
   const [count, setCount] = useState(3);

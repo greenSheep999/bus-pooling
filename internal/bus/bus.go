@@ -55,7 +55,7 @@ type Bus struct {
 // Strategy 每车一策略（decisions §8.6）· 落 bus 表同名列。
 // 指针字段 nil = 不限 / 未设。
 //
-// **策略字段口径**（docs/16 缺口 3）：
+// **策略字段口径**（docs/22-buy-race 缺口 3）：
 //   - **护栏类** · `MaxUnitPrice` —— 全局 + 车级 AND 取更严 · 任一层拦住就拦
 //   - **偏好类** · `PerRoundCount` / `PreferredVendor` —— 车级 > 全局 · 就近优先
 //   - **DailyRoundLimit / DailySpendLimit** —— **车级不生效**（strategy.decide 只判全局）·

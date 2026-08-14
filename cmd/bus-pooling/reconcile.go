@@ -1,4 +1,4 @@
-// reconcile · 交叉对账（docs/20 §1）· 拿我方 pull_round 跟 vendor 侧账本核对。
+// reconcile · 交叉对账（docs/23-endpoints-todo §1）· 拿我方 pull_round 跟 vendor 侧账本核对。
 //
 // 生产开 dry_run=false 真实扣费后 · 定期跑这条查"被多扣 / 漏退 / 幻扣"。
 // 只读 · 不改任何表 · 打印差异清单 + 汇总。

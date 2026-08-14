@@ -2,7 +2,7 @@ package pricing
 
 import "context"
 
-// VendorViewLookup · Prober 用的 pricing 适配器（docs/18 §1.3）
+// VendorViewLookup · Prober 用的 pricing 适配器（docs/10-pricing §1.3）
 //
 // 跟 DeciderAdapter 区别：Prober 用 (currency, credits_per_unit) 双返值 · Decider 用
 // providers.VendorQuote 大结构。类型窄化让消费侧不用依赖整个 VendorQuote。

@@ -1,13 +1,13 @@
 -- +migrate up
 
--- 028 · Pricing 一整套 · 数据入库标准化（docs/18-pricing-normalization.md 落码 Step 2）
+-- 028 · Pricing 一整套 · 数据入库标准化（docs/10-pricing.md 落码 Step 2）
 --
 -- 5 张事：
 --   1. exchange_rate 表 · 系统配置汇率 · 有历史（应对波动）
 --   2. vendor_probe 加 8 列 · 存上游原样 + 我方标准化积分
 --   3. vendor_price_tier 表 · kirodrop 分档 schedule
 --   4. user_subsidy 表 · 减免栈（个人邀请码 / 邀请奖励 / 优惠码 · 有时效额度）
---   5. passenger.tier 加列 · retail / community / wholesale（docs/18 §2.1）
+--   5. passenger.tier 加列 · retail / community / wholesale（docs/10-pricing §2.1）
 --
 -- 落码后 vendor_pricing 表（013 建 · 空）配合本 migration 一起 seed 6 家。
 
@@ -108,7 +108,7 @@ CREATE TABLE user_subsidy (
 CREATE INDEX idx_subsidy_active ON user_subsidy(passenger_id, kind, expires_at);
 
 
--- ─── 6. passenger.tier · 三档定价（docs/18 §2.1） ────────────
+-- ─── 6. passenger.tier · 三档定价（docs/10-pricing §2.1） ────────────
 --
 -- SQLite ALTER TABLE 不支持带 CHECK 的加列 · 分两步：
 --   加列（默认 retail）· 加索引 · 应用层约束（Go const + 校验）

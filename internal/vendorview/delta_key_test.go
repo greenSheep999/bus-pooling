@@ -8,7 +8,7 @@ package vendorview
 //   ① 整个区的 restock delta 被漏掉 → 抢号链收不到唤醒
 //   ② dispatch_key 撞车（两条都是 "delta--<timestamp>"）→ 只落一条
 //
-// 修法：键改用归一后的 `Zone`（每家都有值 · docs/19-fields.md §3）。
+// 修法：键改用归一后的 `Zone`（每家都有值 · docs/11-fields.md §3）。
 
 import (
 	"testing"

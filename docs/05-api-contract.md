@@ -112,7 +112,7 @@ await POST(`/handoff/${download_token}/confirm`)
 }
 ```
 
-**`tier`**（`docs/18 §2.1`）· 三档定价：
+**`tier`**（`docs/10-pricing §2.1`）· 三档定价：
 
 | 值 | 含义 | vendor 显示 | 加价链 |
 |---|---|---|---|

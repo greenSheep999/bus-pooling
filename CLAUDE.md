@@ -2,7 +2,7 @@
 
 > **每次进入本项目动代码前**：先读 `README.md`，再读 `docs/00-values-and-phases.md`，最后读**本文**。
 >
-> **写前端页面前额外必读**：`docs/13-design-principles.md`（数据表达 + 组件用法规范，从概览页 v7 沉淀，硬约束）。写新页面时抄 `web/src/pages/Overview.tsx` 的结构、不重造轮子。
+> **写前端页面前额外必读**：`docs/13-frontend-design.md`（数据表达 + 组件用法规范，从概览页 v7 沉淀，硬约束）。写新页面时抄 `web/src/pages/Overview.tsx` 的结构、不重造轮子。
 > 本文是防止重蹈旧项目 `kiro-auto` 覆辙的**硬约束**。
 >
 > 旧项目 `kiro-auto`（本机 `~/Repositories/daniel/kiro-auto`）—— 90+ 内部模块、60+ 份 v3 文档、5 tier 文档 governance —— 演化成了它自己解释不清的样子。本项目**不重蹈**。
@@ -82,7 +82,7 @@
 | 服务费 | `service_fee` | 我方（加价链最后一层 `× (1+率)` · 单一费率不分档 · 具体率在后台配置，**不写进代码** · 见 `decisions §8.34`） |
 | 通道费 | `channel_fee` | waffo（`pass-through` 5%） |
 
-**用户档次**（`passenger.tier` · **`docs/18 §2.1` 三档定稿** · 覆盖老 `decisions §8.39` 命名）：
+**用户档次**（`passenger.tier` · **`docs/10-pricing §2.1` 三档定稿** · 覆盖老 `decisions §8.39` 命名）：
 
 | 内部档名 | tier 字段 | 谁 | 减免层 | 看 vendor 真名 | 相对倍率（批量） |
 |---|---|---|---|---|---|
@@ -93,7 +93,7 @@
 > **⚠️ `wholesale` 同名不同义** —— 老 `§8.39` 里 `wholesale` 是**中间档**（社群）· 现在是**最优档**（批发商）·
 > 老 `insider` 档**已废**。迁数据 / 改代码时**别做字符串替换**。
 
-**计费模型：逐层乘**（`docs/18 §2.2`）：
+**计费模型：逐层乘**（`docs/10-pricing §2.2`）：
 ```
 最终单价 = 号价 × (1+vendor 附加费) × (1+区域附加费) × (1+单次议价) × (1+插槽…) × (1+服务费率)
 本次扣除 = 最终单价 × 号数
@@ -103,8 +103,8 @@
 **按档跳过的层**：`retail` 全套 · `community` 跳 region_markup · `wholesale` 跳 vendor_markup + region_markup ·
 **服务费 + 单次议价（`count==1`）所有档都收**。
 
-**定价只有一个查询入口**：`vendorview.PricedFor`（`docs/18 §4`）· 拉号 / 拼车 / Pricing 页 / Status 页全走它 ·
-**不许出现第二处算价**。读定价规则**只读 `docs/18-pricing-normalization.md`** —— `§8.20/§8.29/§8.32/§8.34/§8.39` 已被它覆盖。
+**定价只有一个查询入口**：`vendorview.PricedFor`（`docs/10-pricing §4`）· 拉号 / 拼车 / Pricing 页 / Status 页全走它 ·
+**不许出现第二处算价**。读定价规则**只读 `docs/10-pricing.md`** —— `§8.20/§8.29/§8.32/§8.34/§8.39` 已被它覆盖。
 
 **各层费率是内部配置** · 只在文档和后台，**不进代码注释**（前端代码用户看得到 · §8.20 不许暴露加价幅度）
 
@@ -164,11 +164,11 @@
 | `只有 team 车有邀请码` | ❌ **用户建的车一律有邀请码**（`single` / `team` 行为完全一致）· 只有系统撮合池 `anon` 没码 |
 | `1 人车 / 邀请码车`（UI 类型标签） | ❌ 按 `member_count` 说：**独享** / **N 人拼车** · `kind` 不对外 |
 | `建车时选车类型` | ❌ 建车没有类型可选 · 建出来就是一辆能加人的车 |
-| **`社群价 / 社群成员`**（作为**内部档名**）| ⚠️ 内部档名是 **`community`（社群）/ `wholesale`（批发商）**（`docs/18 §2.1`）· **对外 UI 保留"社群成员"** Chip（用户视角只区分"绑了专属邀请码"vs"没绑" · 具体档次不对外） |
+| **`社群价 / 社群成员`**（作为**内部档名**）| ⚠️ 内部档名是 **`community`（社群）/ `wholesale`（批发商）**（`docs/10-pricing §2.1`）· **对外 UI 保留"社群成员"** Chip（用户视角只区分"绑了专属邀请码"vs"没绑" · 具体档次不对外） |
 | **`散客 / 标准价 / 优惠价 / 零售价 / 批发价 / 同行价`** | ❌ **UI 里都不出现** —— 用户端不暴露档次差别 · 加价链算完的最终单价就是他能看到的（`CLAUDE.md §0.1`）|
-| `invited: bool`（作为档次判断） | ❌ 用 `passenger.tier ∈ {retail, community, wholesale}`（三档 · `docs/18 §2.1`）· 字段 `invited` 保留作兜底，下次 schema 变更删 |
-| **`insider` / `同行` / `同行价` / `同行码`**（tier 命名）| ❌ **档已废** —— 三档现为 `retail / community / wholesale`（`docs/18 §2.1`）· 老 `insider` 的位置由 **`wholesale`（批发商）** 接替 |
-| `系统邀请码`（单一）| ❌ 内部分**批发商码 / 社群码** · **对外 UI 都叫「专属邀请码」**（用户不感知级别 · `docs/18 §2.1`）|
+| `invited: bool`（作为档次判断） | ❌ 用 `passenger.tier ∈ {retail, community, wholesale}`（三档 · `docs/10-pricing §2.1`）· 字段 `invited` 保留作兜底，下次 schema 变更删 |
+| **`insider` / `同行` / `同行价` / `同行码`**（tier 命名）| ❌ **档已废** —— 三档现为 `retail / community / wholesale`（`docs/10-pricing §2.1`）· 老 `insider` 的位置由 **`wholesale`（批发商）** 接替 |
+| `系统邀请码`（单一）| ❌ 内部分**批发商码 / 社群码** · **对外 UI 都叫「专属邀请码」**（用户不感知级别 · `docs/10-pricing §2.1`）|
 | `账号安全`（作为设置页名）| ❌ 用 **账号设置**（还含邮箱/用户名/第三方登录 · `decisions §8.40`）|
 
 **如果看到旧对话或旧文档里出现上面左列的词，立即警觉，去 `docs/decisions.md` 查为什么废**。

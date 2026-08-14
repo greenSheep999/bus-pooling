@@ -2,7 +2,7 @@ package providers
 
 import "strings"
 
-// ZoneOf · 把任意 region / zone 字符串归一到 Zone 枚举（docs/16 缺口 5 · 抢号链 region 命名口径）
+// ZoneOf · 把任意 region / zone 字符串归一到 Zone 枚举（docs/22-buy-race 缺口 5 · 抢号链 region 命名口径）
 //
 // **背景**：三处对 region 用了三套字面量：
 //   - enqueue 时 · decider 传 in.Zone（"us" / "eu"）

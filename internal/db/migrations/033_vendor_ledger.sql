@@ -1,6 +1,6 @@
 -- +migrate up
 
--- 033 · vendor_ledger · vendor 侧积分流水（交叉对账 · docs/20 §1）
+-- 033 · vendor_ledger · vendor 侧积分流水（交叉对账 · docs/23-endpoints-todo §1）
 --
 -- **为什么**：生产已开 dry_run=false 真实扣费 · 但我方只有自己的账本
 -- （pull_round + wallet_ledger）· 拿不到 vendor 侧流水做双向核对 —— 被多扣 /

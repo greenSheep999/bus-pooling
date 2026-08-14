@@ -31,7 +31,7 @@ func runBackfillProbeZone(ctx context.Context, cfg config.Config, _ []string) er
 	}
 	defer database.Close()
 
-	// vendor_pricing 换算规则（跟 Prober 落库时同一条 · docs/18 §1.3）
+	// vendor_pricing 换算规则（跟 Prober 落库时同一条 · docs/10-pricing §1.3）
 	pricingStore := pricing.NewStore(database.DB)
 	zoneStore := vendorview.NewProbeZoneStore(database.DB)
 
@@ -150,7 +150,7 @@ func fallbackZone(z providers.ZoneStock) string {
 	return z.Region
 }
 
-// convertOneToCredits · 跟 Prober.computeCreditsFromMoney 同一条规则（docs/18 §1.3）
+// convertOneToCredits · 跟 Prober.computeCreditsFromMoney 同一条规则（docs/10-pricing §1.3）
 func convertOneToCredits(
 	ctx context.Context, store *pricing.Store, vendorID string, m providers.Money,
 ) int64 {

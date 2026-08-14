@@ -9,7 +9,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// ListKeyTiers · GET /api/my/key-price-tiers · vendor 侧**数量分档**表（阶梯价格 · docs/20）。
+// ListKeyTiers · GET /api/my/key-price-tiers · vendor 侧**数量分档**表（阶梯价格 · docs/23-endpoints-todo）。
 //
 // **响应形状实测确认**（2026-08-14 · vendor-probe · 真路径是 /api/my/ 不是文档写的 /my/）：
 //

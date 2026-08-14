@@ -10,7 +10,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
-// ListLedger · GET /api/my/credits · vendor 侧积分流水（交叉对账 · docs/20 §1）。
+// ListLedger · GET /api/my/credits · vendor 侧积分流水（交叉对账 · docs/23-endpoints-todo §1）。
 //
 // **响应形状实测确认**（2026-08-14 · vendor-probe 抓的真实响应 · 不是猜的）：
 //

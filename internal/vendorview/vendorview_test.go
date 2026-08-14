@@ -146,7 +146,7 @@ func TestAggregateStock_SumsAvailableAcrossVendors(t *testing.T) {
 	}
 }
 
-// 只 wholesale 看展示名 · retail / community 都看匿名编号（docs/18 §2.1）
+// 只 wholesale 看展示名 · retail / community 都看匿名编号（docs/10-pricing §2.1）
 func TestAggregateStock_OnlyWholesaleSeesRealNames(t *testing.T) {
 	svc, _, _ := buildService(t)
 

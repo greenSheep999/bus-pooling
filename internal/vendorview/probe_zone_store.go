@@ -3,7 +3,7 @@ package vendorview
 // probe_zone_store · vendor_probe_zone 侧表读写（migration 029）
 //
 // **为什么侧表**：vendor_probe 每探针一行 · 8 新列采样首个 zone · US/EU 差价压平。
-// 侧表逐 zone 落 · PricedFor(vendor, region) 精确到区（docs/18 §5 未收口补齐）。
+// 侧表逐 zone 落 · PricedFor(vendor, region) 精确到区（docs/10-pricing §5 未收口补齐）。
 
 import (
 	"context"

@@ -11,7 +11,7 @@ import (
 // vendor 侧 stock 响应新形状带 `price:"7.35"` 字符串（USD）· 老 mapper 完全忽略 ·
 // 导致 UnitPrice.Amount=0 · Prices 页显示为 0。修复：解析成 microunit USD Money。
 //
-// docs/18 §1.3 · Prober 落库时会经 vendor_pricing.credits_per_unit 换算成积分。
+// docs/10-pricing §1.3 · Prober 落库时会经 vendor_pricing.credits_per_unit 换算成积分。
 func TestParseUSDStringToMoney(t *testing.T) {
 	cases := []struct {
 		in      string
@@ -50,7 +50,7 @@ func TestParseUSDStringToMoney(t *testing.T) {
 //
 // 本 vendor 只给 `region:"us-east-1"` · **不给 zone 短名** · 老 mapper 在
 // "无 zones 数组" 的兜底分支里完全没填 Zone → 侧表 zone 列落空 →
-// PricedFor 按 zone 查匹配不到（docs/19-fields.md §3）。
+// PricedFor 按 zone 查匹配不到（docs/11-fields.md §3）。
 //
 // 修复：兜底分支和 zones[] 分支都过 providers.ZoneOf 归一。
 func TestToStockSnapshot_ZoneNormalized(t *testing.T) {

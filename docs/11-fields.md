@@ -1,4 +1,4 @@
-# 19 · 跨 vendor 字段对齐表（**权威** · 拉平所有上游差异）
+# 11 · 跨 vendor 字段对齐表（**权威** · 拉平所有上游差异）
 
 > **读这份的场景**：写 adapter / 加字段 / 排查"为什么这家没数据" / 决定前端展示什么。
 >
@@ -7,7 +7,7 @@
 >
 > **单家详情看** `docs/vendors/<家>.md`（每家 §2 逐端点字段清单 + §6 adapter 缺口）。
 >
-> **定价规则看** `docs/18-pricing-normalization.md`（换算 / 三档 / 减免栈）。
+> **定价规则看** `docs/10-pricing.md`（换算 / 三档 / 减免栈）。
 
 ---
 
@@ -62,7 +62,7 @@
 
 **我方标准字段**：`ZoneStock.UnitPrice`（`providers.Money{Amount, Currency}`）→ 入库时换算成 `vendor_probe_zone.our_unit_credits`（microunit 积分）。
 
-**⚠️ 换算规则**（`docs/18 §1.3`）：
+**⚠️ 换算规则**（`docs/10-pricing §1.3`）：
 ```
 our_unit_credits = UnitPrice.Amount × vendor_pricing.credits_per_unit / 1_000_000
 ```
@@ -95,7 +95,7 @@ our_unit_credits = UnitPrice.Amount × vendor_pricing.credits_per_unit / 1_000_0
 
 **⚠️ 这是我方唯一的地区标准** —— 前端 `type Zone = "us" | "eu"` · 后端 `providers.ZoneUS/ZoneEU` · DB `vendor_probe_zone.zone` · API 请求/响应一律 `zone`。
 
-**⚠️ 两个 adapter bug**（`docs/19-fields.md §9` 待修）：
+**⚠️ 两个 adapter bug**（`docs/11-fields.md §9` 待修）：
 1. **kirooo** · `Zone: providers.Zone(r.Region)` 直接转 → 落 `"us-east-1"` · 应改 `providers.ZoneOf(r.Region)`
 2. **kirodrop** · 完全没归一 → 落空 · 应改 `Zone: providers.ZoneOf(sr.Region)`
 
@@ -318,7 +318,7 @@ cur:  [{Region:"", Available:5}(us), {Region:"", Available:5}(eu)]
 | **`reserved_keys_delivered`** | kiro91 | **钱扣了 · 号记在我方名下 · 但程序永远拿不到 key**（vendor 明说这条通知里的 `order_id` 是取正文的唯一入口）|
 | **`key_revoked_abuse`** | kiroappio | vendor 主动收回已售 key · 我方还当它活着 → **用户拿到废号** |
 
-**⚠️ 我方 `internal/webhookin/` 是否处理了这两个？** —— `docs/19-fields.md §12` 待查。
+**⚠️ 我方 `internal/webhookin/` 是否处理了这两个？** —— `docs/11-fields.md §12` 待查。
 
 ---
 

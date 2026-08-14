@@ -27,7 +27,7 @@ const TAG_TONE: Record<string, "ok" | "brand" | "neutral"> = {
 /** 每行箱线图高度 */
 const ROW_H = 44;
 
-/** vendor 价格页 · docs/15-prices-page-design.md · decisions §8.22
+/** vendor 价格页 · docs/21-page-prices.md · decisions §8.22
  *  设计要点：数据是三层（vendor → 每天 → 每轮），一根曲线表达不了
  *  → 箱线矩阵：6 家各一行，每根竖条 = 某天全部轮次的价格范围
  *  → hover 竖条 → tooltip 列出那天每一轮的时刻/区/单价/号数 */

@@ -196,7 +196,7 @@ func TestOnNewKeys_AllKeysEmpty_Skips(t *testing.T) {
 	}
 }
 
-// ── 两个"不处理就出事"的独家事件（2026-08-13 补 · docs/19-fields.md §10）──
+// ── 两个"不处理就出事"的独家事件（2026-08-13 补 · docs/11-fields.md §10）──
 
 // mockSweeper · 记 deathwatch 触发次数
 type mockSweeper struct {
@@ -336,7 +336,7 @@ func TestDispatchByType_KeyRevokedAbuse_NoDeathwatch(t *testing.T) {
 	}
 }
 
-// ── 双区合并通知（某家 vendor 独家 · docs/19-fields.md §11）──
+// ── 双区合并通知（某家 vendor 独家 · docs/11-fields.md §11）──
 
 // **回归哨兵 · 2026-08-13**
 //

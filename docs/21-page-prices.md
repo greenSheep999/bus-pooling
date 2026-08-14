@@ -1,5 +1,8 @@
 # 价格走势页设计 · v2（箱线矩阵）
 
+
+> **[C 衍生]** · 独立子系统方案 · 落码后应合回 `docs/12-frontend-pages.md § 价格页` · 到期未合并 = 触发重整。
+>
 > 关联：`decisions.md §8.22` · `docs/vendors/*.md`（阶梯价语义）
 > 实现：`web/src/pages/Prices.tsx` · `web/src/components/PriceBoxPlot.tsx`
 > 定稿：2026-08-08

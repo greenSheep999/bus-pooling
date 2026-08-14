@@ -126,7 +126,7 @@ func decide(st Strategy, passengerID string, in CheckInput) (*Intent, error) {
 
 	// ② 单价上限 —— 全局跟车级取更严的（AND）。
 	//
-	// **策略字段口径**（docs/16 缺口 3）：
+	// **策略字段口径**（docs/22-buy-race 缺口 3）：
 	//   - 护栏类（拦操作 · MaxUnitPrice / DailyRound / DailySpend）→ AND 取更严
 	//   - 偏好类（默认选择 · PerRoundCount / PreferredVendor / Zone）→ 就近优先
 	//

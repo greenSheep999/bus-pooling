@@ -6,7 +6,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/decider"
 )
 
-// computeBreakdown · 三档计费栈锁死（docs/18 §2.3）
+// computeBreakdown · 三档计费栈锁死（docs/10-pricing §2.3）
 //
 // 号价 20 积分（20 × 1_000_000 microunit）· 率见 §2.5
 //   vendor 67% · region 20% · single_pull 20% · service 5%
