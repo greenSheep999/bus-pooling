@@ -87,12 +87,15 @@ func toPurchaseResult(pr *purchaseResp, requested int, replayed bool, raw json.R
 // Available 取 public_available（公共车余量，先到先得），**不含 my_private** ——
 // 自己车的免费号不是"可买库存"，混进去会让 decider 以为有货可拉。
 func toStockSnapshot(sr *stockResp, raw json.RawMessage) *providers.StockSnapshot {
+	// **P0 · 2026-08-15 修**：老代码用 sr.Stock.PublicAvailable · 但 vendor 真实响应
+	// 根本没 stock 嵌套字段 · 恒 0 · decider 判有货偏错。档案 §2.2 明说 Available
+	// 就用顶层 `max`（各 zone 汇总 · 受账户上限约束）· 见 types.go stockResp 注释。
 	snap := &providers.StockSnapshot{
 		VendorID:        providers.VendorKiroCEO,
 		ObservedAt:      time.Now().UTC(),
-		Available:       sr.Stock.PublicAvailable,
+		Available:       sr.Max,
 		MinPerOrder:     sr.Min,
-		MaxPerOrder:     sr.MaxPO,
+		MaxPerOrder:     sr.MaxPurchase,
 		WarrantyMinutes: sr.WM,
 		Raw:             raw,
 	}

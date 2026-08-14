@@ -155,11 +155,14 @@ func (a *Adapter) Balance(ctx context.Context) (*providers.Balance, error) {
 	if err := json.Unmarshal(resp.Body, &pr); err != nil {
 		return nil, fmt.Errorf("kiroappio: 解析 profile: %w", err)
 	}
+	// **P0 · 2026-08-15 修**：老 struct 期望 profile.balance 嵌套 · vendor 真实响应
+	// 顶层平铺 · Balance 恒返 0 · 上游余额预检失效。本 vendor 只暴露 balance ·
+	// 无 spent/earned（vendor 档案 §2.1 明说）· 那两个留 zero。
 	return &providers.Balance{
 		VendorID: providers.VendorKiroAppIO,
-		Balance:  credits(pr.Profile.Balance),
-		Spent:    credits(pr.Profile.Spent),
-		Earned:   credits(pr.Profile.Earned),
+		Balance:  credits(pr.Balance),
+		Spent:    providers.Money{},
+		Earned:   providers.Money{},
 		Raw:      resp.Body,
 	}, nil
 }

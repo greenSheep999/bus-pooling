@@ -175,12 +175,14 @@ func (a *Adapter) Balance(ctx context.Context) (*providers.Balance, error) {
 	if err := json.Unmarshal(resp.Body, &pr); err != nil {
 		return nil, fmt.Errorf("kirooo: 解析 profile: %w", err)
 	}
-	// 本 vendor 字段名 `credits`（跟其他家 balance 命名不同）
+	// **P0 · 2026-08-15 修**：老 struct 期望 profile.credits 嵌套 · vendor 真实响应
+	// 顶层平铺 · 余额是 `remaining` int（本 vendor 积分 = CNY 1:1）·
+	// 老代码 Balance 恒返 0 · 上游余额预检失效。
 	return &providers.Balance{
 		VendorID: providers.VendorKiroOOO,
-		Balance:  credits(pr.Profile.Credits),
-		Spent:    credits(pr.Profile.Spent),
-		Earned:   credits(pr.Profile.Earned),
+		Balance:  credits(pr.Remaining),
+		Spent:    credits(pr.UsedQuota),
+		Earned:   providers.Money{},
 		Raw:      resp.Body,
 	}, nil
 }

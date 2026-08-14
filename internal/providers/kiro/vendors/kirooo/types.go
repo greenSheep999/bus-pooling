@@ -4,13 +4,38 @@ import "encoding/json"
 
 // wire types — vendor 私有，不外暴。
 
+// profileResp · GET /api/my/profile 真实响应（2026-08-15 生产实测）：
+//
+//	{"quota":0,"remaining":0,"used_quota":0,"claimable":0,
+//	 "auto_fleet":false,"is_fleet_owner":false,"is_super":false,
+//	 "min_reserve":1,"reserve_count":0,
+//	 "risk_at":"","risk_flag":0,"risk_rate":0,"risk_threshold":100,
+//	 "name":"...","user_no":"U100135","username":"...","role":"",
+//	 "needs_2fa":false,"twofa_ok":true,"webhook_url":"..."}
+//
+// **P0 · 2026-08-15 修**：老 struct 期望 `profile.credits` 嵌套 · 但 vendor 真实响应
+// 顶层平铺 · **也没有 credits 字段**（余额是 `remaining`）· Balance 恒解析成 0。
 type profileResp struct {
-	Profile struct {
-		// 本 vendor 用 `credits` 字段名（跟其他家的 balance 命名不同 · 见 mapper）
-		Credits int64 `json:"credits"`
-		Spent   int64 `json:"spent"`
-		Earned  int64 `json:"earned"`
-	} `json:"profile"`
+	Name          string `json:"name"`
+	Username      string `json:"username"`
+	UserNo        string `json:"user_no"`
+	Role          string `json:"role"`
+	Quota         int64  `json:"quota"`      // 总配额
+	Remaining     int64  `json:"remaining"`  // ★ 可用余额（Balance() 用这个）
+	UsedQuota     int64  `json:"used_quota"` // 已花
+	Claimable     int    `json:"claimable"`  // 当前可领数量
+	MinReserve    int    `json:"min_reserve"`
+	ReserveCount  int    `json:"reserve_count"`
+	AutoFleet     bool   `json:"auto_fleet"`
+	IsFleetOwner  bool   `json:"is_fleet_owner"`
+	IsSuper       bool   `json:"is_super"`
+	Needs2FA      bool   `json:"needs_2fa"`
+	TwoFAOK       bool   `json:"twofa_ok"`
+	RiskAt        string `json:"risk_at"`
+	RiskFlag      int    `json:"risk_flag"`
+	RiskRate      int    `json:"risk_rate"`
+	RiskThreshold int    `json:"risk_threshold"`
+	WebhookURL    string `json:"webhook_url"`
 }
 
 // stockResp /api/my/stock 响应。

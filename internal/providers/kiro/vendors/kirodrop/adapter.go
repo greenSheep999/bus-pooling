@@ -176,11 +176,17 @@ func (a *Adapter) Balance(ctx context.Context) (*providers.Balance, error) {
 	if err := json.Unmarshal(resp.Body, &pr); err != nil {
 		return nil, fmt.Errorf("kirodrop: 解析 profile: %w", err)
 	}
+	// **P0 · 2026-08-15 修**：老 struct 期望嵌套 profile.balance · 但 vendor 真实响应
+	// 顶层平铺 + 字符串 CNY · Balance 恒解析成 0 · 上游余额预检（P5）恒过。
+	// 现在按 `remaining` 字符串 → microunit CNY · 币种标 CNY（不是 credit）·
+	// 上游档 §2.1 明确 remaining 是"可用余额" = quota - used_quota。
+	spentMicro := priceToMicro(pr.UsedQuota)
+	remainMicro := priceToMicro(pr.Remaining)
 	return &providers.Balance{
 		VendorID: providers.VendorKiroDrop,
-		Balance:  credits(pr.Profile.Balance),
-		Spent:    credits(pr.Profile.Spent),
-		Earned:   credits(pr.Profile.Earned),
+		Balance:  providers.Money{Amount: remainMicro, Currency: providers.CurrencyCNY},
+		Spent:    providers.Money{Amount: spentMicro, Currency: providers.CurrencyCNY},
+		Earned:   providers.Money{},
 		Raw:      resp.Body,
 	}, nil
 }

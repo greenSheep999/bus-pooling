@@ -13,16 +13,32 @@ type profileResp struct {
 	} `json:"profile"`
 }
 
+// stockResp · GET /api/my/stock 真实响应（2026-08-15 实测确认 · docs/vendors/_endpoints-2026-08-12/kiroceo_api_my_stock.json）：
+//
+//	{"max":0,"max_purchase":10,"min":1,"quota":0,"reserved":0,
+//	 "zones":[{"zone":"us","label":"美国区","unit_price":100,"enabled":true,
+//	           "available":0,"max":0,"stock":0}, ...]}
+//
+// **P0 · 2026-08-15 修**：老 struct 有 `stock: {public_available, my_private}` 嵌套 ·
+// **vendor 真实响应根本没这个字段** · sr.Stock.PublicAvailable 恒 0 → snap.Available 恒 0 ·
+// decider 判有货偏错。档案 §2.2 早就写了"实际用 max"· 我一直没改。
+//
+// vendor 档案 §2.2 语义：`max` = 当前可一次性提取的最大数量（= 各 zone 汇总 · 受账户上限约束）·
+// 就是 Available 该用的字段。
 type stockResp struct {
-	Stock struct {
-		PublicAvailable int `json:"public_available"`
-		MyPrivate       int `json:"my_private"`
-	} `json:"stock"`
+	// Max ★ Available 的真实来源（各 zone 汇总 · 受账户上限约束）
+	Max int `json:"max"`
+	// 单次提货上下限（账户维度）· `min`/`max_purchase`（跟 zone 内的 max 不是一个东西）
+	Min         int `json:"min"`
+	MaxPurchase int `json:"max_purchase"`
+	// Quota / Reserved · 账户维度（不参与 stock 判断）
+	Quota    int `json:"quota"`
+	Reserved int `json:"reserved"`
+	// 逐 zone 数据
 	Zones []zoneItem `json:"zones"`
-	Max   int        `json:"max"`
-	Min   int        `json:"min_per_order"`
-	MaxPO int        `json:"max_per_order"`
-	WM    int        `json:"warranty_minutes"`
+	// **注意**：本 vendor 无顶层 warranty_minutes 字段（其他家有 · 这家档案 §5.2 说恒 10min · 硬编码）·
+	// 老 struct 的 WM 保留占位 · JSON 解到就填 · 解不到 = 0 · 上层看 Capability.WarrantyMinutes（=10）
+	WM int `json:"warranty_minutes"`
 }
 
 type zoneItem struct {

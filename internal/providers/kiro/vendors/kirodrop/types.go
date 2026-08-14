@@ -4,15 +4,23 @@ import "encoding/json"
 
 // wire types — vendor 私有，不外暴。
 
+// profileResp · GET /api/my/profile 真实响应（2026-08-15 生产实测 curl 抓的）：
+//
+//	{"name":"danlio","quota":"0.000000","remaining":"0.000000",
+//	 "used_quota":"0.000000","webhook_url":"..."}
+//
+// **注意**（P0 · 2026-08-15 修）：
+//   - 顶层平铺 · **没有** `profile` 嵌套（老 struct 期望嵌套 · 恒解析成零值）
+//   - 值是**字符串** · CNY 保留 6 位小数（本 vendor 混币 · balance=CNY 单价=USD）
+//   - 余额字段名是 **`remaining`** · 不是 `balance`
+//
+// Balance() 语义：可用余额 = remaining · 不是总配额 quota。
 type profileResp struct {
-	Profile struct {
-		Balance          int64 `json:"balance"`
-		Spent            int64 `json:"spent"`
-		Earned           int64 `json:"earned"`
-		MaxKeysHeld      int   `json:"max_keys_held"`
-		HoldCapEffective int   `json:"hold_cap_effective"`
-		KeysHeld         int   `json:"keys_held"`
-	} `json:"profile"`
+	Name       string `json:"name"`
+	Quota      string `json:"quota"`      // 总配额 · CNY 字符串
+	Remaining  string `json:"remaining"`  // ★ 可用余额（Balance() 用这个）
+	UsedQuota  string `json:"used_quota"` // 已花（可推 Spent · 但字符串减法怕精度）
+	WebhookURL string `json:"webhook_url"`
 }
 
 // stockResp 本 vendor /api/me/stock 响应。

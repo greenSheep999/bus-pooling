@@ -4,15 +4,17 @@ import "encoding/json"
 
 // wire types — vendor 私有，不外暴。
 
+// profileResp · GET /api/me/profile 真实响应形状（vendor 档案 §2.1）：
+//
+//	{"balance":0,"min_purchase":1,"max_purchase":10,"notify_new_batch":false}
+//
+// **P0 · 2026-08-15 修**：老 struct 期望 `profile.balance` 嵌套 · 但 vendor 真实响应
+// **顶层平铺** · Balance() 恒返 0 · 上游余额预检失效。
 type profileResp struct {
-	Profile struct {
-		Balance          int64 `json:"balance"`
-		Spent            int64 `json:"spent"`
-		Earned           int64 `json:"earned"`
-		MaxKeysHeld      int   `json:"max_keys_held"`
-		HoldCapEffective int   `json:"hold_cap_effective"`
-		KeysHeld         int   `json:"keys_held"`
-	} `json:"profile"`
+	Balance        int64 `json:"balance"` // 我方积分余额
+	MinPurchase    int   `json:"min_purchase"`
+	MaxPurchase    int   `json:"max_purchase"`
+	NotifyNewBatch bool  `json:"notify_new_batch"`
 }
 
 // stockResp 本 vendor /api/me/stock 响应。
