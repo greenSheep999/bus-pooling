@@ -159,6 +159,21 @@ sudo journalctl -u bus-pooling -f     # 看日志
 
 `settlement_url` 填的路径要跟 bus-pooling 里挂的 handler 对上 —— 现在是 `POST /api/hooks/paymentgw/settlement`（server.go 装配时自动挂）。
 
+### 6.1 ⚠️ settlement URL 检查清单（**上生产前必核** · P7 · 2026-08-14）
+
+`404bus-payment-gateway` 的 README 里的示例路径可能写的是 `/api/hooks/404bus/settlement`
+（旧命名 · 那时候还没定我方项目名叫 kirobus）。**bus-pooling 里没这条路由 · 按 README
+示例直配 · 乘客付了钱回调打到 404 · 到不了账**（这是唯一要盯死的坑）。
+
+**部署时逐条对**：
+
+- [ ] gateway CLI 的 `--settlement-url` **完整拷** 到浏览器打开 · 域名对 · 路径是 `/api/hooks/paymentgw/settlement`
+- [ ] 回一个正式请求打上面这个 URL · 应返 `401 unauthorized`（签名不对）· 而不是 `404 not_found`
+      （404 = 路径写错 · 401 = 路径对但签名验证挂 —— 正确的"没配 secret"表现）
+- [ ] `BP_GW_SETTLEMENT_SECRET` 跟 gateway 侧的 client 匹配 —— 上一步能过 401 就说明匹配
+- [ ] 打一笔 dry-run 充值 · 看 `outbound_webhook_delivery` 里 settlement 到帐记录存在
+- [ ] `wallet_ledger` 里能看到 `reason=recharge` + `reason=channel_fee` 两条（`§1.4` 口径）
+
 ## 7. 反代 · Caddy 例
 
 `/etc/caddy/Caddyfile`：
