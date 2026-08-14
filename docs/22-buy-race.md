@@ -275,7 +275,7 @@ warranty 只有 10 分钟 · 而且不是所有 vendor 都给退
 
 **③ 多个用户都开了预留 · 抢到 1 个号给谁？**
 - 先开预留的先得？（`started_at` 排序）
-- 还是按 tier（insider > wholesale > retail）？—— 这会变成"付费优先" · 跟公益定位冲突
+- 还是按 tier(旧 tier 名 insider · **当前已废** · 现三档 retail/community/wholesale)? —— 这会变成"付费优先" · 跟公益定位冲突
 - 还是轮询公平（上次给了 A · 这次给 B）？
 - **我倾向轮询公平** · 但要你拍
 
@@ -360,7 +360,7 @@ schema 里有（`001_init.sql` bus 表）· `bus.Strategy` struct 也读了 · �
 **① 跟公益定位冲突怎么办**
 
 `CLAUDE.md §13`：「这个项目是给一个人做的公益工具」。而 tier 体系是**反向**的 ——
-`insider` 交的钱**更少**（免 vendor + 区域附加费），不是更多。加钱插队会让
+高档次(旧 `insider` · 当前 `wholesale`)交的钱**更少**(免 vendor + 区域附加费)·不是更多。加钱插队会让
 「谁出价高谁先拿」，跟这个方向相反。
 
 我上一轮在缺口 2 里推荐过「轮询公平，不按 tier」，理由就是这个。加倍率插队跟那条

@@ -36,7 +36,7 @@
 |---|---|
 | `GET /api/me` | 账号对象本身 ~~`/api/me/profile`~~ · 跟前端 `/me` 页面同名 |
 | `/api/vendors/*` | vendor 目录 / 库存 / 行情 · **不带 `/me`** —— 是公共数据 |
-| 定价个性化在服务端做 | 同一个 `/api/vendors/{id}/stock` 对不同调用者返不同**最终价**（按 `passenger.invited` 加不加价 · `?coupon_code=` 单次减免）· 客户端不需要换路径 |
+| 定价个性化在服务端做 | 同一个 `/api/vendors/{id}/stock` 对不同调用者返不同**最终价**(按 `passenger.tier` retail/community/wholesale 分层减免 + `?coupon_code=` 单次减免 · 见 `docs/10-pricing §2.1`)· 客户端不需要换路径 |
 | `/api/me/*` | 只放"属于这个乘客的东西"（车 / 号 / 钱包 / 配置） |
 
 **已废弃的写法**（前端已改）：~~`/api/me/vendors/{id}/stock`~~ · ~~`/api/me/extract`~~（→ `/api/me/pull`）· ~~`/api/me/profile`~~
@@ -96,7 +96,7 @@
 | `GET /api/me/downstream/webhook/deliveries` | ⚙️ 骨架 501 | 同上 |
 | `GET /api/vendors` | ✅ 实现 | 单家 91kiro + 5 家标 disabled |
 | `GET /api/vendors/stock` | ✅ 实现 | **聚合**总可拉数 + 按 vendor 明细 · 顶栏库存徽标（每页都在用） |
-| `GET /api/vendors/{id}/stock` | ✅ 实现 | 单家即时快照 · 返**最终价**（按调用者 invited / `?coupon_code=` 定价） |
+| `GET /api/vendors/{id}/stock` | ✅ 实现 | 单家即时快照 · 返**最终价**(按调用者 `passenger.tier` + `?coupon_code=` 定价 · 见 `docs/10-pricing §2.1`) |
 | `GET /api/vendors/stats` | ✅ 实现 | 概览「Vendor 监测」表 + 占比 · 单价/寿命/存活率/今日拉 |
 | `GET /api/vendors/auto-pick` | ✅ 实现 | auto 档推荐结果（推哪家 + 价 + 库存）· 散客默认就是 auto，没这个下不了单 |
 | `GET /api/vendors/prices` | ⚙️ 骨架 501 | 价格走势页（§8.22）· 要轮次级历史，1d 采集后才有 |
