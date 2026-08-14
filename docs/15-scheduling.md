@@ -311,6 +311,80 @@ preferredVendor = bus.PreferredVendor
 
 ---
 
+### 5.3 已识别的边界漏洞(2026-08-15 压测)
+
+**说明**:2026-08-15 用户压测四个场景(号少 / 涨价 / 降价 / 号快死)时暴露的边界。按严重度分层。**未标"❌ 已否决"的都要在落码时处理**。
+
+**🔴 严重 · 落码前必须解**
+
+**A · 备胎判据单价数据滞后**
+Step 3 Case B 读的"该 vendor 当前单价"来自 `vendor_probe_zone` · 最新采样可能是 60s 前。vendor 刚涨价探针未采到 → 决策器基于旧价判"撑得住"·实际用户已超价拉不动。
+- **处理**:Step 3 Case B 加"数据新鲜度"判据 —— 单价来源老于 2min 保守认为撑不住 · 或加 ±10% 价格 buffer
+
+**B · 上游降价 · 系统不主动囤**
+六种触发源里没"降价触发"·`probe` 只看 stock 数量变化不看价格。vendor 大降价时车里号够用 · 系统不主动多囤。
+- **处理**:**明写"不做"** —— 号有寿命·主动囤有风险(囤几小时死了退款白折腾)·违反 pass-through 人设。降价只在**已有挂单 fire 时受益**(现单价 ≤ maxPrice 更容易 fire 到)。
+
+**C · 号预死不触发 · 无号窗口**
+号还没死但快到寿命(vendor 平均 24h·当前号已存 22h) · deathwatch 等真死才触发 · 中间有短暂无号窗口。
+- **处理**:§5.1 触发源加 `lifespan_predict` · 判据 = `credential.pulled_at + vendor.平均寿命 × 0.9 ≤ now` → 提前触发 Decide · 决策器 Step 3 判备胎撑不撑
+
+**D · 两辆车并发抢同批号**
+Alice 和 Bob 同时缺号 · 决策器都返"下单" · vendor 就 3 个号 · Alice 抢到 · Bob ErrNoStock 白跑。**决策器 Step 3 单车视角**·无全局协调。
+- **处理**:决策器 Step 4 输出"下单"前 · 加"全局在飞数"检查(同 vendor 同 zone 已有 N 个在 Pull)·超阈值改挂单
+
+**E · 同车 death + scheduler 同刻触发**
+号死立即补 + 恰好 5min tick · 两个 Decide 并发跑 · 都读到 alive=2 · 都决定拉 3 → 实际拉 6 个。
+- **处理**:决策器 Step 3 前加"车级 in-flight" · 同 bus 已有拉号在跑就拒(bus_id 层幂等)。**幂等靠 `pending_purchase` UNIQUE(vendor_id, client_order_id)** 已经防"重复扣款"·但**同车重复触发要在决策器层挡住**·不能都走到 Pull 再靠 UNIQUE 兜。
+
+**F · 挂单等的 vendor 被 admin 关掉**
+Alice 挂 stockwatch 等 vendor01 · admin `SetEnabled('vendor01', false)` · 挂单永远不 fire · 用户视角"抢号系统没反应"。
+- **处理**:`Registry.SetEnabled(vid, false)` 时·触发一次 stockwatch 扫 · 该 vendor 挂单批量标 expired · 用户可选切他 vendor 重挂
+
+---
+
+**🟡 中 · 落码时对齐**
+
+**G · 挂单期间用户改 maxPrice**
+挂单里 max_unit_price 是快照 · 用户改设置不同步。改高了挂单该跟着放宽·改低了该拒 fire。
+- **处理**:用户改 `bus.MaxUnitPrice` 或 `passenger.MaxUnitPrice` 时·UPDATE 该 bus 所有 watching 挂单的 max_unit_price(取新的 AND 值)
+
+**H · 挂单期间用户关 AutoRefillEnabled**
+Alice 挂单后关了自动 · 现代码挂单仍会 fire · 违反"关了 auto 不主动"约定。
+- **处理**:关 auto 时 · 该 bus 所有 watching 挂单立即标 cancelled
+
+**I · 多人 bus 成员挂起时的决策**
+车里 3 人 · 1 人 suspended · 决策器 Step 3 只看整车 alive · 没看成员状态。`planSplit` 内部会跳挂起的人 · 但决策器"这辆车还该拉吗"没判 —— 如果只剩发起人一个能付 · 是否仍 auto 补？
+- **处理**:Step 3 前加"活跃成员数 ≥ 1"判据·全挂起则【拒·无人可付】
+
+**J · 上游频繁涨跌 · 挂单反复被拒 fire**
+vendor 10min 内涨跌 5 次 · 挂单反复 fire → 判超价 → 回退 watching。现代码 `fire_count` 计数防 spam · 但决策器不知道。
+- **处理**:`fire_count ≥ 3` 时挂单标 expired · 用户视角"这次抢不到 · 请调高 max 或稍后再试"
+
+**K · 单车挂单堆积上限**
+Alice 一辆车缺货 10 次触发 10 单挂着。
+- **处理**:同车 `status='watching'` 挂单数 ≥ 3 时·新触发不再挂单·直接【拒·挂单已满】
+
+---
+
+**🟢 低 · 边落码边定**
+
+**L · 所有 vendor 都关了** · admin 全关时决策器应【拒·无 vendor 可用】·不循环挂单
+
+**M · 多人 bus daily limit 判谁** · Step 6 daily limit 判**发起人**(现代码即如此)·非发起人成员的 daily 不算在这轮(他们的 daily 会在他们自己发起的轮里判)
+
+**N · DailyLimit 跨零点** · 按 UTC 日切(现代码 `substr(created_at, 1, 10)` 按日期字符串比)·零点前 9 轮零点后清零
+
+**O · anon 车 anon_max_unit_price 语义** · **只用于撮合匹配**(匹配对方 bus 的 max 兼容)·**不参与拉号定价**·拉号定价读 `bus.MaxUnitPrice`
+
+**P · RefillBatchMin < vendor.MinPerOrder 冲突** · Step 5 count = max(RefillBatchMin, vendor.MinPerOrder)·取更大的一方·避免 vendor 拒
+
+**Q · 部分成交(ErrPartialFill)** · vendor 只给 3/5 · 差额已退 · 决策器**下次触发时会自然重判**(alive 涨了 3 · 还差)·**不做立即重触发**·防连击 vendor
+
+**R · 决策器"拒"落 log** · 所有 Decide 结果落 `scheduling_decision_log` 表(新)·字段:bus_id / source / step_rejected / reason / decided_at · 运营排查用 · 保留 7 天
+
+---
+
 ## 6 · 抢号能力(PrebuyEnabled) · 用户场景故事
 
 **Alice 开了抢号开关**:
@@ -418,5 +492,6 @@ preferredVendor = bus.PreferredVendor
 - **加新用户字段** → 加一行到 §4 + §4.3 分类 + §10 反查表
 - **加系统开关** → 加到 §3 对应小节 + §10 反查表底行
 - **改字段语义** → 更新 §4 + §10 + 落 `decisions.md §12`
+- **发现新边界漏洞** → 加到 §5.3 · 按严重度分层 · 严重的必须落码前解
 
 **本文永远是"完整设计" · 不含待决策**(那些落 `decisions.md §12`)。
