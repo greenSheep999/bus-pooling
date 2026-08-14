@@ -792,6 +792,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		VendorAccounts:      vaStore,           // vendor_account 表 · webhook 验签走这里读 secret
 		WebhookDispatcher:   webhookDispatcher, // vendor webhook 事件的分派器
 		Health:              healthStore,       // 数据管线心跳（migration 036）· data-health 端点用
+		Reconciler:          vendorview.NewReconciler(database.DB, vendorview.NewLedgerStore(database.DB)), // v3.1 对账
 		AdminKey:            os.Getenv("BP_ADMIN_KEY"),
 	})
 	apiSrv.Routes(mux)

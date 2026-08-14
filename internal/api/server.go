@@ -72,6 +72,8 @@ type Server struct {
 	webhookDispatcher *webhookin.Dispatcher
 	// health · 数据管线心跳（migration 036）· admin data-health 端点读它 · 可 nil
 	health *vendorview.HealthStore
+	// reconciler · v3.1 对账器 · admin reconcile 端点读它 · 可 nil
+	reconciler *vendorview.Reconciler
 	// adminKey · BP_ADMIN_KEY · 非空才挂 /api/admin/* · 且请求要带 X-Admin-Key 匹配
 	adminKey string
 }
@@ -109,6 +111,8 @@ type ServerDeps struct {
 	WebhookDispatcher *webhookin.Dispatcher
 	// Health 数据管线心跳（migration 036）· admin data-health 端点用 · 允许 nil
 	Health *vendorview.HealthStore
+	// Reconciler v3.1 对账器 · admin reconcile 端点用 · 允许 nil
+	Reconciler *vendorview.Reconciler
 	// AdminKey BP_ADMIN_KEY · 非空才挂 /api/admin/* 运维端点（X-Admin-Key 头校验）
 	AdminKey string
 }
@@ -144,6 +148,7 @@ func NewServer(d ServerDeps) *Server {
 		vaStore:             d.VendorAccounts,
 		webhookDispatcher:   d.WebhookDispatcher,
 		health:              d.Health,
+		reconciler:          d.Reconciler,
 		adminKey:            d.AdminKey,
 	}
 }
@@ -258,6 +263,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 		mux.Handle("GET /api/admin/data-health", handler(s.requireAdmin(s.handleDataHealth)))
 		// v1-E · 运维单页 · 每家 vendor 一屏：余额 + fleet 状态 + 今日 dispatch + zone 现价
 		mux.Handle("GET /api/admin/overview", handler(s.requireAdmin(s.handleAdminOverview)))
+		// v3.1 · 对账 dashboard · wallet_ledger vs vendor_ledger · ?since_days=N
+		mux.Handle("GET /api/admin/reconcile", handler(s.requireAdmin(s.handleAdminReconcile)))
 	}
 
 	// 首页 / 数据 tab / 活动流（05-api-contract §9b）
