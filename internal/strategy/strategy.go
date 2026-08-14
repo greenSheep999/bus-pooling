@@ -48,6 +48,13 @@ type Strategy struct {
 	PreferredVendor *string
 	DefaultZone     string
 
+	// ── 1f-B · auto/refill 全局默认(§4.3.2b 方案 A) ──
+	// 新车 seed + 车级 NULL 时 fallback(15-scheduling §4.3.2b) ·
+	// 不是硬上限 · 只是"跟随全局"时读的当前值。
+	DefaultAutoRefillEnabled bool
+	DefaultRefillWatermark   int
+	DefaultRefillMinCount    *int // nil = 按 gap 补齐差额(§4.3.2c 选项 X)
+
 	UpdatedAt time.Time
 }
 
@@ -74,20 +81,26 @@ func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 func (s *Store) Get(ctx context.Context, passengerID string) (Strategy, error) {
 	out := Defaults(passengerID)
 	var (
-		maxUnitPrice sql.NullInt64
-		roundLimit   sql.NullInt64
-		spendLimit   sql.NullInt64
-		perRound     sql.NullInt64
-		vendor       sql.NullString
-		zone         string
-		updatedAt    string
+		maxUnitPrice     sql.NullInt64
+		roundLimit       sql.NullInt64
+		spendLimit       sql.NullInt64
+		perRound         sql.NullInt64
+		vendor           sql.NullString
+		zone             string
+		defaultAuto      int
+		defaultWatermark int
+		defaultMinCount  sql.NullInt64
+		updatedAt        string
 	)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT max_unit_price, daily_round_limit, daily_spend_limit,
-		       per_round_count, preferred_vendor, default_zone, updated_at
+		       per_round_count, preferred_vendor, default_zone,
+		       default_auto_refill_enabled, default_refill_watermark, default_refill_min_count,
+		       updated_at
 		  FROM passenger_strategy_default
 		 WHERE passenger_id = ?`, passengerID).
-		Scan(&maxUnitPrice, &roundLimit, &spendLimit, &perRound, &vendor, &zone, &updatedAt)
+		Scan(&maxUnitPrice, &roundLimit, &spendLimit, &perRound, &vendor, &zone,
+			&defaultAuto, &defaultWatermark, &defaultMinCount, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, nil
 	}
@@ -114,6 +127,12 @@ func (s *Store) Get(ctx context.Context, passengerID string) (Strategy, error) {
 	if zone != "" {
 		out.DefaultZone = zone
 	}
+	out.DefaultAutoRefillEnabled = defaultAuto != 0
+	out.DefaultRefillWatermark = defaultWatermark
+	if defaultMinCount.Valid {
+		v := int(defaultMinCount.Int64)
+		out.DefaultRefillMinCount = &v
+	}
 	out.UpdatedAt = parseTime(updatedAt)
 	return out, nil
 }
@@ -130,6 +149,14 @@ type Patch struct {
 	PerRoundCount   *int
 	PreferredVendor **string
 	DefaultZone     *string
+
+	// ── 1f-B · auto/refill 全局默认三字段(§4.3.2b) ──
+	// auto/watermark 是 bool/int 值字段 · 用一层指针分"没提"vs"设值"就够
+	// (0/false 也是合法值 · 但全局默认不区分"跟随/覆盖" · 它本来就是最上层)
+	// min_count 沿用双层：外层 nil = 没提 · 内层 nil = 显式 null(按 gap 补差额)
+	DefaultAutoRefillEnabled *bool
+	DefaultRefillWatermark   *int
+	DefaultRefillMinCount    **int
 }
 
 var (
@@ -167,28 +194,47 @@ func (s *Store) Put(ctx context.Context, passengerID string, p Patch) (Strategy,
 	if p.DefaultZone != nil {
 		cur.DefaultZone = *p.DefaultZone
 	}
+	if p.DefaultAutoRefillEnabled != nil {
+		cur.DefaultAutoRefillEnabled = *p.DefaultAutoRefillEnabled
+	}
+	if p.DefaultRefillWatermark != nil {
+		cur.DefaultRefillWatermark = *p.DefaultRefillWatermark
+	}
+	if p.DefaultRefillMinCount != nil {
+		cur.DefaultRefillMinCount = *p.DefaultRefillMinCount
+	}
 
 	if err := validate(cur); err != nil {
 		return Strategy{}, err
 	}
 
 	cur.UpdatedAt = time.Now().UTC()
+	autoInt := 0
+	if cur.DefaultAutoRefillEnabled {
+		autoInt = 1
+	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO passenger_strategy_default
 		  (passenger_id, max_unit_price, daily_round_limit, daily_spend_limit,
-		   per_round_count, preferred_vendor, default_zone, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		   per_round_count, preferred_vendor, default_zone,
+		   default_auto_refill_enabled, default_refill_watermark, default_refill_min_count,
+		   updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (passenger_id) DO UPDATE SET
-		  max_unit_price    = excluded.max_unit_price,
-		  daily_round_limit = excluded.daily_round_limit,
-		  daily_spend_limit = excluded.daily_spend_limit,
-		  per_round_count   = excluded.per_round_count,
-		  preferred_vendor  = excluded.preferred_vendor,
-		  default_zone      = excluded.default_zone,
-		  updated_at        = excluded.updated_at`,
+		  max_unit_price               = excluded.max_unit_price,
+		  daily_round_limit            = excluded.daily_round_limit,
+		  daily_spend_limit            = excluded.daily_spend_limit,
+		  per_round_count              = excluded.per_round_count,
+		  preferred_vendor             = excluded.preferred_vendor,
+		  default_zone                 = excluded.default_zone,
+		  default_auto_refill_enabled  = excluded.default_auto_refill_enabled,
+		  default_refill_watermark     = excluded.default_refill_watermark,
+		  default_refill_min_count     = excluded.default_refill_min_count,
+		  updated_at                   = excluded.updated_at`,
 		passengerID, nullInt64(cur.MaxUnitPrice), nullInt(cur.DailyRoundLimit),
 		nullInt64(cur.DailySpendLimit), cur.PerRoundCount,
 		nullString(cur.PreferredVendor), cur.DefaultZone,
+		autoInt, cur.DefaultRefillWatermark, nullInt(cur.DefaultRefillMinCount),
 		cur.UpdatedAt.Format(time.RFC3339Nano))
 	if err != nil {
 		return Strategy{}, fmt.Errorf("strategy: 写策略: %w", err)
@@ -215,6 +261,14 @@ func validate(s Strategy) error {
 	}
 	if s.DailySpendLimit != nil && *s.DailySpendLimit < 0 {
 		return fmt.Errorf("%w: daily_spend_limit=%d", ErrNegativeLimit, *s.DailySpendLimit)
+	}
+	// 1f-B · watermark 是"活号数低于它才补" · 负数没语义 · 0 表不触发(合法)
+	if s.DefaultRefillWatermark < 0 {
+		return fmt.Errorf("%w: default_refill_watermark=%d", ErrNegativeLimit, s.DefaultRefillWatermark)
+	}
+	// min_count 是"本轮最少拉几个" · 至少 1 才有意义 · 别落负数
+	if s.DefaultRefillMinCount != nil && *s.DefaultRefillMinCount < 0 {
+		return fmt.Errorf("%w: default_refill_min_count=%d", ErrNegativeLimit, *s.DefaultRefillMinCount)
 	}
 	return nil
 }

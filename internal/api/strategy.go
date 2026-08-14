@@ -17,14 +17,25 @@ import (
 
 // strategyResponse 形状对齐 web/src/types/index.ts 的 GlobalStrategy。
 // 那份 TS 是可执行契约，有出入以它为准（契约 §625）。
+//
+// 1f-B(15-scheduling §4.3.2b) · 加 default_auto_refill_enabled /
+// default_refill_watermark / default_refill_min_count 三字段 · 作为：
+//  1. 新车 seed(建车向导预填)
+//  2. 车级 auto/refill 为 NULL 时的运行时 fallback(strategy.Effective)
+//
+// 三字段命名带 default_ 前缀 · 跟车级字段(auto_refill_enabled / refill_watermark /
+// refill_min_count)分开 · 免得前端把全局值当成车级值用。
 type strategyResponse struct {
-	MaxUnitPrice    *int64            `json:"max_unit_price"`
-	DailyRoundLimit *int              `json:"daily_round_limit"`
-	DailySpendLimit *int64            `json:"daily_spend_limit"`
-	PerRoundCount   int               `json:"per_round_count"`
-	PreferredVendor *string           `json:"preferred_vendor"`
-	DefaultZone     string            `json:"default_zone"`
-	UsedToday       usedTodayResponse `json:"used_today"`
+	MaxUnitPrice             *int64            `json:"max_unit_price"`
+	DailyRoundLimit          *int              `json:"daily_round_limit"`
+	DailySpendLimit          *int64            `json:"daily_spend_limit"`
+	PerRoundCount            int               `json:"per_round_count"`
+	PreferredVendor          *string           `json:"preferred_vendor"`
+	DefaultZone              string            `json:"default_zone"`
+	DefaultAutoRefillEnabled bool              `json:"default_auto_refill_enabled"`
+	DefaultRefillWatermark   int               `json:"default_refill_watermark"`
+	DefaultRefillMinCount    *int              `json:"default_refill_min_count"`
+	UsedToday                usedTodayResponse `json:"used_today"`
 }
 
 type usedTodayResponse struct {
@@ -49,16 +60,25 @@ func (s *Server) handleGetStrategy(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 
-	writeJSON(w, http.StatusOK, strategyResponse{
-		MaxUnitPrice:    st.MaxUnitPrice,
-		DailyRoundLimit: st.DailyRoundLimit,
-		DailySpendLimit: st.DailySpendLimit,
-		PerRoundCount:   st.PerRoundCount,
-		PreferredVendor: st.PreferredVendor,
-		DefaultZone:     st.DefaultZone,
-		UsedToday:       usedTodayResponse{Rounds: used.Rounds, Spend: used.Spend},
-	})
+	writeJSON(w, http.StatusOK, buildStrategyResponse(st, used.Rounds, used.Spend))
 	return nil
+}
+
+// buildStrategyResponse · 一处装填 strategyResponse · Get / Put 共用
+// 避免 1f-B 加了 3 字段后 Get / Put 两处漏改。
+func buildStrategyResponse(st strategy.Strategy, roundsToday int, spendToday int64) strategyResponse {
+	return strategyResponse{
+		MaxUnitPrice:             st.MaxUnitPrice,
+		DailyRoundLimit:          st.DailyRoundLimit,
+		DailySpendLimit:          st.DailySpendLimit,
+		PerRoundCount:            st.PerRoundCount,
+		PreferredVendor:          st.PreferredVendor,
+		DefaultZone:              st.DefaultZone,
+		DefaultAutoRefillEnabled: st.DefaultAutoRefillEnabled,
+		DefaultRefillWatermark:   st.DefaultRefillWatermark,
+		DefaultRefillMinCount:    st.DefaultRefillMinCount,
+		UsedToday:                usedTodayResponse{Rounds: roundsToday, Spend: spendToday},
+	}
 }
 
 // strategyPutRequest 用 json.RawMessage 而不是 *T，是为了分清三种情况：
@@ -75,6 +95,11 @@ type strategyPutRequest struct {
 	PerRoundCount   json.RawMessage `json:"per_round_count"`
 	PreferredVendor json.RawMessage `json:"preferred_vendor"`
 	DefaultZone     json.RawMessage `json:"default_zone"`
+	// 1f-B · auto/refill 全局默认 · auto/watermark 非空值(required-like) ·
+	// min_count 允许 null(表"按 gap 补差额" · §4.3.2c 选项 X)
+	DefaultAutoRefillEnabled json.RawMessage `json:"default_auto_refill_enabled"`
+	DefaultRefillWatermark   json.RawMessage `json:"default_refill_watermark"`
+	DefaultRefillMinCount    json.RawMessage `json:"default_refill_min_count"`
 	// UsedToday 是只读的 —— 允许它出现（前端常把整个对象 PUT 回来）但忽略。
 	// 不允许的话前端得先删字段，那是没必要的麻烦。
 	UsedToday json.RawMessage `json:"used_today"`
@@ -113,15 +138,7 @@ func (s *Server) handlePutStrategy(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, strategyResponse{
-		MaxUnitPrice:    st.MaxUnitPrice,
-		DailyRoundLimit: st.DailyRoundLimit,
-		DailySpendLimit: st.DailySpendLimit,
-		PerRoundCount:   st.PerRoundCount,
-		PreferredVendor: st.PreferredVendor,
-		DefaultZone:     st.DefaultZone,
-		UsedToday:       usedTodayResponse{Rounds: used.Rounds, Spend: used.Spend},
-	})
+	writeJSON(w, http.StatusOK, buildStrategyResponse(st, used.Rounds, used.Spend))
 	return nil
 }
 
@@ -163,6 +180,26 @@ func buildPatch(req strategyPutRequest) (strategy.Patch, error) {
 		return p, err
 	}
 	p.DefaultZone = zone
+
+	// 1f-B · auto / watermark 是 bool/int(不接受 null · 想"关"就传 false / 0)
+	// min_count 允许 null(§4.3.2c 选项 X · null = 按 gap 补差额)
+	autoEnabled, err := requiredField[bool]("default_auto_refill_enabled", req.DefaultAutoRefillEnabled)
+	if err != nil {
+		return p, err
+	}
+	p.DefaultAutoRefillEnabled = autoEnabled
+
+	watermark, err := requiredField[int]("default_refill_watermark", req.DefaultRefillWatermark)
+	if err != nil {
+		return p, err
+	}
+	p.DefaultRefillWatermark = watermark
+
+	minCount, err := nullableField[int]("default_refill_min_count", req.DefaultRefillMinCount)
+	if err != nil {
+		return p, err
+	}
+	p.DefaultRefillMinCount = minCount
 
 	return p, nil
 }
