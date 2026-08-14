@@ -745,6 +745,22 @@ func anonIDOf(id providers.VendorID) string {
 	return hex.EncodeToString(h[:])[:6]
 }
 
+// VendorIDForAnon · anon → 内部 vendor_id 反查（v4.2 · 2026-08-15）
+//
+// 匿名端点（前端传 anon_id）要落到真 vendor 表查数据。跟 StatusTrend 里的循环
+// 反查同一套逻辑 · 抽出来公开。未找到返 ""。
+func (s *Service) VendorIDForAnon(anonID string) string {
+	if s == nil || s.registry == nil {
+		return ""
+	}
+	for _, e := range s.registry.Enabled() {
+		if anonIDOf(e.Vendor.ID()) == anonID {
+			return string(e.Vendor.ID())
+		}
+	}
+	return ""
+}
+
 // anonLabelOf 匿名显示名。编号顺序按 CLAUDE.md §1.1 六家列表定义。
 func anonLabelOf(id providers.VendorID) string {
 	if n, ok := anonIndex[id]; ok {
