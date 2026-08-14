@@ -26,6 +26,11 @@ func (m *mockPicker) PickBestVendor(_ context.Context, _ string) (providers.Vend
 	return m.returns, m.zone, m.ok
 }
 
+func (m *mockPicker) PickBestVendorExcluding(_ context.Context, _ string, _ []providers.VendorID) (providers.VendorID, providers.Zone, bool) {
+	m.calls++
+	return m.returns, m.zone, m.ok
+}
+
 // SetPicker 装配 · picker 生效
 func TestSetPicker_LateWire(t *testing.T) {
 	o := &Orchestrator{}
