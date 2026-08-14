@@ -4,7 +4,9 @@
 >
 > **不管**:状态机步骤(去 `09-transactions`)· 加价栈算法(去 `10-pricing`)· 具体 vendor API 字段(去 `11-fields`)。
 >
-> **贯穿模块**:`strategy` / `bus` / `decider` / `stockwatch` / `deathwatch` / `vendorbalance` / `webhookin`。
+> **贯穿模块**:`strategy` / `bus` / `coalescer` / `decider` / `stockwatch` / `deathwatch` / `vendorbalance` / `webhookin` / `pricing`。
+>
+> **字段口径**:本文正式字段必须跟当前 API / schema / Go struct 对齐：`AutoRefillEnabled` / `RefillWatermark` / `RefillMinCount` / `PerRoundCount` / `MaxUnitPrice` / `PreferredVendor`。未落库的产品设想（例如 `PrebuyEnabled` / 付费抢号优先级）只能写进 `decisions.md`，不能写成本设计的当前字段。
 
 ---
 
@@ -23,7 +25,7 @@
 ┌──────────────────────────────────────────────────────────────┐
 │ 系统层(我方 · 决定何时替用户动作)                              │
 │   · 上游状态判断:Cool(号多) / Balance / Tight(号少)           │
-│   · 加价栈:号价 + 服务费 + 占坑费 + ...(surcharge_rule)       │
+│   · 加价栈:号价 + 服务费 + surcharge_rule                    │
 │   · 拉号出口:decider.Pull(所有触发最终都调它)                │
 │   · vendor 切换:某家没钱切下一家                              │
 │   · 急停开关:TURBO_ON / KILL_PULLS 文件哨兵                   │
@@ -31,8 +33,8 @@
                           ↓ 系统按用户配置动作
 ┌──────────────────────────────────────────────────────────────┐
 │ 用户层(乘客配置 · 每车一套 + 全局默认)                        │
-│   · 自动补:开关 + 补到几个 + 每次补几个                      │
-│   · 抢号:开关(付占坑费享优先排单权)                          │
+│   · 自动补:开关 + 水位线 + 每轮最少拉几个                    │
+│   · 缺货挂单:系统能力 · 付费优先级尚未落库                   │
 │   · 上限:每号最贵多少 / 每天最多几轮 / 每天最多花多少        │
 │   · 偏好:首选哪家 vendor / 默认区域                          │
 └──────────────────────────────────────────────────────────────┘
@@ -145,14 +147,17 @@ xi8 是数据补齐 · **不参与抢号**。
 | 字段 | 类型 | 什么意思 | 默认 |
 |---|---|---|---|
 | `AutoRefillEnabled` | bool | **自动补车总开关** · 关了系统不主动拉 | false(建车时默认关) |
-| `RefillTarget` | int | **补到几个**(活号数达到这个就停) | 0(不设) |
-| `RefillBatchMin` | int | **每次至少补几个** | 1 |
-| `PrebuyEnabled` | bool | **抢号开关** · 开了付占坑费享优先排单 | false |
-| `MaxUnitPrice` | int64 | **每号最贵多少**(microunit) | nil = 不限 |
-| `PreferredVendor` | string | **首选 vendor** · 空 = 系统比价选 | nil |
-| `PerRoundCount` | int | 手动拉号默认几个 | 建车时抄全局 |
+| `RefillWatermark` | int | **水位线** · 活号数低于它才考虑自动补 | 0(不触发) |
+| `RefillMinCount` | `*int` | **本轮最少拉几个** · nil 时按 `RefillWatermark - alive_total` 补齐差额 | nil |
+| `PerRoundCount` | `*int` | 手动拉号默认几个 | 建车时抄全局 |
+| `MaxUnitPrice` | `*int64` | **每号最贵多少**(microunit) | nil = 不限 |
+| `PreferredVendor` | `*string` | **首选 vendor** · 空 = 系统比价选 | nil |
+| `DailyRoundLimit` | `*int` | **废弃车级字段** · 当前只读乘客全局 daily limit | nil |
+| `DailySpendLimit` | `*int64` | **废弃车级字段** · 当前只读乘客全局 daily limit | nil |
 
 **anon 车专属**(撮合用 · 不参与拉号定价):`AnonZone` / `AnonMaxUnitPrice`
+
+**明确不在当前 `bus.Strategy` 里的字段**:没有 `PrebuyEnabled` / `prebuy_enabled`。缺货挂单由 `stockwatch` 承担；付费优先排队如果要做，必须另开 migration + API + UI，不能只在本文造字段。
 
 ### 4.2 全局默认(`passenger_strategy_default` · 每乘客一份)
 
@@ -187,7 +192,7 @@ xi8 是数据补齐 · **不参与抢号**。
 
 **类③ · 每车专属 · 只在车级**:
 
-`AutoRefillEnabled` / `RefillTarget` / `RefillBatchMin` / `PrebuyEnabled` —— 每辆车独立配 · 无全局默认。
+`AutoRefillEnabled` / `RefillWatermark` / `RefillMinCount` —— 每辆车独立配 · 无全局默认。
 
 **类④ · 系统内建 · 用户碰不着**:
 
@@ -239,20 +244,29 @@ xi8 是数据补齐 · **不参与抢号**。
 
 **关键**:`death_refill` **不再跳过** auto 检查 —— 号死退款是天赋(deathwatch 独立走)·**号死后是否补车**是自动行为·必须受 auto 约束。用户关了 auto 就是说"死了就死了·别自动补"·系统就该听。
 
-**注**:抢号不是独立触发源 —— 用户主动动作只有两个:手动拉号 or 开 `PrebuyEnabled`。没有"POST 临时抢一次"这种 API。
+**注**:缺货挂单不是独立触发源 —— 用户主动动作只有手动拉号 / 修改车策略。没有"POST 临时抢一次"这种 API；付费优先抢号仍是待决策能力，不是当前字段。
 
 ---
 
-**Step 3 · 目标 + 多 vendor 备胎判据**
+**Step 3 · 水位 + 多 vendor 备胎判据**
 
-**前置**:`RefillTarget ≤ 0` → 【拒·未设目标】(用户没配"补到几个"·视同不启用自动补 · 手动 pull 例外) · 直接返
+**前置**:`RefillWatermark ≤ 0` → 【拒·未设水位】(用户没配水位线·视同不启用自动补 · 手动 pull 例外) · 直接返
 
 按 vendor 分组数活号 · 判"有没有 vendor 撑得住":
 
+先算本轮需求:
+
+```
+gap  = max(0, RefillWatermark - alive_total)
+want = RefillMinCount ?? gap
+want = max(1, want)
+```
+
 **"撑得住"定义**:
 ```
-撑得住 = (该 vendor 活号数 ≥ RefillBatchMin)
+撑得住 = (该 vendor 活号数 ≥ want)
        AND (该 vendor 当前单价 ≤ min(车级 MaxUnitPrice, 全局 MaxUnitPrice))
+       AND (该价格数据新鲜度在允许窗口内)
 ```
 
 价格过滤为什么加:就算某家 vendor 数字够·但**用户超价拉不动它**·用它做备胎没意义。
@@ -261,8 +275,8 @@ xi8 是数据补齐 · **不参与抢号**。
 
 - **整车 alive == 0** → 档 = 急 · 直跳 Step 4 · **强 output**(按 Case A 特殊规则·见 Step 4 底)
 - **有任一 vendor 撑得住** → 【拒·有备胎】(那家撑着·等它也见底再动)
-- **所有 vendor 都撑不住·但 alive_total < RefillTarget** → 档 = 常规 · 继续 Step 4
-- **alive_total ≥ RefillTarget** → 【拒·已达目标】
+- **所有 vendor 都撑不住·但 alive_total < RefillWatermark** → 档 = 常规 · 继续 Step 4
+- **alive_total ≥ RefillWatermark** → 【拒·已达水位】
 
 ---
 
@@ -290,8 +304,9 @@ xi8 是数据补齐 · **不参与抢号**。
 
 ```
 【count · 这次拉几个】
-gap    = RefillTarget - alive_total                    · 差多少号
-raw    = max(RefillBatchMin, gap)                       · 至少补 RefillBatchMin·差得多就补差量
+gap    = max(0, RefillWatermark - alive_total)          · 差多少号
+raw    = RefillMinCount ?? gap                          · 设了 min_count 就按它拉；没设就补齐差额
+raw    = max(1, raw)
 count  = clamp(raw, config.pull.MinCount, min(config.pull.MaxCount, vendor.MaxPerOrder))
   · 若 raw > 上限 → 截断到上限 · 差额下轮触发再补(不重触发·等 death/scheduler 自然触发)
   · 若 raw < config.pull.MinCount → 提升到 MinCount(避免 vendor 拒小单)
@@ -305,10 +320,7 @@ preferredVendor = bus.PreferredVendor
                ?? AutoPick(比价选)
 
 【加价栈】
-加价栈 = 号价 × vendor × zone × retail × [capability if PrebuyEnabled]
-       × service × [single_pull if count==1]
-
-如果 PrebuyEnabled=true → capability 层叠一个"占坑费"(固定小额)
+加价栈 = 号价 × vendor × zone × retail × service × [single_pull if count==1]
 ```
 
 ---
@@ -330,30 +342,18 @@ preferredVendor = bus.PreferredVendor
 
 ---
 
-## 6 · 抢号能力(PrebuyEnabled) · 用户场景故事
+## 6 · 缺货挂单 · 当前实现与待决策
 
-**Alice 开了抢号开关 · 车里号少**:
+**当前实现**:
 
-> Alice 车里号从 5 掉到 2 · RefillTarget=5 · 所有 vendor 撑不住(Step 3 常规)。
->
-> **触发场景**:
-> - 若号死触发(death_refill):Step 4 表 → Cool 下单 / Balance 下单 / **Tight 挂单**
-> - 若 5min 兜底扫触发(scheduler):Cool 下单 / Balance 下单 / **Tight 挂单**
-> - 若 vendor 新号 webhook 触发(webhook):Cool 拒(号多不响应) / **Balance 下单** / **Tight 下单**
-> - 若探针触发(probe):Cool/Balance 拒 / **Tight 下单**
->
-> **不管下单还是挂单**·因为 Alice 开了 PrebuyEnabled · 加价栈叠一层**占坑费**(固定小额)。
->
-> **挂单场景下的优先级** —— vendor 有新号 fire 时·**开了 PrebuyEnabled 的车排在没开的车前面**先拿到号。
+- 缺货挂单由 `stockwatch` 负责，当前排序是先挂先抢。
+- `reserved_amount` 当前恒为 0；挂单时不预冻结。
+- `stockwatch.Notify` 只在 `watching` 行上触发，fire 失败会回 `watching`，硬错才 `expired`。
 
-**Bob 没开抢号开关**:
+**待决策能力**:
 
-> 同触发同 mode 下 · Bob 车走一样的决策器流程 · **加价栈不叠占坑费**。挂单 fire 时排在 Alice 后面。
-
-**关键**:
-- 抢号 = **付费享优先级** · 不是"额外触发一种拉号"
-- **每次拉号都收占坑费**(开了就收 · 不管抢到没抢到) · 属于"你付的是能力资格·不是能力次数"
-- **抢不到没有退款一说** —— 挂单本来就不冻钱 · 只是意向记录 · TTL 到 expired 就算了(号价压根没花)
+- 付费优先排队（此前叫 `PrebuyEnabled`）尚未落库，不能作为本文正式行为。
+- 如果后续要做，必须同时补字段、冻结/扣费/退款、排序 SQL、前端解释、审计测试。
 
 ---
 
@@ -405,12 +405,11 @@ preferredVendor = bus.PreferredVendor
 | 号死·整车挂·auto on·Cool | 过 | 同上 | Case A 急 | 强制 Cool → 下单 | **执行 · 下单** |
 | 号死·整车挂·auto on·Tight | 过 | 同上 | Case A 急 | 强制 Tight → 挂单 | **执行 · 挂单** |
 | **号死·auto off** | 过 | **拒·auto off** | - | - | **拒·用户关了自动补·死了就死了**(退款照走) |
-| vendor 新号·Alice 开抢号·auto on | 过 | webhook · auto on | 常规 | Balance/Tight 下单 · 叠占坑费 | **执行 + 收占坑费** |
-| vendor 新号·Bob 没开·auto on | 过 | 同上 | 常规 | 同上 · 不叠 | **执行·Alice 排前面** |
-| 保底扫·剩号少于紧急线·Tight | 过 | scheduler · auto on | 常规 | Tight → 挂单 | **挂单** |
+| vendor 新号·挂单命中 | 过 | webhook · auto on | 常规 | 按先挂先抢 | **执行** |
+| 保底扫·剩号少于水位线·Tight | 过 | scheduler · auto on | 常规 | Tight → 挂单 | **挂单** |
 | 用户没开 auto·上游有货 | 过 | 【拒·auto off】 | - | - | **拒·手动才动** |
-| 新建拼车·空车·RefillTarget=0 | 过 | auto off(默认) | - | - | **不动·第一批用户手动拉** |
-| 用户开 auto·空车·RefillTarget=5 | 过 | scheduler · auto on | Case A 急 · 视 mode | Cool 下单 / 其他挂单 | **执行** |
+| 新建拼车·空车·水位线未设 | 过 | auto off(默认) | - | - | **不动·第一批用户手动拉** |
+| 用户开 auto·空车·水位线=5 | 过 | scheduler · auto on | Case A 急 · 视 mode | Cool 下单 / 其他挂单 | **执行** |
 | 用户手动点拉号·有货 | 过 | manual 跳 | 不判 | 不进 | **调 decider.Pull 直下单** |
 | 用户手动点拉号·没货 | 过 | manual 跳 | 不判 | 不进 | **decider.Pull 返 ErrNoStock · 内部挂 stockwatch** |
 
@@ -423,9 +422,8 @@ preferredVendor = bus.PreferredVendor
 | 改这个 | 立即感知 |
 |---|---|
 | `AutoRefillEnabled` | 决策器 Step 2 · 号死立即补 · 5min 兜底扫 |
-| `RefillTarget` | 决策器 Step 3 前置 · 0 = 未启用自动补 · > 0 才判达标 |
-| `RefillBatchMin` | 决策器 Step 3 备胎判据 + Step 5 拉几个 |
-| `PrebuyEnabled` | 决策器 Step 5 加价栈叠占坑费 + 挂单 fire 排优先 |
+| `RefillWatermark` | 决策器 Step 3 前置 · 0 = 未启用自动补 · > 0 才判达标 |
+| `RefillMinCount` | 决策器 Step 3 备胎判据 + Step 5 拉几个 |
 | `MaxUnitPrice`(车级) | Step 5 · 与全局 AND 取严 |
 | `PreferredVendor` | Step 5 · 车级 → 全局 → 比价 |
 | `passenger.MaxUnitPrice` | 与车级 AND 取严 |

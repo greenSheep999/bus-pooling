@@ -14,17 +14,18 @@
 - [x] webhook 带的 price/available 落 vendor_probe_zone · source='webhook'
 - [x] 陈旧管线告警外发 · `StalenessChecker` + `AlertNotifier`
 - [ ] 自动模式 scheduler · `bus.Scheduler` 已 commit 但需按 `decisions §12` 六条位置改造：
+    - [ ] 位置 0 · `death_refill` 补车必须受 `AutoRefillEnabled` 约束（`15-scheduling §5.2` 已定；现代码 `decider.RefillAdapter` 仍直接 `Pull`）
     - [ ] 位置 1 · vendor 新号 webhook 唤醒范围（谁被喂）
     - [ ] 位置 2 · prebuy-pool 抢到无主号的分配路径
     - [ ] 位置 3 · 多 vendor 同车判据（"另一家撑得住就不拉"）
     - [ ] 位置 4 · 建拼车后第一次一律手动 · **由 UI 保证**（建车向导 + AutoRefillEnabled 默认 false · 见 decisions §12.已定 2026-08-15）
     - [ ] 位置 5 · 保底触发挂 stockwatch 不是硬下单
-    - [ ] 位置 6 · 用户字段命名对齐（RefillWatermark 是补到几个还是紧急线）
+    - [x] 位置 6 · 用户字段命名对齐（`RefillWatermark` = 水位线；`RefillMinCount` = 本轮最少拉几个；见 `docs/15-scheduling.md §4/§5`）
 
 ## 依赖 / 阻塞
 
 - 1c 完成（拼车分摊已通）
-- 六条位置**等用户拍板** —— 拍完更新 `decisions.md §12` · 再照做
+- 位置 1/2/3/5 仍需落码验证；位置 4/6 已完成文档拍板
 
 ## 上线判据
 

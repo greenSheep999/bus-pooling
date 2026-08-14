@@ -76,10 +76,10 @@
 
 ### Layer 3 · bus-pooling 本体（核心）
 
-按内部功能再分 6 个子层（3a-3f）。每个子层**是一个独立包**，包间调用走接口，不循环依赖。
+按内部功能再分 8 个子层（3a-3h）。每个子层**是一个独立包或包族**，包间调用走接口，不循环依赖。
 
 #### 3a · 乘客账号 · 积分钱包 · 兑换码 · 充值渠道 · 计费流水
-- 乘客身份与登录（含 SuperTokens 或类似）
+- 乘客身份与登录（Go 自建 Argon2id + session cookie）
 - 积分账户（存余额、扣费、退款）
 - 兑换码兑换（阶段 1b）
 - **payment-gateway 客户端**（外部服务，waffo 通道，5% 通道费 pass-through 给乘客）
@@ -103,7 +103,7 @@
 - **不选 vendor**（那是 3d） · **不实际调 vendor**（那是走 Layer 2）
 
 #### 3d · 决策模型
-- 输入：一个拉号意图 + 6 家 vendor 实时快照 + **6 家平均寿命统计**
+- 输入：一个拉号意图 + 6 家 vendor 实时快照 + **6 家平均寿命统计** + 调度运行态
 - 决策维度：
   - **单价**：跨 vendor 归一算价（CNY/USD/积分/阶梯/手续费 → "每 key 积分成本"）
   - **平均寿命**：从历史号 `dead_at - created_at` 采样算得（近 N 天），得"每 vendor 号平均活多久"
@@ -111,6 +111,9 @@
   - **筛选**：按策略上限（`max_unit_price`）过滤
   - **健康**：按存活 / 缺货信号过滤
   - **Fallback**：主选挂了走次选
+- **缺货挂单**：`stockwatch` 维护 watching 队列；webhook / 探针唤醒后回到 `decider.Pull`
+- **运营态**：`ModeMgr` 按 demand/supply 切 Cool / Balance / Tight；`TURBO_ON` / `KILL_PULLS` 是人工哨兵
+- **vendor 余额预检**：`vendorbalance.Cache` 做 5min 乐观预检，真下单失败时由 `decider` fallback
 - 输出：一个具体的 vendor 选择 + 幂等键 + 调用参数
 - **不发请求**（发请求是 Layer 2 的事）
 - **平均寿命数据来源**：`deathwatch` 记录的号死时间 - `providers` 记录的拉号时间；聚合成"vendor × 最近 N 天 → 平均寿命"表
@@ -268,12 +271,17 @@ internal/
 ├── passenger/                  Layer 3a · 账号
 ├── wallet/                     Layer 3a · 积分钱包 + 流水
 ├── redeem/                     Layer 3a · 兑换码
-├── payment/                    Layer 3a · payment-gateway 客户端（waffo）
+├── topup/                      Layer 3a · 充值订单状态机
+├── topupchannel/               Layer 3a · 充值通道配置
+├── paymentgw/                  Layer 3a · payment-gateway 客户端
 ├── strategy/                   Layer 3b · 策略引擎
 ├── coalescer/                  Layer 3c · 集单调度器（bus 维度）
 │   ├── anon.go                 匿名撮合（阶段 1）
 │   └── team.go                 邀请码组队（阶段 2）
 ├── decider/                    Layer 3d · 决策模型
+├── stockwatch/                 Layer 3d 支撑 · 缺货挂单 + ModeMgr + 急停/强抢
+├── vendorbalance/              Layer 3d 支撑 · vendor 侧余额缓存
+├── pricing/                    Layer 3d 支撑 · vendor_pricing + surcharge_rule
 ├── deathwatch/                 Layer 3e · 号死监控 + 质保退款
 ├── webhookout/                 Layer 3f · 对外 webhook
 ├── pullrecord/                 Layer 3g · 拉号记录（次入口暂存表）
@@ -301,5 +309,5 @@ internal/
 | `internal/{exclusivemother,supplybatch,supplyfulfillment,supplycatalog,...}` | **不做**：发车（乘客上传 AWS）延后到阶段 3b/3c，届时只加一个薄薄的转发层，不复刻母号管理 |
 | `internal/{passenger,wallet,points,...}` | **保留**：合并为 3a 一个子层 |
 | `internal/{tokensheep,newapi,apilane,...}` | **不做**：不是拼车产品线的一部分 |
-| `internal/{payments,404bus-payment-gateway,...}` | **不做**：复用外部 payment-gateway 服务（waffo 通道已打通），本项目只做 client → `internal/payment/` |
+| `internal/{payments,404bus-payment-gateway,...}` | **不做**：复用外部 payment-gateway 服务；本项目只做充值状态机 + client → `internal/topup/` + `internal/topupchannel/` + `internal/paymentgw/` |
 | `internal/{connectors,contract,forecast,replenisher,...}` | **不做**：过度抽象 |

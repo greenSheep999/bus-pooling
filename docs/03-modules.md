@@ -100,7 +100,7 @@
 - **输出**：`Passenger { id, name, email, downstream_config, created_at, ... }`
 - **依赖**：`infra/db`, `infra/secrets`（passengerpool token 加密存）
 - **谁调它**：`api`（HTTP 层），几乎所有业务包（凭 `passenger_id` 索引）
-- **P 标签**：1a（含 SuperTokens 或类似方案，先做最小可用）
+- **P 标签**：1a（Go 自建 Argon2id + session cookie，先做最小可用）
 
 ### `internal/wallet/` (业务包 4/15)
 
@@ -124,10 +124,10 @@
 - **谁调它**：`api`
 - **P 标签**：1b
 
-### `internal/payment/` (业务包 6/15)
+### `internal/topup/` + `internal/topupchannel/` + `internal/paymentgw/` (业务包 6/15 · 充值家族)
 
-- **目的**：payment-gateway 客户端（当前 waffo 通道）；下单 / 收 webhook / 通道费 pass-through 记账
-- **输入**：`{passenger_id, amount_cny, channel}`
+- **目的**：充值订单状态机 + 充值通道配置 + payment-gateway 客户端；下单 / 收 webhook / settlement / refund / reversed / 手续费 pass-through 记账
+- **输入**：`{passenger_id, amount, channel}`
 - **输出**：`{order_id, pay_url, qr, status}`
 - **依赖**：`wallet`, `infra/httpx`, `infra/secrets`（payment-gateway 密钥）
 - **谁调它**：`api`
@@ -137,7 +137,7 @@
 ### `internal/strategy/` (业务包 7/15)
 
 - **目的**：存 / 校验乘客的策略参数；判断"当下能否拉号"；生成拉号意图
-- **参数**：`{auto_enabled, per_round_count, min_count, keep_safety_stock, max_unit_price, daily_round_limit, daily_spend_limit, target_bus_id}`
+- **参数**：乘客全局 `{max_unit_price, daily_round_limit, daily_spend_limit, per_round_count, preferred_vendor, default_zone}` + 车级 `{auto_refill_enabled, refill_watermark, refill_min_count, per_round_count, max_unit_price, preferred_vendor}`
 - **输入**：`passenger_id`（或系统触发源）
 - **输出**：**意图** `Intent { passenger_id, bus_id, want_count, constraints }`
 - **依赖**：`passenger`, `wallet`（查余额）, `bus`（查 bus 归属）, `infra/db`
@@ -148,15 +148,15 @@
 ### `internal/coalescer/` (业务包 8/15)
 
 - **目的**：**bus 维度**集单调度；同 bus 内多成员意图在窗口内合流成一次拉号意图
-- **子文件**（1c-1 骨架已建）：
-  - `coalescer.go` · 骨架 · 定义 Intent / BatchIntent · Single 直发 pass-through · Anon/Team 占位 ErrNotImplemented
-  - **真集单窗口 + 意图池表 = 1c-2**（定时器合流 · 现阶段前端多人同 bus 各自 pull · 各自 decider）
+- **子文件**：
+  - `coalescer.go` · 定义 Intent / BatchIntent · Single 直发 pass-through
+  - `window.go` · 单进程同步窗口，按 `(bus_id, zone, vendor_id)` 合流，默认 200ms / MaxBatch 8
 - **输入**：意图流（`Intent`）
 - **输出**：合流后的**批量意图** `BatchIntent { bus_id, participants[], count_total }`
 - **依赖**：`strategy`, `bus`
-- **谁调它**：`decider`（拿 BatchIntent 去发起 vendor 调用）
-- **P 标签**：1c / 2a
-- **不做**：不选 vendor / 不算价；1 人 bus 意图**绕过**（直发 decider）
+- **谁调它**：API / 调度层把多人 bus 意图送进窗口；窗口关闭后由 executor 调 `decider`
+- **P 标签**：1c
+- **不做**：不选 vendor / 不算价；1 人 bus 意图**绕过**（直发 decider）；跨进程意图池 / 后台异步 fire 留后续
 
 ### `internal/decider/` (业务包 9/15)
 
@@ -164,11 +164,18 @@
 - **输入**：`BatchIntent` 或 `Intent`
 - **输出**：`PurchaseResult { credentials[], vendor_id, cost, participants_split }`
 - **依赖**：`providers/*`, `wallet`（记账）, `housepool`（进 bus group）, `pullrecord`（单独拉号写记录）, `deathwatch`（读平均寿命统计）, `pricing`（`SurchargeResolver` + `VendorPricing` 换算·可选）
-- **谁调它**：`strategy`（1 人 bus 意图直发）, `coalescer`（多人 bus 合流后发）, `api`（单独拉号）
+- **谁调它**：`strategy` / `api`（手动和单人直发）, `coalescer`（多人 bus 合流后发）, `stockwatch`（缺货挂单 fire）, `deathwatch` / `bus.Scheduler`（自动补）
 - **P 标签**：1a（单 vendor 直选）→ 1c-2（`surcharge_rule` 引擎动态求费率 + `vendor_pricing` 多币种）→ 1d（比价 + fallback + **平均寿命**，与自动一起上）
 - **比价维度**：**单价 / 平均寿命 = 每积分能活的时长**（不是只看单价）
 - **归一算价**：跨 vendor 单价 → 一个"每 key 有效积分成本"，含通道费/手续费在内
 - **附加费引擎**：可选注入 `RatesResolver`（由 `internal/pricing.SurchargeResolver` 实现）· 按本次拉号 `EvalContext`（vendor_id / zone / count / passenger.invited / bus.avg_lifespan_h）从 `surcharge_rule` 表命中规则求 `Rates` · 每轮命中细节留痕到 `pull_round_surcharge` · nil resolver 走 env 兜底
+
+#### 调度支撑包（服务 `decider`，不单独占业务包编号）
+
+- `internal/stockwatch/`：缺货挂单队列；`Enqueue` / `Notify` / `Sweep` / `ModeMgr` / `FileFlag`；webhook / 探针唤醒后回到 `decider.Pull`
+- `internal/vendorbalance/`：vendor 侧余额 5min 缓存；供 `decider` 做乐观预检和 fallback
+- `internal/pricing/`：`vendor_pricing` / `surcharge_rule` 解析；供估价 API 和 `decider` 统一算价
+- `internal/insight/`：看板聚合读模型；不参与拉号决策
 
 ### `internal/deathwatch/` (业务包 10/15)
 
@@ -409,7 +416,7 @@
 | 3 | `passenger` | 3a | 1a |
 | 4 | `wallet` | 3a | 1a |
 | 5 | `redeem` | 3a | 1b |
-| 6 | `payment` | 3a | 1b |
+| 6 | `topup` / `topupchannel` / `paymentgw` | 3a | 1b |
 | 7 | `strategy` | 3b | 1a（手动）→ 1d（自动） |
 | 8 | `coalescer` | 3c | 1c-1（骨架）→ 1c-2（真集单）→ 2a（team） |
 | 9 | `decider` | 3d | 1a → 1d（比价 + fallback） |

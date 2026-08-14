@@ -272,12 +272,12 @@ CREATE TABLE bus (
 
   -- 补车策略（每车一策略 · decisions §8.6）
   auto_refill_enabled    INTEGER NOT NULL DEFAULT 0,      -- 0/1 · 号死自动补
-  refill_watermark       INTEGER NOT NULL DEFAULT 0,      -- 活号低于水位（号数）触发补车
-  refill_min_count       INTEGER,                          -- 每轮至少补到 N 号
+  refill_watermark       INTEGER NOT NULL DEFAULT 0,      -- 水位线：活号低于这个数才考虑自动补
+  refill_min_count       INTEGER,                          -- 本轮最少拉几个；NULL = 按 watermark-alive 补齐差额
   per_round_count        INTEGER,                          -- 每轮拉几号
   max_unit_price         INTEGER,                          -- microunit · 单号最高价
-  daily_round_limit      INTEGER,                          -- 每日最多拉号次数
-  daily_spend_limit      INTEGER,                          -- microunit · 每日花费上限
+  daily_round_limit      INTEGER,                          -- DEPRECATED 车级不生效；当前只读 passenger_strategy_default
+  daily_spend_limit      INTEGER,                          -- DEPRECATED 车级不生效；当前只读 passenger_strategy_default
   preferred_vendor       TEXT,                              -- NULL = 有效成本比价自动选
 
   -- 1c-1 · 匿名撮合（migration 011）

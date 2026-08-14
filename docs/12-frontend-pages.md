@@ -207,10 +207,10 @@
 **Tab C · 补车策略**（`decisions §8.6` · 跟车绑，非全局设置）：
 - `auto_refill_enabled` toggle（号死自动补）
 - `refill_watermark` 水位线（活号低于 N 触发）
-- `refill_min_count` 每轮至少补到 N 号
+- `refill_min_count` 本轮最少拉 N 号；未设时按水位差额补齐
 - `per_round_count` 每轮拉几号
 - `max_unit_price` 单号最高价（积分）
-- `daily_round_limit` / `daily_spend_limit` 每日限额
+- `daily_round_limit` / `daily_spend_limit` 只展示乘客全局每日限额；车级字段 deprecated，不做车详情入口
 - `preferred_vendor` 指定 vendor（默认空 = 有效成本比价自动选）
 
 **Tab D · 成员**：
