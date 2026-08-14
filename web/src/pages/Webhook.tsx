@@ -17,25 +17,23 @@ import {
 import { SecretField } from "@/components/ui/secret-field";
 import { Switch } from "@/components/ui/switch";
 import { fmtTime } from "@/lib/utils";
-import type { WebhookDelivery } from "@/types";
+import type { WebhookDelivery, WebhookEvent } from "@/types";
 
-/** 可订阅事件 · 5 个（spec §10b）
+/** 可订阅事件 · 4 个 · 对齐 docs/05-api-contract §11(1e-2 定稿)
  *  event id 是对外契约的一部分（用户要在自己代码里 switch），所以这里**故意露出原名**
  *  —— 技术页例外，跟对接文档同性质（CLAUDE.md §12.6） */
 const EVENT_IDS = [
-  "round.completed",
-  "round.failed",
-  "credential.dead",
-  "bus.refilled",
-  "wallet.low",
+  "new_keys_available",
+  "all_keys_dead",
+  "warranty_refund",
+  "boarded",
 ] as const;
 
 const EVENT_KEY: Record<(typeof EVENT_IDS)[number], string> = {
-  "round.completed": "round-completed",
-  "round.failed": "round-failed",
-  "credential.dead": "credential-dead",
-  "bus.refilled": "bus-refilled",
-  "wallet.low": "wallet-low",
+  "new_keys_available": "new-keys-available",
+  "all_keys_dead":      "all-keys-dead",
+  "warranty_refund":    "warranty-refund",
+  "boarded":            "boarded",
 };
 
 export default function Webhook() {
@@ -48,7 +46,7 @@ export default function Webhook() {
 
   const [url, setUrl] = useState("");
   const [newSecret, setNewSecret] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<{ ok: boolean; code: number; ms: number } | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; code: number; ms: number; error?: string } | null>(null);
 
   useEffect(() => {
     if (cfg && !url) setUrl(cfg.url);
@@ -63,7 +61,7 @@ export default function Webhook() {
     desc: t(`webhook.event.${EVENT_KEY[id]}.desc`),
   }));
 
-  const toggleEvent = (id: string, on: boolean) => {
+  const toggleEvent = (id: WebhookEvent, on: boolean) => {
     if (!cfg) return;
     const next = on
       ? [...cfg.events, id]
@@ -74,7 +72,7 @@ export default function Webhook() {
   const onTest = async () => {
     setTestResult(null);
     const r = await test.mutateAsync();
-    setTestResult({ ok: r.ok, code: r.status_code, ms: r.latency_ms });
+    setTestResult({ ok: r.ok, code: r.status_code, ms: r.latency_ms, error: r.error });
   };
 
   return (
@@ -135,7 +133,9 @@ export default function Webhook() {
               icon={testResult.ok ? CheckCircle2 : X}
               title={testResult.ok ? t("webhook.endpoint.test-ok") : t("webhook.endpoint.test-fail")}
             >
-              {t("webhook.endpoint.test-detail-prefix")}<Em>{testResult.code}</Em>{t("webhook.endpoint.test-detail-middle")}<Em>{testResult.ms}</Em>{t("webhook.endpoint.test-detail-suffix")}
+              {testResult.ok || !testResult.error
+                ? <>{t("webhook.endpoint.test-detail-prefix")}<Em>{testResult.code}</Em>{t("webhook.endpoint.test-detail-middle")}<Em>{testResult.ms}</Em>{t("webhook.endpoint.test-detail-suffix")}</>
+                : <>{testResult.error}{testResult.ms > 0 && <> · <Em>{testResult.ms}</Em> ms</>}</>}
             </Alert>
           )}
 

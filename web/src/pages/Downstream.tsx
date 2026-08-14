@@ -37,7 +37,7 @@ export default function Downstream() {
 
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
-  const [testResult, setTestResult] = useState<{ ok: boolean; ms: number } | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; ms: number; error?: string } | null>(null);
 
   /* 服务端值到了再灌进表单 · 用户已经改过就不覆盖他的输入 */
   useEffect(() => {
@@ -57,7 +57,7 @@ export default function Downstream() {
   const onTest = async () => {
     setTestResult(null);
     const r = await test.mutateAsync({ url: url.trim(), token: token.trim() || undefined });
-    setTestResult({ ok: r.ok, ms: r.latency_ms });
+    setTestResult({ ok: r.ok, ms: r.latency_ms, error: r.error });
   };
 
   return (
@@ -147,7 +147,9 @@ export default function Downstream() {
             >
               {testResult.ok
                 ? <>{t("test.ok.desc-prefix")} <Em>{testResult.ms}</Em> {t("test.ok.desc-suffix")}</>
-                : t("test.fail.desc")}
+                : testResult.error
+                  ? <>{testResult.error}{testResult.ms > 0 && <> · <Em>{testResult.ms}</Em> ms</>}</>
+                  : t("test.fail.desc")}
             </Alert>
           )}
 

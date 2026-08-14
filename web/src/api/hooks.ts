@@ -759,11 +759,16 @@ export const useSaveDownstream = () => {
   });
 };
 
-/** 测连通 · 不写库，只回 latency */
+/** 测连通 · 不写库，只回 latency + 可选错误细节
+ *
+ *  error 字段仅在 ok=false 时非空 · 用户 URL/token 配错要能看到具体原因(1e 收尾) */
 export const useTestDownstream = () =>
   useMutation({
     mutationFn: (body?: { url?: string; token?: string }) =>
-      post<{ ok: boolean; latency_ms: number }>("/me/downstream/passengerpool/test", body ?? {}),
+      post<{ ok: boolean; latency_ms: number; error?: string }>(
+        "/me/downstream/passengerpool/test",
+        body ?? {},
+      ),
   });
 
 export const useSaveWebhook = () => {
@@ -779,7 +784,7 @@ export const useTestWebhook = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      post<{ ok: boolean; status_code: number; latency_ms: number }>(
+      post<{ ok: boolean; status_code: number; latency_ms: number; error?: string }>(
         "/me/downstream/webhook/test",
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["webhookDeliveries"] }),

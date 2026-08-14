@@ -368,25 +368,21 @@
       "url-placeholder": "https://bot.example.com/kiro-events"
     },
     "event": {
-      "bus-refilled": {
-        "desc": "Water level dropped below threshold, system pulled a new round on its own",
-        "title": "Auto-refill triggered"
+      "new-keys-available": {
+        "desc": "Pull succeeded · keys landed in your bus or your pool · includes count + bus id",
+        "title": "New keys available"
       },
-      "credential-dead": {
-        "desc": "We detected a key is dead · the signal before a refill",
-        "title": "Key went dead"
+      "all-keys-dead": {
+        "desc": "Every key in the bus went dead · decide auto-refill or manual pull",
+        "title": "All keys dead"
       },
-      "round-completed": {
-        "desc": "A pull round finished · includes how many keys landed and total cost",
-        "title": "Pull completed"
+      "warranty-refund": {
+        "desc": "Key died within warranty · refunded to your wallet by share",
+        "title": "Warranty refund"
       },
-      "round-failed": {
-        "desc": "The whole round got nothing · includes the reason",
-        "title": "Pull failed"
-      },
-      "wallet-low": {
-        "desc": "Balance is too low to pull more keys soon",
-        "title": "Low balance warning"
+      "boarded": {
+        "desc": "Keys delivered to you · copied to your pool or handoff plaintext sent",
+        "title": "Keys boarded"
       }
     },
     "head": {

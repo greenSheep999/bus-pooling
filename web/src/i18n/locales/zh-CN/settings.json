@@ -368,25 +368,21 @@
       "url-placeholder": "https://bot.example.com/kiro-events"
     },
     "event": {
-      "bus-refilled": {
-        "desc": "水位跌破阈值、系统自己补了一轮",
-        "title": "自动补车触发"
+      "new-keys-available": {
+        "desc": "拉号成功 · 号已进车或已进你的号池 · 带号数 + 车 id",
+        "title": "拿到新号"
       },
-      "credential-dead": {
-        "desc": "我方探到某个号死了 · 补车前的信号",
-        "title": "号失效了"
+      "all-keys-dead": {
+        "desc": "车里所有号都失效了 · 需要你决定是自动补还是手动拉",
+        "title": "整车全灭"
       },
-      "round-completed": {
-        "desc": "一轮拉号跑完 · 带拿到几个号、花了多少",
-        "title": "拉号完成"
+      "warranty-refund": {
+        "desc": "号在质保期内失效 · 已按份额退款到你的钱包",
+        "title": "质保退款"
       },
-      "round-failed": {
-        "desc": "整轮没拿到号 · 带失败原因",
-        "title": "拉号失败"
-      },
-      "wallet-low": {
-        "desc": "余额低到快拉不动号了",
-        "title": "余额不足预警"
+      "boarded": {
+        "desc": "号已交付给你 · 复制到你的号池成功 或 handoff 明文已发",
+        "title": "号已交付"
       }
     },
     "head": {

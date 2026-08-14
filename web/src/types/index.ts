@@ -491,16 +491,29 @@ export interface DownstreamConfig {
   };
 }
 
+/** 4 事件白名单 · 对齐 docs/05-api-contract §11(1e-2 定稿) · 后端 defaultWebhookEvents · 前端 EVENT_IDS
+ *
+ *  **只**含用户可订阅的 4 个业务事件 · 用于 WebhookConfig.events 复选框 · TS 编译期强约束漂移。
+ *  test 事件不在此列表(那是运营态心跳 · 用户点"测试 webhook"时后端才发) · 见 WebhookEventInDelivery。 */
+export type WebhookEvent =
+  | "new_keys_available"
+  | "all_keys_dead"
+  | "warranty_refund"
+  | "boarded";
+
+/** deliveries 台账里的 event 字段 · 比白名单多一个 "test"(用户测试按钮 · 后端 SendTest 落台账) */
+export type WebhookEventInDelivery = WebhookEvent | "test";
+
 export interface WebhookConfig {
   url: string;
   secret_masked: string;
   enabled: boolean;
-  events: string[];
+  events: WebhookEvent[];
 }
 
 export interface WebhookDelivery {
   id: string;
-  event: string;
+  event: WebhookEventInDelivery;
   ok: boolean;
   status_code: number | null;
   attempt: number;

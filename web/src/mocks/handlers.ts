@@ -266,7 +266,7 @@ export const handlers = [
   }),
   http.post("/api/me/downstream/webhook/test", () => {
     fx.webhookDeliveries.unshift({
-      id: `w_${Date.now()}`, event: "test.ping", ok: true,
+      id: `w_${Date.now()}`, event: "test", ok: true,
       status_code: 200, attempt: 1, latency_ms: 132,
       created_at: new Date().toISOString(),
     });

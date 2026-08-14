@@ -797,15 +797,15 @@ export const webhook: WebhookConfig = {
   url: "https://bot.example.com/kiro-events",
   secret_masked: "whsec_•••••••••••••••••••••••3f2a",
   enabled: true,
-  events: ["round.completed", "round.failed", "credential.dead", "wallet.low"],
+  events: ["new_keys_available", "all_keys_dead", "warranty_refund", "boarded"],
 };
 
 export const webhookDeliveries: WebhookDelivery[] = [
-  { id: "w1", event: "round.completed", ok: true, status_code: 200, attempt: 1, latency_ms: 124, created_at: ago(0.5) },
-  { id: "w2", event: "credential.dead", ok: true, status_code: 200, attempt: 1, latency_ms: 98, created_at: ago(1) },
-  { id: "w3", event: "round.completed", ok: true, status_code: 200, attempt: 1, latency_ms: 115, created_at: ago(2.7) },
-  { id: "w4", event: "round.failed", ok: false, status_code: 502, attempt: 3, latency_ms: 5200, created_at: ago(4.3) },
-  { id: "w5", event: "wallet.low", ok: true, status_code: 200, attempt: 2, latency_ms: 820, created_at: ago(9.8) },
+  { id: "w1", event: "new_keys_available", ok: true, status_code: 200, attempt: 1, latency_ms: 124, created_at: ago(0.5) },
+  { id: "w2", event: "boarded",            ok: true, status_code: 200, attempt: 1, latency_ms: 98,  created_at: ago(1) },
+  { id: "w3", event: "new_keys_available", ok: true, status_code: 200, attempt: 1, latency_ms: 115, created_at: ago(2.7) },
+  { id: "w4", event: "warranty_refund",    ok: false, status_code: 502, attempt: 3, latency_ms: 5200, created_at: ago(4.3) },
+  { id: "w5", event: "all_keys_dead",      ok: true, status_code: 200, attempt: 2, latency_ms: 820, created_at: ago(9.8) },
 ];
 
 /** 全局策略 · 06-db-schema §16 passenger_strategy_default
