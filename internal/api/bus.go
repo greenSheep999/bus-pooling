@@ -362,11 +362,20 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
+	// **P3 · preferred_vendor 进下单**（2026-08-14）：req.VendorID 空时用 strategy
+	// 里的 PreferredVendor（intent.Vendor）· 兜底再走 decider 的 defaultVendor。
+	// 顺带修一个**老 bug** —— 这里之前根本没传 VendorID · 所以显式请求"我想找 X 家"
+	// 的意图完全没生效 · 全走 defaultVendor。
+	vendorID := req.VendorID
+	if vendorID == "" && intent.Vendor != nil && *intent.Vendor != "" {
+		vendorID = *intent.Vendor
+	}
 	result, err := s.decider.Pull(r.Context(), decider.PullInput{
 		PassengerID:         p.ID,
 		BusID:               busID,
 		Count:               req.Count,
 		Zone:                providers.Zone(req.Zone),
+		VendorID:            providers.VendorID(vendorID),
 		IdempotencyRecordID: hit.recordID,
 		// 生效上限（全局 ∧ 车级取严）· 用途见 pull.go 同处注释
 		MaxUnitPrice: derefInt64(intent.MaxUnitPrice),

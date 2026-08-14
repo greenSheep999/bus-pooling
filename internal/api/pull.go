@@ -130,12 +130,21 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 
 	// 交给 decider 走完 5 状态。1b 起支持 request 指定 vendor · 空 = defaultVendor。
 	// **换 vendor 就应该是新的拉号请求** —— req.VendorID 参与幂等指纹签名。
+	//
+	// **P3 · preferred_vendor 进下单**（2026-08-14）：请求没显式指定 vendor 时 · 用
+	// strategy 里的 PreferredVendor（intent.Vendor · 从 passenger_strategy 表取）·
+	// 兜底再走 decider 的 defaultVendor。原来这个字段存了但没进拉号 —— 用户偏好
+	// 白设。
+	vendorID := req.VendorID
+	if vendorID == "" && intent.Vendor != nil && *intent.Vendor != "" {
+		vendorID = *intent.Vendor
+	}
 	result, err := s.decider.Pull(r.Context(), decider.PullInput{
 		PassengerID:         p.ID,
 		BusID:               "",
 		Count:               req.Count,
 		Zone:                providers.Zone(req.Zone),
-		VendorID:            providers.VendorID(req.VendorID),
+		VendorID:            providers.VendorID(vendorID),
 		IdempotencyRecordID: hit.recordID,
 		// 生效的单价上限（CanPull 已取全局跟车级更严的）· 给 decider 两个用途：
 		//   ① 缺货挂单时存进 stock_watcher · fire 时继续守同一上限
