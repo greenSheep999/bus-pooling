@@ -57,11 +57,12 @@
 | 4 | [`docs/03-modules.md`](./docs/03-modules.md) | 业务包 15 上限 · 依赖图 · 模块清单 |
 | 5 | [`docs/04-scenarios.md`](./docs/04-scenarios.md) | 31 用户场景路径（产品视角） |
 | 6 | [`docs/decisions.md`](./docs/decisions.md) | 讨论过并否决的方案（**避免重复讨论**） |
-| 7 | [`docs/vendors/*.md`](./docs/vendors/) | 6 家 vendor 官方 API 档案 |
+| 7 | [`docs/15-scheduling.md`](./docs/15-scheduling.md) | **调度权威入口** · 策略优先级铁律 + `strategy.Effective()` 唯一入口 + 六触发源 + `decider.Decide` 决策模型（1f 收口） |
+| 8 | [`docs/vendors/*.md`](./docs/vendors/) | 6 家 vendor 官方 API 档案 |
 
-**编码相关文档**（已就位）：`05-api-contract.md` · `06-db-schema.md` · `07-provider-contract.md` · `08-housepool-contract.md` · `09-transactions.md`（核心交易状态机）· `12-frontend-pages.md`（页面清单）· `13-frontend-research.md`（前端调研 + 主题）· `sprint-1a-frontend.md` + `sprint-1a-backend.md`（阶段 1a 前后端）。
+**编码相关文档**（已就位）：`05-api-contract.md` · `06-db-schema.md` · `07-provider-contract.md` · `08-housepool-contract.md` · `09-transactions.md`（核心交易状态机）· `12-frontend-pages.md`（页面清单）· `13-frontend-design.md`（前端设计规范）· `15-scheduling.md`（调度权威入口 · 1f 收口）。
 
-**编码起手前尚待写**：`10-secrets.md`（阶段 1 落码时）· `11-testing-strategy.md`（首 e2e 前）。
+**上线路线**：见 [`docs/sprint-1-final.md`](./docs/sprint-1-final.md)（Stage 1-6 分阶段切真链路 · Stage 7 打 tag 归档）。**阶段 1 sprint 文档已归档**至 [`docs/archive/`](./docs/archive/)（1a-1f 全部）。
 
 **首上线前**：见 `docs/14-deployment.md`（systemd + Caddy + smoke test + backup）。
 
@@ -79,11 +80,11 @@
 
 ## 三阶段（长期路线，见 `00-values-and-phases.md §7`）
 
-| 阶段 | 内容 |
-|---|---|
-| **阶段 1** | MVP 拉存推：6 家 vendor + 主入口拼车 + 次入口单独拉号 + 自动补车 + 双写 + handoff |
-| **阶段 2** | 列队策略 + 集单窗口调优 + 压车治理 |
-| **阶段 3** | 数据图表 + 发车（乘客 AWS 转发 vendor）+ 市场分成 |
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| **阶段 1** | MVP 拉存推：6 家 vendor + 主入口拼车 + 次入口单独拉号 + 自动补车 + 双写 + handoff + 策略收口 | **code-complete · 1f 落码完成 = feature-complete**（2026-08-15）· 剩 Stage 1-6 只需 env + 灰度切换 · 见 `docs/sprint-1-final.md` |
+| **阶段 2** | 列队策略 + 集单窗口调优 + 压车治理 | 未开始 |
+| **阶段 3** | 数据图表 + 发车（乘客 AWS 转发 vendor）+ 市场分成 | 未开始 |
 
 ## 开发
 

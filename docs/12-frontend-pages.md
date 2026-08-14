@@ -1,6 +1,6 @@
 # bus-pooling · 前端页面清单 + 路由
 
-> 前置：`04-scenarios.md` · `05-api-contract.md` · `sprint-1a-frontend.md`
+> 前置：`04-scenarios.md` · `05-api-contract.md` · `archive/sprint-1a-frontend.md`（阶段 1 feature-complete 后归档）
 >
 > **14 页面 + 2 layout** 覆盖阶段 1 全部乘客侧需求。管理端阶段 3+ 单独开文档。
 >
@@ -516,7 +516,7 @@
 - 按页面分 namespace：`login.title` / `bus.detail.tab.credentials` / ...
 - **阶段 1 只中文**；阶段 3+ 加英文时不改代码
 
-## 术语审查（`sprint-1a-frontend.md Iss #F13`）
+## 术语审查（`archive/sprint-1a-frontend.md Iss #F13`）
 
 **每次 PR 都要**：`grep -rE 'housepool|provider|adapter|record group|initiated|imported|handed_off' web/src/` **必须 0 命中**。
 
@@ -524,7 +524,7 @@
 
 ## API 端点 · 已全部进契约 ✅
 
-原来这节叫「待补 API 端点」，列了 6 个 mockup 画了但契约没定义的。**2026-08-08 已全部补进 `05-api-contract.md` 并同步到 `sprint-1a-backend.md` 的端点矩阵**（`decisions §8.28`），不再是"待补"。
+原来这节叫「待补 API 端点」，列了 6 个 mockup 画了但契约没定义的。**2026-08-08 已全部补进 `05-api-contract.md` 并同步到 `archive/sprint-1a-backend.md` 的端点矩阵**（`decisions §8.28`），不再是"待补"。
 
 前端实际调用的完整清单以 `web/src/api/hooks.ts` 为准。几条**命名铁律**（改过，别用旧的）：
 

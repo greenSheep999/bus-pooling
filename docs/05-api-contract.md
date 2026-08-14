@@ -132,20 +132,91 @@ await POST(`/handoff/${download_token}/confirm`)
 
 ## 2. API Key
 
-| Method | Path | 说明 | 备注 |
-|---|---|---|---|
-| GET | `/api/me/api-keys` | 我的 key 列表（不含明文） | 只显示 prefix |
-| POST | `/api/me/api-keys` | 创建 key | **明文只返回一次**；会话鉴权强制 |
-| DELETE | `/api/me/api-keys/{id}` | 吊销 key | 立即生效 |
+| Method | Path | 说明 | 鉴权 | 备注 |
+|---|---|---|---|---|
+| GET | `/api/me/api-keys` | 我的 key 列表（不含明文） | session · API key | 只返 prefix + 元数据 · 已吊销的 key 也在列表里（`revoked=true`） |
+| POST | `/api/me/api-keys` | 创建 key | **仅 session** | **明文只返回一次**（响应体 `key`）· 关闭响应后就再也拿不到 |
+| DELETE | `/api/me/api-keys/{id}` | 吊销 key | session · API key | **soft delete** · 库里保留台账行（见 §2.3） |
 
-**创建响应**：
+### 2.1 创建 · 一次性明文语义
+
+**响应形状**（`POST /api/me/api-keys` 成功 · 201 Created）：
 
 ```json
 {
-  "key": "usr-1a2b3c4d5e6f...",
-  "item": { "id": "01H8...", "prefix": "usr-1a2b3c4d", "created_at": "..." }
+  "key": "usr-1a2b3c4d5e6f...",              // 明文 · 只此一次 · 服务端只落 hash
+  "item": {
+    "id": "01H8...",
+    "name": "my-bot",                         // 用户填的备注 · 可空
+    "prefix": "usr-1a2b3c4d",                 // 明文头 8 位 · 列表页展示用
+    "created_at": "2026-08-07T12:00:00Z",
+    "last_used_at": null,                     // 用过后填 · 便于识别"哪个 key 谁在用"
+    "revoked": false
+  }
 }
 ```
+
+- **`key` 明文**：仅在创建响应体出现 · 前端必须弹一次性对话框让用户手抄 · 关闭后**再也拿不回来**
+- **服务端只落 hash + prefix** · 后续任何端点都不返 `key` 明文
+- **`prefix`** = 明文前 8 位十六进制 · 用来在列表页认识"哪个 key" · 不足以反推明文
+
+### 2.2 列表 · 只返 prefix
+
+`GET /api/me/api-keys` 响应形状（`ApiKey[]` · **纯数组 · 非分页信封**）：
+
+```json
+[
+  {
+    "id": "01H8...",
+    "name": "my-bot",
+    "prefix": "usr-1a2b3c4d",
+    "created_at": "2026-08-07T12:00:00Z",
+    "last_used_at": "2026-08-08T09:12:00Z",   // 可为 null（建了没用过）
+    "revoked": false                           // 已吊销的 key 也在列表里（台账保留）
+  },
+  { "id": "01H7...", "prefix": "usr-9f8e7d6c", "revoked": true, ... }
+]
+```
+
+**注意**：响应体**不含 `key` 明文** · 也不含 `key_hash` · 只有 `prefix` + 元数据。
+
+### 2.3 吊销 · 保留台账
+
+`DELETE /api/me/api-keys/{id}`：
+
+- **soft delete** · 库里对应行的 `revoked_at` 打上时间戳 · **行不物理删**
+- 后续 `GET` 该 key **仍会出现在列表** · `revoked: true`
+- 后续 `X-API-Key` / `Authorization: Bearer` 用它 → **`401 invalid_api_key`**（立即生效）
+- 台账保留的理由：售后要能查这个 key 什么时候建的、用过没（哪些拉号是它做的）。物理删就断了追溯链。
+
+### 2.4 权限收窄
+
+**API key 能做的**：调 `/api/me/*` 里除下面几个之外的所有端点。
+
+**API key 明确不能做的**（返 `403 session_required`）：
+
+| 端点 | 为什么只能 session |
+|---|---|
+| `POST /api/me/password` | 改密码是账号最强动作 · 泄露的 key 换密码等于把主人锁在门外 |
+| `POST /api/me/api-keys` | 建新 key 只能 session · 防"泄露的 key 反过来生新 key" · 跟 91kiro 一致 |
+
+**DELETE key 允许 API key** · 让脚本能自己清理不用的 key · 但**只能删自己名下的**（路径参数 `{id}` 必须属于该 key 的 owner）· 别的乘客的 key 拿了也删不掉（404）。
+
+### 2.5 传递方式 · `X-API-Key` 或 `Authorization: Bearer`
+
+两种 header 都支持 · 服务端行为完全一致 · 挑一个用即可（同时传以 `X-API-Key` 为准）：
+
+```bash
+# 方式 A · X-API-Key（推荐 · 简单）
+curl https://<base-url>/api/me \
+  -H "X-API-Key: usr-1a2b3c4d5e6f..."
+
+# 方式 B · Authorization: Bearer（跟 OAuth 客户端库对得上）
+curl https://<base-url>/api/me \
+  -H "Authorization: Bearer usr-1a2b3c4d5e6f..."
+```
+
+**明文格式**：`usr-<hex>` · 前缀 `usr-` 固定 · 后跟十六进制字符。前缀是身份标记（不是加密）· 目的是**在日志 / 代码 grep 里一眼认出**"这是一条 API key 明文"（便于事后清理泄漏）。
 
 ## 3. 钱包 / 充值
 
@@ -153,7 +224,10 @@ await POST(`/handoff/${download_token}/confirm`)
 |---|---|---|---|
 | GET | `/api/me/wallet` | 余额 + 概要 | 1a |
 | GET | `/api/me/ledger` | 积分流水（分页） | 1a |
+| GET | `/api/me/history-summary` | 我买过多少号 / 花过多少积分（生涯统计） | 1a |
 | GET | `/api/promos` | **公开** · 顶部跑马灯活动位（config.promo.items · 过期条目服务端不下发） | 1c |
+| GET | `/api/topup/channels` | **公开** · 充值渠道注册表（前端确认窗按这个渲染 · 含 disabled 占位） | 1b |
+| GET | `/api/community/channels` | **公开** · 社群频道列表（TG/Discord 入口） | 1c |
 | POST | `/api/me/redeem` | 兑换码 | 1b |
 | GET | `/api/me/invite` | 我的个人邀请码 + 邀请数 + 剩余手续费减免次数 | 1c |
 | POST | `/api/me/community-code` | 补绑社群码（已注册用户拿社群身份）· 404 码无效 · 409 已绑过 | 1c |
@@ -515,6 +589,9 @@ await POST(`/handoff/${download_token}/confirm`)
   "per_round_count": 3,             // 新车默认值
   "preferred_vendor": null,         // 新车默认值 · null = 让系统比价
   "default_zone": "auto",           // 新车默认值
+  "default_auto_refill_enabled": false,   // 补车全局默认（1f-B）· 车级 auto_refill_enabled = null 时读这个
+  "default_refill_watermark": 0,          // 补车全局默认（1f-B）· 车级 refill_watermark = null 时读这个
+  "default_refill_min_count": null,       // 补车全局默认（1f-B）· 车级 refill_min_count = null 且此值也 null 时走 watermark-alive gap
   "used_today": { "rounds": 6, "spend": 45000000 }   // 只读 · UI 画用量进度条
 }
 ```
@@ -526,6 +603,32 @@ await POST(`/handoff/${download_token}/confirm`)
 - `max_unit_price` 在**下单前**比价阶段校验 · 超了返 `price_over_cap`（带 `cap` 和 `current` 便于前端提示"超了多少"）
 - 跟车级同名字段取**更严**的（AND）
 - **提取 key 只受全局管** —— record group 没有车级限额
+
+**三个 `default_*` 补车字段（1f-B）**：作用是「运行时 fallback + 新车 seed」双职（详见 `docs/15-scheduling.md §4.3.2b` 方案 A）—— 用户改这三项会**同步影响所有"跟随全局"的车**；已经"覆盖本车"的车不受影响。三字段权威读取入口：`internal/strategy.Effective()`（见 `docs/15-scheduling.md §4.3.4`）· 别再手工从 DB 拼字段。
+
+### `PUT /api/me/buses/{bus_id}/strategy`
+
+**读取入口**：车级 strategy 不单独开 GET 端点 —— 通过 `GET /api/me/buses/{bus_id}` 返回体里的 `strategy` 字段读（省一次请求）。
+
+**null 语义明确**（1f-B · `docs/15-scheduling.md §4.3.2b` 方案 A · nullable 表继承）：
+
+```json
+{
+  "auto_refill_enabled": null,   // null = 跟随全局默认（读 GET /me/strategy 的 default_auto_refill_enabled）· 非 null（含 false / 0）= 覆盖本车
+  "refill_watermark":    null,   // null = 跟随全局；非 null（含 0）= 覆盖本车
+  "refill_min_count":    null,   // null 三态：全局若也 null → 走 watermark-alive gap；全局非 null → 用全局；本车非 null → 覆盖本车
+  "per_round_count":     null,   // null = 跟随全局
+  "preferred_vendor":    null,   // null = 跟随全局；全局也 null 时走系统比价
+  "max_unit_price":      null,   // 硬上限 · null = 车级不加严；实际生效值 = min(本车值, 全局值)
+  "anon_zone":           null,   // anon 车专用 · null = 不限
+  "anon_max_unit_price": null    // anon 车专用 · null = 不限
+}
+```
+
+- **`null` 在这三个补车字段（`auto_refill_enabled` / `refill_watermark` / `refill_min_count`）上不等于"关闭"** —— 是"跟随全局"。想显式关闭 auto，传 `false` 覆盖本车。
+- `PUT` **部分更新**：payload 里没出现的字段服务端不改（不用带全字段）；显式传 `null` 才是把该字段清成"跟随全局"。
+- 权威读取入口 `internal/strategy.Effective()`（`docs/15-scheduling.md §4.3.4`）· UI 展示"实际生效值"的口径见 `§4.3.5.1`。
+- 迁移保行为：老车（1f-B migration 前建的）字段值原样保留为"覆盖本车" · 全局默认改变**不影响**老车（`§4.3.2b` 硬约束）。
 
 ## 8. 下游配置
 
@@ -589,27 +692,39 @@ await POST(`/handoff/${download_token}/confirm`)
 
 ## 9. Vendor 状态
 
+**分两类**:公开的 `/api/vendors/status*` 是无鉴权 landing / Status 页用 · 其余走 `RequireAuth`。
+
+**公开**(landing / Status 页):
+
 | Method | Path | 说明 | 阶段 |
 |---|---|---|---|
-| GET | `/api/vendors` | 6 家 vendor 列表 + 当前 stock / price 快照 | 1a |
+| GET | `/api/vendors/status` | 6 家 vendor 匿名状态列表（首页 / Status 页顶栏） | 1a |
+| GET | `/api/vendors/status/{anon_id}/trend` | 单家运行趋势（老契约 · 按 source 两种 schema） | 1a |
+| GET | `/api/vendors/status/{anon_id}/events` | 单家统一事件流（/status 页正文） | 1a |
+| GET | `/api/vendors/status/{anon_id}/price-trend` | 单家涨价历史（3 源合并） | 1a |
+
+**已鉴权**(登录后按 tier 出显示名):
+
+| Method | Path | 说明 | 阶段 |
+|---|---|---|---|
 | GET | `/api/vendors/stock` | **聚合**总可拉数 + 按 vendor 明细（顶栏库存徽标） | 1a |
 | GET | `/api/vendors/{vendor_id}/stock` | 单家实时快照 · 支持 `?coupon_code=` | 1a |
 | GET | `/api/vendors/stats` | 概览「Vendor 监测」表 + 占比 | 1a |
 | GET | `/api/vendors/auto-pick` | auto 档的推荐结果（推哪家 + 价 + 库存） | 1a |
-| GET | `/api/vendors/prices?days=&zone=` | 价格走势（**轮次级**历史 · `decisions §8.22`）· 1a stub 返 `{trends: []}` | 1a stub → 1d 补数据源 |
+| GET | `/api/vendors/prices?days=&zone=` | 价格走势（**轮次级**历史 · `decisions §8.22`） | 1a stub → 1d 补数据源 |
 | GET | `/api/vendors/{vendor_id}/history` | 单家历史 | 1d |
-| GET | `/api/vendors/{vendor_id}/health` | 单家健康（平均寿命等） | 1d |
+| GET | `/api/vendors/{vendor_id}/prices/daily` | 单家逐日单价 | 1a |
 
-**不带 `/me` 前缀** —— vendor 是公共数据。但**返回的价格是按调用者个性化的**：
+**不带 `/me` 前缀** —— vendor 是公共数据。`/api/vendors/status*` 四个是完全公开的（landing 页 / Status 页无鉴权就要展示） · 其余的**返回的价格是按调用者个性化的**：
 
 | 调用者 | 看到的 |
 |---|---|
 | 绑了**专属邀请码 wholesale 版** | vendor **真名** + 跳 vendor+zone 减免 |
 | 绑了**专属邀请码 community 版** | vendor **编号**(AWS-Q Kiro Vendor 0N) + 跳 zone 减免 |
-| 没绑专属邀请码(默认 retail) | vendor **编号** + 默认加价 |
+| 没绑专属邀请码(默认 retail) | vendor **编号** + 默认分项 |
 | 有效期内的 `?coupon_code=` | 单次减免 · 不改 tier · **不解锁真名** |
 
-**只下发最终价**，不下发原价和加价明细（`decisions §8.20`）。所以这几个端点**要鉴权**（拿不到身份就没法定价）—— 全部走 `RequireAuth`，别用 vendors 作为"未登录可看的公共接口"。
+**只下发最终价**，不下发原价和分项明细（`decisions §8.20`）。价格 / 库存端点全部走 `RequireAuth`（拿不到身份就没法定价）；公开的 `/api/vendors/status*` 只出匿名 `anon_id` + 无价格字段。
 
 **`auto-pick` 为什么必须 1a 有**：散客默认就走 auto 档，界面上 auto 项要显示"推荐到哪家 + 单价 + 库存 + 预估费用"才能下单（`decisions §8.20`）。没有它，无邀请码用户根本下不了单。
 
@@ -635,7 +750,7 @@ await POST(`/handoff/${download_token}/confirm`)
 
 | Method | Path | 说明 |
 |---|---|---|
-| POST | `/webhook/vendor/{vendor_id}` | vendor 事件入口 |
+| POST | `/api/webhooks/vendor/{vendor_id}` | vendor 事件入口 |
 
 各家 vendor 各自的签名验证：
 - 91kiro：HMAC-SHA256，`X-KM-Signature: sha256=<hex>`

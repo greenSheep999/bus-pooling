@@ -435,7 +435,7 @@ ALTER TABLE wallet ADD COLUMN reserved INTEGER NOT NULL DEFAULT 0;
 - **1d 之后**：状态机应对补车链条（deathwatch → new pending_purchase）
 
 > **修订**：本节原写「1a 唯一的 assign 场景是 handoff」+「`pending_assignment` 全形态 1c」，
-> 但 `sprint-1a-backend` 矩阵把 `POST /me/pull-records/assign` 标成 1a 必做且「501 不可接受」，
+> 但 `archive/sprint-1a-backend.md` 矩阵把 `POST /me/pull-records/assign` 标成 1a 必做且「501 不可接受」，
 > Iss #11 也要实现 into_bus 分支。两处对立 —— 按 sprint 走：**into_bus 是 1a，push_pool 是 1c**。
 
 ## 13. 参考

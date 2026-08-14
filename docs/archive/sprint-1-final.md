@@ -9,17 +9,23 @@
 
 ## 收官定义
 
-**阶段 1 收官上线** = 阶段 1 code-complete(1a-1e 全绿) + mock/live 分阶段切换验收 + 真链路小流量运行 24h 无 P0/P1。
+**术语双档**（1f 收口后固化 · 别再混）：
+- **code-complete** = 1a-1e 全绿 · 主线代码路径都在，但**策略层收口未做**
+- **feature-complete** = code-complete + 1f 全绿（策略优先级铁律 + 全局默认字段对齐 + `Effective()` 唯一入口）· 阶段 1 **代码不再需要新增**
+- **阶段 1 收官上线** = feature-complete + mock/live 分阶段切换 + 真链路小流量 24h 无 P0/P1
+
+**当前状态**（2026-08-15）:**阶段 1 code-complete + 1f 落码完成 → feature-complete** · 剩下的 Stage 1-6 只需**填 env 变量 + 灰度观察** · 不再改代码。**明早用户根据 `docs/1f-audit.json` 决定填哪些 env / 灰度哪几辆车**。
 
 **不是一个总开关** —— 是多把开关分阶段打开。上线路线上任一 stage 卡住 = 未上线。
 
-## code-complete 前提(1a-1e 全绿)
+## code-complete + feature-complete 前提(1a-1f 全绿)
 
 - [x] **1a** · 账号 / 钱包 / 手动拉号 / 1 人 bus / handoff / 状态机(生产在跑)
 - [x] **1b** · 6 家 vendor / 兑换码 / payment-gateway(生产在跑)
 - [x] **1c** · anon 撮合 + team 邀请码 + 分摊(生产在跑)
 - [x] **1d** · 自动补车 / webhook 唤醒 / 比价 fallback / 号死补车(codex 六刀收敛完成 · 30 commit 已 push)
-- [ ] **1e** · 推 passengerpool 双写 + 对外 webhook(未开始 · 见 `sprint-1e-backend.md`)
+- [x] **1e** · 推 passengerpool 双写 + 对外 webhook(8 commit 已 push · code-complete)
+- [x] **1f** · 策略优先级铁律 + `internal/strategy.Effective()` 唯一入口 + 全局默认三字段对齐 + `/docs` 对接文档扩(见 `archive/sprint-1f-scope.md` · **落码完成 = feature-complete**)
 
 ## Stage 序列(分阶段切真链路)
 
@@ -83,10 +89,24 @@
 
 - [ ] Stage 1-6 观察 24h 无 P0/P1
 - [ ] git tag 打标记(具体命名规则跟运维对齐)
-- [ ] `sprint-1a-backend.md` / `sprint-1a-frontend.md` 归档到 `docs/archive/`
-- [ ] `sprint-1b-backend.md` / `sprint-1c-backend.md` / `sprint-1d-backend.md` / `sprint-1e-backend.md` 归档到 `docs/archive/`
-- [ ] `sprint-1-final.md`(本文) 归档到 `docs/archive/`
+- [x] `sprint-1a-backend.md` / `sprint-1a-frontend.md` 归档到 `docs/archive/`（2026-08-15 · 1f 落码完成后归档）
+- [x] `sprint-1b-backend.md` / `sprint-1c-backend.md` / `sprint-1d-backend.md` / `sprint-1e-backend.md` / `sprint-1f-scope.md` 归档到 `docs/archive/`
+- [ ] `sprint-1-final.md`(本文) 归档到 `docs/archive/`（Stage 7 结尾操作 · 阶段 1 完全收官后）
 - [ ] 进入阶段 2 · 新建 `sprint-2a-backend.md`
+
+## 环境变量填充清单 · 明早用户看这个
+
+**参考**：`docs/1f-audit.json` —— 结构化列出所有 1f 审计到位后的字段/API/DTS 对齐现状 + 差距。用户 stage 切换时按这份决定填哪些 env、灰度哪几辆车。
+
+**关键 env 三档**：
+
+| 档 | 环境变量 | Stage |
+|---|---|---|
+| **money live** | `BP_GW_BASE` / `BP_GW_TOKEN` / `BP_GW_SETTLEMENT_SECRET` / `BP_GW_SUCCESS_URL` | Stage 1 |
+| **housepool live** | `housepool.base_url` / `housepool.admin_key` / `housepool.expected_version` | Stage 2 |
+| **vendor live** | `DRY_RUN=0` / `BP_ALLOW_LIVE_PULL=1` / `decider.default_vendor` + 单家 vendor `api_key` + `webhook_secret` | Stage 3-4 |
+
+**不需要再写代码** —— Stage 1-6 全部只需要 env + 数据库配置 + UI 灰度切换。阶段 1 feature-complete 意味着代码层面阶段 1 已经收工。
 
 ## 阶段 1 收官后 · 进阶段 2
 

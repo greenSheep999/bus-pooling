@@ -79,13 +79,19 @@ vendors/xi8.md                聚合站(非 vendor · 内部数据源)
 ### B 主线 · sprint · 每阶段一份 · 上线后归档
 
 ```
-sprint-1a-backend.md          阶段 1a 后端(已上线 · 待归档)
-sprint-1a-frontend.md         阶段 1a 前端(已上线 · 待归档)
-sprint-1b-backend.md          阶段 1b · 交付清单 + 上线判据
-sprint-1c-backend.md          阶段 1c · 主体已通生产
-sprint-1d-backend.md          阶段 1d · 调度模型 codex 六刀收敛完成
-sprint-1e-backend.md          阶段 1e · 推 passengerpool 双写 + 对外 webhook(未开始)
-sprint-1-final.md             阶段 1 收官上线路线(mock/live 分阶段切换)· 1a-1e 全做完后启用
+sprint-1-final.md             阶段 1 收官上线路线(mock/live 分阶段切换)· 1a-1f 全绿 → Stage 1-6 只需 env / 灰度
+```
+
+**已归档**（1a-1f 全部 · 2026-08-15 · 阶段 1 feature-complete 后归档）：
+
+```
+archive/sprint-1a-backend.md    阶段 1a 后端(生产在跑 · 已归档)
+archive/sprint-1a-frontend.md   阶段 1a 前端(生产在跑 · 已归档)
+archive/sprint-1b-backend.md    阶段 1b 后端(6 vendor / 兑换码 / payment-gateway · 已归档)
+archive/sprint-1c-backend.md    阶段 1c 后端(anon 撮合 / team 邀请码 / 分摊 · 已归档)
+archive/sprint-1d-backend.md    阶段 1d 后端(自动补车 / webhook 唤醒 / 比价 fallback · 已归档)
+archive/sprint-1e-backend.md    阶段 1e 后端(推 passengerpool 双写 + 对外 webhook · 已归档)
+archive/sprint-1f-scope.md      阶段 1f(策略收口 + Effective() 唯一入口 + /docs 扩 · 已归档)
 ```
 
 ### C 衍生 · 4 份 · 独立子系统方案 · 落码后合回 A

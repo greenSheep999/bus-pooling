@@ -1,7 +1,7 @@
 # 14 · 部署 runbook（阶段 1a-1c 首上线）
 
 > 目标读者：**首次把 bus-pooling 从本机搬到公网机器**的人（可能只有 1 个）。
-> 前提：`sprint-1a-backend.md` DoD 已打勾，真 vendor happy path 至少跑过一次（`#117`）。
+> 前提：`archive/sprint-1a-backend.md` DoD 已打勾（已归档 · 阶段 1 feature-complete），真 vendor happy path 至少跑过一次（`#117`）。
 
 ## 0. 结构一览
 

@@ -270,10 +270,10 @@ CREATE TABLE bus (
   created_at             TEXT NOT NULL,
   dissolved_at           TEXT,
 
-  -- 补车策略（每车一策略 · decisions §8.6）
-  auto_refill_enabled    INTEGER NOT NULL DEFAULT 0,      -- 0/1 · 号死自动补
-  refill_watermark       INTEGER NOT NULL DEFAULT 0,      -- 水位线：活号低于这个数才考虑自动补
-  refill_min_count       INTEGER,                          -- 本轮最少拉几个；NULL = 按 watermark-alive 补齐差额
+  -- 补车策略（每车一策略 · decisions §8.6 · 三字段 nullable 表继承 · `docs/15-scheduling.md §4.3.2b` 方案 A）
+  auto_refill_enabled    INTEGER,                          -- 0/1 · NULL = 跟随全局默认；非 NULL(含 0) = 覆盖本车 · 见 §4.3.2b 迁移保行为
+  refill_watermark       INTEGER,                          -- 水位线：活号低于这个数才考虑自动补 · NULL = 跟随全局；非 NULL = 覆盖本车 · 见 §4.3.2b
+  refill_min_count       INTEGER,                          -- 本轮最少拉几个 · NULL 三态见 §4.3.2c(方案 A：全局 fallback 优先 · 若全局也 NULL 走 watermark-alive gap) · 非 NULL = 覆盖本车
   per_round_count        INTEGER,                          -- 每轮拉几号
   max_unit_price         INTEGER,                          -- microunit · 单号最高价
   daily_round_limit      INTEGER,                          -- DEPRECATED 车级不生效；当前只读 passenger_strategy_default
@@ -608,21 +608,27 @@ CREATE TABLE passenger_strategy_default (
   per_round_count          INTEGER,
   preferred_vendor         TEXT,                         -- NULL = 让系统比价
   default_zone             TEXT NOT NULL DEFAULT 'auto', -- us | eu | auto
+  -- ↓ 补车策略全局默认（1f-B · `docs/15-scheduling.md §4.3.2b` 方案 A · 车级三字段 NULL 时的 fallback + 新车 seed）
+  default_auto_refill_enabled INTEGER NOT NULL DEFAULT 0, -- 0/1 · 车级 auto_refill_enabled IS NULL 时用这个
+  default_refill_watermark    INTEGER NOT NULL DEFAULT 0, -- 车级 refill_watermark IS NULL 时用这个
+  default_refill_min_count    INTEGER,                    -- NULL = 让系统按 watermark-alive gap 算；车级 refill_min_count IS NULL 时先查这个再降级
   updated_at               TEXT NOT NULL,
   FOREIGN KEY (passenger_id) REFERENCES passenger(id)
 );
 ```
 
-**两类字段语义不同，别混**（§8.27）：
+**三类字段语义不同，别混**（§8.27 + 1f-B `docs/15-scheduling.md §4.3.2b`）：
 
 | 字段 | 性质 | 行为 |
 |---|---|---|
 | `max_unit_price` / `daily_round_limit` / `daily_spend_limit` | **硬上限** | 每次拉号 / 提取前校验，超了拒绝。跟车级同名字段取**更严**的（AND） |
 | `per_round_count` / `preferred_vendor` / `default_zone` | **新车默认值** | 只在建车时填初值，改它不动已有的车 |
+| `default_auto_refill_enabled` / `default_refill_watermark` / `default_refill_min_count` | **运行时 fallback + 新车 seed** | 车级 `bus.auto_refill_enabled / refill_watermark / refill_min_count` **IS NULL** 时运行时读这份；用户改这里会**同步影响所有"跟随全局"的车**（覆盖本车字段不受影响） |
 
 - **提取 key（record group）只受全局限额管** —— 车级限额管不到 record group
 - `max_unit_price` **手动拉号也拦**：提取确认窗超限时禁用确认按钮（判优惠码折后价）· 不给"就这次放行"的口子
 - 1b 就要**真的生效**（拉号 / 提取前校验），不是存着等 1d
+- 三个 `default_*` 补车字段的继承语义 + 迁移保行为见 `docs/15-scheduling.md §4.3.2b`（方案 A · nullable 表继承）·「只有 UI 显式改为"跟随全局"后 · 老车行为才随全局变化」是硬约束
 
 ## 17. Vendor 账户凭证（我方在 vendor 那的账号）· `vendor_account`
 
@@ -775,6 +781,8 @@ grants_tier TEXT NOT NULL CHECK(grants_tier IN ('community','wholesale'))
 条件 UPDATE 保证只退一次（janitor 重跑 / 并发都安全）。
 
 **1d 加**：`vendor_lifespan_snapshot`, `vendor_webhook_delivery`, `credential_usage_snapshot`, `bus_usage_snapshot`
+
+**1f-B 加**：migration 039 · `bus.auto_refill_enabled / refill_watermark` 改可空（`bus_new` 复制迁移 · 保留历史值为"覆盖本车"） + `passenger_strategy_default` 补 `default_auto_refill_enabled / default_refill_watermark / default_refill_min_count` 三字段（新车 seed + 车级 NULL 运行时 fallback）· **无新表** · 迁移保行为见 `docs/15-scheduling.md §4.3.2b`。
 
 **2c 加**：`capability_slot`, `pull_round_capability`
 

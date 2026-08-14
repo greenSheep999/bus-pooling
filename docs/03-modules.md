@@ -84,7 +84,7 @@
 - **输入**：HTTP POST（来自各家 vendor）
 - **输出**：归一化的 `providers.WebhookEvent` + 调用下游接口（`SweepTrigger` / `RestockNotifier` / `DispatchStore` / `ProbeZoneSink`）
 - **依赖**：`providers/*`（各家 adapter 的 `Parse` / `VerifySignature`）· 下游接口由装配层注入（**不硬 import deathwatch/stockwatch**）
-- **谁调它**：`internal/api` 路由 `POST /webhook/vendor/<vendor_id>`
+- **谁调它**：`internal/api` 路由 `POST /api/webhooks/vendor/{vendor_id}`
 - **P 标签**：1d
 - **幂等**：以 `(vendor_id, event_id)` 去重
 - **不做**：
@@ -139,16 +139,19 @@
 
 ### `internal/strategy/` (业务包 7/15)
 
-- **目的**：存 / 校验乘客的策略参数；判断"当下能否拉号"；生成拉号意图
-- **参数**：乘客全局 `{max_unit_price, daily_round_limit, daily_spend_limit, per_round_count, preferred_vendor, default_zone}` + 车级 `{auto_refill_enabled, refill_watermark, refill_min_count, per_round_count, max_unit_price, preferred_vendor}`
-- **输入**：`passenger_id`（或系统触发源）
-- **输出**：**意图** `Intent { passenger_id, bus_id, want_count, constraints }`
+- **目的**：存 / 校验乘客的策略参数；判断"当下能否拉号"；生成拉号意图；**给所有运行时决策路径吐"最终生效值"**（1f-C 收口）
+- **参数**：
+  - 乘客全局 `passenger_strategy_default`：`{max_unit_price, daily_round_limit, daily_spend_limit, per_round_count, preferred_vendor, default_zone, default_auto_refill_enabled, default_refill_watermark, default_refill_min_count}`（后三字段 1f-B 加 · fallback + 新车 seed 双职 · 见 `docs/06-db-schema §16`）
+  - 车级 `bus`：`{auto_refill_enabled, refill_watermark, refill_min_count, per_round_count, max_unit_price, preferred_vendor}` —— 前三 nullable · `null=跟随全局`（`docs/15-scheduling §4.3.2b` 方案 A）
+- **唯一入口 · `strategy.Effective(ctx, passengerID, busID, requestOverride) → EffectiveStrategy`**（`docs/15-scheduling §4.3.4`）：
+  - 已算好优先级链 `request > 车级 > 全局 > 系统默认`（覆盖字段）/ 取 min（硬上限）
+  - 调用方**不能**再二次拼字段 · `_test.go` / DB CRUD / DTO 定义除外
+  - 接入清单 + `grep` 验收见 `docs/15-scheduling §4.3.4`（decider / bus.Scheduler / deathwatch.RefillTick / stockwatch.Notify / webhookAutoScanBridge / api.handleBusPull / api.pullrecord 全部通过 `Effective()` 取值）
+- **输入**：`passenger_id` + 可选 `bus_id` + 可选 `requestOverride`
+- **输出**：`EffectiveStrategy` · 手动拉号入口再包一层意图 `Intent { passenger_id, bus_id, want_count, constraints }`
 - **依赖**：`passenger`, `wallet`（查余额）, `bus`（查 bus 归属）, `infra/db`
-- **谁调它**：手动拉号从 `api` 触发；自动拉号由 `deathwatch`（补车）/ 时钟 / vendor webhook 触发
-- **P 标签**：1a（手动）→ 1d（自动）
-- **谁读它的字段**：
-  - 手动拉号：`api/bus.go:handleBusPull` → `strategy.CanPull` → `decider.Pull`
-  - 自动拉号：`decider.Decide` 读 `AutoRefillEnabled` / `RefillWatermark` / `RefillMinCount` / `MaxUnitPrice` / `PreferredVendor` 等（见 `docs/15-scheduling.md §5`）
+- **谁调它**：手动拉号从 `api` 触发；自动拉号由 `deathwatch`（补车）/ `bus.Scheduler`（5min 兜底）/ vendor webhook / stockwatch 触发（**统一走 `Effective()`**）
+- **P 标签**：1a（手动）→ 1d（自动）→ 1f-C（唯一入口收口）
 - **不做**：
   - **不选 vendor / 不动 housepool / 不调 Pull**（那是 decider）
   - **不做系统调度决策**（是否补车 / mode 判断 / vendor mode 都是 `decider.Decide`）
@@ -368,22 +371,36 @@
 - **P 标签**：1a
 - **实现**：AES-GCM，主密钥来自环境变量
 
-### `internal/authpassenger/`
+### 认证 · 内嵌在 `internal/passenger/`
 
 - **目的**：乘客登录 · **Go 自建**（无外部依赖）
+- **位置**：`internal/passenger/password.go` + `session.go` + `apikey.go`（**没有独立的 authpassenger / authadmin 包** —— 认证是 passenger 的一部分 · 不单开包）
 - **实现**：
   - 密码哈希：Argon2id（`golang.org/x/crypto/argon2`，`memory=64MB, iterations=3, parallelism=2`）
   - Session：`sessions` 表 + cookie 存随机 token（32 hex）；也接受 `X-API-Key` header 登录
   - API key：`passenger_api_key.key_hash` 存 SHA-256(明文)；明文只 create/rotate 时返回一次
   - 邮箱验证 / 忘记密码 / 社交登录：**阶段 1 不做**（放 §00.9 未决 · 阶段 3+ 补）
+- **管理端认证**：`internal/api/server.go` 走 `X-Admin-Key` header（跟 `BP_ADMIN_KEY` 比较）· 不建独立包
 - **P 标签**：1a
 - **备注**：**不用 SuperTokens**（`decisions.md §1.9` 记录）—— 项目是公益工具，自建 200 行 Go 够用
 
-### `internal/authadmin/`
+### `internal/downstream/`（下游配置支撑层 · 不占业务包编号）
 
-- **目的**：管理端登录（简单 email/password + 白名单）
-- **P 标签**：2c
-- **备注**：管理端 UI 靠后，登录能力也靠后
+- **定位**：passenger 侧的下游配置（passengerpool url / token · webhook url / secret / events / rules）· 承载 `/api/me/downstream/*` 全部端点的读写。
+- **为什么不算业务包**：15 包上限给业务域留 · downstream 只是"乘客账户内的一小段配置"（跟 `delivery/passengerpool` 是消费方) · 不代表独立业务域。
+- **P 标签**：1a
+
+### `internal/vendoraccount/`（vendor 账户支撑层 · 不占业务包编号）
+
+- **定位**：`vendor_account` 表读写 · 加密 `api_key` / `webhook_secret`（走 `internal/secrets`）· webhook receiver 验签时读明文用。
+- **为什么不算业务包**：vendor 账户是运维配置（不是乘客业务）· 存的是我方接 vendor 用的私钥 / webhook 签名密钥。
+- **P 标签**：1a
+
+### `internal/xi8/`（vendor 聚合站映射 · 不占业务包编号）
+
+- **定位**：把 xi8 聚合站的 vendor 编号翻译到我方 vendor slug · 让 seed-vendor CLI 能读 xi8 的实况。
+- **为什么不算业务包**：纯 identifier 翻译表 · 无业务逻辑。
+- **P 标签**：1e
 
 ### `internal/vendorview/`（策略支撑层 · 不占业务包编号）
 
