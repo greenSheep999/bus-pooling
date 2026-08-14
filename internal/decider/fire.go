@@ -80,8 +80,11 @@ func (o *Orchestrator) FireWatcher(ctx context.Context, w stockwatch.WatcherRow)
 // **三道门 · 全过才挂**：
 //
 //	① enqueuer 装配了（nil = 老行为 · 缺货直接失败）
-//	② auto 模式 —— in.VendorID 空。用户明确指定 vendor 时不代抢：他要等的是那家 ·
+//	② auto 模式 —— **用户请求的 vendor 为空**(requestedVendorID)。
+//	   用户明确指定 vendor 时不代抢:他要等的是那家 ·
 //	   给他挂到别家违背意图（decisions §11.15）
+//	   **第四刀修正**:老代码用 in.VendorID != "" 判非 auto · 但 AutoPick 会填 in.VendorID ·
+//	   导致 auto 模式的缺货永远不进 stockwatch。改用 requestedVendorID(原始请求)判。
 //	③ 不是 fire 自己触发的 —— in.ClientOrderID 非空说明这轮就是 fire 来的 ·
 //	   再挂会把刚 fire 的挂单复位成 watching · 死循环
 //
@@ -91,10 +94,14 @@ func (o *Orchestrator) FireWatcher(ctx context.Context, w stockwatch.WatcherRow)
 //   - 代价：fire 时余额可能已被花掉 → 那轮硬失败标 expired（可接受 · 用户重挂即可）
 //
 // 挂单失败只 log 不影响主流程 —— 缺货本来就是要返 ErrNoStock 的 · 挂单是增值尝试。
+//
+// **vendorID 参数**:实际拉号选中的 vendor(可能是 AutoPick 结果) · 用它填 stock_watcher.vendor_id ·
+// fire 时才知道要等哪家新号。
+// **requestedVendorID 参数**:用户原始请求(空 = auto) · 只用来判"三道门 ②"。
 func (o *Orchestrator) maybeEnqueueOnNoStock(
-	ctx context.Context, in PullInput, vendorID providers.VendorID,
+	ctx context.Context, in PullInput, vendorID providers.VendorID, requestedVendorID providers.VendorID,
 ) bool {
-	if o.enqueuer == nil || in.VendorID != "" || in.ClientOrderID != "" {
+	if o.enqueuer == nil || requestedVendorID != "" || in.ClientOrderID != "" {
 		return false
 	}
 	// 挂单自己的 vendor 幂等键 · fire 时复用它调 Pull

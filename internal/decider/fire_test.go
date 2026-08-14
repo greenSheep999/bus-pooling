@@ -46,7 +46,7 @@ func TestMaybeEnqueue_AutoMode_Enqueues(t *testing.T) {
 		PassengerID:  "p1",
 		Count:        2,
 		MaxUnitPrice: 80_000_000,
-	}, providers.VendorID("kiroceo"))
+	}, providers.VendorID("kiroceo"), providers.VendorID(""))
 
 	if !ok {
 		t.Fatal("auto 模式缺货应挂单")
@@ -75,7 +75,7 @@ func TestMaybeEnqueue_ExplicitVendor_NoEnqueue(t *testing.T) {
 		PassengerID: "p1",
 		Count:       1,
 		VendorID:    providers.VendorID("kirooo"), // 明确指定
-	}, providers.VendorID("kirooo"))
+	}, providers.VendorID("kirooo"), providers.VendorID("kirooo"))
 
 	if ok || enq.count() != 0 {
 		t.Fatal("用户指定 vendor 时不应挂单代抢（decisions §11.15）")
@@ -92,7 +92,7 @@ func TestMaybeEnqueue_FromFire_NoReEnqueue(t *testing.T) {
 		PassengerID:   "p1",
 		Count:         1,
 		ClientOrderID: "already-a-fire", // fire 传进来的
-	}, providers.VendorID("kiroceo"))
+	}, providers.VendorID("kiroceo"), providers.VendorID(""))
 
 	if ok || enq.count() != 0 {
 		t.Fatal("fire 触发的那轮不能再挂单 · 会死循环")
@@ -104,7 +104,7 @@ func TestMaybeEnqueue_NoEnqueuer_NoOp(t *testing.T) {
 	o := &Orchestrator{} // enqueuer 为 nil
 	ok := o.maybeEnqueueOnNoStock(context.Background(), PullInput{
 		PassengerID: "p1", Count: 1,
-	}, providers.VendorID("kiroceo"))
+	}, providers.VendorID("kiroceo"), providers.VendorID(""))
 	if ok {
 		t.Fatal("未装 enqueuer 时应保持老行为（缺货直接失败）")
 	}
@@ -117,7 +117,7 @@ func TestMaybeEnqueue_WithBus_TargetsBusGroup(t *testing.T) {
 
 	o.maybeEnqueueOnNoStock(context.Background(), PullInput{
 		PassengerID: "p1", BusID: "b1", Count: 1,
-	}, providers.VendorID("kiroceo"))
+	}, providers.VendorID("kiroceo"), providers.VendorID(""))
 
 	got, ok := enq.last()
 	if !ok {
@@ -125,5 +125,28 @@ func TestMaybeEnqueue_WithBus_TargetsBusGroup(t *testing.T) {
 	}
 	if got.BusID != "b1" || got.TargetGroup != "bus-b1" {
 		t.Fatalf("有 bus 应进 bus group · 得 bus=%q group=%q", got.BusID, got.TargetGroup)
+	}
+}
+
+
+// **第四刀关键测试**：AutoPick 填了 in.VendorID 后·requestedVendorID 仍空·应挂单
+// 老 bug:老代码用 in.VendorID != "" 判非 auto · AutoPick 填后永远不挂 · 修法用 requestedVendorID
+func TestMaybeEnqueue_AutoPickFilled_StillEnqueues(t *testing.T) {
+	enq := &mockEnqueuer{}
+	o := &Orchestrator{enqueuer: enq}
+
+	// 模拟 Pull 里 AutoPick 已经填了 in.VendorID · 但用户原始请求为空
+	ok := o.maybeEnqueueOnNoStock(context.Background(), PullInput{
+		PassengerID: "p1",
+		Count:       2,
+		VendorID:    providers.VendorID("kiroceo"), // AutoPick 后填的 · 不是用户请求的
+	}, providers.VendorID("kiroceo"), providers.VendorID("")) // requestedVendorID="" · auto 模式
+
+	if !ok {
+		t.Fatal("AutoPick 填了 vendor 后·requestedVendorID 空(auto 模式)·仍应挂单")
+	}
+	got, _ := enq.last()
+	if got.VendorID != "kiroceo" {
+		t.Fatalf("挂单 vendor 应用 AutoPick 结果 · 得 %q", got.VendorID)
 	}
 }

@@ -361,10 +361,16 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 	if err := o.limits.checkCountRange(in.Count); err != nil {
 		return nil, err
 	}
-	// **P4 · AutoPick 进 decider**（2026-08-14）：VendorID 空时先问 picker（比价+库存综合选）·
+	// **AutoPick 进 decider**:VendorID 空时先问 picker(比价+库存综合选)·
 	// picker 返 false 或未装配才走 defaultVendor 兜底。
-	// 好处：用户看到 UI 说"推荐 A 家" · 真拉时用的就是 A 家（老代码割裂：UI 显示 A · 实拉走 default）。
-	// 顺带把 picker 选的 zone 也用上（缺货挂单和 stock 请求都受益）。
+	//
+	// 好处:用户看到 UI 说"推荐 A 家" · 真拉时用的就是 A 家(老代码割裂:UI 显示 A · 实拉走 default)。
+	// 顺带把 picker 选的 zone 也用上(缺货挂单和 stock 请求都受益)。
+	//
+	// **第四刀关键**:必须先快照原始 in.VendorID · 用来后面判"这是不是 auto 模式"(缺货挂单需要)。
+	// 老 bug:AutoPick 填了 in.VendorID → maybeEnqueueOnNoStock 用 in.VendorID != "" 判非 auto ·
+	// 结果 auto 模式的缺货永远不进 stockwatch。修法:传独立的 requestedVendorID 快照。
+	requestedVendorID := in.VendorID
 	if in.VendorID == "" && o.picker != nil {
 		if pv, pz, ok := o.picker.PickBestVendor(ctx, string(in.Zone)); ok {
 			in.VendorID = pv
@@ -395,11 +401,13 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 		// auto 模式挂单等补货（decisions §11.15）· 挂上也照样返 ErrNoStock ——
 		// 这一轮确实没拿到号 · api 层照常告诉用户"暂无库存"。补到货后 fire 会
 		// 走一轮新的 Pull · 号直接进 group（用户在"我的号"里看到）。
-		o.maybeEnqueueOnNoStock(ctx, in, vendor.ID())
+		//
+		// **第四刀修正**:传 requestedVendorID(用户原始请求)判 auto · 不是 AutoPick 后的 in.VendorID
+		o.maybeEnqueueOnNoStock(ctx, in, vendor.ID(), requestedVendorID)
 		return nil, ErrNoStock
 	}
 	if !hasEnoughStock(stock, in.Zone, in.Count) {
-		o.maybeEnqueueOnNoStock(ctx, in, vendor.ID())
+		o.maybeEnqueueOnNoStock(ctx, in, vendor.ID(), requestedVendorID)
 		return nil, ErrNoStock
 	}
 	// 估价基准 · 优先按 zone 读 vendor_probe_zone.our_unit_credits · 精确到区（docs/10-pricing §1.4）·
