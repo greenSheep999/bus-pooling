@@ -34,11 +34,26 @@
 - 第五刀 · vendor 新号 webhook 触发 `Decide(source=webhook)` · 扫低水位 auto 车
 - 第六刀 · coalescer 明确骨架 · 未接生产
 
+## Enqueue 执行链闭合(2026-08-15 · fix: complete VerdictEnqueue execution path)
+
+按 codex 建议 · 补齐三处 Enqueue 分支的真实执行 · 避免"文档说完成·代码只 log":
+- `bus.Scheduler.doEnqueue` · 装配 `AutoEnqueuer` · 真调 stockwatch.Enqueue
+- `deathwatch.RefillTick` Enqueue 分支 · 装配 `RefillEnqueuer` · 挂完标 pending_refill=fulfilled(note=enqueued_to_stockwatch) · **不无限 pending 空转**
+- `webhookAutoScanBridge` Enqueue 分支 · 直用 stockWatcher.Enqueue
+
+**资金语义**:挂意图不预冻结(ReservedAmount=0)· fire 时走 decider.Pull 完整钱包事务。跟 `maybeEnqueueOnNoStock` 一致 · Tight 期间不冻死大量用户资金。
+
+**规格测试**:
+- `TestSchedulerDecide_Enqueue_CallsEnqueuer` · 闭环
+- `TestSchedulerDecide_Enqueue_NoEnqueuer_LogsOnly` · nil-safe
+- `TestRefillTick_DecideEnqueue_CallsEnqueuer_MarksFulfilled` · 挂完标 fulfilled
+- `TestRefillTick_DecideEnqueue_NoEnqueuer_Reschedules` · nil-safe
+
 ## 依赖 / 阻塞
 
 - 1c 完成（拼车分摊已通）
 - 位置 2 待用户决策付费优先能力方向
-- **可上线**:自动补车链路(1a-1d)已全部收口到 `decider.Decide`
+- **1d 调度闭环完成**:自动补车链路(1a-1d)已全部收口到 `decider.Decide` · Enqueue 分支已真调 stockwatch
 
 ## 上线判据
 

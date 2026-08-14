@@ -128,12 +128,27 @@ func TestRefillTick_DecidePull_UsesVerdictParams(t *testing.T) {
 	}
 }
 
-func TestRefillTick_DecideEnqueue_Reschedules(t *testing.T) {
+// mockRefillEnqueuer · 记录调用
+type mockRefillEnqueuer struct {
+	mu    sync.Mutex
+	calls []RefillEnqueueRequest
+	err   error
+}
+
+func (m *mockRefillEnqueuer) Enqueue(_ context.Context, req RefillEnqueueRequest) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, req)
+	return m.err
+}
+
+func TestRefillTick_DecideEnqueue_NoEnqueuer_Reschedules(t *testing.T) {
+	// 未装 enqueuer · 保 pending 兼容旧路径
 	sqldb, _, busID, roundID := setupDB(t)
 	insertCred(t, sqldb, "c1", 111, busID, roundID, "dead", true)
 	insertPendingRefill(t, sqldb, "pr1", busID, "c1")
 
-	dec := &mockRefillDecider{verdict: RefillVerdict{Action: RefillEnqueue, Reason: "tight_enqueue"}}
+	dec := &mockRefillDecider{verdict: RefillVerdict{Action: RefillEnqueue, Reason: "tight"}}
 	pull := &mockRecordingPuller{}
 	w := &Watcher{
 		db:            sqldb,
@@ -145,13 +160,56 @@ func TestRefillTick_DecideEnqueue_Reschedules(t *testing.T) {
 
 	w.RefillTick(context.Background(), 10)
 	if len(pull.calls) != 0 {
-		t.Errorf("Enqueue 不该调 puller(第五刀待接) · 得 %d 次", len(pull.calls))
+		t.Errorf("Enqueue 不该调 puller · 得 %d 次", len(pull.calls))
 	}
-	// 保 pending 等下轮
 	var status string
 	sqldb.QueryRow(`SELECT status FROM pending_refill WHERE id='pr1'`).Scan(&status)
 	if status != "pending" {
-		t.Errorf("pending_refill.status = %q · want pending", status)
+		t.Errorf("nil enqueuer 应保 pending · 得 %q", status)
+	}
+}
+
+// **闭环测试** · Decide 返 Enqueue → 真调 enqueuer + pending_refill 标 fulfilled
+func TestRefillTick_DecideEnqueue_CallsEnqueuer_MarksFulfilled(t *testing.T) {
+	sqldb, _, busID, roundID := setupDB(t)
+	insertCred(t, sqldb, "c1", 111, busID, roundID, "dead", true)
+	insertPendingRefill(t, sqldb, "pr1", busID, "c1")
+
+	dec := &mockRefillDecider{verdict: RefillVerdict{
+		Action:       RefillEnqueue,
+		PullVendor:   "vT",
+		PullMaxPrice: 150_000_000,
+	}}
+	pull := &mockRecordingPuller{}
+	enq := &mockRefillEnqueuer{}
+	w := &Watcher{
+		db:             sqldb,
+		refillPuller:   pull,
+		refillDecider:  dec,
+		refillEnqueuer: enq,
+		now:            func() time.Time { return time.Now() },
+	}
+	w.log = slog.Default()
+
+	w.RefillTick(context.Background(), 10)
+	if len(enq.calls) != 1 {
+		t.Fatalf("Enqueue 应调 enqueuer 1 次 · 得 %d", len(enq.calls))
+	}
+	if len(pull.calls) != 0 {
+		t.Errorf("Enqueue 不该调 puller · 得 %d 次", len(pull.calls))
+	}
+	got := enq.calls[0]
+	if got.RefillID != "pr1" || got.BusID != busID || got.PreferredVendor != "vT" || got.MaxUnitPrice != 150_000_000 {
+		t.Errorf("enqueue 参数不对: %+v", got)
+	}
+	// pending_refill 应标 fulfilled · 不无限 pending
+	var status, errCol sql.NullString
+	sqldb.QueryRow(`SELECT status, last_error FROM pending_refill WHERE id='pr1'`).Scan(&status, &errCol)
+	if status.String != "fulfilled" {
+		t.Errorf("pending_refill.status = %q · want fulfilled(挂 stockwatch 后不无限 pending)", status.String)
+	}
+	if errCol.String != "enqueued_to_stockwatch" {
+		t.Errorf("pending_refill.last_error = %q · want enqueued_to_stockwatch", errCol.String)
 	}
 }
 

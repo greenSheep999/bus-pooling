@@ -50,6 +50,9 @@ type Watcher struct {
 	// refillDecider · 第三刀 · Decide 前置判据 · nil = 老行为(直接 puller)
 	// 装配层实现 · 避免 deathwatch → decider 硬依赖
 	refillDecider RefillDecide
+	// refillEnqueuer · 挂 stockwatch 桥 · nil = Enqueue 分支只 reschedule
+	// 装配层实现 · 避免 deathwatch → stockwatch 硬依赖
+	refillEnqueuer RefillEnqueuer
 }
 
 // SetRefillDecider · 装配层注入 · 必须在 Start 前调用。
@@ -58,6 +61,14 @@ func (w *Watcher) SetRefillDecider(d RefillDecide) {
 		return
 	}
 	w.refillDecider = d
+}
+
+// SetRefillEnqueuer · 装配层注入 · 必须在 Start 前调用。
+func (w *Watcher) SetRefillEnqueuer(e RefillEnqueuer) {
+	if w == nil {
+		return
+	}
+	w.refillEnqueuer = e
 }
 
 // RefillPuller · 号死后触发新一轮拉号的抽象
@@ -92,9 +103,27 @@ type RefillRequest struct {
 // 语义:
 //   - Verdict=Reject → RefillTick 跳过这条 · 标 skipped · 记 reason
 //   - Verdict=Pull   → RefillTick 用 verdict 里的 Count/VendorID/MaxPrice 调 puller
-//   - Verdict=Enqueue → 第五刀接 · 现在跟 Reject 一样跳过(号死场景通常紧俏·挂单是合理选)
+//   - Verdict=Enqueue → RefillTick 调 refillEnqueuer 挂 stockwatch · 挂完标 fulfilled
 type RefillDecide interface {
 	Decide(ctx context.Context, req RefillRequest) RefillVerdict
+}
+
+// RefillEnqueuer · 装配层注入 stockwatch.Enqueue 桥。
+//
+// **挂意图不预冻结** —— fire 时走 decider.Pull 完整钱包事务。
+// nil = Enqueue 分支只 reschedule(旧行为·会无限 pending)。
+type RefillEnqueuer interface {
+	Enqueue(ctx context.Context, req RefillEnqueueRequest) error
+}
+
+// RefillEnqueueRequest · deathwatch → stockwatch 桥的入参
+type RefillEnqueueRequest struct {
+	RefillID        string
+	PassengerID     string
+	BusID           string
+	Count           int
+	PreferredVendor string
+	MaxUnitPrice    int64
 }
 
 // RefillVerdict · Decide 输出给 RefillTick 的结果

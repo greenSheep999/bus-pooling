@@ -196,10 +196,34 @@ func (w *Watcher) RefillTick(ctx context.Context, limit int) (processed int, err
 				processed++
 				continue
 			case RefillEnqueue:
-				// 第五刀待接 · 号死场景通常紧俏挂单更合理·但现无 stockwatch 通路·先跳
-				w.log.Info("deathwatch: Decide 判挂单 · 第五刀待接 · 保 pending 等下轮",
+				// 挂 stockwatch · 挂意图不预冻结 · fire 时走 decider.Pull 完整钱包事务
+				// 挂完标 pending_refill=fulfilled · note='enqueued_to_stockwatch' · 不无限 pending
+				if w.refillEnqueuer == nil {
+					// 未装配 enqueuer · 保 pending 兼容旧路径
+					w.log.Info("deathwatch: Decide 判挂单 · enqueuer 未装配 · 保 pending 等下轮",
+						"refill_id", r.ID, "bus", r.BusID, "reason", verdict.Reason)
+					w.rescheduleRefill(ctx, r.ID, "enqueue_no_enqueuer")
+					processed++
+					continue
+				}
+				eerr := w.refillEnqueuer.Enqueue(ctx, RefillEnqueueRequest{
+					RefillID:        r.ID,
+					PassengerID:     r.PassengerID,
+					BusID:           r.BusID,
+					Count:           req.Count,
+					PreferredVendor: verdict.PullVendor,
+					MaxUnitPrice:    verdict.PullMaxPrice,
+				})
+				if eerr != nil {
+					w.log.Info("deathwatch: 挂 stockwatch 失败 · 保 pending 下轮重试",
+						"refill_id", r.ID, "err", eerr)
+					w.rescheduleRefill(ctx, r.ID, "enqueue_error:"+eerr.Error())
+					processed++
+					continue
+				}
+				w.log.Info("deathwatch: pending_refill 挂 stockwatch · 标 fulfilled",
 					"refill_id", r.ID, "bus", r.BusID, "reason", verdict.Reason)
-				w.rescheduleRefill(ctx, r.ID, "enqueue_deferred")
+				w.markRefillResolved(ctx, r.ID, "fulfilled", "enqueued_to_stockwatch")
 				processed++
 				continue
 			case RefillPull:

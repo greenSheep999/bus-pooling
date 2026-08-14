@@ -60,17 +60,77 @@ func TestSchedulerDecide_Reject_NotPulling(t *testing.T) {
 	}
 }
 
-func TestSchedulerDecide_Enqueue_NotPullingYet(t *testing.T) {
+// mockEnqueuer · 记录调用 · 用于覆盖 Enqueue 执行链
+type mockEnqueuer struct {
+	mu    sync.Mutex
+	calls []AutoEnqueueRequest
+	err   error
+}
+
+func (m *mockEnqueuer) Enqueue(_ context.Context, req AutoEnqueueRequest) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, req)
+	return m.err
+}
+
+func (m *mockEnqueuer) count() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.calls)
+}
+
+func TestSchedulerDecide_Enqueue_NoEnqueuer_LogsOnly(t *testing.T) {
+	// nil enqueuer · Enqueue 分支只 log · 不调 puller
 	s, refill, exec := setupSchedulerDB(t)
 	insertBus(exec, "b1", true, 5, -1, 2)
 
 	dec := &mockDecider{verdict: SchedulerVerdict{Action: ActionEnqueue}}
 	s.SetDecider(dec)
+	// 不 SetEnqueuer
 
 	s.ScanOnce(context.Background())
 
 	if refill.count() != 0 {
-		t.Errorf("Enqueue 第五刀待接·现在不调 puller · 得 %d", refill.count())
+		t.Errorf("Enqueue 不调 puller · 得 %d", refill.count())
+	}
+}
+
+// **闭环测试** · Decide 返 Enqueue → 真调 stockwatch.Enqueue
+func TestSchedulerDecide_Enqueue_CallsEnqueuer(t *testing.T) {
+	s, refill, exec := setupSchedulerDB(t)
+	insertBus(exec, "b1", true, 5, -1, 2) // watermark=5·alive=2
+
+	dec := &mockDecider{verdict: SchedulerVerdict{
+		Action:       ActionEnqueue,
+		PullCount:    3,
+		PullVendor:   "vT",
+		PullMaxPrice: 80_000_000,
+	}}
+	enq := &mockEnqueuer{}
+	s.SetDecider(dec)
+	s.SetEnqueuer(enq)
+
+	s.ScanOnce(context.Background())
+
+	if enq.count() != 1 {
+		t.Fatalf("Enqueue 应调 enqueuer 1 次 · 得 %d", enq.count())
+	}
+	if refill.count() != 0 {
+		t.Errorf("Enqueue 不该调 puller · 得 %d", refill.count())
+	}
+	got := enq.calls[0]
+	if got.BusID != "b1" {
+		t.Errorf("BusID = %q · want b1", got.BusID)
+	}
+	if got.Count != 3 {
+		t.Errorf("Count = %d · want 3", got.Count)
+	}
+	if got.PreferredVendor != "vT" {
+		t.Errorf("PreferredVendor = %q · want vT", got.PreferredVendor)
+	}
+	if got.MaxUnitPrice != 80_000_000 {
+		t.Errorf("MaxUnitPrice = %d · want 80_000_000", got.MaxUnitPrice)
 	}
 }
 

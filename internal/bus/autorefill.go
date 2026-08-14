@@ -31,6 +31,23 @@ type AutoRefiller interface {
 	Refill(ctx context.Context, req AutoRefillRequest) error
 }
 
+// AutoEnqueuer · 装配层给 scheduler 装的 stockwatch.Enqueue 桥
+//
+// **挂意图不预冻结** —— 跟 maybeEnqueueOnNoStock 一致 · fire 时走 decider.Pull 完整钱包事务。
+// nil = Enqueue 分支只 log(旧行为)。
+type AutoEnqueuer interface {
+	Enqueue(ctx context.Context, req AutoEnqueueRequest) error
+}
+
+// AutoEnqueueRequest · scheduler → stockwatch 桥的入参
+type AutoEnqueueRequest struct {
+	BusID           string
+	InitiatorPassengerID string
+	Count           int
+	PreferredVendor string // Decide 已挑好的 vendor
+	MaxUnitPrice    int64  // 涨价保护
+}
+
 // AutoRefillRequest · scheduler → decider 桥的入参
 type AutoRefillRequest struct {
 	// BusID 目标车
@@ -91,6 +108,7 @@ const (
 type Scheduler struct {
 	db       *sql.DB
 	puller   AutoRefiller
+	enqueuer AutoEnqueuer    // nil = ActionEnqueue 只 log
 	decider  SchedulerDecide // nil = 老行为·直发 puller(1a-1c 回归)
 	interval time.Duration
 	logger   *slog.Logger
@@ -103,6 +121,12 @@ type Scheduler struct {
 // nil 时保留老行为(直接 puller.Refill)。
 func (s *Scheduler) SetDecider(d SchedulerDecide) {
 	s.decider = d
+}
+
+// SetEnqueuer · 装配层注入 stockwatch.Enqueue 桥 · 必须在 Start 前调用。
+// nil 时 ActionEnqueue 只 log(旧行为)。
+func (s *Scheduler) SetEnqueuer(e AutoEnqueuer) {
+	s.enqueuer = e
 }
 
 // NewScheduler · interval<=0 用默认 5min · puller/db 为 nil 时 Start 是 no-op（不 panic）
@@ -228,10 +252,7 @@ func (s *Scheduler) decideAndAct(ctx context.Context, c autoRefillCandidate) boo
 			s.logger.Debug("bus.Scheduler: Decide 拒", "bus", c.busID, "reason", verdict.Reason)
 			return false
 		case ActionEnqueue:
-			// 第五刀接 stockwatch · 现在先 log(避免 5min 内挂重复 watcher)
-			s.logger.Info("bus.Scheduler: Decide 判挂单 · 第五刀待接",
-				"bus", c.busID, "reason", verdict.Reason)
-			return false
+			return s.doEnqueue(ctx, c, verdict.PullCount, verdict.PullVendor, verdict.PullMaxPrice)
 		case ActionPull:
 			return s.doPull(ctx, c, verdict.PullCount, verdict.PullVendor, verdict.PullMaxPrice)
 		}
@@ -250,6 +271,36 @@ func (s *Scheduler) decideAndAct(ctx context.Context, c autoRefillCandidate) boo
 		return false
 	}
 	return s.doPull(ctx, c, count, c.preferredVendor, c.maxUnitPrice)
+}
+
+// doEnqueue · 挂 stockwatch(挂意图不预冻结 · fire 时走 decider.Pull 完整钱包事务)
+//
+// codex 拍板:挂意图不预冻结·跟 maybeEnqueueOnNoStock 一致。
+// 未装配 enqueuer 时只 log(1a-1c 回归)。
+func (s *Scheduler) doEnqueue(ctx context.Context, c autoRefillCandidate, count int, vendorID string, maxPrice int64) bool {
+	if s.enqueuer == nil {
+		s.logger.Info("bus.Scheduler: Decide 判挂单但 enqueuer 未装配 · 只 log",
+			"bus", c.busID, "vendor", vendorID, "count", count)
+		return false
+	}
+	if count <= 0 {
+		count = 1
+	}
+	err := s.enqueuer.Enqueue(ctx, AutoEnqueueRequest{
+		BusID:                c.busID,
+		InitiatorPassengerID: c.ownerID,
+		Count:                count,
+		PreferredVendor:      vendorID,
+		MaxUnitPrice:         maxPrice,
+	})
+	if err != nil {
+		s.logger.Info("bus.Scheduler: 挂 stockwatch 失败 · 下轮再试",
+			"bus", c.busID, "err", err)
+		return false
+	}
+	s.logger.Info("bus.Scheduler: 挂 stockwatch",
+		"bus", c.busID, "vendor", vendorID, "count", count, "max_price", maxPrice)
+	return true
 }
 
 // doPull · 生成幂等键·调 puller

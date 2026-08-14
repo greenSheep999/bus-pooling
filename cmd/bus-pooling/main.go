@@ -713,6 +713,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		probeZone: probeZoneStore,
 		logger:    slog.Default(),
 	})
+	// ActionEnqueue 分支 · 挂 stockwatch · 挂意图不预冻结
+	autoRefill.SetEnqueuer(&schedulerEnqueueBridge{sw: stockWatcher, logger: slog.Default()})
 	autoRefill.Start(ctx)
 	defer autoRefill.Stop(2 * time.Second)
 
@@ -777,6 +779,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 			probeZone: probeZoneStore,
 			logger:    slog.Default(),
 		})
+		// RefillEnqueue 分支 · 挂 stockwatch · 挂意图不预冻结
+		deathwatchWatcher.SetRefillEnqueuer(&refillEnqueueBridge{sw: stockWatcher, logger: slog.Default()})
 	}
 
 	// webhookin 分派器 · 收到 vendor webhook 后按事件类型走 vendor_dispatch / deathwatch / refund
@@ -793,13 +797,14 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		Notifier: stockWatcher,
 		// 第五刀 · vendor 新号 webhook 到时扫低水位 auto 车 · 逐辆调 Decide
 		AutoScan: &webhookAutoScanBridge{
-			db:        database.DB,
-			orch:      orch,
-			modeMgr:   modeMgr,
-			killFlag:  killFlag,
-			turboFlag: turboFlag,
-			probeZone: probeZoneStore,
-			logger:    slog.Default(),
+			db:           database.DB,
+			orch:         orch,
+			stockWatcher: stockWatcher,
+			modeMgr:      modeMgr,
+			killFlag:     killFlag,
+			turboFlag:    turboFlag,
+			probeZone:    probeZoneStore,
+			logger:       slog.Default(),
 		},
 		// 部分 vendor webhook 带 price/available · 顺手落 vendor_probe_zone
 		// source='webhook' · 补探针间隙 + 前端 price-trend 多一路
@@ -1348,13 +1353,14 @@ func strictestMaxPrice(a, b int64) int64 {
 //
 // 出错只 log · 不影响 webhook 主流程返 200。
 type webhookAutoScanBridge struct {
-	db        *sql.DB
-	orch      *decider.Orchestrator
-	modeMgr   *stockwatch.ModeMgr
-	killFlag  *stockwatch.FileFlag
-	turboFlag *stockwatch.FileFlag
-	probeZone *vendorview.ProbeZoneStore
-	logger    *slog.Logger
+	db           *sql.DB
+	orch         *decider.Orchestrator
+	stockWatcher *stockwatch.Watcher // Enqueue 目标
+	modeMgr      *stockwatch.ModeMgr
+	killFlag     *stockwatch.FileFlag
+	turboFlag    *stockwatch.FileFlag
+	probeZone    *vendorview.ProbeZoneStore
+	logger       *slog.Logger
 }
 
 func (b *webhookAutoScanBridge) OnNewKeys(ctx context.Context, vendorID, zone string, newKeys int) {
@@ -1486,8 +1492,40 @@ func (b *webhookAutoScanBridge) decideAndAct(
 	case decider.VerdictReject:
 		return
 	case decider.VerdictEnqueue:
-		b.logger.Info("webhookAutoScanBridge: Decide 判挂单 · 第五刀 · stockwatch 接入后填",
-			"bus", busID, "reason", out.RejectReason)
+		// 挂 stockwatch · 挂意图不预冻结
+		gap := watermark - aliveTotal
+		count := minCount
+		if count <= 0 {
+			count = gap
+		}
+		if count < 1 {
+			count = 1
+		}
+		v := webhookVendor
+		if v == "" {
+			v = preferredVendor
+		}
+		cid, err := newAutoScanIdemID()
+		if err != nil {
+			return
+		}
+		_, eerr := b.stockWatcher.Enqueue(ctx, stockwatch.EnqueueParams{
+			PassengerID:   ownerID,
+			BusID:         busID,
+			TargetGroup:   "bus-" + busID,
+			VendorID:      v,
+			Region:        "",
+			ClientOrderID: cid,
+			Count:         count,
+			MaxUnitPrice:  strictestMaxPrice(maxPrice, passengerMax),
+			// ReservedAmount = 0 · 挂意图不预冻结
+		})
+		if eerr != nil {
+			b.logger.Info("webhookAutoScanBridge: 挂 stockwatch 失败", "bus", busID, "err", eerr)
+			return
+		}
+		b.logger.Info("webhookAutoScanBridge: Decide→Enqueue",
+			"bus", busID, "vendor", v, "count", count)
 		return
 	case decider.VerdictPull:
 		gap := watermark - aliveTotal
@@ -1531,4 +1569,65 @@ func newAutoScanIdemID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// schedulerEnqueueBridge · bus.Scheduler → stockwatch.Enqueue 桥
+//
+// **挂意图不预冻结** —— 跟 maybeEnqueueOnNoStock 一致 · fire 时走 decider.Pull 完整钱包事务。
+type schedulerEnqueueBridge struct {
+	sw     *stockwatch.Watcher
+	logger *slog.Logger
+}
+
+func (b *schedulerEnqueueBridge) Enqueue(ctx context.Context, req bus.AutoEnqueueRequest) error {
+	if b.sw == nil {
+		return errors.New("scheduler enqueue: stockwatch 未装配")
+	}
+	cid, err := newAutoScanIdemID()
+	if err != nil {
+		return err
+	}
+	_, err = b.sw.Enqueue(ctx, stockwatch.EnqueueParams{
+		PassengerID:   req.InitiatorPassengerID,
+		BusID:         req.BusID,
+		TargetGroup:   "bus-" + req.BusID,
+		VendorID:      req.PreferredVendor,
+		ClientOrderID: cid,
+		Count:         req.Count,
+		MaxUnitPrice:  req.MaxUnitPrice,
+		// ReservedAmount = 0 · 挂意图不预冻结
+	})
+	return err
+}
+
+// refillEnqueueBridge · deathwatch.RefillTick → stockwatch.Enqueue 桥
+//
+// **挂意图不预冻结** —— 跟 scheduler 一致 · pending_refill 挂完标 fulfilled(note=enqueued_to_stockwatch)。
+type refillEnqueueBridge struct {
+	sw     *stockwatch.Watcher
+	logger *slog.Logger
+}
+
+func (b *refillEnqueueBridge) Enqueue(ctx context.Context, req deathwatch.RefillEnqueueRequest) error {
+	if b.sw == nil {
+		return errors.New("refill enqueue: stockwatch 未装配")
+	}
+	cid, err := newAutoScanIdemID()
+	if err != nil {
+		return err
+	}
+	target := "bus-" + req.BusID
+	if req.BusID == "" {
+		target = "record-" + req.PassengerID
+	}
+	_, err = b.sw.Enqueue(ctx, stockwatch.EnqueueParams{
+		PassengerID:   req.PassengerID,
+		BusID:         req.BusID,
+		TargetGroup:   target,
+		VendorID:      req.PreferredVendor,
+		ClientOrderID: cid,
+		Count:         req.Count,
+		MaxUnitPrice:  req.MaxUnitPrice,
+	})
+	return err
 }
