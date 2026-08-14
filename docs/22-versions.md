@@ -18,13 +18,15 @@
 4. ✅ 缺货挂单抢号 · restock 触发 fire（`decider/orchestrator.go:395`）
 5. ✅ vendor 60s 探针 · /api/vendors/status 真数据无 mock 兜底
 
-**假的 · mock 的 · 断链的**：
-1. ❌ **多人 bus 拉号不合流** —— `coalescer.Anon/Team` 返 ErrNotImplemented（`internal/coalescer/coalescer.go:73,78`）· 现在多人 bus 是**各自独立 decider.Pull** · 各自付各自号 · vendor 侧 N 次 API 调用 · **拼车没有拼车的样子**
+**假的 · mock 的 · 断链的**（v3/v4 之后重排 · 2026-08-14 收工快照）：
+1. ❌ **多人 bus 拉号不合流** —— `coalescer.Anon/Team` 返 ErrNotImplemented（`internal/coalescer/coalescer.go:73,78`）· 现在多人 bus 是**各自独立 decider.Pull** · vendor 侧 N 次 API 调用 · **v2 才能拼**
 2. ❌ **我方给 vendor 充值** —— 没 UI 没路由 · 全靠人工登 vendor 后台
-3. ❌ **对账页面** —— reconcile 只有 CLI 子命令 · 无 cron 无页面 · 后台看不到差异
-4. ❌ **告警外发** —— data-health 落表 · 无 email/slack/tg webhook
-5. 🟡 P6 自动补车 · Step 1 落队列 skeleton · **不真拉**（等观察数据再上 Step 2）
-6. 🟡 上游余额预检 P5 装了 · **但 3 家 vendor 的 Balance() 恒返 0**（profile 解析 bug · 前面审计发现的 P0）
+3. ✅ **对账端点** —— `/api/admin/reconcile` v3.1 已装
+4. ✅ **告警外发** —— v3.5 已装 · BP_ALERT_WEBHOOK 未设则只留 ERROR 日志（`internal/vendorview/alert_notifier.go`）
+5. ✅ **自动补车 Step 2** —— v3.2 · deathwatch RefundOnce 后真调 decider.Pull（`internal/deathwatch/refill.go`）
+6. ✅ **vendor 余额自动切换** —— v3.3 · BalanceChecker + Picker 组合 · 没钱切下一家（`internal/decider/orchestrator.go`）
+7. ✅ **profile Balance 恒 0 bug** —— 之前 profileResp 结构错 · vendor 返 flat JSON 却按 nested 解 · 3 家 vendor 已修（v1 收官）
+8. ✅ **涨价历史 / 乘客对账 / webhook 落价** —— v4.2 / v4.3 / v4.4 端点全通
 
 ## 三个核心场景 · 每个场景的完整链路
 
