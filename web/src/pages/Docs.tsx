@@ -96,6 +96,16 @@ function StartSection() {
       </Card>
 
       <Card className="p-7">
+        <SectionHead title={t("start.api-keys.title")} sub={t("start.api-keys.sub")} />
+        <div className="mt-4 space-y-3">
+          <CodeBlock lang="bash" code={t("start.api-keys.code")} />
+          <Alert tone="neutral" icon={KeyRound} title={t("start.api-keys.alert.title")}>
+            {t("start.api-keys.alert.body")}
+          </Alert>
+        </div>
+      </Card>
+
+      <Card className="p-7">
         <SectionHead title={t("start.convention.title")} sub={t("start.convention.sub")} />
         <div className="mt-4 space-y-3">
           <ConventionRow label={t("start.convention.money.label")} value={<>{t("start.convention.money.value")} <Em>1_000_000</Em></>} />

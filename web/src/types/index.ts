@@ -530,10 +530,10 @@ export interface ApiKey {
   revoked: boolean;
 }
 
-/** 新建 api key 的返回 · plaintext 只在这一次返回，之后再也拿不到 */
+/** 新建 api key 的返回 · key 只在这一次返回，之后再也拿不到 */
 export interface ApiKeyCreated {
-  id: string;
-  plaintext: string;
+  key: string;
+  item: ApiKey;
 }
 
 /* ── 充值 ──

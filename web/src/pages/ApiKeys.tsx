@@ -167,6 +167,13 @@ function CreateKeyModal({ open, onClose }: { open: boolean; onClose: () => void 
     onClose();
   };
 
+  const submit = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || create.isPending) return;
+    const r = await create.mutateAsync(trimmed);
+    setPlaintext(r.key);
+  };
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
       <DialogContent className="max-w-[480px]">
@@ -199,7 +206,11 @@ function CreateKeyModal({ open, onClose }: { open: boolean; onClose: () => void 
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && name.trim() && create.mutate(name.trim())}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" || !name.trim()) return;
+                    e.preventDefault();
+                    void submit();
+                  }}
                   placeholder={t("api-keys.create-modal.new.placeholder")}
                   autoFocus
                 />
@@ -210,10 +221,7 @@ function CreateKeyModal({ open, onClose }: { open: boolean; onClose: () => void 
               <Button
                 variant="brand"
                 disabled={!name.trim() || create.isPending}
-                onClick={async () => {
-                  const r = await create.mutateAsync(name.trim());
-                  setPlaintext(r.plaintext);
-                }}
+                onClick={() => void submit()}
               >
                 {create.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
                 {create.isPending ? t("api-keys.create-modal.new.submitting") : t("api-keys.create-modal.new.submit")}
