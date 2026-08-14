@@ -256,6 +256,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	// 把 /healthz「HTTP 活着」升级到「数据在更新」· 纯运维视角 · 不给乘客前端（§0.1）
 	if s.adminKey != "" && s.health != nil {
 		mux.Handle("GET /api/admin/data-health", handler(s.requireAdmin(s.handleDataHealth)))
+		// v1-E · 运维单页 · 每家 vendor 一屏：余额 + fleet 状态 + 今日 dispatch + zone 现价
+		mux.Handle("GET /api/admin/overview", handler(s.requireAdmin(s.handleAdminOverview)))
 	}
 
 	// 首页 / 数据 tab / 活动流（05-api-contract §9b）
