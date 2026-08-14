@@ -170,35 +170,317 @@ xi8 是数据补齐 · **不参与抢号**。
 | `PreferredVendor` | 建新车时预填的首选 vendor |
 | `DefaultZone` | 建新车时预填的默认区域 |
 
-### 4.3 参数解析优先级 · 三类字段不同规则
+### 4.3 策略优先级铁律(权威)
 
-**类① · 硬上限 · 取最严**(不是降级 · 是 `min()`):
+**本节是策略层的唯一权威口径** —— API / decider / scheduler / 前端 / 测试**必须**引这一节 · 别自己再造规则(sprint-1f-A · `decisions.md §13.5`)。
+
+#### 4.3.1 四层优先级 · 顺序固定
+
+```
+本次请求约束(request override)  >  车级策略(bus.strategy)  >  全局默认(passenger_strategy_default)  >  系统默认值(config.pull.*)
+```
+
+- **本次请求约束**:用户手动动作携带的一次性参数(手动拉号带 `count`/`vendor`/`zone` · 建车向导若携带首次拉号参数)· **不落库** · 只影响这一次
+- **车级策略**:`bus` 表 · 每车一份 · **两种状态**:
+  - **跟随全局**:字段 NULL(方案 A) 或 inherit=true(方案 B) · 运行时读全局当前值 · 全局变化会影响该车
+  - **覆盖本车**:字段有值(方案 A) 或 inherit=false(方案 B) · 运行时读本车值 · 全局变化不影响该字段
+  - 建车时若走"覆盖本车"路径 · 抄一份全局值作为 seed 后独立演化;走"跟随全局"路径 · 不 seed · 运行时始终读全局
+- **全局默认**:`passenger_strategy_default` 表 · 每乘客一份 · **三种用途**:
+  1. **硬上限**(`MaxUnitPrice / DailyRoundLimit / DailySpendLimit`):运行时**始终参与** · 跨所有车生效
+  2. **新车默认 seed**:建车向导预填 UI · 用户显式选"覆盖本车"时把这份值落到车表
+  3. **运行时 inherit fallback**(1f-B 引入后):字段处于"跟随全局"态时 · 运行时读全局当前值
+- **系统默认值**:`config.pull.MinCount / MaxCount / DefaultCount` 等 · vendor 静态限 · 无用户入口
+
+#### 4.3.2 字段两类 · 规则不同
+
+**类① 硬上限字段** —— 取更严(`min` · 不是覆盖):
 
 | 字段 | 规则 |
 |---|---|
-| `MaxUnitPrice` | `min(车级, 全局)` · 任一层拦住都拦 |
-| `DailyRoundLimit` | 只在全局(车级 deprecated) |
-| `DailySpendLimit` | 只在全局(车级 deprecated) |
+| `MaxUnitPrice` | `min(request, 车级, 全局, +∞)` · 任一层拦住都拦 |
+| `DailyRoundLimit` | 只在全局(车级 deprecated · 见 §4.1) |
+| `DailySpendLimit` | 只在全局(车级 deprecated · 见 §4.1) |
 
-**为什么取最严不降级**:全局是"这个人不想超" · 车级是"这辆车不想超" · 任一层触发都要拦。降级会让用户在某辆车设 max=1000 就绕开全局 max=100 的护栏。
+**为什么取更严不覆盖**:硬上限是护栏 · 车级 30 全局 20 时若"车级覆盖" → 用户在某车设 30 就绕过全局 20 的保护;车级 15 全局 20 时取 min 15 · 车级更严也听。**任一层触发都拦**。
 
-**类② · 偏好 · 车级 > 全局 > 系统内建**(真正的降级链):
+**请求约束更严**:手动拉号带 `max_unit_price=10` · 全局 20 车级 15 · 最终按 10 拉;若手动带 20 · 全局 15 · 仍按 15 拉(请求**不能放宽**硬上限)。
+
+**类② 覆盖字段** —— 后者盖前者:
 
 | 字段 | 规则 |
 |---|---|
-| `PerRoundCount` | 车级 → 全局 → `config.pull.DefaultCount` |
-| `PreferredVendor` | 车级 → 全局 → 系统比价选(AutoPick) |
-| `DefaultZone` | 只在全局 → 代码默认 `auto` |
+| `PerRoundCount` | 车级 → 全局 → `config.pull.DefaultCount`(**注**:是"默认每轮拉几个"偏好·非 request 字段·见 §4.3.2d) |
+| `PreferredVendor` | request → 车级 → 全局 → 系统比价选(AutoPick) |
+| `Zone` / `DefaultZone` | request → 车级 → 全局 → 代码默认 `auto` |
+| `AutoRefillEnabled` | 车级(**当前唯一来源** · 无 request 语义 · 无全局 fallback) |
+| `RefillWatermark` | 车级(**当前唯一来源** · 同上) |
+| `RefillMinCount` | 车级(**当前唯一来源** · 同上) |
 
-**类③ · 每车专属 · 只在车级**:
+**覆盖的"是否有值"由字段继承语义决定** · **不是**用"非空"泛化所有字段:
 
-`AutoRefillEnabled` / `RefillWatermark` / `RefillMinCount` —— 每辆车独立配 · 无全局默认。
+| 继承方案 | "跟随上层" | "覆盖本车" |
+|---|---|---|
+| **方案 A · nullable** | 字段 = NULL | 字段非 NULL(**包括 0 / false**) |
+| **方案 B · inherit flag** | `xxx_inherit = true` | `xxx_inherit = false`(值字段允许 0 / false) |
+| **request override** | 请求 payload 里字段**未出现** | 请求 payload 里字段**出现且合法**(**包括 0 / false**) |
 
-**类④ · 系统内建 · 用户碰不着**:
+**关键**:对 `bool` / `int` 字段 · `0` 和 `false` 是**合法覆盖值** · 不是"空"。**别用"非空"判"是否覆盖"** —— 判断依据是"是否存在 / 是否显式声明" · 见上表。
 
-`config.pull.*` · vendor 内建限 · `surcharge_rule` 加价率 · `ModeMgr` 阈值 · 文件哨兵。
+**⚠️ `AutoRefillEnabled` / `RefillWatermark` / `RefillMinCount` · 现状 vs 目标口径**:
 
-**UI 展示规范**:给用户看"**实际生效值**"·不是"你设的值"。例:"你设的 max=1000·全局 max=100·**实际生效 100**"。
+**当前现状**(001_init.sql / 011_bus_anon_match.sql · sprint-1e 落地):
+- `passenger_strategy_default` **没有** `default_auto_refill_enabled` / `default_refill_watermark` / `default_refill_min_count` 三个字段
+- `bus.auto_refill_enabled` / `bus.refill_watermark` **NOT NULL DEFAULT 0** · 无法表达"NULL = 跟随全局"
+- 因此**当前 auto/refill 三字段仅存在于车级** · 无全局 fallback · 无"跟随全局"语义
+
+**1f-B 目标口径**(等 sprint-1f-B 落 DB migration 后生效):
+- 新增全局字段 `default_auto_refill_enabled bool NOT NULL DEFAULT 0` / `default_refill_watermark int NOT NULL DEFAULT 0` / `default_refill_min_count int NULL`
+- 只作为**新车默认值 seed** + **车级"跟随全局"时的 fallback**
+- 继承语义(NULL = 跟随 vs 显式覆盖为 0)见 §4.3.2b
+
+**过渡期约束**:1f-B DB migration 未落之前 · `Effective()` 对 auto/refill 三字段**只读车级**·`grep` 验收(§4.3.4)不检查这三字段的 fallback 链。
+
+#### 4.3.2b 继承语义 · "跟随全局 vs 覆盖本车" 如何表达(sprint-1f-B 决策)
+
+**问题**:`bus.auto_refill_enabled` / `bus.refill_watermark` 现在是 `NOT NULL DEFAULT 0` · 用户改成 0 时**无法区分**"跟随全局(全局若为 0 就 0 · 若为 1 就 1)" vs "显式覆盖为 0(不管全局多少都是 0)"。
+
+**两种落库方案 · 1f-B 二选一**:
+
+**方案 A · nullable 字段表达继承**(推荐 · SQL 简单 · 无冗余):
+```sql
+-- migration: 改 bus 表 auto/refill 三字段为可空
+ALTER TABLE bus …  auto_refill_enabled INTEGER NULL
+                   refill_watermark    INTEGER NULL
+                   refill_min_count    INTEGER NULL  -- 本来就可空 · 保留
+```
+- `NULL` = 跟随全局默认
+- 非 `NULL` = 覆盖本车(包括显式 0 / false)
+- `RefillMinCount` 本来就 NULL · 但要**跟"按 gap 补齐"的 nil 语义区分** —— 见 §4.3.2c
+
+**方案 B · 显式 inherit flag**(冗余但语义显式):
+```sql
+-- 保留现有 NOT NULL 值字段 · 新增 inherit 标记
+ALTER TABLE bus ADD COLUMN auto_refill_inherit INTEGER NOT NULL DEFAULT 1
+ALTER TABLE bus ADD COLUMN refill_watermark_inherit INTEGER NOT NULL DEFAULT 1
+ALTER TABLE bus ADD COLUMN refill_min_count_inherit INTEGER NOT NULL DEFAULT 1
+```
+- `inherit=1` → 读全局
+- `inherit=0` → 读本车值(值字段仍 NOT NULL DEFAULT 0)
+- 场景:如果"覆盖为 0"是有意义的动作(比如车级明确关闭自动补)·inherit flag 更清晰
+
+**1f-B 决策要求**:落 migration 前先在 `docs/decisions.md §13.4` 补一条方案选择 · 拍板后再动 DB。
+
+**⚠️ 迁移保行为铁律**(无论选方案 A 还是 B · 硬约束):
+
+**核心**:1f-B migration **不允许**让历史车因为全局默认变化而突然开始补车。
+
+**方案 A(nullable)** 落库规则:
+- 现有 `bus` 行的 `auto_refill_enabled / refill_watermark / refill_min_count` 值 **一律保留为"显式覆盖本车"** · 不能一律转 NULL
+  - 用户建车时明确关了 auto(值为 0)· migration 后仍是 0(覆盖) · 全局 auto=1 也不影响
+  - 用户建车时明确开了 auto(值为 1)· migration 后仍是 1(覆盖) · 全局 auto=0 也不影响
+- 只有**新建车走"跟随全局"路径** · 或**存量车用户主动在 UI 选"跟随全局"** · 字段才置 NULL
+- SQL 层面 · `ALTER TABLE bus ALTER COLUMN auto_refill_enabled DROP NOT NULL` · 但**不 UPDATE 现有值**
+
+**方案 B(inherit flag)** 落库规则:
+- 现有 `bus` 行 `auto_refill_inherit / refill_watermark_inherit / refill_min_count_inherit` 一律 **DEFAULT 0(覆盖本车)** · 保留当前值字段的行为
+- 新建车是否默认 `inherit=1` · 由 1f-B 产品决策单独写入 `decisions.md §13.4`(默认跟随 vs 默认覆盖需拍板)
+
+**测试要求**(1f-B migration 落码时必带):
+- fixture:建一辆老 auto=1 车 · 一辆老 auto=0 车 · 各一辆 · 分别验 migration 后 `Effective()` 返值等于 migration 前
+- fixture:migration 后 global default_auto_refill_enabled 从 0 改成 1 · 老车 `Effective()` 结果**不变**
+- 只有 UI 显式改为"跟随全局"后 · 老车行为才随全局变化
+
+#### 4.3.2c RefillMinCount 三态语义
+
+**当前 `bus.refill_min_count` `*int`** · 但有**三种语义**混在同一个字段:
+1. **NULL** = 跟随全局默认(§4.3.2b 方案 A 语义)
+2. **NULL** = 按 `RefillWatermark - alive_total` gap 补差额(§4.1 原语义 · Step 3 已在用)
+3. **非 NULL** = 覆盖本车(每轮至少拉 N 个)
+
+**1 和 2 冲突** —— 同一个 NULL 值前一个说"跟随全局" · 后一个说"按 gap 补"。
+
+**1f-B 拍板要求**:方案 A 下必须选一:
+- **选项 X**:全局 fallback 优先 · NULL 走全局 · 若全局也 NULL 才走 gap
+- **选项 Y**:去掉"跟随全局"语义 · `refill_min_count` 只有"NULL = gap · 非 NULL = 显式"两态(auto_refill_enabled / refill_watermark 走继承 · min_count 不走)
+
+#### 4.3.2d `request.count` vs `PerRoundCount` · 别混
+
+两个东西**语义不同 · 优先级链也不同**:
+
+- **`request.count`**:一次性动作参数 · 用户手动拉号 / 建车向导首次拉号时**显式**带的"这一次拉几个"。**最高优先级** · **不是**持久策略字段 · 不落库。
+- **`PerRoundCount`**:**默认批量偏好** · 落库(车级 / 全局)· 用于:
+  - 手动拉号但 request **没显式给 count** 时的 fallback
+  - 建车向导 seed(建车时抄全局值到车级)
+  - **不用于自动补车 count** —— 自动补车的 count 由 `RefillMinCount` / `RefillWatermark - alive_total` 的 gap 决定(Step 5 · §5.2)
+
+**优先级链**:
+- `request.count`(手动动作)· 优先级最高 · 有值就用 · 不用降级
+- 无 `request.count` 时才走 `PerRoundCount` 三层链(车级 → 全局 → `config.pull.DefaultCount`)
+- 自动补车根本不查 `PerRoundCount`(gap-based 见 Step 5)
+
+#### 4.3.3 自动触发无 request · 走车级 → 全局 → 系统
+
+`webhook` / `deathwatch` / `scheduler` / `probe` / `coalescer` 五个触发源**没有**"本次请求" · 直接从车级开始走:
+
+```
+车级(有 busID)  →  全局默认  →  系统默认值
+```
+
+**关键 · 调用 `Effective()` 前必须解析成"逐车决策"**:
+
+原始 webhook / probe 事件本身**通常只有 `vendor_id` / `zone` / `stock` 信息** · 不天然带 `busID`。**这不代表**自动触发链路可以绕过 busID —— **正确口径是**:
+
+| 触发源 | 原始 payload | 如何解析出 busID |
+|---|---|---|
+| `webhook`(vendor 新号) | vendor / zone / stock | webhook 桥先按 vendor/zone/低水位扫**候选 bus 集合** · 逐辆调 `Effective(pid, busID, nil)` · 各自决策 |
+| `probe`(我方探针) | vendor / zone / new_stock | 同 webhook · probe 桥扫候选 · 逐辆决策 |
+| `deathwatch.RefillTick` | `pending_refill.dead_credential_id` | `pending_refill.bus_id` 字段已带(NULL = 单独提取 · 不走车级) |
+| `bus.Scheduler`(5min 兜底) | 遍历自动车 | 每辆车自带 `busID` |
+| `stockwatch.Notify`(fire 挂单) | `stock_watcher.id` | `stock_watcher.bus_id` 字段已带 |
+| `coalescer`(集单) | 意图窗口 | 意图窗口必须归属某个 `busID`(coalescer 不跨车合并) |
+
+**禁止**:没有 `busID` 就直接用全局策略对**所有车**做自动拉号(会造成"改一次全局默认 · 所有 auto 车瞬间齐补" · 违反用户预期)。
+
+**允许**:`record` 模式(用户单独拉号进 `record-<pid>` group)· `busID` 为空 · 走 request override → 全局默认 · **不涉及车级**。
+
+#### 4.3.4 唯一入口 · `internal/strategy.Effective()`
+
+**别再手工拼字段** —— 所有策略读取路径必须调:
+
+```go
+strategy.Effective(ctx, passengerID, busID, requestOverride) → EffectiveStrategy
+```
+
+- `passengerID`:必填
+- `busID`:自动触发时必填(不填退化成全局-only) · 手动无 bus 场景(record group)可为空
+- `requestOverride`:手动动作时填 · 自动触发传 nil
+- 返值:**已经算好优先级的最终值** · 调用方不能再二次拼
+
+**接入清单**(sprint-1f-C 落码 · 路径均为**当前仓库真实位置**):
+
+| 调用点 | 位置 | busID | requestOverride |
+|---|---|---|---|
+| 手动拉号 | `internal/api/bus.go handleBusPull` | 有 | 有(count/vendor/zone) |
+| 建车向导首次拉号 | **目标链路**(当前 `handleCreateBus` 不做内部拉号 · 用户建完车再手动点拉号走 `handleBusPull`)· 若 1f-B/C 加 `first_pull` / `initial_pull` 参数 · 落在 `handleCreateBus` 后半段 · 现暂无此实现 | 有(新建 bus 的 id) | 有 |
+| bus.Scheduler(5min 兜底) | `internal/bus/autorefill.go`(**当前文件名 · 非 scheduler.go**) | 有 | 无 |
+| deathwatch.RefillTick | `internal/deathwatch/refill.go` | 有(`pending_refill.bus_id` · NULL=单独提取) | 无 |
+| webhook auto scan | `cmd/bus-pooling/main.go` 里的 `webhookAutoScanBridge`(**当前位置 · 非独立 bridge 文件**) | 无 → 由 bridge 扫候选 bus 后逐辆调 | 无 |
+| stockwatch.Notify(fire 挂单) | `internal/stockwatch/`(fire 路径) | 有(`stock_watcher.bus_id`) | 无 |
+| decider.Pull 内部兜底 | `internal/decider/orchestrator.go` / `fire.go`(当前无独立 `pull.go`) | 上游传入 | 上游传入 |
+| record 拉号(单独) | `internal/api/pullrecord.go` | 无(空串) | 有 |
+
+**不存在的路径**(gpt 审阅时误列 · 记录避免造):
+- ❌ `internal/api/bus.go handleBusRefillNow` —— 当前**没有**这个 handler(立即补车走 `handleBusPull` 主路径 · 未来若单开可补)
+- ❌ `internal/bus/scheduler.go` —— 当前实际是 `autorefill.go`(1f-C 若拆文件可命名 scheduler · 现在保留原名)
+- ❌ `cmd/bus-pooling/webhookout_bridge.go` —— 事件通知出向的 bridge 在 `webhookout_bridge.go` · **webhook auto scan(vendor 入向) bridge 在 `main.go`** · 别混
+
+**验收**(sprint-1f-C 完成后 · 精确 grep · 不误伤 DTO/schema/tests):
+
+**禁止**:
+- `decider` / `bus.Scheduler` / `deathwatch` / `stockwatch` / `webhookAutoScanBridge` **运行时决策路径**直接 SELECT 或手工合并策略字段
+- 在 `Effective()` 外计算 `max_unit_price` min 链
+- 在 `Effective()` 外做 `preferred_vendor` 三级 fallback
+- 在 `Effective()` 外解释 `refill_watermark` / `refill_min_count` 语义
+
+**允许**:
+- DB schema / migration(SQL 文件)
+- API request/response DTO(struct 字段定义 + json tag)
+- store 基础读写(`SELECT ... FROM passenger_strategy_default` / `bus` 的 CRUD)
+- `internal/strategy/` 包内部(`Effective()` 自身实现 + 单测)
+- `_test.go` 测试用例
+- `docs/` markdown
+- handler 把 request override 参数**传给** `Effective()` 的合法转发代码
+
+#### 4.3.5 UI 展示规范 · 前端契约(先立 · 后端 1f-B 按此对齐)
+
+**目的**:前端 UI 契约先落定 · 避免 1f-B 后端落 DB / API 时前后端交互层再偏移(用户 1f-A 补丁指令)。
+
+##### 4.3.5.1 展示规则:实际生效值
+
+**给用户看"实际生效值"**·不是"你设的值":
+
+- **车级设 `max=1000` · 全局设 `max=100`** → 展示 "实际生效 100(受全局上限约束)" · 不是"当前:1000"
+- **车级留空 `preferred_vendor`(NULL)** → 展示"跟随全局默认(**读全局配的那家 · 按用户 tier 显示真名或匿名 label**)" · 不是空
+- **全局也留空** → 展示"系统自动选(AutoPick)"
+
+⚠️ **文档里不写死 vendor 名** —— 全局配的哪家是**用户配置项** · 不是文档常量。展示时按 `docs/10-pricing §2.1` 的 tier 规则决定显真名(wholesale)还是匿名 label(retail/community · 例:`Vendor 03`)。
+
+##### 4.3.5.2 EditStrategyPanel 二态切换 UI(依赖 §4.3.2b 继承落地)
+
+**每个"覆盖字段"旁边有一个 toggle · 二态**:
+
+```
+○ 跟随全局默认                 ● 覆盖本车
+  值灰显 · 只读                   值可编辑
+  显示当前全局值 · 加"跟随"标签    可自由输入
+  全局改了这里也改                 全局改不影响这里
+```
+
+**硬上限字段无 toggle** —— 硬上限总是取 min · 车级设的值只作为**更严的补充** · UI 直接输入 · 但旁边**必须**标"仍受全局 X 约束(实际生效 min(车级, 全局))"。
+
+##### 4.3.5.3 前端字段契约(TS 类型 · 1f-B 后端按此对齐)
+
+**推荐**:方案 A(nullable)· TS 侧 `null` = 跟随全局 · 非 `null` = 覆盖:
+
+```typescript
+interface BusStrategy {
+  // 硬上限 · 车级值 · 无二态 · null = 车级不加严 · min(车级, 全局) 由后端算
+  max_unit_price: Money | null;
+
+  // 覆盖字段 · 当前已成立 · null = 跟随全局
+  per_round_count: number | null;
+  preferred_vendor: string | null;
+  zone: "us" | "eu" | "auto" | null;
+
+  // 覆盖字段 · 1f-B 目标 · null = 跟随全局(1f-B DB migration 落后生效)
+  auto_refill_enabled: boolean | null;
+  refill_watermark: number | null;
+  refill_min_count: number | null;
+}
+```
+
+**关键**:前端 TS 类型全部改成 `| null` · 未来 1f-B DB migration 落 nullable 时前端不用改类型 · 只需要:
+1. 建车 / 存量车读取时 · null 走"跟随全局"分支
+2. 保存时 · toggle "跟随全局" 就发 `null` · toggle "覆盖本车" 就发用户填的值(允许 `0` / `false`)
+
+##### 4.3.5.4 全局页(Preferences.tsx)契约
+
+**Preferences 展示所有全局默认字段** · 无 toggle(因为它是"全局默认" · 本身就是最上层的可覆盖源) · 但要:
+
+1. 硬上限字段旁标"**跨所有车累加 · 每车都受此约束**"
+2. 覆盖字段旁标"**新车默认值** + 车级选'跟随全局'时的运行时值"(1f-B 后)
+3. **今日已用/上限** 进度条(`used_today.rounds / rounds_limit` · 已存在)
+
+##### 4.3.5.5 当前 vs 1f-B 目标 · 前端落地节奏
+
+**当前可以先做的**(不依赖后端 migration):
+- ✅ EditStrategyPanel 现有字段的 UI(已完成 · sprint-1e 之前)
+- ⏸ **给现有可覆盖字段加 toggle UI**(`per_round_count / preferred_vendor / zone`) · 后端已支持 nullable · 前端 toggle 立刻能落
+- ⏸ Preferences 页加"新车默认值"标注
+
+**依赖 1f-B DB migration 才能做的**:
+- ⏸ `auto_refill_enabled / refill_watermark / refill_min_count` 的 toggle UI(等 migration 把这三字段改 nullable 后)
+- ⏸ 全局 Preferences 加这三字段的输入(依赖 1f-B 新加全局默认字段)
+
+##### 4.3.5.6 交互失败态
+
+用户操作过程中的**边界态**:
+
+- **用户点"跟随全局" · 但全局也没配** → toggle 变为跟随 · 值区显示 "系统默认(N)" · N 是 `config.pull.DefaultCount` 或类型默认值
+- **用户填了车级值 · 但硬上限被全局卡住** → 保存成功 · 但保存后 UI 展示"你设的 1000 · 实际生效 100(受全局上限约束)"
+- **1f-B migration 未完成时用户改 auto/refill** → 前端不显示 toggle · 直接编辑车级值(跟当前一致)
+
+---
+
+#### 4.3.6 字段两类 · 一览
+
+**类① 硬上限**(取 min · request 不能放宽):`MaxUnitPrice` / `DailyRoundLimit` / `DailySpendLimit`
+
+**类② 覆盖**(后者盖前者):`PerRoundCount` / `PreferredVendor` / `Zone` / `AutoRefillEnabled` / `RefillWatermark` / `RefillMinCount`
+
+**类③ 系统内建**(用户碰不着):`config.pull.*` / vendor 内建 / `surcharge_rule` / `ModeMgr` 阈值 / 文件哨兵
+
+**anon 车专属**(撮合用 · 不参与拉号定价):`AnonZone` / `AnonMaxUnitPrice`(见 §4.1)
 
 ---
 
@@ -302,28 +584,33 @@ want = max(1, want)
 
 ---
 
-**Step 5 · 参数解析**(按 §4.3 三类规则)
+**Step 5 · 参数解析** —— **必须**走 `strategy.Effective()`(§4.3.4 · sprint-1f-C 收口)
 
 ```
+eff := strategy.Effective(ctx, passengerID, busID, requestOverride)
+  // 返 EffectiveStrategy · 已经算好优先级 · 直接取字段
+
 【count · 这次拉几个】
-gap    = max(0, RefillWatermark - alive_total)          · 差多少号
-raw    = RefillMinCount ?? gap                          · 设了 min_count 就按它拉；没设就补齐差额
+gap    = max(0, eff.RefillWatermark - alive_total)      · 差多少号
+raw    = eff.RefillMinCount ?? gap                      · 设了 min_count 就按它拉;没设就补齐差额
 raw    = max(1, raw)
 count  = clamp(raw, config.pull.MinCount, min(config.pull.MaxCount, vendor.MaxPerOrder))
   · 若 raw > 上限 → 截断到上限 · 差额下轮触发再补(不重触发·等 death/scheduler 自然触发)
   · 若 raw < config.pull.MinCount → 提升到 MinCount(避免 vendor 拒小单)
 
-【maxPrice · 单价上限】     · 类① 取最严
-maxPrice = min(bus.MaxUnitPrice ?? +∞, passenger.MaxUnitPrice ?? +∞)
+【maxPrice · 单价上限 · 类① 硬上限】
+maxPrice = eff.MaxUnitPrice
+  // Effective() 内部已算 min(request, 车级, 全局, +∞) · 见 §4.3.2
 
-【preferredVendor · 选哪家】· 类② 车级 > 全局 > 系统
-preferredVendor = bus.PreferredVendor
-               ?? passenger.PreferredVendor
-               ?? AutoPick(比价选)
+【preferredVendor · 选哪家 · 类② 覆盖】
+preferredVendor = eff.PreferredVendor
+  // Effective() 内部已算 request → 车级 → 全局 → nil · nil 时走 AutoPick
 
 【加价栈】
 加价栈 = 号价 × vendor × zone × retail × service × [single_pull if count==1]
 ```
+
+**别再在 Step 5 里手工拼字段** —— sprint-1f-C 之后 · `decider.Pull` / `bus.Scheduler` / `deathwatch.RefillTick` 全部通过 `Effective()` 拿最终值 · `grep` 验收见 §4.3.4。
 
 ---
 

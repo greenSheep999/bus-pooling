@@ -2450,29 +2450,29 @@ vendor 供给（6 家 + xi8 聚合站）
 - decider 入参需要支持"当前 bus 的策略 + 兜底到全局默认"
 - 前端 `EditStrategyPanel` 需要有"跟随全局默认 / 覆盖"的 UI 语义
 
-### 13.5 缺策略优先级铁律 ⏸（1f 补 · 最高优）
+### 13.5 策略优先级铁律文档 ✅（1f-A）· Effective 代码收口 ⏸（1f-C）
 
-**症状**：现在**没有一份写死的优先级文档** · 前端、API、decider 各自解释 · 迟早出 bug。
+**权威口径已落 `docs/15-scheduling.md §4.3`** —— 未来讨论 / 代码 / 前端**必须**引那一节 · 别在这里发明规则。
 
-**推荐固定顺序**（用户提议 · 采纳）：
-```
-本次请求约束  >  车级策略  >  全局默认策略  >  系统默认值
-```
+**四层优先级**：`本次请求约束 > 车级策略 > 全局默认 > 系统默认值`
 
-**"覆盖" vs "硬上限"**：
-- `max_unit_price / daily_spend_limit / daily_round_limit` 是**硬上限** · **不能**被更低优先级**放宽**
-  - 例：全局 max_unit_price=20 · 车级设 max_unit_price=30 · 车级仍受**全局 20** 卡(取更严的)
-  - 反之全局 20 · 车级 15 · 走车级 15
-  - 硬上限规则:**取 min · 不是取更晚设置的那个**
-- `preferred_vendor / zone / per_round_count` 是**覆盖** · 后者直接盖前者
-- `auto_refill_enabled / refill_watermark` 是**覆盖**(想关就关 · 全局开车里关也行)
+**字段两类**（详见 15 §4.3.2 表格）：
+- **类① 硬上限**（`MaxUnitPrice / DailyRoundLimit / DailySpendLimit`）取 `min` · 请求不能放宽 · **当前已成立**
+- **类② 覆盖**（后者盖前者）· 分两批:
+  - **当前已成立**:`PerRoundCount / PreferredVendor / Zone` · 全局作为 fallback 已可用
+  - **1f-B 目标**:`AutoRefillEnabled / RefillWatermark / RefillMinCount` · `passenger_strategy_default` **尚无**这三字段 · 1f-B 才新增全局字段 + 继承语义(15 §4.3.2b)
 
-**自动触发**（webhook / deathwatch / scheduler / probe / coalescer）没有"本次请求" · 就走 "车级 > 全局 > 系统默认"。
+**自动触发**（webhook / deathwatch / scheduler / probe / coalescer）无 request · 调 `Effective()` 前必须解析到 `busID`(15 §4.3.3 有解析路径表):
+- **当前**:`auto/refill` 只读车级 · 无全局 fallback
+- **1f-B 后**:车级选"跟随全局"时可 fallback 到 `passenger_strategy_default`
 
-**做在哪**：
-- `docs/15-scheduling.md` 新增 §6 · 策略优先级铁律 · 附字段类型表(硬上限 / 覆盖)
-- `CLAUDE.md §1` 铁律段引用 · 未来 AI 别再重讨论
-- `internal/strategy/` 加一个 `Effective(passengerID, busID, requestOverride) → EffectiveStrategy` 函数收口
+**唯一入口**：`internal/strategy.Effective(ctx, passengerID, busID, requestOverride) → EffectiveStrategy`（1f-C 落码 · 15 §4.3.4）。
+
+**落地清单**：
+- ✅ `docs/15-scheduling.md §4.3` 权威章节落定（sprint-1f-A commit）
+- ✅ `CLAUDE.md §1.5` 铁律段引用（sprint-1f-A commit）
+- ⏸ `internal/strategy/effective.go` 函数落码（1f-C）
+- ⏸ 全代码路径改走 `Effective()`（1f-C · `grep` 验收见 15 §4.3.4）
 
 ### 13.6 015 调度文档还没成权威入口 ⏸（1f 补）
 

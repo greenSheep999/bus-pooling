@@ -140,6 +140,31 @@
 - ❌ 计价用 CNY 描述（`docs/02-flows.md` / `docs/04-scenarios.md` 里的时序图）
 - ✅ 统一按「乘客想充 N 积分，通道费 = N × 5%，支付 (N × 1.05) / 7 USD」
 
+### 1.5 策略优先级铁律（`docs/15-scheduling.md §4.3` 是唯一权威）
+
+**读取任何拉号策略字段前 · 必须先看 `docs/15-scheduling.md §4.3`**。别在代码 / 文档 / 讨论里重新发明规则。
+
+**四层优先级 · 顺序固定**：
+
+```
+本次请求约束 > 车级策略(bus.strategy) > 全局默认(passenger_strategy_default) > 系统默认值(config.pull.*)
+```
+
+**字段两类 · 规则不同**（见 §4.3.2）：
+
+- **类① 硬上限**（`MaxUnitPrice` / `DailyRoundLimit` / `DailySpendLimit`）—— 取 `min` · **请求不能放宽**
+- **类② 覆盖**（后者盖前者 · 但要区分**当前 vs 1f-B 目标**）：
+  - **当前已成立**：`PerRoundCount` / `PreferredVendor` / `Zone` —— 全局作为运行时 fallback 已可用
+  - **1f-B 目标**：`AutoRefillEnabled` / `RefillWatermark` / `RefillMinCount` —— **当前仅在车级**·`passenger_strategy_default` 表**尚无**这三字段·1f-B 才新增全局字段 + 继承语义(§4.3.2b)。**当前 `Effective()` 对这三字段只读车级**。
+
+**自动触发无 request**（webhook / deathwatch / scheduler / probe / coalescer）：
+- **当前**：调 `Effective()` 前必须解析到具体 `busID`(见 §4.3.3 解析路径表)·`auto/refill` 只读车级·**无全局 fallback**
+- **1f-B 后**：车级选"跟随全局"时可 fallback 到 `passenger_strategy_default`(需先落全局字段 + 继承语义)
+
+**唯一入口**：`internal/strategy.Effective(ctx, passengerID, busID, requestOverride) → EffectiveStrategy`（sprint-1f-C 收口）。**别再手工拼字段** —— code review 验收规则见 `docs/15-scheduling.md §4.3.4`（精确到"运行时决策路径不得手工合并策略字段" · **不误伤** DTO / schema / store 基础读写 / 测试 / 文档）。
+
+**UI 展示规范**：给用户看"**实际生效值**"·不是"你设的值"。EditStrategyPanel 必须清晰二态（跟随全局 / 覆盖本车）· 硬上限字段旁标"仍受全局 X 约束"。
+
 ---
 
 ## 2. 术语作废清单（**这些词一律不用**）
