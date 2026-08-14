@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -701,6 +702,15 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	// 补的号自动进 bus-<id> group · 下次循环看得到。**这是 1d 阶段最关键的活的部件** ——
 	// 老代码只支持乘客手动点拉号 · scheduler 装上后车挂着就能自己补。
 	autoRefill := bus.NewScheduler(database.DB, &autoRefillBridge{orch: orch}, 5*time.Minute, slog.Default())
+	// v1d-2 · 第二刀 · 装配 decider.Decide 适配器 · Scheduler 每辆车过统一决策器
+	autoRefill.SetDecider(&schedulerDecideBridge{
+		db:        database.DB,
+		modeMgr:   modeMgr,
+		killFlag:  killFlag,
+		turboFlag: turboFlag,
+		probeZone: probeZoneStore,
+		logger:    slog.Default(),
+	})
 	autoRefill.Start(ctx)
 	defer autoRefill.Stop(2 * time.Second)
 
@@ -1014,6 +1024,133 @@ func (b *autoRefillBridge) Refill(ctx context.Context, req bus.AutoRefillRequest
 		BusID:               req.BusID,
 		Count:               req.Count,
 		IdempotencyRecordID: req.IdempotencyRecordID,
+		VendorID:            providers.VendorID(req.PreferredVendor),
+		MaxUnitPrice:        req.MaxUnitPrice,
 	})
 	return err
+}
+
+// schedulerDecideBridge · 第二刀 · 把 decider.Decide 接进 bus.Scheduler
+//
+// 负责:
+//   1. 从 bus.SchedulerCandidate + stockwatch.ModeMgr + passenger_strategy_default
+//      + vendor_probe_zone 组装 decider.DecideInput
+//   2. 调 decider.Decide
+//   3. 输出翻译成 bus.SchedulerVerdict
+//
+// 装配层给 SchedulerDecider 注入 · nil-safe(bus.Scheduler 未装配 decider 时走老路径)。
+type schedulerDecideBridge struct {
+	db           *sql.DB
+	modeMgr      *stockwatch.ModeMgr
+	killFlag     *stockwatch.FileFlag
+	turboFlag    *stockwatch.FileFlag
+	probeZone    *vendorview.ProbeZoneStore // 读 vendor 单价新鲜度
+	logger       *slog.Logger
+}
+
+func (b *schedulerDecideBridge) Decide(ctx context.Context, busID string, cand bus.SchedulerCandidate) bus.SchedulerVerdict {
+	// 读乘客全局策略(passenger_strategy_default.max_unit_price 参与硬上限取严)
+	var passengerMax int64
+	if err := b.db.QueryRowContext(ctx,
+		`SELECT COALESCE(psd.max_unit_price, 0)
+		   FROM bus b JOIN passenger_strategy_default psd
+		     ON psd.passenger_id = b.creator_passenger_id
+		  WHERE b.id = ?`, busID).Scan(&passengerMax); err != nil {
+		passengerMax = 0 // 没配 · 视为不限
+	}
+
+	// 读 vendor 当前单价(freshness 判 stale)· 只查 cand.AliveByVendor 里的那几家
+	prices := make(map[string]decider.VendorPriceSnapshot, len(cand.AliveByVendor))
+	if b.probeZone != nil {
+		for vid := range cand.AliveByVendor {
+			credits, at, ok := b.probeZone.LatestZoneCredits(ctx, vid, providers.Zone(""))
+			if !ok {
+				prices[vid] = decider.VendorPriceSnapshot{}
+				continue
+			}
+			stale := time.Since(at) > 2*time.Minute
+			prices[vid] = decider.VendorPriceSnapshot{
+				UnitPriceMicro: credits,
+				ObservedAt:     at,
+				Stale:          stale,
+			}
+		}
+	}
+
+	mode := ""
+	if b.modeMgr != nil {
+		mode = b.modeMgr.Current().String()
+	}
+	kill := b.killFlag != nil && b.killFlag.Engaged()
+	turbo := b.turboFlag != nil && b.turboFlag.Engaged()
+
+	out, err := decider.Decide(ctx, decider.DecideInput{
+		Source:            decider.SourceScheduler,
+		BusID:             busID,
+		AliveByVendor:     cand.AliveByVendor,
+		AutoRefillEnabled: true, // Scheduler 侧 SQL 已过滤 auto_refill_enabled=1
+		RefillWatermark:   cand.Watermark,
+		RefillMinCount:    cand.MinCount,
+		BusMaxUnitPrice:   cand.MaxUnitPrice,
+		PassengerMaxPrice: passengerMax,
+		PreferredVendor:   cand.PreferredVendor,
+		Mode:              mode,
+		KillPulls:         kill,
+		Turbo:             turbo,
+		PricesByVendor:    prices,
+	})
+	if err != nil {
+		b.logger.Warn("schedulerDecideBridge: Decide 报错", "bus", busID, "err", err)
+		return bus.SchedulerVerdict{Action: bus.ActionReject, Reason: err.Error()}
+	}
+
+	verdict := bus.SchedulerVerdict{Reason: out.RejectReason}
+	switch out.Verdict {
+	case decider.VerdictReject:
+		verdict.Action = bus.ActionReject
+	case decider.VerdictEnqueue:
+		verdict.Action = bus.ActionEnqueue
+	case decider.VerdictPull:
+		verdict.Action = bus.ActionPull
+		// 组装 Pull 参数(§5 Step 5)
+		gap := cand.Watermark - sumAlive(cand.AliveByVendor)
+		count := cand.MinCount
+		if count <= 0 {
+			count = gap
+		}
+		if count < 1 {
+			count = 1
+		}
+		verdict.PullCount = count
+		verdict.PullVendor = cand.PreferredVendor
+		// maxPrice · 取车级和乘客级严的
+		verdict.PullMaxPrice = strictestMaxPrice(cand.MaxUnitPrice, passengerMax)
+	}
+	return verdict
+}
+
+// sumAlive · 整车 alive
+func sumAlive(m map[string]int) int {
+	s := 0
+	for _, v := range m {
+		s += v
+	}
+	return s
+}
+
+// strictestMaxPrice · 硬上限取最严 · 0 视为不限
+func strictestMaxPrice(a, b int64) int64 {
+	if a <= 0 && b <= 0 {
+		return 0
+	}
+	if a <= 0 {
+		return b
+	}
+	if b <= 0 {
+		return a
+	}
+	if a < b {
+		return a
+	}
+	return b
 }
