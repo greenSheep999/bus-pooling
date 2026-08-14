@@ -44,6 +44,31 @@ type Watcher struct {
 	now func() time.Time
 	// refunds 质保退款的库操作 · nil = 不跑退款（老装配 / 测试）
 	refunds RefundStore
+	// refillPuller · Step 2 真调拉号（v3.2 · 2026-08-15）· nil = 走 Step 1 只 log 不真拉
+	// 装配层实现 · 避免 deathwatch → decider 硬依赖
+	refillPuller RefillPuller
+}
+
+// RefillPuller · 号死后触发新一轮拉号的抽象（v3.2）
+//
+// 实现方 decider.Orchestrator.Pull 的一个薄封装 · 从 pending_refill 一条记录
+// 重构造 decider.PullInput 并调用。
+//
+// 返 (fulfilled bool, err error)：
+//   fulfilled=true · err=nil  → 补车成功 · pending_refill 标 fulfilled
+//   fulfilled=false · err=nil → vendor 缺货 · 挂号或跳过 · 保 pending 等下轮
+//   fulfilled=?    · err!=nil → 硬错 · attempts++ · 3 次后 expired
+type RefillPuller interface {
+	Refill(ctx context.Context, req RefillRequest) (fulfilled bool, err error)
+}
+
+// RefillRequest · 从 pending_refill 一条记录拿出的字段 · 上层装配 puller 用
+type RefillRequest struct {
+	RefillID     string             // pending_refill.id · 幂等键
+	PassengerID  string
+	BusID        string             // 空 = 单独提取
+	Count        int
+	VendorID     string             // 可空 · 让 decider auto-pick
 }
 
 // Config 装配参数。零值全部走默认。
@@ -57,6 +82,8 @@ type Config struct {
 	Now func() time.Time
 	// Refunds 质保退款库操作 · nil = 不跑退款（1c 起装 NewSQLRefundStore(db)）
 	Refunds RefundStore
+	// RefillPuller · Step 2 · 号死后真调拉号（v3.2）· nil = Step 1 只 log
+	RefillPuller RefillPuller
 }
 
 // New 构造 Watcher。DB 和 Pool 必须非空。
@@ -69,6 +96,7 @@ func New(cfg Config) *Watcher {
 		log:          cfg.Logger,
 		now:          cfg.Now,
 		refunds:      cfg.Refunds,
+		refillPuller: cfg.RefillPuller,
 	}
 	if w.interval <= 0 {
 		w.interval = 5 * time.Minute

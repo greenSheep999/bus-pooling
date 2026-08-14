@@ -101,8 +101,8 @@ func TestRefillTick_Step1LogOnly(t *testing.T) {
 	if status != "skipped" {
 		t.Errorf("Step 1 应标 skipped · 得 %q", status)
 	}
-	if lastErr != "step1_log_only" {
-		t.Errorf("last_error 应说明是 step1 · 得 %q", lastErr)
+	if lastErr != "no_puller_configured" {
+		t.Errorf("last_error 应说明未装 puller · 得 %q", lastErr)
 	}
 }
 

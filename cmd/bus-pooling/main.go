@@ -739,6 +739,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 			DB:      database.DB,
 			Pool:    poolClient,
 			Refunds: deathwatch.NewSQLRefundStore(database.DB),
+			// v3.2 · 号死后真调 decider.Pull 补车（Step 2）· puller 用 decider.RefillAdapter 桥接
+			RefillPuller: &refillPullerBridge{orch: orch},
 		})
 	}
 
@@ -862,6 +864,27 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	if deathwatchWatcher != nil {
 		go deathwatchWatcher.Run(ctx)
 		slog.Info("deathwatch 已启动")
+
+		// v3.2 · 自动补车 tick · 每 1min 消费 pending_refill · 装了 puller 才有意义
+		if orch != nil {
+			go func() {
+				ticker := time.NewTicker(1 * time.Minute)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						if n, err := deathwatchWatcher.RefillTick(ctx, 20); err != nil {
+							slog.Warn("deathwatch refill tick 失败", "err", err)
+						} else if n > 0 {
+							slog.Info("deathwatch refill tick", "processed", n)
+						}
+					}
+				}
+			}()
+			slog.Info("deathwatch refill tick 已启动 · 1min 一轮")
+		}
 	}
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -927,4 +950,33 @@ func (a *deathwatchTriggerAdapter) RefundOnce(ctx context.Context, limit int) we
 		Refunded: r.Refunded,
 		Errors:   r.Errors,
 	}
+}
+
+// refillPullerBridge · v3.2 · 把 orch 转成 deathwatch.RefillPuller
+//
+// 直接调 orch.Pull · 内部处理 err 分类（缺货保 pending / 硬错重试）。
+// 参考 decider/refill_puller.go 的 RefillAdapter · 但那份用 refillReq · 我们这里用
+// deathwatch.RefillRequest 直接对接（避免 refillReq/RefillRequest 两个 struct）。
+type refillPullerBridge struct {
+	orch *decider.Orchestrator
+}
+
+func (b *refillPullerBridge) Refill(ctx context.Context, req deathwatch.RefillRequest) (bool, error) {
+	if b.orch == nil {
+		return false, nil
+	}
+	_, err := b.orch.Pull(ctx, decider.PullInput{
+		PassengerID: req.PassengerID,
+		BusID:       req.BusID,
+		Count:       req.Count,
+		VendorID:    providers.VendorID(req.VendorID),
+	})
+	if err == nil {
+		return true, nil
+	}
+	// 缺货 / 限流 · 保 pending · 不算失败
+	if errors.Is(err, decider.ErrNoStock) || errors.Is(err, decider.ErrRateLimited) {
+		return false, nil
+	}
+	return false, err
 }

@@ -151,26 +151,89 @@ func (w *Watcher) RefillTick(ctx context.Context, limit int) (processed int, err
 	}
 
 	for _, r := range items {
-		// **Step 1**：只 log · 状态标 skipped 表示"看见了但没真拉"
-		// Step 2 会改成：调 decider.Pull → fulfilled / expired · 失败重试 3 次进 expired
-		w.log.Info("deathwatch: pending_refill 待补（Step 1 只 log · 1d 起真拉）",
-			"refill_id", r.ID, "dead_cred", r.CredID, "bus", r.BusID,
-			"passenger", r.PassengerID, "count", r.Count, "vendor", r.VendorID)
+		// **Step 2**（v3.2 · 2026-08-15）：puller 装配了就真拉 · 未装配走 Step 1（只 log 标 skipped）
+		if w.refillPuller == nil {
+			w.log.Info("deathwatch: pending_refill 待补（未装 puller · 只 log）",
+				"refill_id", r.ID, "dead_cred", r.CredID, "bus", r.BusID,
+				"passenger", r.PassengerID, "count", r.Count, "vendor", r.VendorID)
+			w.markRefillResolved(ctx, r.ID, "skipped", "no_puller_configured")
+			processed++
+			continue
+		}
 
-		_, uerr := w.db.ExecContext(ctx, `
+		// 先把状态推到 processing · 防两个 tick 并发抢同一条
+		res, uerr := w.db.ExecContext(ctx, `
 			UPDATE pending_refill
-			   SET status = 'skipped',
-			       last_attempt_at = ?,
-			       last_error = 'step1_log_only',
-			       resolved_at = ?
+			   SET status = 'processing',
+			       attempts = attempts + 1,
+			       last_attempt_at = ?
 			 WHERE id = ? AND status = 'pending'`,
-			w.now().UTC().Format(time.RFC3339),
 			w.now().UTC().Format(time.RFC3339), r.ID)
 		if uerr != nil {
-			w.log.Warn("pending_refill 标 skipped 失败", "id", r.ID, "err", uerr)
+			w.log.Warn("pending_refill 标 processing 失败", "id", r.ID, "err", uerr)
 			continue
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			// 被其他 tick 抢了 · 跳
+			continue
+		}
+
+		// 真调 decider.Pull
+		fulfilled, perr := w.refillPuller.Refill(ctx, RefillRequest{
+			RefillID:    r.ID,
+			PassengerID: r.PassengerID,
+			BusID:       r.BusID,
+			Count:       r.Count,
+			VendorID:    r.VendorID,
+		})
+
+		// 落终态
+		switch {
+		case perr != nil:
+			// 硬错 · 3 次后 expired · 否则回 pending 等下轮重试
+			if r.Attempts+1 >= 3 {
+				w.log.Warn("deathwatch: pending_refill 3 次失败 · 标 expired",
+					"refill_id", r.ID, "err", perr)
+				w.markRefillResolved(ctx, r.ID, "expired", perr.Error())
+			} else {
+				w.log.Info("deathwatch: pending_refill 本轮失败 · 保 pending 重试",
+					"refill_id", r.ID, "attempts", r.Attempts+1, "err", perr)
+				w.rescheduleRefill(ctx, r.ID, perr.Error())
+			}
+		case fulfilled:
+			w.log.Info("deathwatch: pending_refill 补车成功",
+				"refill_id", r.ID, "passenger", r.PassengerID, "count", r.Count)
+			w.markRefillResolved(ctx, r.ID, "fulfilled", "")
+		default:
+			// fulfilled=false err=nil · vendor 缺货 · 保 pending 等下轮（不算失败）
+			w.log.Info("deathwatch: pending_refill 缺货 · 保 pending",
+				"refill_id", r.ID, "passenger", r.PassengerID)
+			w.rescheduleRefill(ctx, r.ID, "no_stock")
 		}
 		processed++
 	}
 	return processed, nil
+}
+
+// markRefillResolved · 标终态（fulfilled / expired / skipped）
+func (w *Watcher) markRefillResolved(ctx context.Context, refillID, status, errStr string) {
+	nowStr := w.now().UTC().Format(time.RFC3339)
+	_, err := w.db.ExecContext(ctx, `
+		UPDATE pending_refill
+		   SET status = ?, last_error = ?, resolved_at = ?
+		 WHERE id = ?`, status, errStr, nowStr, refillID)
+	if err != nil {
+		w.log.Warn("pending_refill 标终态失败", "id", refillID, "status", status, "err", err)
+	}
+}
+
+// rescheduleRefill · 保 pending · 只更新 last_error · 下一轮再试
+func (w *Watcher) rescheduleRefill(ctx context.Context, refillID, errStr string) {
+	_, err := w.db.ExecContext(ctx, `
+		UPDATE pending_refill
+		   SET status = 'pending', last_error = ?
+		 WHERE id = ?`, errStr, refillID)
+	if err != nil {
+		w.log.Warn("pending_refill 回 pending 失败", "id", refillID, "err", err)
+	}
 }
