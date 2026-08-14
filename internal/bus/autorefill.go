@@ -76,9 +76,14 @@ type SchedulerDecide interface {
 }
 
 // SchedulerCandidate · 一辆待判定车的字段快照(Scheduler 侧收集 · 传给 Decider)
+//
+// **注**·所有字段是**车级原始值** · **未合并全局**。Decider 侧的桥内部会调
+// strategy.Effective() 拿最终值再判(§4.3.4 单入口铁律)· 这里带原始值只用来
+// 给 Decider 参考(如 mock 场景 psd 表空 · 车级值即最终值)。
 type SchedulerCandidate struct {
 	BusID           string
 	OwnerID         string
+	AutoRefill      bool // 车级原始 auto_refill_enabled · 桥要覆盖走 Effective
 	Watermark       int
 	MinCount        int
 	MaxUnitPrice    int64 // 0 = 不限
@@ -191,11 +196,22 @@ func (s *Scheduler) Stop(timeout time.Duration) {
 }
 
 // autoRefillCandidate · 一辆待补车的当前状态
+//
+// **1f-C 铁律**(§4.3.4)· 这里只装**车级原始字段** · **不合并全局** ——
+// 生效值由决策器桥调 strategy.Effective() 拿(§4.3.4 "在 Effective() 外解释
+// refill_watermark / refill_min_count 语义" 是明文禁的)。
+//
+// 装配了 Decider 的路径这些字段只是"传给 Decider 参考的原始快照" · Decider
+// 侧会再调 Effective() 重算 · 覆盖候选值。
+//
+// 未装 Decider 的路径(单测 · 保 1a-1c 回归)直接读这些字段做判据 —— 单测
+// 场景下车级字段本身就是最终值(没有全局默认表参与) · 不算 fallback 手工合并。
 type autoRefillCandidate struct {
 	busID           string
 	ownerID         string
-	watermark       int
-	minCount        int // 0 = 未设 · 用 watermark - alive 补齐
+	watermark       int // 车级原始值 · **不合并全局** · 用于 nil-decider 测试路径 + 传给 Decider 桥参考
+	autoRefill      bool // 车级原始 auto_refill_enabled · 同上
+	minCount        int  // 0 = 未设 · 用 watermark - alive 补齐
 	maxUnitPrice    int64
 	preferredVendor string
 	aliveByVendor   map[string]int // vendor_id → alive · 空 map = 整车挂
@@ -235,42 +251,39 @@ func (s *Scheduler) ScanOnce(ctx context.Context) (touched, refilled int) {
 }
 
 // decideAndAct · 单车决策 + 动作 · 返 true 表示真触发了 Pull
+//
+// **1f-C 铁律**(§4.3.4)· 决策**必须**过 Decider(装配层桥内部会调
+// strategy.Effective) · 不允许在这里读车级原始字段做判据(§4.3.4 明文禁"在
+// Effective() 外解释 refill_watermark / refill_min_count 语义")。
+//
+// nil-decider = 装配未完成 · 静默 skip · 不走"raw 字段兜底"分支。单测请显式
+// SetDecider(见 autorefill_test.go 里的 defaultTestDecider)。
 func (s *Scheduler) decideAndAct(ctx context.Context, c autoRefillCandidate) bool {
-	// 装配了 decider · 过统一决策器
-	if s.decider != nil {
-		verdict := s.decider.Decide(ctx, c.busID, SchedulerCandidate{
-			BusID:           c.busID,
-			OwnerID:         c.ownerID,
-			Watermark:       c.watermark,
-			MinCount:        c.minCount,
-			MaxUnitPrice:    c.maxUnitPrice,
-			PreferredVendor: c.preferredVendor,
-			AliveByVendor:   c.aliveByVendor,
-		})
-		switch verdict.Action {
-		case ActionReject:
-			s.logger.Debug("bus.Scheduler: Decide 拒", "bus", c.busID, "reason", verdict.Reason)
-			return false
-		case ActionEnqueue:
-			return s.doEnqueue(ctx, c, verdict.PullCount, verdict.PullVendor, verdict.PullMaxPrice)
-		case ActionPull:
-			return s.doPull(ctx, c, verdict.PullCount, verdict.PullVendor, verdict.PullMaxPrice)
-		}
+	if s.decider == nil {
+		// 生产装配层一定注入 · 走到这条说明 wiring bug · log 一次不阻塞
+		s.logger.Debug("bus.Scheduler: decider 未装配 · skip", "bus", c.busID)
 		return false
 	}
-
-	// 未装配 decider · 走老路径(nil-safe · 保 1a-1c 回归)
-	if c.aliveTotal() >= c.watermark {
+	verdict := s.decider.Decide(ctx, c.busID, SchedulerCandidate{
+		BusID:           c.busID,
+		OwnerID:         c.ownerID,
+		AutoRefill:      c.autoRefill,
+		Watermark:       c.watermark,
+		MinCount:        c.minCount,
+		MaxUnitPrice:    c.maxUnitPrice,
+		PreferredVendor: c.preferredVendor,
+		AliveByVendor:   c.aliveByVendor,
+	})
+	switch verdict.Action {
+	case ActionReject:
+		s.logger.Debug("bus.Scheduler: Decide 拒", "bus", c.busID, "reason", verdict.Reason)
 		return false
+	case ActionEnqueue:
+		return s.doEnqueue(ctx, c, verdict.PullCount, verdict.PullVendor, verdict.PullMaxPrice)
+	case ActionPull:
+		return s.doPull(ctx, c, verdict.PullCount, verdict.PullVendor, verdict.PullMaxPrice)
 	}
-	count := c.minCount
-	if count <= 0 {
-		count = c.watermark - c.aliveTotal()
-	}
-	if count <= 0 {
-		return false
-	}
-	return s.doPull(ctx, c, count, c.preferredVendor, c.maxUnitPrice)
+	return false
 }
 
 // doEnqueue · 挂 stockwatch(挂意图不预冻结 · fire 时走 decider.Pull 完整钱包事务)
@@ -330,23 +343,31 @@ func (s *Scheduler) doPull(ctx context.Context, c autoRefillCandidate, count int
 	return true
 }
 
-// loadCandidates · 一次 SQL 拿全部 auto_refill=1 的车 + 按 vendor 分组的活号 + owner_id + 护栏字段
+// loadCandidates · 一次 SQL 拿全部 active 车的车级原始字段 + 按 vendor 分组的活号 + owner_id
 //
-// **性能**：LEFT JOIN + GROUP BY (bus,vendor) · v1 期用户量单进程 sqlite 秒级完成
-// 拿回来在 Go 侧按 bus 聚成 candidate · 减少 SQL 复杂度
+// **1f-C 铁律**(§4.3.4)· SQL **只**过滤 `status='active'` · **不做**任何"跟随全局"
+// 的 IFNULL 合并 —— auto_refill_enabled / refill_watermark 的"nil = 跟随全局"
+// 语义**只**在 strategy.Effective() 里解释(§4.3.4 明文禁在 Effective 外解释)。
+//
+// 决策路径(装配 Decider)会逐辆调 Effective 判"生效字段"是否满足触发条件 ·
+// 单测路径(未装 Decider)直接用车级原始字段 —— 单测场景没有 psd 表参与 ·
+// 车级字段就是最终值。
+//
+// **性能取舍**:候选池从"只筛符合 auto+watermark 的车"扩到"全部 active 车" ·
+// v1 期用户量下每 5min 一轮扫依然秒级完成 · 换回 §4.3.4 单入口合规。
 func (s *Scheduler) loadCandidates(ctx context.Context) ([]autoRefillCandidate, error) {
 	q := `
-		SELECT b.id, b.creator_passenger_id, b.refill_watermark,
-		       COALESCE(b.refill_min_count, 0),
+		SELECT b.id, b.creator_passenger_id,
+		       COALESCE(b.auto_refill_enabled, 0) AS auto_refill_raw,
+		       COALESCE(b.refill_watermark, 0)    AS watermark_raw,
+		       COALESCE(b.refill_min_count, 0)    AS min_count_raw,
 		       COALESCE(b.max_unit_price, 0),
 		       COALESCE(b.preferred_vendor, ''),
 		       COALESCE(cl.vendor_id, ''),
 		       COALESCE(SUM(CASE WHEN cl.status = 'alive' THEN 1 ELSE 0 END), 0) AS alive
 		  FROM bus b
 		  LEFT JOIN credential_ledger cl ON cl.owner_bus_id = b.id
-		 WHERE b.auto_refill_enabled = 1
-		   AND b.status = 'active'
-		   AND b.refill_watermark > 0
+		 WHERE b.status = 'active'
 		 GROUP BY b.id, cl.vendor_id`
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
@@ -360,6 +381,7 @@ func (s *Scheduler) loadCandidates(ctx context.Context) ([]autoRefillCandidate, 
 	for rows.Next() {
 		var (
 			busID, ownerID  string
+			autoRefillInt   int
 			watermark       int
 			minCount        int
 			maxPrice        int64
@@ -367,7 +389,7 @@ func (s *Scheduler) loadCandidates(ctx context.Context) ([]autoRefillCandidate, 
 			vendorID        string
 			alive           int
 		)
-		if err := rows.Scan(&busID, &ownerID, &watermark, &minCount, &maxPrice, &preferredVendor, &vendorID, &alive); err != nil {
+		if err := rows.Scan(&busID, &ownerID, &autoRefillInt, &watermark, &minCount, &maxPrice, &preferredVendor, &vendorID, &alive); err != nil {
 			return nil, err
 		}
 		c, ok := byBus[busID]
@@ -376,6 +398,7 @@ func (s *Scheduler) loadCandidates(ctx context.Context) ([]autoRefillCandidate, 
 				busID:           busID,
 				ownerID:         ownerID,
 				watermark:       watermark,
+				autoRefill:      autoRefillInt == 1,
 				minCount:        minCount,
 				maxUnitPrice:    maxPrice,
 				preferredVendor: preferredVendor,

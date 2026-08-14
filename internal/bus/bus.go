@@ -61,9 +61,16 @@ type Bus struct {
 //   - **DailyRoundLimit / DailySpendLimit** —— **车级不生效**（strategy.decide 只判全局）·
 //     字段保留是因为 SQLite 不支持 DROP COLUMN · 别在 UI 上暴露车级设置入口 ·
 //     每日限额的意义是"人的预算"不是"车的预算"
+// 1f-B(15-scheduling §4.3.2b 方案 A) · auto/refill 三字段改 *bool / *int：
+//
+//	NULL / nil  = **跟随全局默认**(strategy.Effective() 运行时读乘客全局)
+//	非 NULL     = **覆盖本车**(含显式 0 / false)
+//
+// 别用"零值"当"跟随"判据 —— 用户显式关自动补(false)跟"跟随一个全局关的值"都合法 ·
+// 只有指针 nil 才能表达"没有覆盖 · 用全局那份"。
 type Strategy struct {
-	AutoRefillEnabled bool
-	RefillWatermark   int
+	AutoRefillEnabled *bool
+	RefillWatermark   *int
 	RefillMinCount    *int
 	PerRoundCount     *int
 	MaxUnitPrice      *int64
@@ -213,7 +220,9 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (*Bus, error) {
 		nullableString(&b.AnonZone),
 		nullableInt64Zero(b.AnonMaxUnitPrice),
 		nullableString(&b.InviteCode),
-		boolToInt(b.Strategy.AutoRefillEnabled), b.Strategy.RefillWatermark,
+		// 1f-B · nil = NULL(跟随全局) · 非 nil = 显式值(覆盖本车 · 含 0 / false)
+		nullableBool(b.Strategy.AutoRefillEnabled),
+		nullableInt(b.Strategy.RefillWatermark),
 		nullableInt(b.Strategy.RefillMinCount),
 		nullableInt(b.Strategy.PerRoundCount),
 		nullableInt64(b.Strategy.MaxUnitPrice),
@@ -761,12 +770,14 @@ func (s *Store) UpdateStrategy(ctx context.Context, busID, passengerID string, s
 	if b.CreatorID != passengerID {
 		return ErrNotMember
 	}
+	// 1f-B · nil = 写 NULL(跟随全局) · 非 nil = 写值(覆盖本车 · 含 0 / false)
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE bus SET auto_refill_enabled = ?, refill_watermark = ?, refill_min_count = ?,
 		               per_round_count = ?, max_unit_price = ?,
 		               daily_round_limit = ?, daily_spend_limit = ?, preferred_vendor = ?
 		 WHERE id = ? AND status = 'active'`,
-		boolToInt(st.AutoRefillEnabled), st.RefillWatermark, nullableInt(st.RefillMinCount),
+		nullableBool(st.AutoRefillEnabled), nullableInt(st.RefillWatermark),
+		nullableInt(st.RefillMinCount),
 		nullableInt(st.PerRoundCount), nullableInt64(st.MaxUnitPrice),
 		nullableInt(st.DailyRoundLimit), nullableInt64(st.DailySpendLimit),
 		nullableString(st.PreferredVendor), busID)
@@ -848,14 +859,15 @@ type scanner interface {
 func scanBusFields(sc scanner, b *Bus) error {
 	var kind, status, createdAt string
 	var dissolvedAt sql.NullString
-	var autoRefill int
+	// 1f-B · auto/watermark 改 NULL 语义 · 用 NullInt64 扫 · nil = 跟随全局
+	var autoRefill, refillWatermark sql.NullInt64
 	var refillMinCount, perRoundCount, dailyRoundLimit sql.NullInt64
 	var maxUnitPrice, dailySpendLimit sql.NullInt64
 	var preferredVendor sql.NullString
 	err := sc.Scan(&b.ID, &b.Name, &kind, &status, &b.CreatorID,
 		&b.InviteCode, &b.MaxMembers, &createdAt, &dissolvedAt,
 		&b.AnonZone, &b.AnonMaxUnitPrice,
-		&autoRefill, &b.Strategy.RefillWatermark, &refillMinCount,
+		&autoRefill, &refillWatermark, &refillMinCount,
 		&perRoundCount, &maxUnitPrice,
 		&dailyRoundLimit, &dailySpendLimit, &preferredVendor)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -871,7 +883,14 @@ func scanBusFields(sc scanner, b *Bus) error {
 		t := parseTime(dissolvedAt.String)
 		b.DissolvedAt = &t
 	}
-	b.Strategy.AutoRefillEnabled = autoRefill != 0
+	if autoRefill.Valid {
+		v := autoRefill.Int64 != 0
+		b.Strategy.AutoRefillEnabled = &v
+	}
+	if refillWatermark.Valid {
+		v := int(refillWatermark.Int64)
+		b.Strategy.RefillWatermark = &v
+	}
 	if refillMinCount.Valid {
 		v := int(refillMinCount.Int64)
 		b.Strategy.RefillMinCount = &v
@@ -915,6 +934,19 @@ func boolToInt(b bool) int {
 	}
 	return 0
 }
+
+// nullableBool · 1f-B · *bool → SQLite INTEGER(0/1) 或 NULL
+// nil = NULL(跟随全局 · §4.3.2b 方案 A) · 非 nil = 0 / 1
+func nullableBool(p *bool) any {
+	if p == nil {
+		return nil
+	}
+	if *p {
+		return 1
+	}
+	return 0
+}
+
 func nullableInt(p *int) any {
 	if p == nil {
 		return nil

@@ -53,12 +53,50 @@ func setupSchedulerDB(t *testing.T) (*Scheduler, *mockRefiller, func(sql string,
 	}
 	m := &mockRefiller{}
 	s := NewScheduler(d.DB, m, 5*time.Minute, nil)
+	// 1f-C · Scheduler 现在强制走 Decider(§4.3.4)· 单测里用 rawFallbackDecider
+	// 直接把车级字段当最终值判决 · 语义 = 老 nil-decider 兜底路径(passenger_strategy_default
+	// 表在 mock 场景空表 · 车级字段即"最终生效值")。
+	s.SetDecider(&rawFallbackDecider{})
 	exec := func(sql string, args ...any) {
 		if _, err := d.DB.Exec(sql, args...); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return s, m, exec
+}
+
+// rawFallbackDecider · 单测用 · 把 SchedulerCandidate 的车级原始字段当最终值判决 ·
+// 复刻 1a-1c 老 nil-decider 语义(单测 mock 场景 psd 表空 · 车级字段即最终值)。
+type rawFallbackDecider struct{}
+
+func (rawFallbackDecider) Decide(_ context.Context, _ string, cand SchedulerCandidate) SchedulerVerdict {
+	// 计算 aliveTotal
+	alive := 0
+	for _, n := range cand.AliveByVendor {
+		alive += n
+	}
+	if !cand.AutoRefill {
+		return SchedulerVerdict{Action: ActionReject, Reason: "auto_refill_off"}
+	}
+	if cand.Watermark <= 0 {
+		return SchedulerVerdict{Action: ActionReject, Reason: "watermark_zero"}
+	}
+	if alive >= cand.Watermark {
+		return SchedulerVerdict{Action: ActionReject, Reason: "at_or_above_watermark"}
+	}
+	count := cand.MinCount
+	if count <= 0 {
+		count = cand.Watermark - alive
+	}
+	if count <= 0 {
+		return SchedulerVerdict{Action: ActionReject, Reason: "no_gap"}
+	}
+	return SchedulerVerdict{
+		Action:       ActionPull,
+		PullCount:    count,
+		PullVendor:   cand.PreferredVendor,
+		PullMaxPrice: cand.MaxUnitPrice,
+	}
 }
 
 // kiroCredIDCounter · 每次插号自增（credential_ledger.kiro_rs_credential_id UNIQUE）
@@ -104,12 +142,16 @@ func insertBus(exec func(string, ...any), busID string, autoRefill bool, waterma
 }
 
 // 禁用 auto_refill · 不该触发
+//
+// **1f-C 后**·SQL 不再筛 auto_refill_enabled(§4.3.4 · 不做 fallback 合并)·
+// 所有 active 车都进 candidate 池 · 由 Decider 拒 · 所以 touched=1(扫过) ·
+// refilled=0(拒绝补) · puller 0 次调用。
 func TestScheduler_DisabledBusNotTriggered(t *testing.T) {
 	s, m, exec := setupSchedulerDB(t)
 	insertBus(exec, "b1", false, 5, 3, 0)
-	touched, refilled := s.ScanOnce(context.Background())
-	if touched != 0 || refilled != 0 {
-		t.Errorf("禁用车不该扫到 · touched=%d refilled=%d", touched, refilled)
+	_, refilled := s.ScanOnce(context.Background())
+	if refilled != 0 {
+		t.Errorf("禁用车不该补 · refilled=%d", refilled)
 	}
 	if m.count() != 0 {
 		t.Errorf("不该调 puller · 得 %d", m.count())

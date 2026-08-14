@@ -33,9 +33,14 @@ type busResponse struct {
 }
 
 // busStrategyDT 对齐前端 BusStrategy（TS 是权威 · CLAUDE.md §0）
+//
+// 1f-B(15-scheduling §4.3.2b 方案 A) · auto/refill 三字段前端 TS 已改成 `| null` ·
+// null = 跟随全局默认 · 值(含 0 / false) = 覆盖本车。用指针接住"字段存在但值是 null"
+// 的差别 —— json.Unmarshal 会把 `"auto_refill_enabled": null` 解成 *bool = nil ·
+// 把 `"auto_refill_enabled": false` 解成 *bool = 指向 false。
 type busStrategyDT struct {
-	AutoRefillEnabled bool    `json:"auto_refill_enabled"`
-	RefillWatermark   int     `json:"refill_watermark"`
+	AutoRefillEnabled *bool   `json:"auto_refill_enabled"`
+	RefillWatermark   *int    `json:"refill_watermark"`
 	RefillMinCount    *int    `json:"refill_min_count"`
 	PerRoundCount     *int    `json:"per_round_count"`
 	MaxUnitPrice      *int64  `json:"max_unit_price"`
@@ -293,9 +298,9 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	busID := r.PathValue("bus_id")
-	// 校验乘客在这辆车里（防越权拉到别人车里）· 顺带拿车级策略（下面判上限要用）
-	b, err := s.buses.GetForPassenger(r.Context(), busID, p.ID)
-	if err != nil {
+	// 校验乘客在这辆车里(防越权拉到别人车里) · 车级策略走 Effective 里的 BusGet ·
+	// 这里只判归属 · 车级字段读取由装配层完成(§4.3.4)。
+	if _, err := s.buses.GetForPassenger(r.Context(), busID, p.ID); err != nil {
 		return ErrNotFound("找不到这辆车")
 	}
 
@@ -337,7 +342,21 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 		return ErrIdempotencyConflict()
 	}
 
-	// strategy 校验（读余额 + 用量）· bus 级上限跟全局取更严的（AND · §8.27）
+	// 1f-C · 策略优先级铁律 · 所有策略读取走 strategy.Effective(§4.3.4) ·
+	// 别自己拼字段(preferred_vendor 三层降级 / max_unit_price 取严等)。
+	//
+	// request override · 手动拉号带的一次性字段(§4.3.2d):
+	//   - count · 手动动作参数 · 有值就用(最高优先级 · 不走 PerRoundCount 链)
+	//   - vendor · req.VendorID 有值(空串已在上面清成 "")
+	//   - zone · req.Zone 有值(空串已在上面清成 "")
+	//   - 手动拉号不带 max_unit_price · 收紧场景要显式带 · 见 §4.3.2 类①
+	reqOverride := buildManualPullOverride(req)
+	eff, err := s.effective(r.Context(), p.ID, busID, reqOverride)
+	if err != nil {
+		return err
+	}
+	// 保留 canpull 硬护栏(余额 / daily_round / daily_spend / 单价上限)校验 ·
+	// **护栏值来自 EffectiveStrategy** · 别再从 bus.Strategy 抽字段。
 	bal, err := s.wallets.Get(r.Context(), p.ID)
 	if err != nil {
 		return err
@@ -346,14 +365,12 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	// 车级 max_unit_price 参与判定（跟全局取更严 · strategy.decide 的 stricter）。
-	// 车级策略由 PUT /api/buses/{id}/strategy 配 · b 是上面已经取到的那辆车。
-	intent, err := s.strategies.CanPull(r.Context(), p.ID, strategy.CheckInput{
+	_, err = s.strategies.CanPull(r.Context(), p.ID, strategy.CheckInput{
 		BusID:           busID,
 		Count:           req.Count,
 		Balance:         bal.Balance,
 		Used:            strategy.Usage{Rounds: used.Rounds, Spend: used.Spend},
-		BusMaxUnitPrice: b.Strategy.MaxUnitPrice,
+		BusMaxUnitPrice: nilIfZeroInt64(eff.MaxUnitPrice),
 	})
 	if err != nil {
 		if fail := translateStrategyErr(err); fail != nil {
@@ -362,23 +379,23 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	// **P3 · preferred_vendor 进下单**（2026-08-14）：req.VendorID 空时用 strategy
-	// 里的 PreferredVendor（intent.Vendor）· 兜底再走 decider 的 defaultVendor。
-	// 顺带修一个**老 bug** —— 这里之前根本没传 VendorID · 所以显式请求"我想找 X 家"
-	// 的意图完全没生效 · 全走 defaultVendor。
-	vendorID := req.VendorID
-	if vendorID == "" && intent.Vendor != nil && *intent.Vendor != "" {
-		vendorID = *intent.Vendor
+	// **P3 · preferred_vendor 进下单** · vendor 已由 Effective 按优先级挑好 ·
+	// eff.PreferredVendor 空 = AutoPick(decider 内 picker 兜底)。
+	vendorID := eff.PreferredVendor
+	// zone · request 已在 Effective 里处理 · 但注意 "auto" 在这里等价空(见上面 322-323)
+	zoneOut := eff.Zone
+	if zoneOut == strategy.ZoneAuto {
+		zoneOut = ""
 	}
 	result, err := s.decider.Pull(r.Context(), decider.PullInput{
 		PassengerID:         p.ID,
 		BusID:               busID,
 		Count:               req.Count,
-		Zone:                providers.Zone(req.Zone),
+		Zone:                providers.Zone(zoneOut),
 		VendorID:            providers.VendorID(vendorID),
 		IdempotencyRecordID: hit.recordID,
-		// 生效上限（全局 ∧ 车级取严）· 用途见 pull.go 同处注释
-		MaxUnitPrice: derefInt64(intent.MaxUnitPrice),
+		// 生效上限 · 由 Effective 取严得到 · 0 = 不限
+		MaxUnitPrice: eff.MaxUnitPrice,
 	})
 	if err != nil {
 		if fail := translateDeciderErr(err); fail != nil {

@@ -105,7 +105,13 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 		return ErrIdempotencyConflict()
 	}
 
-	// strategy 校验（读余额 + 用量）
+	// 1f-C · 策略优先级铁律 · record 单独拉(busID 空 · 不查车级 · §4.3.3 底部)。
+	// request override 携带用户显式指定的 count/vendor/zone(手动动作)。
+	reqOverride := buildManualPullOverride(req)
+	eff, err := s.effective(r.Context(), p.ID, "", reqOverride)
+	if err != nil {
+		return err
+	}
 	bal, err := s.wallets.Get(r.Context(), p.ID)
 	if err != nil {
 		return err
@@ -114,8 +120,8 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	// 单独拉号 · 没有 bus 级上限
-	intent, err := s.strategies.CanPull(r.Context(), p.ID, strategy.CheckInput{
+	// 硬护栏(余额/上限)校验 · BusMaxUnitPrice 留 nil(record 无车级 · §8.27)
+	_, err = s.strategies.CanPull(r.Context(), p.ID, strategy.CheckInput{
 		BusID:   "",
 		Count:   req.Count,
 		Balance: bal.Balance,
@@ -128,28 +134,24 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	// 交给 decider 走完 5 状态。1b 起支持 request 指定 vendor · 空 = defaultVendor。
-	// **换 vendor 就应该是新的拉号请求** —— req.VendorID 参与幂等指纹签名。
-	//
-	// **P3 · preferred_vendor 进下单**（2026-08-14）：请求没显式指定 vendor 时 · 用
-	// strategy 里的 PreferredVendor（intent.Vendor · 从 passenger_strategy 表取）·
-	// 兜底再走 decider 的 defaultVendor。原来这个字段存了但没进拉号 —— 用户偏好
-	// 白设。
-	vendorID := req.VendorID
-	if vendorID == "" && intent.Vendor != nil && *intent.Vendor != "" {
-		vendorID = *intent.Vendor
+	// vendor / zone / max_price 由 Effective 按 §4.3.1 优先级挑好 · 直接用。
+	vendorID := eff.PreferredVendor
+	zoneOut := eff.Zone
+	if zoneOut == strategy.ZoneAuto {
+		zoneOut = ""
 	}
 	result, err := s.decider.Pull(r.Context(), decider.PullInput{
 		PassengerID:         p.ID,
 		BusID:               "",
 		Count:               req.Count,
-		Zone:                providers.Zone(req.Zone),
+		Zone:                providers.Zone(zoneOut),
 		VendorID:            providers.VendorID(vendorID),
 		IdempotencyRecordID: hit.recordID,
-		// 生效的单价上限（CanPull 已取全局跟车级更严的）· 给 decider 两个用途：
+		// 生效的单价上限 · 由 Effective 取严得到 · 0 = 不限 ·
+		// 传给 decider 两个用途:
 		//   ① 缺货挂单时存进 stock_watcher · fire 时继续守同一上限
-		//   ② 换算成 vendor 币种传涨价保护（部分 vendor 原生支持）
-		MaxUnitPrice: derefInt64(intent.MaxUnitPrice),
+		//   ② 换算成 vendor 币种传涨价保护(部分 vendor 原生支持)
+		MaxUnitPrice: eff.MaxUnitPrice,
 	})
 	if err != nil {
 		if fail := translateDeciderErr(err); fail != nil {

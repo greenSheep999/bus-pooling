@@ -701,6 +701,17 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	stalenessChecker.Start(ctx)
 	defer stalenessChecker.Stop(2 * time.Second)
 
+	// 1f-C · 策略 Effective() 桥依赖 · 供三条自动触发路径共用(scheduler / deathwatch /
+	// webhook 扫号)。装配层集中构造 · 保 strategy.Store + bus.Store + SystemDefaults 一份。
+	effDepsMain := &effectiveDepsMain{
+		strategies: strategy.NewStore(database.DB),
+		buses:      bus.NewStoreWithConfig(database.DB, cfg.Bus.MaxMembers),
+		sys: strategy.SystemDefaults{
+			PerRoundCount: cfg.Pull.DefaultCount,
+			DefaultZone:   strategy.ZoneAuto,
+		},
+	}
+
 	// 1d · 自动补车 scheduler · 5min 扫水位低于阈值的 auto_refill bus · 走 decider.Pull
 	// 补的号自动进 bus-<id> group · 下次循环看得到。**这是 1d 阶段最关键的活的部件** ——
 	// 老代码只支持乘客手动点拉号 · scheduler 装上后车挂着就能自己补。
@@ -708,6 +719,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	// v1d-2 · 第二刀 · 装配 decider.Decide 适配器 · Scheduler 每辆车过统一决策器
 	autoRefill.SetDecider(&schedulerDecideBridge{
 		db:        database.DB,
+		deps:      effDepsMain,
 		modeMgr:   modeMgr,
 		killFlag:  killFlag,
 		turboFlag: turboFlag,
@@ -775,6 +787,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		// 关键:AutoRefillEnabled=false 时 · Decide 会拒 · 号死不自动补(退款照走)
 		deathwatchWatcher.SetRefillDecider(&refillDecideBridge{
 			db:        database.DB,
+			deps:      effDepsMain,
 			modeMgr:   modeMgr,
 			killFlag:  killFlag,
 			turboFlag: turboFlag,
@@ -801,6 +814,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		// 第五刀 · vendor 新号 webhook 到时扫低水位 auto 车 · 逐辆调 Decide
 		AutoScan: &webhookAutoScanBridge{
 			db:           database.DB,
+			deps:         effDepsMain,
 			orch:         orch,
 			stockWatcher: stockWatcher,
 			modeMgr:      modeMgr,
@@ -911,6 +925,11 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		AdminKey:            os.Getenv("BP_ADMIN_KEY"),
 		Pusher:              pusher,         // nil 时 handler 走 dry-run · 跟 1a 一致
 		WebhookOut:          webhookOutDisp, // nil 时 handleTestWebhook 走裸 POST
+		// 1f-C · 策略 Effective() 系统默认值(config.pull.*)
+		SysDefaults: strategy.SystemDefaults{
+			PerRoundCount: cfg.Pull.DefaultCount,
+			DefaultZone:   strategy.ZoneAuto,
+		},
 	})
 	apiSrv.Routes(mux)
 
@@ -1107,15 +1126,18 @@ func (b *refillPullerBridge) Refill(ctx context.Context, req deathwatch.RefillRe
 // refillDecideBridge · 第三刀 · 把 decider.Decide 接进 deathwatch.RefillTick
 //
 // 负责:
-//  1. 读 bus.Strategy(auto/watermark/min_count/max_price/preferred_vendor)
-//  2. 读 passenger_strategy_default(max_price)
-//  3. 组装 DecideInput(source=death_refill · 单车视角)
-//  4. 调 decider.Decide
-//  5. 输出翻译成 deathwatch.RefillVerdict
+//  1. 调 strategy.Effective 拿车级/全局取严后的策略字段(1f-C · §4.3.4)
+//  2. 组装 DecideInput(source=death_refill · 单车视角)
+//  3. 调 decider.Decide
+//  4. 输出翻译成 deathwatch.RefillVerdict
 //
 // 只处理有 bus_id 的 pending_refill · 无 bus_id(record group 单独号)直接放行。
+//
+// **1f-C** · 手工拼 bus 表字段 + passenger_strategy_default 已经改用
+// strategy.Effective() · 桥自己不再直接读策略字段。
 type refillDecideBridge struct {
 	db        *sql.DB
+	deps      *effectiveDepsMain // 1f-C · strategy.Effective() 依赖
 	modeMgr   *stockwatch.ModeMgr
 	killFlag  *stockwatch.FileFlag
 	turboFlag *stockwatch.FileFlag
@@ -1134,35 +1156,16 @@ func (b *refillDecideBridge) Decide(ctx context.Context, req deathwatch.RefillRe
 		}
 	}
 
-	// 读车级策略
-	var (
-		autoEnabled     int
-		watermark       int
-		minCount        sql.NullInt64
-		busMax          sql.NullInt64
-		preferredVendor sql.NullString
-	)
-	if err := b.db.QueryRowContext(ctx,
-		`SELECT auto_refill_enabled, refill_watermark,
-		        refill_min_count, max_unit_price, preferred_vendor
-		   FROM bus WHERE id = ?`, req.BusID).Scan(
-		&autoEnabled, &watermark, &minCount, &busMax, &preferredVendor); err != nil {
-		b.logger.Warn("refillDecideBridge: 读 bus 策略失败·保守跳过",
+	// 1f-C · 策略优先级铁律 · 所有字段从 strategy.Effective() 拿(§4.3.4)。
+	// req.PassengerID 已在 pending_refill 里 · 直接用。
+	eff, err := strategy.Effective(ctx, b.deps, req.PassengerID, req.BusID, nil)
+	if err != nil {
+		b.logger.Warn("refillDecideBridge: Effective 失败·保守跳过",
 			"bus", req.BusID, "err", err)
-		return deathwatch.RefillVerdict{Action: deathwatch.RefillReject, Reason: "bus_lookup_failed"}
+		return deathwatch.RefillVerdict{Action: deathwatch.RefillReject, Reason: "effective_lookup_failed"}
 	}
 
-	// 读乘客全局 max_price
-	var passengerMax int64
-	if err := b.db.QueryRowContext(ctx,
-		`SELECT COALESCE(psd.max_unit_price, 0)
-		   FROM bus b JOIN passenger_strategy_default psd
-		     ON psd.passenger_id = b.creator_passenger_id
-		  WHERE b.id = ?`, req.BusID).Scan(&passengerMax); err != nil {
-		passengerMax = 0
-	}
-
-	// 读车里活号按 vendor 分组
+	// 读车里活号按 vendor 分组(车级快照 · 不是策略字段)
 	aliveByVendor := make(map[string]int)
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT vendor_id, COUNT(*)
@@ -1205,29 +1208,25 @@ func (b *refillDecideBridge) Decide(ctx context.Context, req deathwatch.RefillRe
 	kill := b.killFlag != nil && b.killFlag.Engaged()
 	turbo := b.turboFlag != nil && b.turboFlag.Engaged()
 
-	busMaxVal := int64(0)
-	if busMax.Valid {
-		busMaxVal = busMax.Int64
-	}
+	// EffectiveStrategy 的 MaxUnitPrice 已是全局∧车级取严后的最终值 · 直接传 ·
+	// decider.Decide 的 BusMaxUnitPrice / PassengerMaxPrice 语义是分层输入 ·
+	// 但既然 Effective 已经取严 · 分层再传只会重算一次同样的 min · 把最终值
+	// 传成 BusMaxUnitPrice · PassengerMaxPrice=0 让 Decide 那边保持行为一致。
 	minCountVal := 0
-	if minCount.Valid {
-		minCountVal = int(minCount.Int64)
-	}
-	preferredVal := ""
-	if preferredVendor.Valid {
-		preferredVal = preferredVendor.String
+	if eff.RefillMinCount != nil {
+		minCountVal = *eff.RefillMinCount
 	}
 
 	out, err := decider.Decide(ctx, decider.DecideInput{
 		Source:            decider.SourceDeathRefill,
 		BusID:             req.BusID,
 		AliveByVendor:     aliveByVendor,
-		AutoRefillEnabled: autoEnabled == 1,
-		RefillWatermark:   watermark,
+		AutoRefillEnabled: eff.AutoRefillEnabled,
+		RefillWatermark:   eff.RefillWatermark,
 		RefillMinCount:    minCountVal,
-		BusMaxUnitPrice:   busMaxVal,
-		PassengerMaxPrice: passengerMax,
-		PreferredVendor:   preferredVal,
+		BusMaxUnitPrice:   eff.MaxUnitPrice, // Effective 已取严 · 直接传
+		PassengerMaxPrice: 0,                 // 已进 BusMaxUnitPrice · 不重复
+		PreferredVendor:   eff.PreferredVendor,
 		Mode:              mode,
 		KillPulls:         kill,
 		Turbo:             turbo,
@@ -1247,12 +1246,17 @@ func (b *refillDecideBridge) Decide(ctx context.Context, req deathwatch.RefillRe
 	if minCountVal > count {
 		count = minCountVal
 	}
-	// vendor · pending_refill 明说的 vendor 优先(号死通常想补同家) · 兜底走 preferred / AutoPick
+	// vendor · pending_refill 明说的 vendor 优先(号死通常想补同家) · 兜底走 Effective 挑好的
 	chosenVendor := req.VendorID
 	if chosenVendor == "" {
-		chosenVendor = pickVendorForEnqueue(ctx, preferredVal, passengerPreferredVendor(ctx, b.db, req.BusID), b.picker)
+		chosenVendor = eff.PreferredVendor
 	}
-	maxPrice := strictestMaxPrice(busMaxVal, passengerMax)
+	if chosenVendor == "" && b.picker != nil {
+		if pv, _, ok := b.picker.PickBestVendor(ctx, ""); ok {
+			chosenVendor = string(pv)
+		}
+	}
+	maxPrice := eff.MaxUnitPrice
 
 	switch out.Verdict {
 	case decider.VerdictReject:
@@ -1274,23 +1278,6 @@ func (b *refillDecideBridge) Decide(ctx context.Context, req deathwatch.RefillRe
 		verdict.PullMaxPrice = maxPrice
 	}
 	return verdict
-}
-
-// passengerPreferredVendor · 读乘客全局默认 preferred_vendor(bus 无 bus_id 时可能拿不到)
-func passengerPreferredVendor(ctx context.Context, db *sql.DB, busID string) string {
-	if db == nil || busID == "" {
-		return ""
-	}
-	var v sql.NullString
-	_ = db.QueryRowContext(ctx,
-		`SELECT COALESCE(psd.preferred_vendor, '')
-		   FROM bus b JOIN passenger_strategy_default psd
-		     ON psd.passenger_id = b.creator_passenger_id
-		  WHERE b.id = ?`, busID).Scan(&v)
-	if v.Valid {
-		return v.String
-	}
-	return ""
 }
 
 // autoRefillBridge · 1d · 把 orch 转成 bus.AutoRefiller
@@ -1319,14 +1306,16 @@ func (b *autoRefillBridge) Refill(ctx context.Context, req bus.AutoRefillRequest
 // schedulerDecideBridge · 第二刀 · 把 decider.Decide 接进 bus.Scheduler
 //
 // 负责:
-//  1. 从 bus.SchedulerCandidate + stockwatch.ModeMgr + passenger_strategy_default
-//     + vendor_probe_zone 组装 decider.DecideInput
-//  2. 调 decider.Decide
-//  3. 输出翻译成 bus.SchedulerVerdict
+//  1. 调 strategy.Effective 拿车级/全局取严后的策略字段(1f-C · §4.3.4)
+//  2. 从 bus.SchedulerCandidate.AliveByVendor + ModeMgr + vendor_probe_zone 组装
+//     decider.DecideInput
+//  3. 调 decider.Decide
+//  4. 输出翻译成 bus.SchedulerVerdict
 //
 // 装配层给 SchedulerDecider 注入 · nil-safe(bus.Scheduler 未装配 decider 时走老路径)。
 type schedulerDecideBridge struct {
 	db        *sql.DB
+	deps      *effectiveDepsMain // 1f-C · strategy.Effective() 依赖
 	modeMgr   *stockwatch.ModeMgr
 	killFlag  *stockwatch.FileFlag
 	turboFlag *stockwatch.FileFlag
@@ -1336,14 +1325,12 @@ type schedulerDecideBridge struct {
 }
 
 func (b *schedulerDecideBridge) Decide(ctx context.Context, busID string, cand bus.SchedulerCandidate) bus.SchedulerVerdict {
-	// 读乘客全局策略(passenger_strategy_default.max_unit_price 参与硬上限取严)
-	var passengerMax int64
-	if err := b.db.QueryRowContext(ctx,
-		`SELECT COALESCE(psd.max_unit_price, 0)
-		   FROM bus b JOIN passenger_strategy_default psd
-		     ON psd.passenger_id = b.creator_passenger_id
-		  WHERE b.id = ?`, busID).Scan(&passengerMax); err != nil {
-		passengerMax = 0 // 没配 · 视为不限
+	// 1f-C · 拿 passenger owner · 走 Effective(cand.OwnerID 是 creator_passenger_id)
+	eff, err := strategy.Effective(ctx, b.deps, cand.OwnerID, busID, nil)
+	if err != nil {
+		b.logger.Warn("schedulerDecideBridge: Effective 失败·保守跳过",
+			"bus", busID, "err", err)
+		return bus.SchedulerVerdict{Action: bus.ActionReject, Reason: "effective_lookup_failed"}
 	}
 
 	// 读 vendor 当前单价(freshness 判 stale)· 只查 cand.AliveByVendor 里的那几家
@@ -1371,16 +1358,21 @@ func (b *schedulerDecideBridge) Decide(ctx context.Context, busID string, cand b
 	kill := b.killFlag != nil && b.killFlag.Engaged()
 	turbo := b.turboFlag != nil && b.turboFlag.Engaged()
 
+	minCountVal := 0
+	if eff.RefillMinCount != nil {
+		minCountVal = *eff.RefillMinCount
+	}
+
 	out, err := decider.Decide(ctx, decider.DecideInput{
 		Source:            decider.SourceScheduler,
 		BusID:             busID,
 		AliveByVendor:     cand.AliveByVendor,
-		AutoRefillEnabled: true, // Scheduler 侧 SQL 已过滤 auto_refill_enabled=1
-		RefillWatermark:   cand.Watermark,
-		RefillMinCount:    cand.MinCount,
-		BusMaxUnitPrice:   cand.MaxUnitPrice,
-		PassengerMaxPrice: passengerMax,
-		PreferredVendor:   cand.PreferredVendor,
+		AutoRefillEnabled: eff.AutoRefillEnabled, // Effective 里已含全局 fallback
+		RefillWatermark:   eff.RefillWatermark,
+		RefillMinCount:    minCountVal,
+		BusMaxUnitPrice:   eff.MaxUnitPrice, // 已取严 · 直接传
+		PassengerMaxPrice: 0,                 // 已进 BusMaxUnitPrice
+		PreferredVendor:   eff.PreferredVendor,
 		Mode:              mode,
 		KillPulls:         kill,
 		Turbo:             turbo,
@@ -1393,19 +1385,25 @@ func (b *schedulerDecideBridge) Decide(ctx context.Context, busID string, cand b
 
 	verdict := bus.SchedulerVerdict{Reason: out.RejectReason}
 	// Pull / Enqueue 共用的参数(§5 Step 5)
-	gap := cand.Watermark - sumAlive(cand.AliveByVendor)
-	count := cand.MinCount
+	//
+	// **1f-C 铁律**(§4.3.4)· gap 用 eff.RefillWatermark(Effective 已合并全局) ·
+	// **不用** cand.Watermark(loadCandidates 返的车级原始值 · 未合并全局)。
+	gap := eff.RefillWatermark - sumAlive(cand.AliveByVendor)
+	count := minCountVal
 	if count <= 0 {
 		count = gap
 	}
 	if count < 1 {
 		count = 1
 	}
-	maxPrice := strictestMaxPrice(cand.MaxUnitPrice, passengerMax)
-	// vendor 三级降级 · Enqueue 前必须非空(stockwatch.Enqueue 要求)
-	// 读乘客全局 preferred_vendor 兜底(bus preferred 空时)
-	passengerPreferred := passengerPreferredVendor(ctx, b.db, busID)
-	chosenVendor := pickVendorForEnqueue(ctx, cand.PreferredVendor, passengerPreferred, b.picker)
+	maxPrice := eff.MaxUnitPrice
+	// vendor · Effective 已按 request→车级→全局 挑好 · 空(AutoPick)时走 picker
+	chosenVendor := eff.PreferredVendor
+	if chosenVendor == "" && b.picker != nil {
+		if pv, _, ok := b.picker.PickBestVendor(ctx, ""); ok {
+			chosenVendor = string(pv)
+		}
+	}
 
 	switch out.Verdict {
 	case decider.VerdictReject:
@@ -1439,51 +1437,17 @@ func sumAlive(m map[string]int) int {
 	return s
 }
 
-// pickVendorForEnqueue · Enqueue 前选一家 vendor(stockwatch.Enqueue 要求 VendorID 非空)
-//
-// 三级降级:bus preferred → passenger preferred → picker.PickBestVendor(AutoPick 比价)
-// 全空返 "" · 上层判空 skip Enqueue。
-func pickVendorForEnqueue(
-	ctx context.Context,
-	busPreferred, passengerPreferred string,
-	picker *vendorview.Service,
-) string {
-	if busPreferred != "" {
-		return busPreferred
-	}
-	if passengerPreferred != "" {
-		return passengerPreferred
-	}
-	if picker != nil {
-		if pv, _, ok := picker.PickBestVendor(ctx, ""); ok {
-			return string(pv)
-		}
-	}
-	return ""
-}
-
-// strictestMaxPrice · 硬上限取最严 · 0 视为不限
-func strictestMaxPrice(a, b int64) int64 {
-	if a <= 0 && b <= 0 {
-		return 0
-	}
-	if a <= 0 {
-		return b
-	}
-	if b <= 0 {
-		return a
-	}
-	if a < b {
-		return a
-	}
-	return b
-}
+// pickVendorForEnqueue / strictestMaxPrice · 1f-C 已删除 · 三级 vendor 降级 +
+// 硬上限取严都由 strategy.Effective() 统一算(§4.3.4)。桥拿到的 EffectiveStrategy
+// 里 PreferredVendor 空就调 picker · MaxUnitPrice 已经取严 —— 不再需要 wrap。
 
 // webhookAutoScanBridge · 第五刀 · vendor 新号 webhook 到时 · 扫低水位 auto 车 · 逐辆调 Decide。
 //
 // 逻辑:
 //  1. 查所有 auto_refill_enabled=1 且 alive < watermark 的 bus(排除已挂 stockwatch 的)
-//  2. 逐辆调 decider.Decide(source=webhook) · 传当前 vendor/mode/价格数据
+//     ** 候选筛 SQL 用 bus 表原始字段(auto_refill_enabled=1) —— 这不是决策 · 是过滤 ·
+//     真正的字段生效值由后面 Effective() 逐辆决定(1f-C · §4.3.4)。
+//  2. 逐辆调 strategy.Effective + decider.Decide(source=webhook)
 //  3. Verdict=Pull → 调 orch.Pull(vendor 指定为 webhook 到的那家)
 //  4. Verdict=Enqueue → 交给 stockwatch 挂单
 //  5. Verdict=Reject → 静默
@@ -1491,6 +1455,7 @@ func strictestMaxPrice(a, b int64) int64 {
 // 出错只 log · 不影响 webhook 主流程返 200。
 type webhookAutoScanBridge struct {
 	db           *sql.DB
+	deps         *effectiveDepsMain // 1f-C · strategy.Effective() 依赖
 	orch         *decider.Orchestrator
 	stockWatcher *stockwatch.Watcher // Enqueue 目标
 	modeMgr      *stockwatch.ModeMgr
@@ -1504,25 +1469,26 @@ func (b *webhookAutoScanBridge) OnNewKeys(ctx context.Context, vendorID, zone st
 	if b.orch == nil || b.db == nil {
 		return
 	}
-	// 查候选:auto_refill=1 且 status='active' 且 refill_watermark>0
-	// 排除已经在 stock_watcher watching 的 bus(那些走 stockwatch fire 路径)
+	// 查候选:所有 active 车 · 排除已经在 stock_watcher watching 的 bus
+	// (那些走 stockwatch fire 路径)
+	//
+	// **1f-C 铁律**(§4.3.4)· SQL **只**做 store 基础过滤(active + 未挂 stockwatch) ·
+	// **不**做 auto/watermark 的 IFNULL 合并 —— 那些字段的生效值由后面 Effective()
+	// 逐车重算。低水位判断也放到 decideAndAct 里 · 拿 eff.RefillWatermark 比 alive。
+	//
+	// **性能取舍**:候选池从"筛过 auto+watermark 的车"扩到"全部 active 车" ·
+	// v1 期用户量下每次 webhook 到 · 扫全表秒级完成 · 换回 §4.3.4 单入口合规。
 	rows, err := b.db.QueryContext(ctx, `
-		SELECT b.id, b.creator_passenger_id, b.refill_watermark,
-		       COALESCE(b.refill_min_count, 0),
-		       COALESCE(b.max_unit_price, 0),
-		       COALESCE(b.preferred_vendor, ''),
+		SELECT b.id, b.creator_passenger_id,
 		       COALESCE(SUM(CASE WHEN cl.status = 'alive' THEN 1 ELSE 0 END), 0) AS alive
 		  FROM bus b
 		  LEFT JOIN credential_ledger cl ON cl.owner_bus_id = b.id
-		 WHERE b.auto_refill_enabled = 1
-		   AND b.status = 'active'
-		   AND b.refill_watermark > 0
+		 WHERE b.status = 'active'
 		   AND NOT EXISTS (
 		     SELECT 1 FROM stock_watcher sw
 		      WHERE sw.bus_id = b.id AND sw.status = 'watching'
 		   )
-		 GROUP BY b.id
-		HAVING alive < b.refill_watermark`)
+		 GROUP BY b.id`)
 	if err != nil {
 		b.logger.Warn("webhookAutoScanBridge: 扫候选失败", "err", err)
 		return
@@ -1539,39 +1505,40 @@ func (b *webhookAutoScanBridge) OnNewKeys(ctx context.Context, vendorID, zone st
 	touched := 0
 	for rows.Next() {
 		var (
-			busID, ownerID  string
-			watermark       int
-			minCount        int
-			maxPrice        int64
-			preferredVendor string
-			aliveTotal      int
+			busID, ownerID string
+			aliveTotal     int
 		)
-		if err := rows.Scan(&busID, &ownerID, &watermark, &minCount, &maxPrice, &preferredVendor, &aliveTotal); err != nil {
+		if err := rows.Scan(&busID, &ownerID, &aliveTotal); err != nil {
 			continue
 		}
 		touched++
-		b.decideAndAct(ctx, busID, ownerID, watermark, minCount, maxPrice, preferredVendor, aliveTotal, vendorID, mode, kill, turbo)
+		b.decideAndAct(ctx, busID, ownerID, aliveTotal, vendorID, mode, kill, turbo)
 	}
 	if touched > 0 {
-		b.logger.Info("webhookAutoScanBridge: 扫低水位 auto 车",
+		b.logger.Info("webhookAutoScanBridge: 扫 active auto 车",
 			"vendor", vendorID, "zone", zone, "new_keys", newKeys, "touched", touched)
 	}
 }
 
-// decideAndAct · 单车决策 + 动作
+// decideAndAct · 单车决策 + 动作(1f-C · 策略字段从 Effective 拿)
 func (b *webhookAutoScanBridge) decideAndAct(
 	ctx context.Context, busID, ownerID string,
-	watermark, minCount int, maxPrice int64, preferredVendor string,
 	aliveTotal int, webhookVendor string,
 	mode string, kill, turbo bool,
 ) {
-	// 读乘客全局 max_price
-	var passengerMax int64
-	b.db.QueryRowContext(ctx,
-		`SELECT COALESCE(psd.max_unit_price, 0)
-		   FROM bus b JOIN passenger_strategy_default psd
-		     ON psd.passenger_id = b.creator_passenger_id
-		  WHERE b.id = ?`, busID).Scan(&passengerMax)
+	// 1f-C · 走 Effective · 拿最终策略字段(§4.3.4)
+	eff, err := strategy.Effective(ctx, b.deps, ownerID, busID, nil)
+	if err != nil {
+		b.logger.Warn("webhookAutoScanBridge: Effective 失败·跳过",
+			"bus", busID, "err", err)
+		return
+	}
+
+	// **1f-C 铁律**(§4.3.4)· "auto 关 / watermark 0 / alive 已满"这三个决策口径
+	// 从 Effective 生效值判定 · 不从 SQL 候选筛。
+	if !eff.AutoRefillEnabled || eff.RefillWatermark <= 0 || aliveTotal >= eff.RefillWatermark {
+		return
+	}
 
 	// 读车里活号按 vendor 分组
 	aliveByVendor := make(map[string]int)
@@ -1606,16 +1573,21 @@ func (b *webhookAutoScanBridge) decideAndAct(
 		}
 	}
 
+	minCountVal := 0
+	if eff.RefillMinCount != nil {
+		minCountVal = *eff.RefillMinCount
+	}
+
 	out, err := decider.Decide(ctx, decider.DecideInput{
 		Source:            decider.SourceWebhook,
 		BusID:             busID,
 		AliveByVendor:     aliveByVendor,
-		AutoRefillEnabled: true, // 扫时 SQL 已过滤
-		RefillWatermark:   watermark,
-		RefillMinCount:    minCount,
-		BusMaxUnitPrice:   maxPrice,
-		PassengerMaxPrice: passengerMax,
-		PreferredVendor:   preferredVendor,
+		AutoRefillEnabled: eff.AutoRefillEnabled,
+		RefillWatermark:   eff.RefillWatermark,
+		RefillMinCount:    minCountVal,
+		BusMaxUnitPrice:   eff.MaxUnitPrice, // 已取严
+		PassengerMaxPrice: 0,
+		PreferredVendor:   eff.PreferredVendor,
 		Mode:              mode,
 		KillPulls:         kill,
 		Turbo:             turbo,
@@ -1630,19 +1602,18 @@ func (b *webhookAutoScanBridge) decideAndAct(
 		return
 	case decider.VerdictEnqueue:
 		// 挂 stockwatch · 挂意图不预冻结
-		gap := watermark - aliveTotal
-		count := minCount
+		gap := eff.RefillWatermark - aliveTotal
+		count := minCountVal
 		if count <= 0 {
 			count = gap
 		}
 		if count < 1 {
 			count = 1
 		}
-		// vendor · webhook 推的最优先(反正是刚来货) · 再走三级降级
+		// vendor · webhook 推的最优先(反正是刚来货) · 兜底 Effective 挑好的
 		v := webhookVendor
 		if v == "" {
-			passengerPreferred := passengerPreferredVendor(ctx, b.db, busID)
-			v = pickVendorForEnqueue(ctx, preferredVendor, passengerPreferred, nil) // webhook 时不再走 picker(webhook 已明说是哪家)
+			v = eff.PreferredVendor
 			if v == "" {
 				b.logger.Info("webhookAutoScanBridge: 无 vendor 可用 · skip Enqueue", "bus", busID)
 				return
@@ -1660,7 +1631,7 @@ func (b *webhookAutoScanBridge) decideAndAct(
 			Region:        "",
 			ClientOrderID: cid,
 			Count:         count,
-			MaxUnitPrice:  strictestMaxPrice(maxPrice, passengerMax),
+			MaxUnitPrice:  eff.MaxUnitPrice,
 			// ReservedAmount = 0 · 挂意图不预冻结
 		})
 		if eerr != nil {
@@ -1671,8 +1642,8 @@ func (b *webhookAutoScanBridge) decideAndAct(
 			"bus", busID, "vendor", v, "count", count)
 		return
 	case decider.VerdictPull:
-		gap := watermark - aliveTotal
-		count := minCount
+		gap := eff.RefillWatermark - aliveTotal
+		count := minCountVal
 		if count <= 0 {
 			count = gap
 		}
@@ -1683,10 +1654,10 @@ func (b *webhookAutoScanBridge) decideAndAct(
 		if err != nil {
 			return
 		}
-		// vendor 优先用 webhook 推的那家(反正是刚来货的)· 兜底 preferred
+		// vendor 优先用 webhook 推的那家(反正是刚来货的)· 兜底 Effective 挑好的
 		v := webhookVendor
 		if v == "" {
-			v = preferredVendor
+			v = eff.PreferredVendor
 		}
 		b.logger.Info("webhookAutoScanBridge: Decide→Pull",
 			"bus", busID, "vendor", v, "count", count)
@@ -1695,7 +1666,7 @@ func (b *webhookAutoScanBridge) decideAndAct(
 			BusID:               busID,
 			Count:               count,
 			VendorID:            providers.VendorID(v),
-			MaxUnitPrice:        strictestMaxPrice(maxPrice, passengerMax),
+			MaxUnitPrice:        eff.MaxUnitPrice,
 			IdempotencyRecordID: idem,
 		})
 		if perr != nil {

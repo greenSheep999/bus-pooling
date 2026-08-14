@@ -82,6 +82,9 @@ type Server struct {
 	pusher passengerpool.Pusher
 	// webhookOut · 对外 webhook 出向 · nil = handleTestWebhook 走裸 POST(1a 兼容)
 	webhookOut WebhookOutSender
+	// sysDefaults · 策略 Effective() 用的系统默认值(config.pull.*) · 1f-C · 装
+	// 配层从 config 传进来 · 零值时 EffectiveDeps 用 fallback(DefaultCount=1)
+	sysDefaults strategy.SystemDefaults
 }
 
 // WebhookOutSender · webhookout.Dispatcher 的对外接口(避免 api → webhookout 硬依赖)。
@@ -134,6 +137,9 @@ type ServerDeps struct {
 	Pusher passengerpool.Pusher
 	// WebhookOut · 对外 webhook 出向 · nil = handleTestWebhook 走裸 POST(1a 兼容)
 	WebhookOut WebhookOutSender
+	// SysDefaults · 策略 Effective() 系统默认值(config.pull.*) · 1f-C ·
+	// 装配层从 config.Pull 组装 · nil 允许(用兜底 DefaultCount=1 / Zone=auto)
+	SysDefaults strategy.SystemDefaults
 }
 
 func NewServer(d ServerDeps) *Server {
@@ -171,6 +177,7 @@ func NewServer(d ServerDeps) *Server {
 		adminKey:            d.AdminKey,
 		pusher:              d.Pusher,
 		webhookOut:          d.WebhookOut,
+		sysDefaults:         d.SysDefaults,
 	}
 }
 
@@ -427,14 +434,20 @@ type profileResponse struct {
 	Email         string `json:"email"`
 	EmailVerified bool   `json:"email_verified"`
 	CreatedAt     string `json:"created_at"`
+	Tier          string `json:"tier"` // retail / community / wholesale (docs/10-pricing §2.1)
 	Invited       bool   `json:"invited"`
 }
 
 func profileOf(p *passenger.Passenger) profileResponse {
+	tier := p.Tier
+	if tier == "" {
+		tier = passenger.TierRetail
+	}
 	return profileResponse{
 		ID: p.ID, Username: p.Username, Email: p.Email,
 		EmailVerified: p.EmailVerified,
 		CreatedAt:     p.CreatedAt.Format(time.RFC3339),
+		Tier:          tier,
 		Invited:       p.Invited,
 	}
 }
