@@ -131,7 +131,7 @@ export interface VendorQuality {
 export interface VendorQualityTag {
   /** 前端按 kind 映射色调 · 文案走 i18n status:tags-quality.<kind>
    *   stable / high-volume / active / in-stock / warranty / watching */
-  kind: "stable" | "high-volume" | "active" | "in-stock" | "warranty" | "watching";
+  kind: "stable" | "high-volume" | "active" | "in-stock" | "out-of-stock" | "warranty" | "watching";
 }
 
 /** Vendor 平台 fleet-wide 发货节奏 · 上线一秒到手（后端从 vendor 侧真历史或探针增量推） */

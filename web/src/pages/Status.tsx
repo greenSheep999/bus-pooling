@@ -144,7 +144,7 @@ function VendorCard({ vendor, window }: { vendor: VendorStatusRow; window: Statu
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-2">
           <div className="flex items-center gap-2">
-            <PingDot tone={vendor.alive ? "ok" : "danger"} />
+            <PingDot tone={stockDotTone(vendor)} />
             <span className="font-semibold">{vendor.anon_label}</span>
           </div>
           <QualityTags tags={vendor.quality?.tags} />
@@ -170,8 +170,8 @@ function VendorCard({ vendor, window }: { vendor: VendorStatusRow; window: Statu
           )}
         </div>
 
-        {/* 数字 · 3 项 · 单位写清楚 */}
-        <div className="grid grid-cols-3 gap-4 md:w-[280px]">
+        {/* 数字 · 3 项 · 单位写清楚 · md:w-[320px] 给最后一列 "yesterday" 单词留够宽度 */}
+        <div className="grid grid-cols-3 gap-4 md:w-[320px]">
           <Metric
             value={fmtCompact(summary?.keys ?? 0)}
             unit={t("unit.keys")}
@@ -204,7 +204,8 @@ function Metric({
 }) {
   const isZero = value === "0" || value === "—";
   return (
-    <div>
+    // min-w-0 让 grid item 能收缩到内容以下 · 避免 "yesterday" 这种单词把格撑出边界
+    <div className="min-w-0">
       <div
         className={cn(
           "font-mono text-lg font-semibold tabular-nums leading-tight",
@@ -227,6 +228,25 @@ function PingDot({ tone }: { tone: "ok" | "warn" | "danger" }) {
       <span className={cn("relative inline-flex size-2 rounded-full", bg)} />
     </span>
   );
+}
+
+/** vendor 名字前的点 · 按库存判色 · 用户视角就是"能不能买到号"
+ *
+ *  · vendor 挂了(alive=false) → danger 红
+ *  · 有货(many)              → ok 绿
+ *  · 少量(low)               → warn 黄
+ *  · 缺货(out) 或探不到       → danger 红
+ *
+ *  跟 uptime/alive 解耦 · 之前用 alive 让用户以为"服务在跑就是有号可拉"·实际探针能打通不等于有货。
+ */
+function stockDotTone(v: { alive: boolean; stock_bucket?: "many" | "low" | "out" | "unknown" }): "ok" | "warn" | "danger" {
+  if (!v.alive) return "danger";
+  switch (v.stock_bucket) {
+    case "many": return "ok";
+    case "low":  return "warn";
+    case "out":  return "danger";
+    default:     return "danger"; // unknown 保守当红
+  }
 }
 
 /** 时间窗口 tab · 24h / 7天 / 30天 · 影响后端 Quality 评估窗口 + 图表窗口 */
@@ -516,7 +536,7 @@ function VendorDetail({ anonID }: { anonID: string }) {
               <>
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
-                    <PingDot tone={vendor.alive ? "ok" : "danger"} />
+                    <PingDot tone={stockDotTone(vendor)} />
                     <h1 className="text-2xl font-semibold">{vendor.anon_label}</h1>
                   </div>
                   <QualityTags tags={vendor.quality?.tags} />
@@ -524,8 +544,8 @@ function VendorDetail({ anonID }: { anonID: string }) {
 
                 <WindowTabs value={window} onChange={setWindow} />
 
-                {/* 指标 · 单位写清楚 */}
-                <div className="grid grid-cols-2 gap-5 rounded-2xl border border-hairline bg-surface p-5 md:grid-cols-4">
+                {/* 指标 · 5 项 · 加'稳定度'补齐 decisions §10.4 定义的 status 详情字段 */}
+                <div className="grid grid-cols-2 gap-5 rounded-2xl border border-hairline bg-surface p-5 md:grid-cols-5">
                   <Metric
                     value={fmtCompact(summary?.keys ?? 0)}
                     unit={t("unit.keys")}
@@ -538,6 +558,9 @@ function VendorDetail({ anonID }: { anonID: string }) {
                   <Metric
                     value={summary?.avg_interval_min ? fmtInterval(summary.avg_interval_min) : "—"}
                     label={t("detail.avg-interval")} />
+                  <Metric
+                    value={vendor.uptime_24h_pct !== undefined ? `${vendor.uptime_24h_pct.toFixed(1)}%` : "—"}
+                    label={t("detail.uptime-24h")} />
                   <Metric
                     value={vendor.warranty_minutes ? String(vendor.warranty_minutes) : "—"}
                     unit={vendor.warranty_minutes ? t("unit.minutes") : undefined}

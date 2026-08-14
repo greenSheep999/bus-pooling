@@ -29,11 +29,12 @@ type VendorQuality struct {
 
 // QualityTag 单个质量标签 · 前端按 kind 决定颜色和图标
 type QualityTag struct {
-	// Kind 标签种类 · 前端映射到色调（ok / brand / info / neutral / warn）
+	// Kind 标签种类 · 前端映射到色调（ok / brand / info / neutral / warn / danger）
 	// - "stable"     · 24h uptime ≥ 95%              · 稳定（ok · 绿）
 	// - "high-volume" · 窗口内批次 ≥ 20              · 高产（brand · 紫）
 	// - "active"     · 最新一次 ≤ 24h 内             · 活跃（info · 蓝）
 	// - "in-stock"   · 当下 stock=many               · 有货（ok · 绿）
+	// - "out-of-stock" · 当下 stock=out              · 缺货（danger · 红）
 	// - "warranty"   · has_warranty=true             · 保质（brand · 紫）
 	// - "watching"   · 数据不足 / uptime<50% / 长期没开号 · 观察中（warn · 黄）
 	Kind string `json:"kind"`
@@ -129,6 +130,10 @@ func computeQuality(in qualityInput) VendorQuality {
 	// 有货 · 当下 stock=many
 	if in.stockBucket == "many" {
 		tags = append(tags, QualityTag{Kind: "in-stock"})
+	}
+	// 缺货 · 当下 stock=out · 用户视角一眼看到"这家买不到号"
+	if in.stockBucket == "out" {
+		tags = append(tags, QualityTag{Kind: "out-of-stock"})
 	}
 
 	// 保质

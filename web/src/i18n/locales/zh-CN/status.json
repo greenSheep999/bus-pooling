@@ -19,6 +19,7 @@
     "high-volume": "高产",
     "active": "活跃",
     "in-stock": "有货",
+    "out-of-stock": "缺货",
     "warranty": "保质",
     "watching": "观察中"
   },
@@ -58,6 +59,7 @@
     "keys-7d": "7 天内放出",
     "batches-7d": "7 天内开号",
     "avg-interval": "平均间隔",
+    "uptime-24h": "24h 稳定度",
     "warranty": "失效质保",
     "chart-title": "7 天开号量"
   },

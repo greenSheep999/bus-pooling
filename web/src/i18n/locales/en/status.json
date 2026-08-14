@@ -19,6 +19,7 @@
     "high-volume": "High volume",
     "active": "Active",
     "in-stock": "In stock",
+    "out-of-stock": "Out of stock",
     "warranty": "Warranty",
     "watching": "Watching"
   },
@@ -58,6 +59,7 @@
     "keys-7d": "Keys · 7d",
     "batches-7d": "Batches · 7d",
     "avg-interval": "Avg interval",
+    "uptime-24h": "24h uptime",
     "warranty": "Warranty",
     "chart-title": "Keys dispatched · 7 days"
   },

@@ -9,23 +9,25 @@ import type { VendorQualityTag } from "@/api/hooks";
  *
  *  标签顺序：正向标签先 · 观察态最后（视觉上"好"的信号排前面）
  */
-const TAG_TONE: Record<VendorQualityTag["kind"], "ok" | "brand" | "neutral" | "warn"> = {
-  "stable":      "ok",
-  "high-volume": "brand",
-  "active":      "neutral",
-  "in-stock":    "ok",
-  "warranty":    "brand",
-  "watching":    "warn",
+const TAG_TONE: Record<VendorQualityTag["kind"], "ok" | "brand" | "neutral" | "warn" | "danger"> = {
+  "stable":       "ok",
+  "high-volume":  "brand",
+  "active":       "neutral",
+  "in-stock":     "ok",
+  "out-of-stock": "danger",
+  "warranty":     "brand",
+  "watching":     "warn",
 };
 
-/** 排序权重 · 数字越小越靠前 */
+/** 排序权重 · 数字越小越靠前 · 缺货最靠前(用户最想一眼看到"这家买不到") */
 const TAG_ORDER: Record<VendorQualityTag["kind"], number> = {
-  "high-volume": 1,
-  "stable":      2,
-  "active":      3,
-  "in-stock":    4,
-  "warranty":    5,
-  "watching":    99,
+  "out-of-stock": 0,
+  "high-volume":  1,
+  "stable":       2,
+  "active":       3,
+  "in-stock":     4,
+  "warranty":     5,
+  "watching":     99,
 };
 
 export function QualityTags({
