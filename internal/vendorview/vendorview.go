@@ -44,6 +44,10 @@ type Service struct {
 	// 展示价换算的兜底路径用（库里 our_unit_credits 还没落时）· nil 走 1:1
 	pricing PricingLookup
 
+	// quality · 从 vendor_key 表聚合的号寿命 / 30d 存活率（Task 65）·
+	// nil 时 AutoPick 打分退回 aliveRate=50 常数（老行为 · 等价纯价格排序）
+	quality *QualityStore
+
 	// now / newCtx 可注入 · 测试时控时钟和取消
 	now func() time.Time
 }
@@ -60,6 +64,9 @@ type Config struct {
 	OrderKeyStore *OrderKeyStore
 	// Pricing · vendor_pricing 换算规则 · 传 nil = 展示价兜底按 1:1 算
 	Pricing PricingLookup
+	// Quality · vendor_key 表聚合的号寿命 / 存活率（Task 65 · 喂 AutoPick 打分）
+	// 传 nil = AutoPick 用 aliveRate=50 常数兜底（老行为）
+	Quality *QualityStore
 }
 
 // New 建 Service。rates 为零值时零费率（真实环境从后台配置注入）。
@@ -83,6 +90,7 @@ func New(cfg Config) (*Service, error) {
 		probeInterval: probeInterval,
 		orderKeyStore: cfg.OrderKeyStore,
 		pricing:       cfg.Pricing,
+		quality:       cfg.Quality,
 		now:           func() time.Time { return time.Now().UTC() },
 	}, nil
 }
@@ -445,10 +453,18 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 	if maxPrice <= 0 {
 		maxPrice = 1
 	}
+	// **Task 65 · 2026-08-14**：从 vendor_key 表聚合 30d 存活率喂进打分公式 ·
+	// 无数据的家降级 50 常数（不误伤 · 新接入 vendor 保 30d 才拿真数据）。
+	// 打分公式不变（0.6 存活 + 0.4 价格）· 数据源变了 —— 老代码恒 50 等价纯价格排序 ·
+	// 现在能反映"这家最近的号好不好"。
 	for i := range cands {
 		p := cands[i].credits
-		// 成活率 1a 无数据 → 50 常数，等价于纯价格排序
 		aliveRate := 50.0
+		if s.quality != nil {
+			if stats, ok, _ := s.quality.Get(ctx, string(cands[i].entry.VendorID)); ok && stats != nil {
+				aliveRate = float64(stats.AliveRate30d)
+			}
+		}
 		cands[i].score = aliveRate/100*0.6 + (1-float64(p)/float64(maxPrice))*0.4
 	}
 	// 稳定排序，score 高优先；同 score 按 VendorID 字典序（可复现）
@@ -485,6 +501,16 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 		zonePtr = &z
 	}
 
+	// Task 65：从 vendor_key 聚合取真实值 · 无数据返 0（前端显示 "-"）
+	var avgLifespan int64
+	var aliveRate30d int
+	if s.quality != nil {
+		if stats, ok, _ := s.quality.Get(ctx, string(best.entry.VendorID)); ok && stats != nil {
+			avgLifespan = stats.AvgLifespanSeconds
+			aliveRate30d = stats.AliveRate30d
+		}
+	}
+
 	return &AutoPickView{
 		VendorLabel: label,
 		// 走 visibleVendorID · 非 wholesale 档返 anon_id（原来这里直接返真 id · 漏名）
@@ -496,9 +522,9 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 		WarrantyMinutes: best.snap.WarrantyMinutes,
 		MaxPerOrder:     best.snap.MaxPerOrder,
 		MinPerOrder:     best.snap.MinPerOrder,
-		// 1a 无历史数据，寿命/成活率给 0，前端会显示 "-"
-		AvgLifespanSeconds: 0,
-		AliveRate30d:       0,
+		// 真实值 · vendor_key 无数据时为 0（前端显示 "-"）
+		AvgLifespanSeconds: avgLifespan,
+		AliveRate30d:       aliveRate30d,
 		Reason:             reason,
 	}
 }

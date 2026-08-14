@@ -611,6 +611,9 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		OrderKeyStore: orderKeyStoreForView,
 		// 展示价换算 · USD 家不换会把展示价算成实际的 1/6.8（docs/18 §1.3）
 		Pricing: pricing.NewVendorViewLookup(pricing.NewStore(database.DB)),
+		// Task 65 · 从 vendor_key 聚合号寿命 / 30d 存活率喂 AutoPick 打分
+		// 没数据的家降级 50 常数（老行为 · 等价纯价格排序）
+		Quality: vendorview.NewQualityStore(database.DB),
 	})
 	if err != nil {
 		return err
