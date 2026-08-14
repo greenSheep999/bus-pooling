@@ -46,6 +46,8 @@ type Orchestrator struct {
 	// enqueuer · 抢号链缺货挂单（stockwatch.Watcher）· nil = 缺货直接失败（老行为）
 	// 只在 auto 模式（未指定 vendor）缺货时挂 · 见 maybeEnqueueOnNoStock
 	enqueuer StockEnqueuer
+	// picker · 自动选 vendor（P4）· nil = 走 defaultVendor（老行为 · 测试默认）
+	picker VendorPicker
 	// now / newID 可注入，测试里用来控时钟和 id 生成
 	now   func() time.Time
 	newID func() string
@@ -64,6 +66,16 @@ type StockEnqueuer interface {
 // 装配层传 pricing.Store.GetOrFallback 的适配 · 测试 mock 简单。
 type PricingLookup interface {
 	QuoteFor(ctx context.Context, vendorID providers.VendorID) VendorQuote
+}
+
+// VendorPicker · 自动选 vendor 的抽象（避免 decider → vendorview 硬依赖）·
+// 实现方 vendorview.Service.PickBestVendor · 装配层注入。
+//
+// **P4 · 2026-08-14**：Pull 里 VendorID 空 · 用户偏好也空时 · 调这个选一家 ·
+// 老代码直接走 defaultVendor · 用户看到 UI 说"推荐 A 家" · 真拉却总走 default · 割裂。
+type VendorPicker interface {
+	// PickBestVendor 返 (vendorID, zone, ok)。全网缺货 ok=false · 上层 defaultVendor 兜底。
+	PickBestVendor(ctx context.Context, zoneHint string) (providers.VendorID, providers.Zone, bool)
 }
 
 // CreditsLookup · 读 vendor_probe / vendor_probe_zone 的积分（docs/18 §1.4）·
@@ -106,6 +118,8 @@ type Config struct {
 	Limits Limits
 	// Enqueuer · 抢号链缺货挂单 · nil = 缺货直接失败退款（老行为 · 测试默认）
 	Enqueuer StockEnqueuer
+	// Picker · 自动选 vendor（VendorID 空 + preferred 也空时用）· nil = 走 defaultVendor（老行为）
+	Picker VendorPicker
 }
 
 func New(cfg Config) *Orchestrator {
@@ -130,6 +144,7 @@ func New(cfg Config) *Orchestrator {
 		ratesResolver: cfg.RatesResolver,
 		limits:        cfg.Limits,
 		enqueuer:      cfg.Enqueuer,
+		picker:        cfg.Picker,
 		now:           func() time.Time { return time.Now().UTC() },
 		newID:         uuid.NewString,
 	}
@@ -289,6 +304,24 @@ var (
 //
 // 崩溃恢复原则：**每步只推进一个字段** + **调 vendor 前必须先落 purchasing**（§2.1）。
 // 中途任何步失败都留可恢复的状态，janitor 会接手（recovery.go）。
+// SetPicker · 装配后补设 VendorPicker · 解决构造环。
+//
+// **为什么需要**：vendorview.Service 用同一批 vendor registry 才能选 · 而 registry
+// 在 buildDecider 里构造。若把 vendorSvc 塞进 decider.Config · 又得先建 vendorSvc ·
+// 而 vendorSvc 又要 registry —— 跟 stockwatch 一样构造环。装配顺序：
+//
+//	orch := decider.New(Config{Picker: nil, ...})
+//	vendorSvc := vendorview.New(...)  // 用同 registry
+//	orch.SetPicker(vendorSvc)
+//
+// 只在 main.go 装配时调一次 · 之后不变。
+func (o *Orchestrator) SetPicker(p VendorPicker) {
+	if o == nil {
+		return
+	}
+	o.picker = p
+}
+
 func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, error) {
 	if in.Count < 1 {
 		return nil, fmt.Errorf("decider: count 非法: %d", in.Count)
@@ -297,6 +330,19 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 	// 放最前面 —— 超区间根本不该占 vendor 查询和冻结的开销
 	if err := o.limits.checkCountRange(in.Count); err != nil {
 		return nil, err
+	}
+	// **P4 · AutoPick 进 decider**（2026-08-14）：VendorID 空时先问 picker（比价+库存综合选）·
+	// picker 返 false 或未装配才走 defaultVendor 兜底。
+	// 好处：用户看到 UI 说"推荐 A 家" · 真拉时用的就是 A 家（老代码割裂：UI 显示 A · 实拉走 default）。
+	// 顺带把 picker 选的 zone 也用上（缺货挂单和 stock 请求都受益）。
+	if in.VendorID == "" && o.picker != nil {
+		if pv, pz, ok := o.picker.PickBestVendor(ctx, string(in.Zone)); ok {
+			in.VendorID = pv
+			// zone 空时用 picker 的（用户没显式指定就跟推荐一致）
+			if in.Zone == "" {
+				in.Zone = pz
+			}
+		}
 	}
 	vendor, err := o.vendorFor(in.VendorID)
 	if err != nil {

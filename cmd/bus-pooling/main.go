@@ -615,6 +615,11 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 
+	// **P4 · AutoPick 进 decider**（2026-08-14）：闭合"用户看到的推荐 = 真拉时用的"·
+	// decider.Pull 里 VendorID 空且 preferred 也空时 · 走 vendorSvc.PickBestVendor（同一套打分）。
+	// 装配顺序：orch → vendorSvc → orch.SetPicker（跟 stockwatch.SetFirer 一样解构造环）。
+	orch.SetPicker(vendorSvc)
+
 	// vendor 状态探针 · 每 vendor 一个 goroutine · 每 60s 拨号 vendor.Stock
 	// 结果写 vendor_probe · /api/vendors/status 从表读，不实时打上游
 	// 探测 timeout 10s（vendor 侧偶尔慢·比原 3s 更宽松·避免误报 timeout）

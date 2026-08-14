@@ -342,6 +342,29 @@ func (s *Service) VendorStock(ctx context.Context, vendorID string, v Viewer) (*
 	return view, nil
 }
 
+// PickBestVendor · 内部选 vendor · 返真 vendor id + zone（不脱敏）。
+//
+// 跟 AutoPick 共用同一套打分（成活率 × 0.6 + (1 - 相对价) × 0.4）· 但**只返内部原文** ·
+// 用于 decider.Pull 在 VendorID 空且 preferred 也空时选一家。
+//
+// zoneHint 传空或 "auto" · 让全 zone 参赛。
+// 全网缺货返 ("", "", false) · 上层用 defaultVendor 兜底。
+//
+// **P4 · 2026-08-14**：老代码 AutoPick 只喂 UI · 从不进下单决策。这个方法让 decider
+// 能拿到跟前端 UI 一致的选择 · 用户看到的推荐跟真拉时用的是同一家。
+func (s *Service) PickBestVendor(ctx context.Context, zoneHint string) (providers.VendorID, providers.Zone, bool) {
+	// 走 wholesale Viewer 拿真 id · 但只在返值层用（不下发到 UI · 内部消费）
+	view := s.AutoPick(ctx, zoneHint, Viewer{Tier: TierWholesale})
+	if view == nil || view.VendorID == "" || view.Available <= 0 {
+		return "", "", false
+	}
+	var zone providers.Zone
+	if view.Zone != nil {
+		zone = providers.Zone(*view.Zone)
+	}
+	return providers.VendorID(view.VendorID), zone, true
+}
+
 // AutoPick 系统推荐的 vendor + 理由。
 //
 // 打分：成活率 × 0.6 + (1 - 相对价) × 0.4；成活率 1a 未采集，等价于价低者胜。
