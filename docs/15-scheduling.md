@@ -6,7 +6,44 @@
 >
 > **贯穿模块**:`strategy` / `bus` / `coalescer` / `decider` / `stockwatch` / `deathwatch` / `vendorbalance` / `webhookin` / `pricing`。
 >
-> **字段口径**:本文正式字段必须跟当前 API / schema / Go struct 对齐：`AutoRefillEnabled` / `RefillWatermark` / `RefillMinCount` / `PerRoundCount` / `MaxUnitPrice` / `PreferredVendor`。未落库的产品设想（例如 `PrebuyEnabled` / 付费抢号优先级）只能写进 `decisions.md`，不能写成本设计的当前字段。
+> **字段口径**:本文正式字段必须跟当前 API / schema / Go struct 对齐：`AutoRefillEnabled` / `RefillWatermark` / `RefillMinCount` / `PerRoundCount` / `MaxUnitPrice` / `PreferredVendor`。未落库的产品设想（例如 `PrebuyEnabled` / 付费抢号优先级）只能写进 `decisions.md`,不能写成本设计的当前字段。
+
+---
+
+## 0 · 整体导览 · 本文是"调度权威入口"
+
+**一句话定位**:三类车(single/anon/team) · 六触发源(manual/webhook/probe/deathwatch/scheduler/coalescer) · 一个决策器(`decider.Decide`) · 一个拉号出口(`decider.Pull`) · 一个策略读取入口(`strategy.Effective`) · **本文是这五件事的唯一权威定义**。
+
+**读本文的顺序**:
+
+| 想了解 | 看这里 |
+|---|---|
+| 一句话看清全貌 | §1 三层视图 |
+| vendor 层什么事件推给我方 | §2 事件源清单 |
+| 系统层有哪些策略 / 阈值 / 后台任务 | §3 全策略清单 |
+| 用户能配哪些字段 · 优先级怎么算 | §4(**§4.3 是策略优先级铁律 · sprint-1f-A 已落权威 · 别改**) |
+| 一次拉号从触发到入池的完整流程 | §5 完整决策流 |
+| 缺货挂单 / 四层兜底 / 建车路径 | §6-§8 |
+| 场景验证 / 反查表 / 变更协议 | §9-§11 |
+| **三类车怎么统一到同一模型** | **§12 三条车路径统一调度模型**(1f-D 新增) |
+| **六触发源边界 · 输入 / busID 来源 / 输出 / 钱** | **§13 六触发源边界表**(1f-D 新增) |
+| **stockwatch → decider → refund 完整状态时序** | **§14 状态机 + 时序**(1f-D 新增) |
+
+**跟其他文档的分工**:
+
+- **`docs/09-transactions.md`**:`pending_purchase` / `pending_assignment` / `pending_handoff` 状态机的**逐字段定义 + 崩溃恢复**。本文 §14 引它 · **不重复表结构**。
+- **`docs/10-pricing.md`**:加价栈 / 三档减免 / `vendorview.PricedFor`。本文 §3.2 引它 · **不重复算价规则**。
+- **`docs/06-db-schema.md`**:表结构 / 字段类型 / 索引。本文字段名跟它对齐 · **不重复 SQL**。
+- **`docs/03-modules.md`**:15 业务包依赖关系。本文只写"调度决策"跨的那几个包(`strategy` / `decider` / `bus` / `stockwatch` / `deathwatch` / `coalescer`)。
+
+**能力覆盖标注约定**(下文"当前 vs 目标"处一律按四项标实 · 不用"已接通"等模糊词):
+
+- **API**:是否有 HTTP 接口(handler 路径 · 已落 = ✅ / 未落 = ⏸)
+- **DB**:是否有 schema 支撑(migration + 表/字段 · ✅ / ⏸)
+- **state**:是否有运行时状态字段(status 枚举 / 落表 · ✅ / ⏸)
+- **test**:是否有测试守住行为(`_test.go` · ✅ / ⏸)
+
+四项全 ✅ 才叫"当前实现" · 任一 ⏸ 就要在段内标"目标口径"。
 
 ---
 
@@ -741,3 +778,291 @@ preferredVendor = eff.PreferredVendor
 - **产品决策** → 落 `decisions.md §12` · 拍完把最终态回落本文相应位置
 
 **本文永远是"完整设计"** —— 只写"最终该怎么运作" · 不含讨论 / 待决策 / 边界漏洞清单。
+
+---
+
+## 12 · 三条车路径统一调度模型(1f-D)
+
+**核心命题**:三类车(`kind ∈ {single, anon, team}`)**建车流程不同 · 但拉号调度走同一套模型**。差别只在"车怎么诞生"和"谁能加人",诞生后的**策略读取 → 决策 → 拉号 → 派去向**四步完全一致。
+
+### 12.1 三类车的建车流程差异
+
+| 维度 | `single`(独享) | `anon`(系统撮合搭车) | `team`(邀请码拼车) |
+|---|---|---|---|
+| **谁建的** | 用户显式建(带向导) | 系统在**撮合**时按需建(用户匿名搭车) | 用户显式建(带向导 + 邀请码) |
+| **建车 API** | `POST /api/me/buses` · body `kind=single` | `POST /api/me/buses/anon/match`(若没有活跃 anon 就顺便建) | `POST /api/me/buses` · body `kind=team` |
+| **`bus.invite_code`** | 有(1c 之后 · 用户建的都有拼车码) | **无**(系统建的匿名池 · 不接受邀请码加人) | 有 |
+| **初始 `member_count`** | 1(建者本人) | 1 或 N(取决于并发撮合) | 1 |
+| **能否加人** | ✅ 能(拼车码给出去 → 变多人拼车) | ✅ 能(通过 `/anon/match` 撮合加入 · 不通过邀请码) | ✅ 能(邀请码加入) |
+| **建车时首次拉号** | 向导可选(用户填 count/vendor/zone) | 撮合时**不**自动拉号 · 撮合成功后走乘客手动拉号 or 车级 auto | 向导可选 |
+| **`bus.Strategy` 初值** | 抄乘客全局默认(seed) · `AutoRefillEnabled` 默认 false | 抄乘客全局默认(seed) · `AnonZone` / `AnonMaxUnitPrice` 从 `/anon/match` 请求填入 | 抄乘客全局默认(seed) |
+
+**关键**:`kind` 只记"谁建的 / 撮合规则" · **不决定能不能加人 · 不决定调度模型**。对乘客 UI 只展示人数(独享 / N 人拼车 / 搭车) · **不暴露 kind**(见 `CLAUDE.md §12.5 / §2 术语作废清单`)。
+
+### 12.2 三类车统一走同一调度模型
+
+**建完车后 · 拉号调度四步一致**:
+
+```
+[任一 kind 的 bus]
+    ↓
+Step A · strategy.Effective(passengerID, busID, requestOverride)
+    → 读 bus.Strategy(车级) · 融合 passenger_strategy_default(全局) · 融合 requestOverride
+    → 返 EffectiveStrategy(已算好优先级 · §4.3 铁律)
+    ↓
+Step B · decider.Decide(六步决策 · §5.2)
+    → 判 KILL_PULLS / auto 开关 / 水位 / mode × 触发源 / 参数 / 每日限额
+    → 返 【拒·原因】 / 【下单】 / 【挂单】
+    ↓
+Step C · 若【下单】→ decider.Pull(count, vendor, maxPrice)
+         若【挂单】→ stockwatch.Enqueue(vendor, count, ttl)
+    ↓
+Step D · 号入 housepool `bus-<bus_id>` group(或视 assign 参数进 `record-<pid>` group / handoff DELETE)
+    → 落 credential_ledger + pull_round + wallet_ledger
+```
+
+**三类车走 A-D 完全同流** —— **没有** "anon 车走 anon 决策器"这种分叉。**唯一 anon 专属**:
+
+- 撮合入口 `POST /api/me/buses/anon/match`(bus 建车侧 · 不进决策器)
+- `bus.Strategy` 里的 `AnonZone` / `AnonMaxUnitPrice` 字段(只影响撮合 · 不进定价栈 · 见 §4.1)
+
+### 12.3 三类车调度差异 · 反查表
+
+| 差异点 | `single` | `anon` | `team` |
+|---|---|---|---|
+| **coalescer 集单** | 同 bus 内多成员补车意图合流(1c-2 落地) | 同上 | 同上 |
+| **auto 补车判据** | `bus.AutoRefillEnabled` 车级值 | 同上 | 同上 |
+| **拉号价格** | `vendorview.PricedFor(passenger.tier)` | 同上 | 同上 |
+| **`bus.Scheduler` 5min 兜底** | 遍历所有 `AutoRefillEnabled=true` 的车 · 不区分 kind | 同上 | 同上 |
+| **deathwatch 补车** | `pending_refill.bus_id` 触发 death_refill · 走 §5.2 | 同上 | 同上 |
+| **加人方式** | 拼车码(`bus.invite_code`) → `/join-by-invite` | 撮合(`/anon/match`) | 邀请码(`bus.invite_code`) → `/join-by-invite` |
+
+**这张表看下来 · 除了"加人方式"其他全一样** —— 这就是"统一调度模型"的含义:kind 只在建车 / 加人时区分 · 建完之后拉号调度不分家。
+
+### 12.4 违反检查(改代码时必看)
+
+- [ ] `decider` / `stockwatch` / `deathwatch` / `bus.Scheduler` 里出现 `if kind == "anon"` / `if kind == "team"` 分支?**违反** —— 调度不该按 kind 分叉 · 有差异应该走**策略字段**表达(如 `AnonZone` 单开字段就是这个思路)
+- [ ] `strategy.Effective()` 依赖 `bus.kind`?**违反** —— Effective 只读策略字段 · 不看 kind
+- [ ] `bus.Scheduler` 5min 兜底扫车时 `WHERE kind = 'single'` 或类似?**违反** —— 遍历判据是 `AutoRefillEnabled = true` · 跨 kind
+
+**允许**:
+- 建车 API(`handleCreateBus` / `handleMatchAnonBus`)按 kind 分建车路径(必然)
+- 加人 API(`handleJoinBus` / `handleJoinByInvite`)按 kind 校验(anon 车拒绝邀请码 join)
+- UI 按 `member_count` 展示"独享 / N 人拼车 / 搭车"(不暴露 kind 名字)
+
+### 12.5 当前 vs 目标口径
+
+| 能力 | API | DB | state | test | 备注 |
+|---|---|---|---|---|---|
+| `single` 建车 + 拉号 + 调度 | ✅ | ✅ | ✅ | ✅ | `handleCreateBus` / `handleBusPull` / `bus.Scheduler` |
+| `team` 邀请码建车 + join | ✅ | ✅ | ✅ | ✅ | `handleJoinByInvite` |
+| `anon` 撮合(单车+多车) | ✅ | ✅ | ✅ | ✅ | `handleMatchAnonBus` · 1c-1 落地 |
+| `coalescer` 同 bus 集单窗口 | ⏸ | ⏸ | ⏸ | ⏸ | 目标口径:1c-2 才做 · 当前 `ErrNotImplemented` |
+| 统一调度模型(§12.2 A-D 四步) | ✅ | ✅ | ✅ | ✅ | 三 kind 走同一 `Effective + Decide + Pull` 路径 |
+
+---
+
+## 13 · 六触发源边界表(1f-D)
+
+**目的**:一次拉号可能被六种事件触发 · 每种事件的**输入上下文 / busID 来源 / requestOverride / 可能输出 / 钱何时扣 / 失败态 / janitor 兜底**必须清晰。别在 §5.2 决策流之外造第七种触发路径。
+
+### 13.1 六触发源边界总表
+
+| 触发源 | 输入上下文 | busID 来源 | requestOverride | 可能输出 | 钱何时扣 | 失败后 pending 状态 | janitor 兜底 |
+|---|---|---|---|---|---|---|---|
+| **manual** | HTTP `POST /api/me/buses/{id}/pull` payload | 路径参数 `{id}`(必有 · 无则 record 路径) | 有(`count` / `vendor` / `zone` / `max_unit_price`) | Pull(直下单 · 可能内部 ErrNoStock → 内部挂 stockwatch) / Reject(auto 检查跳过 · 但 KILL_PULLS / 日限额 / 并发满仍能拒) | `wallet.Reserve` 冻结 → `Purchase` 成功后转消费 | `pending_purchase` → `reserved` / `purchasing` / `purchased` / `imported`(见 `09-transactions §2`) | janitor.Tick 1min 扫 · 分状态处理(§2.1) |
+| **webhook** | vendor push · `vendor_id` / `zone` / `stock` / `available` | 无 · 由 `webhookAutoScanBridge` 按 vendor/zone/低水位扫候选 bus 集合 · **逐车**调 Effective + Decide | 无 | Pull(Balance/Tight 下单) / Enqueue(Tight 下单必 ErrNoStock 时挂) / Reject(auto off / Cool 不响应) / Noop(候选集为空) | 同 manual · 决策器出 Pull 才走 Reserve | 同 manual | 同 manual |
+| **probe** | 我方 60s `GET /stock` 采样对比 | 无 · 由 probe 桥扫候选 bus 集合 · 逐车决策 | 无 | Pull(Tight 时关键补位) / Reject(Cool/Balance 不响应) / Noop | 同 manual | 同 manual | 同 manual |
+| **deathwatch(RefillTick)** | `pending_refill` 队列一行 | `pending_refill.bus_id`(NULL = record 单独拉 · 走无 busID 分支) | 无 | Pull(mode 允许) / Enqueue(Tight) / Reject(auto off) | 同 manual · 但**退款独立走**(见 §14.3) | 同 manual | 同 manual |
+| **scheduler(bus.Scheduler 5min)** | 遍历所有 `AutoRefillEnabled = true` 的 bus | 遍历时每辆车自带 | 无 | Pull(Cool/Balance) / Enqueue(Tight) / Reject(水位未到 · 备胎撑着 · auto off) | 同 manual | 同 manual | 同 manual |
+| **coalescer(集单窗口 · 1c-2 目标)** | 同 bus 内多个 pull_intent 在时间窗内合流 | 意图窗口必属某 busID(coalescer 不跨车) | 有(合流后的最大公约 count / 一致 vendor) | Pull(合流后一次下单) / Reject(合流失败落回单独执行) | 同 manual · 合流后一次 Reserve | 同 manual | 同 manual |
+
+### 13.2 六触发源共同不变量
+
+1. **输出 Pull 时 · 一律调 `decider.Pull(ctx, count, vendor, maxPrice)`** —— 没有第二个拉号出口
+2. **输出 Enqueue 时 · 一律调 `stockwatch.Enqueue(EnqueueParams)`** —— `reserved_amount=0`(当前不预冻结 · §6)
+3. **调 `Effective()` 前 · 必须解析出 busID(或明确无 busID · 走 record 分支)** —— 见 §4.3.3
+4. **钱只在 `decider.Pull` 内部走 wallet.Reserve** —— 决策器只判"能不能拉" · 不动钱
+5. **Reject 不写 pending_purchase** · Enqueue 只写 `stock_watcher`(不占钱) · Pull 才落 `pending_purchase`
+
+### 13.3 六触发源 · 输入 payload 到 Effective 的解析路径
+
+| 触发源 | 原始 payload 字段 | 解析到 Effective 的输入 |
+|---|---|---|
+| manual | `{bus_id, count, vendor, zone, max_unit_price}` | `passengerID` 从 session · `busID` 从路径 · `requestOverride = {count, vendor, zone, max_unit_price}` |
+| webhook | `{vendor_id, zone, stock, available_at}` | 逐候选 bus 循环:`passengerID = bus.passenger_id` · `busID = bus.id` · `requestOverride = nil` |
+| probe | `{vendor_id, zone, new_stock, prev_stock}` | 同 webhook |
+| deathwatch | `{dead_credential_id, bus_id}` | `passengerID = bus.passenger_id` · `busID = pending_refill.bus_id` · `requestOverride = nil` |
+| scheduler | `bus 行` | `passengerID = bus.passenger_id` · `busID = bus.id` · `requestOverride = nil` |
+| coalescer | `{bus_id, intent_ids[], merged_count, vendor}` | `passengerID = bus.passenger_id` · `busID = bus.id` · `requestOverride = {count: merged_count, vendor}` |
+
+### 13.4 当前 vs 目标口径
+
+| 触发源 | API | DB | state | test | 备注 |
+|---|---|---|---|---|---|
+| manual | ✅ | ✅ | ✅ | ✅ | `handleBusPull` / `handlePullRecord` |
+| webhook | ✅ | ✅ | ✅ | ✅ | `webhookAutoScanBridge`(在 `cmd/bus-pooling/main.go` · 非独立文件) |
+| probe | ✅ | ✅ | ✅ | ✅ | probe 60s poll · 触发链跟 webhook 共用 bridge |
+| deathwatch(RefillTick) | ✅ | ✅ | ✅ | ✅ | `internal/deathwatch/refill.go` |
+| scheduler(bus.Scheduler) | ✅ | ✅ | ✅ | ✅ | `internal/bus/autorefill.go`(**非** `scheduler.go`) |
+| coalescer(集单窗口) | ⏸ | ⏸ | ⏸ | ⏸ | 目标口径:1c-2 · 当前 `ErrNotImplemented` |
+
+---
+
+## 14 · 状态机 + 时序(1f-D)
+
+**核心命题**:一次拉号请求穿过 stockwatch(可能) → decider → wallet → vendor → housepool → credential_ledger 六个系统 · 每步都有可能失败 · **状态机必须能崩溃恢复**。本节只做**跨模块串联**;每个模块内部的详细状态字段 / 崩溃恢复策略在 `docs/09-transactions.md` 里逐节写清。
+
+### 14.1 完整时序 · Enqueue(不预冻结) → Fire → Pull(完整事务)
+
+```
+[触发源(manual/webhook/probe/deathwatch/scheduler/coalescer)]
+    │
+    ▼
+[decider.Decide] ← 六步串行(§5.2)
+    │
+    ├─── 拒 ────────────────────────────────────────────► [结束 · 无副作用]
+    │
+    ├─── 挂单 ─► [stockwatch.Enqueue] ── status=watching · reserved_amount=0(不冻钱)
+    │              │
+    │              ▼
+    │           [等 vendor 上货 / 或 stockwatch.Sweep 30s 扫过期]
+    │              │
+    │              ├─── 到货 · webhook/probe 触发 fire ─► [stockwatch.Notify(watching→fulfilled)]
+    │              │                                             │
+    │              │                                             ▼
+    │              │                                        [走同一 decider.Pull 分支] (下面 ▼)
+    │              │
+    │              └─── TTL 到 · Sweep 标 expired ─► [结束 · 未拉号 · 无副作用]
+    │
+    ▼
+[下单 · decider.Pull]  ← 完整事务(下面详展)
+    │
+    ├─ tx1: wallet.Reserve + pending_purchase(initial) 一次原子 commit ── 崩溃留痕给 janitor
+    │
+    ├─ pending_purchase → reserved(冻结成功 · 未调 vendor)
+    │
+    ├─ pending_purchase → purchasing(**发 vendor 请求前一刻落此** · P0-1 修补 · `09-transactions §2.1`)
+    │
+    ├─ vendor.Purchase(client_order_id) ────► [vendor 侧扣款出号]
+    │
+    ├─ pending_purchase → purchased(vendor 返成功 · 未入 housepool)
+    │
+    ├─ housepool.BatchImport(refresh_tokens, group="bus-<bus_id>") ─► [号进车 group]
+    │
+    ├─ pending_purchase → imported(号入池 · 未结账)
+    │
+    ├─ tx2: wallet 冻结→消费 + wallet_ledger 落账 + pull_round + credential_ledger 一次原子 commit
+    │
+    ▼
+[pending_purchase → completed] · 号可用
+```
+
+**崩溃恢复**:
+- `initial` / `reserved` / `purchasing` / `purchased` / `imported` 每一态都有 janitor 兜底(见 `09-transactions §2` 状态表)
+- **`purchasing` 是黄金窗口** —— vendor 可能已扣款 · 必须靠幂等键重放而非直接释放冻结(见 `09-transactions §2.1`)
+
+### 14.2 no_stock → pending → fulfilled / need_manual
+
+**stockwatch 状态机**(`stock_watcher` 表 · 见 `docs/06-db-schema.md`):
+
+```
+[decider.Pull 内部 vendor.Purchase 返 ErrNoStock]
+    ↓
+    (decider.Pull 走 maybeEnqueueOnNoStock 分支)
+    ↓
+[stockwatch.Enqueue] · INSERT stock_watcher 行 · status=watching
+    ↓
+    ├─── vendor 新号事件(webhook/probe)触发 fire ────►[stockwatch.Notify]
+    │        ↓
+    │        UPDATE stock_watcher SET status='fulfilled' WHERE id=? AND status='watching'
+    │        ↓ (条件 UPDATE · 保证只一次触发)
+    │        [调 Firer.Fire → decider.Pull 走完整事务]
+    │        ↓
+    │        ├─ Pull 成功 → 号入车 · 结束
+    │        └─ Pull 失败(仍 ErrNoStock / 网络抖) → conditional UPDATE 回 watching(允许下次 fire)
+    │
+    ├─── TTL 10min 到期 · Sweep 30s 扫 ────►[status=expired]
+    │        (**当前未做退款**:reserved_amount=0 本来就没冻钱 · 无需退)
+    │
+    └─── 硬错(vendor 明确拒绝 / 参数非法) ────►[status=expired] + 日志报警
+```
+
+**当前 vs 目标口径**:
+
+| 能力 | API | DB | state | test | 备注 |
+|---|---|---|---|---|---|
+| Enqueue(不预冻结) | ✅ | ✅ | ✅ | ✅ | `stockwatch.Enqueue` · `reserved_amount=0` |
+| watching → fulfilled(fire 成功) | ✅ | ✅ | ✅ | ✅ | `stockwatch.Notify` · 条件 UPDATE |
+| fulfilled → watching(fire 失败回滚) | ✅ | ✅ | ✅ | ✅ | `wiring_test.go` 守 |
+| watching → expired(TTL) | ✅ | ✅ | ✅ | ✅ | `stockwatch.Sweep` 30s |
+| 付费优先排队(前称 `PrebuyEnabled`) | ⏸ | ⏸ | ⏸ | ⏸ | 目标口径:未落 · 若要做必须补字段 + 冻结/扣费/退款 + 排序 SQL + 前端解释 + 测试 · 见 `decisions §11.15 / §12` |
+| `need_manual`(硬错兜底) | ✅ | ✅ | ✅ | ⏸ | 当前直接标 expired + 日志 · 无专门的 `need_manual` 状态(未来若做付费优先才需要) |
+
+### 14.3 三去向 · 钱与号归属
+
+拉号成功后 · 号的去向决定"钱归属谁 / 号在哪 / 后续监控归属":
+
+| 去向 | 号落位 | 钱归属 | credential_ledger 落 | 后续监控 |
+|---|---|---|---|---|
+| **into_bus**(进车) | housepool `bus-<bus_id>` group | 乘客钱包被扣消费 · 我方计入营收 | `status=alive` · `current_group=bus-<bus_id>` | housepool 探活 · 死了走 §14.4 refund |
+| **push_pool**(推 passengerpool · 双写) | housepool `bus-<bus_id>` **保留** + passengerpool 也有一份 | 同 into_bus(乘客付了) | 同 into_bus | housepool 副本继续监控 · 死了走 §14.4 refund(passengerpool 侧我方不管) |
+| **handoff**(拿走) | 从 housepool DELETE · 明文一次性给乘客 | 同 into_bus | `status=handed_off` · 台账行保留(**永不删** · `decisions §8.24` 售后追溯) | **不监控**(唯一 fire-and-forget 路径) |
+
+**pending_assignment 状态机**(`docs/09-transactions §3`)负责 into_bus / push_pool 的原子性 · `pending_handoff` 状态机(`§4` 三段式 Token 交付)负责 handoff。
+
+**关键**:钱一律在 `decider.Pull` 里就扣完了(tx2 结账) · 三种去向**不影响钱的归属** · 只影响号的物理存放和后续监控范围。
+
+### 14.4 refund / warranty_refund 反向路径
+
+号死了或质保退款时 · 反向走一遍:
+
+```
+[号死信号] (vendor webhook: credential_dead / 我方 deathwatch 探活标死)
+    ↓
+[credential_ledger.status = 'dead'] · 落 `death_source ∈ {housepool_probe, vendor_webhook, vendor_poll}`(内部记录 · 不对外)
+    ↓
+[deathwatch.RefundTick 1min 扫]
+    ↓
+    (查 vendor 质保政策 · 是否在保内)
+    ↓
+    ├─── 在保 ─► vendor.RefundOrder(order_id)
+    │       ↓
+    │       ├─ vendor 返成功 → [wallet_ledger.reason='warranty_refund' · 退乘客积分]
+    │       │                    ↓
+    │       │                    [pull_round.status='refunded'](见 `09-transactions §2`)
+    │       │                    ↓
+    │       │                    [触发 death_refill 进决策器 §5.2] · 若 auto on 就自动补
+    │       │
+    │       └─ vendor 拒绝退款 → 保留死状态 · 不退钱 · 记 vendor 拒绝原因
+    │
+    └─── 超保 ─► [不退款] · 只标死 · 等 death_refill 决策器判是否补(受用户 auto 开关约束)
+```
+
+**关键**:
+- **退款是天赋权利** —— vendor 政策允许就退 · 跟用户 auto 开关**无关**(不能因为用户关了 auto 就不退)
+- **是否补车** —— 由 death_refill 走 §5.2 六步决策器 · **受 auto 开关约束**(用户关了 auto · 死了就死了 · 不补)
+- **两条链解耦** —— refund 走 wallet + deathwatch · refill 走 decider · 一辆车可能 refund 但不 refill
+
+**当前 vs 目标口径**:
+
+| 能力 | API | DB | state | test | 备注 |
+|---|---|---|---|---|---|
+| 号死标记(webhook + probe) | ✅ | ✅ | ✅ | ✅ | `credential_ledger.status='dead'` · `death_source` |
+| 质保退款(RefundTick) | ✅ | ✅ | ✅ | ✅ | `internal/deathwatch/refund.go` |
+| refund → refill 触发(不跳 auto 检查) | ✅ | ✅ | ✅ | ✅ | `pending_refill` 表 + `RefillTick` 走 §5.2 |
+| pull_round.refunded 状态 | ✅ | ✅ | ✅ | ✅ | `09-transactions §2` |
+
+### 14.5 交叉引用 · 不冲突
+
+本节写"跨模块串联的时序" · 详细字段 / 崩溃恢复分类 / 幂等键要求在 `docs/09-transactions.md`:
+
+- **`§2 拉号状态机 · pending_purchase`** ← §14.1 引它(六态 + P0-1 purchasing 修补)
+- **`§3 派去向状态机 · pending_assignment`** ← §14.3 引它(into_bus / push_pool 原子性)
+- **`§4 handoff 状态机 · pending_handoff`** ← §14.3 引它(三段式 Token 交付)
+- **`§6 充值状态机 · pending_topup`** ← 本文不涉及(充值不是调度)
+- **`§8 wallet 并发控制`** ← §14.1 tx1/tx2 引它(`BEGIN IMMEDIATE`)
+- **`§9 janitor 恢复任务`** ← §14.1 janitor 兜底引它
+
+**双向引用**:`09-transactions.md` 顶部导航若要指向"这些状态机怎么被触发" · 引本文 §13 六触发源边界表。**互相引用不冲突** —— 状态机本身归 09 · 触发时序 + 决策入口归本文。
+
