@@ -33,7 +33,7 @@
 │   3e · 号死监控 + 质保退款处理（跟随上游）                    │
 │   3f · 对外 webhook 出向（推乘客）                            │
 │   3g · 上车分配器（拉到号后决定去哪个 bus）                   │
-│   3h · bus 实体管理（匿名撮合 + 邀请码组队）                  │
+│   3h · bus 实体管理（匿名撮合 + 拼车码加入）                  │
 └───────────────────────────────────────────────────────────────┘
                               ▲
 ┌───────────────────────────────────────────────────────────────┐
@@ -95,9 +95,9 @@
 - **集单发生在 bus 维度**：同一 bus 内多成员的补车意图，在窗口内合流成一次拉号意图
 - **不跨 bus 合并**：不同 bus 各自集单，避免抢资源 / 分账混乱
 - **1 人 bus 不集单**：一乘客一意图直发 decider（无合流对象）
-- 两种子模式：
-  - `coalescer/anon.go` —— 匿名撮合的 bus 用（阶段 1）
-  - `coalescer/team.go` —— 邀请码组队的 bus 用（阶段 2）
+- 两种子模式（都在阶段 1c 骨架 · 2a 做窗口 / 排队策略增强）：
+  - `coalescer/anon.go` —— 匿名撮合的 bus 用
+  - `coalescer/team.go` —— 拼车码加入的 bus 用（不是好友邀请码 · 见术语铁律）
 - 窗口触发：**先到者胜** —— N 秒到期 或 积攒到 M 需求
 - 输出**一个批量拉号意图**：`{bus_id, participants[], count_total}`
 - **不选 vendor**（那是 3d） · **不实际调 vendor**（那是走 Layer 2）
@@ -144,11 +144,11 @@
 - **拼车触发的号不经过这里**（`BatchImport` 直接进 `bus-<bus_id>`）
 
 #### 3h · bus 实体管理
-- bus 是**长期存在的实体**（成员加入/退出 · 补车规则 · 目标水位 · 分账规则 · 邀请码）
+- bus 是**长期存在的实体**（成员加入/退出 · 补车规则 · 目标水位 · 分账规则 · 拼车码）
 - **1 人 bus 也是 bus**（一乘客自建，自动或手动创建）
-- **多人 bus** 两种加入方式：
-  - 匿名撮合：乘客声明"要拼"，系统撮合到已存在的 bus 或新建（阶段 1）
-  - 邀请码组队：乘客建 bus 拿邀请码，其他乘客输码加入（阶段 2）
+- **多人 bus** 两种加入方式（都在阶段 1c）：
+  - 匿名撮合：乘客声明"要拼"，系统撮合到已存在的 bus 或新建
+  - 拼车码加入：乘客建 bus 拿**拼车码**（不是好友邀请码），其他乘客输码加入
 - housepool 里每个 bus 对应一个 `group = bus-<bus_id>`
 - **不管 credential 具体在不在**（那是 housepool 的事）；**不管服务费**（那是 3a）
 
@@ -276,8 +276,8 @@ internal/
 ├── paymentgw/                  Layer 3a · payment-gateway 客户端
 ├── strategy/                   Layer 3b · 策略引擎
 ├── coalescer/                  Layer 3c · 集单调度器（bus 维度）
-│   ├── anon.go                 匿名撮合（阶段 1）
-│   └── team.go                 邀请码组队（阶段 2）
+│   ├── anon.go                 匿名撮合（1c 骨架 · 2a 增强）
+│   └── team.go                 拼车码加入（1c 骨架 · 2a 增强）
 ├── decider/                    Layer 3d · 决策模型
 ├── stockwatch/                 Layer 3d 支撑 · 缺货挂单 + ModeMgr + 急停/强抢
 ├── vendorbalance/              Layer 3d 支撑 · vendor 侧余额缓存
@@ -285,7 +285,7 @@ internal/
 ├── deathwatch/                 Layer 3e · 号死监控 + 质保退款
 ├── webhookout/                 Layer 3f · 对外 webhook
 ├── pullrecord/                 Layer 3g · 拉号记录（次入口暂存表）
-├── bus/                        Layer 3h · bus 实体管理（含匿名撮合 + 邀请码组队）
+├── bus/                        Layer 3h · bus 实体管理（含匿名撮合 + 拼车码加入）
 ├── housepool/                  Layer 4 · 我方号池（存/管/监控）
 │   └── kirors/                 具体实现 = 我方运维的 kiro.rs 客户端
 └── delivery/                   Layer 5 · 出货（去向 ②/③）

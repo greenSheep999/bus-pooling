@@ -211,7 +211,7 @@ await POST(`/handoff/${download_token}/confirm`)
 | Method | Path | 说明 | 阶段 |
 |---|---|---|---|
 | GET | `/api/me/buses` | 我参与的所有 bus | 1a |
-| POST | `/api/me/buses` | 建 bus | 1a（`kind: single`）→ 1c（`anon`）→ 2a（`team`） |
+| POST | `/api/me/buses` | 建 bus | 1a（`kind: single`）→ 1c（`anon` / `team` · 一律带拼车码） |
 | GET | `/api/me/buses/{bus_id}` | bus 详情 + 号池状态 | 1a |
 | POST | `/api/me/buses/{bus_id}/join` | 加入 anon bus（匿名撮合） | 1c |
 | POST | `/api/me/buses/join-by-invite` | **拼车码**加入一辆车（对外叫「拼车码」· 跟个人邀请码区分 · §8.38） | 1c |
@@ -232,10 +232,11 @@ await POST(`/handoff/${download_token}/confirm`)
 
 ```json
 // req
-{ "name": "我的号池", "kind": "single" }  // kind: single | anon | team
-{ "name": "程序员拼车", "kind": "team", "invite_code_hint": "friends" }  // 阶段 2a
+{ "name": "我的号池", "kind": "single" }  // kind 只标'谁建的'·single/team 行为完全一致·一律带拼车码
+{ "name": "程序员拼车", "kind": "team", "invite_code_hint": "friends" }  // 阶段 1c
 // resp
-{ "bus": { "id": "01H8...", "kind": "single", "invite_code": null, "members": [...] } }
+{ "bus": { "id": "01H8...", "kind": "single", "invite_code": "…", "members": [...] } }
+// 用户建的车一律带 invite_code(拼车码) · 只有系统撮合池 kind=anon 没码(CLAUDE §1.2)
 ```
 
 ### `POST /api/me/buses/{bus_id}/pull`
@@ -603,9 +604,10 @@ await POST(`/handoff/${download_token}/confirm`)
 
 | 调用者 | 看到的 |
 |---|---|
-| 有注册邀请码 | vendor **真名** + 不加价 |
-| 无邀请码 | `AWS-Q Kiro Vendor 0N` **编号** + 默认加价 |
-| 无邀请码但带 `?coupon_code=` | 编号（**码不解锁真名**）+ 本次免加价 |
+| 绑了**专属邀请码 wholesale 版** | vendor **真名** + 跳 vendor+zone 减免 |
+| 绑了**专属邀请码 community 版** | vendor **编号**(AWS-Q Kiro Vendor 0N) + 跳 zone 减免 |
+| 没绑专属邀请码(默认 retail) | vendor **编号** + 默认加价 |
+| 有效期内的 `?coupon_code=` | 单次减免 · 不改 tier · **不解锁真名** |
 
 **只下发最终价**，不下发原价和加价明细（`decisions §8.20`）。所以这几个端点**要鉴权**（拿不到身份就没法定价）—— 全部走 `RequireAuth`，别用 vendors 作为"未登录可看的公共接口"。
 

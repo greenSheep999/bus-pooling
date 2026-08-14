@@ -61,8 +61,8 @@
 | `GET /api/me/buses` | ✅ 实现 | |
 | `POST /api/me/buses` | ✅ 实现 | 只支持 `kind: single` |
 | `GET /api/me/buses/{id}` | ✅ 实现 | |
-| `POST /api/me/buses/{id}/join` | ⚙️ 骨架 501 | anon bus 是 1c |
-| `POST /api/me/buses/join-by-invite` | ⚙️ 骨架 501 | team bus 是 2a |
+| `POST /api/me/buses/{id}/join` | ⚙️ 1a 骨架 501 → 1c 已启用 | anon 撮合 |
+| `POST /api/me/buses/join-by-invite` | ⚙️ 1a 骨架 501 → 1c 已启用 | 拼车码加入(见 `decisions §8.42` 四码分离) |
 | `POST /api/me/buses/{id}/leave` | ✅ 实现 | 1 人 bus 不允许 leave（要 delete 解散） |
 | `DELETE /api/me/buses/{id}` | ✅ 实现 | 解散 |
 | `POST /api/me/buses/{id}/pull` | ✅ 实现 | **走 `pending_purchase` 状态机** |
@@ -73,7 +73,7 @@
 | ~~`GET /api/me/buses/{id}/members`~~ | ❌ 不做 | **成员并进 `GET /me/buses/{id}` 的 `members[]`** —— 成员 tab 打开就有数据，不多一次请求 + loading 态。1 人车 `members` 只有 owner 一条 |
 | `PUT /api/me/buses/{id}/members/{pid}` | ⚙️ 骨架 501 | 挂起 / 解挂（§8.26）· 阶段 2a |
 | `DELETE /api/me/buses/{id}/members/{pid}` | ✅ 实现（1c） | 移除成员 · 车主有权（§8.36）· 剩余成员均分重算 |
-| `POST /api/me/buses/{id}/invite-code` | ⚙️ 骨架 501 | 换邀请码 · team bus 是 2a |
+| `POST /api/me/buses/{id}/invite-code` | ⚙️ 1a 骨架 501 → 1c 已启用 | 重新生成**拼车码** |
 | `POST /api/me/pull` | ✅ 实现 | 单独拉号 → record group（前端「提取 key」页的主动作） |
 | `POST /api/me/pull/estimate` | ✅ 实现 | 提取确认窗的费用预估（**不下单**）· 含优惠码折后价 |
 | `GET /api/me/pull/events` | ✅ 实现 | 提取历史（提取页第 1 个 tab · 前端在调，原矩阵漏了） |
@@ -279,7 +279,7 @@
 ### Iss #10 · bus 包（single kind） · 1 天
 - 表：`bus` / `bus_member`
 - 端点：`POST /api/me/buses`（`kind: single`）/ `GET /api/me/buses` / `GET /api/me/buses/{id}` / `POST /api/me/buses/{id}/leave` / `DELETE /api/me/buses/{id}`（解散）
-- **不做**：anon / team kind（那是 1c / 2a）
+- **不做**：anon / team kind（那是 1c · anon 撮合 + 拼车码加入两条路径都在 1c）
 - **拉号入口**：`POST /api/me/buses/{id}/pull` → 调 strategy + decider
 - **查看号**：`GET /api/me/buses/{id}/credentials` 从 `credential_ledger` join `housepool.ListCredentials(bus-<id>)`
 - **DoD**：建 1 人 bus → 拉 5 个号 → 看到 5 个号在 bus 里

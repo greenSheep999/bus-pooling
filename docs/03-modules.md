@@ -17,14 +17,13 @@
 
 | 阶段 | 关键交付 |
 |---|---|
-| **1a** | 单 vendor 手动拉 → 1 人 bus → housepool → 用户 UI 处理 |
+| **1a** | 单 vendor 手动拉 → 1 人 bus → housepool → 用户 UI 处理 + handoff 三段式 |
 | **1b** | 6 家 vendor + 兑换码 + payment-gateway（waffo） |
-| **1c** | 匿名撮合多人 bus 拼车 + 号价按 N 摊 |
+| **1c** | anon 撮合 + **拼车码加入用户车** + 号价按 N 摊 · 集单调度骨架 |
 | **1d** | 自动模式 + 号死自动补 |
-| **1e** | 去向 ② 推 passengerpool（双写）+ 去向 ③ handoff + 对外 webhook |
-| **2a** | 邀请码组队 bus（认识的人拼车） |
-| **2b** | 列队策略（多 bus 抢 vendor 排队） |
-| **2c** | 压车治理（bus 内噪邻探测 + 限速） |
+| **1e** | 去向 ② 推 passengerpool（双写）+ 对外 webhook（handoff 已在 1a） |
+| **2a** | 列队策略（多 bus 抢同一 vendor 时排队；bus 内集单窗口调优） |
+| **2b** | 压车治理（bus 内噪邻探测 + 限速降级） |
 | **3a** | 数据图表（管理端 + 乘客端） |
 | **3b** | 发车（乘客上传 AWS 凭证） |
 | **3c** | 市场（公开池 + 分成） |
@@ -252,7 +251,7 @@
 - **输出**：`Bus { id, name, kind, invite_code, members[], refill_watermark, ... }`（`kind` 只标"谁建的"）
 - **依赖**：`passenger`, `infra/db`
 - **谁调它**：`strategy`, `coalescer`, `deathwatch`, `pullrecord`（用户从拉号记录派号进车）
-- **P 标签**：1a（single）→ 1c（anon）→ 2a（team）
+- **P 标签**：1a（single）→ 1c（anon 撮合 + 拼车码加入)
 - **housepool 映射**：每个 bus 对应一个 group `bus-<bus_id>`
 - **不做**：
   - **不选 vendor / 不算价 / 不做加价栈**（那是 decider）
@@ -453,12 +452,12 @@
 | 5 | `redeem` | 3a | 1b |
 | 6 | `topup` / `topupchannel` / `paymentgw` | 3a | 1b |
 | 7 | `strategy` | 3b | 1a（手动）→ 1d（自动） |
-| 8 | `coalescer` | 3c | 1c-1（骨架）→ 1c-2（真集单）→ 2a（team） |
+| 8 | `coalescer` | 3c | 1c-1（骨架）→ 2a（真集单 · 窗口/排队策略调优） |
 | 9 | `decider` | 3d | 1a → 1d（比价 + fallback） |
 | 10 | `deathwatch` | 3e | 1a（基础）→ 1d（webhook + 自动补车） |
 | 11 | `webhookout` | 3f | 1e |
 | 12 | `pullrecord` | 3g | 1a（次入口一开始就要） |
-| 13 | `bus` | 3h | 1a（single）→ 1c（anon）→ 2a（team） |
+| 13 | `bus` | 3h | 1a（single）→ 1c（anon 撮合 + 拼车码加入） |
 | 14 | `housepool` | 4 | 1a |
 | 15 | `delivery` | 5 | 1e |
 

@@ -87,16 +87,16 @@
 
 ### 四种码各减免哪一项
 
-（完整对照见 `decisions §8.32 §8.39`）：
+（完整对照见 `decisions §8.42` 四码分离 + `docs/10-pricing §2.1`）：
 
-| 码 | 减免 | 持久性 |
-|---|---|---|
-| **同行码**（注册时 · 内部）| 授 `tier=insider` · 免 vendor + 区域附加费 | 永久绑账号 |
-| **社群码**（注册时 · 内部）| 授 `tier=wholesale` · 免区域附加费 | 永久绑账号 |
-| **个人邀请码** | 充值通道费 5% | **限次数 / 限时**，用完恢复 |
-| **随机优惠码**（支付 / 提号时） | 提号价 5~20%（后台可配） | 单次 |
+| 用户侧叫 | 内部字段 | 减免 | 持久性 |
+|---|---|---|---|
+| **专属邀请码**（community 版）| `system_invite_code` · `grants_tier=community` | 跳 zone 减免 | 永久绑账号 |
+| **专属邀请码**（wholesale 版）| `system_invite_code` · `grants_tier=wholesale` | 跳 vendor + zone 减免 · **只有它能看 vendor 真名** | 永久绑账号 |
+| **邀请码**(好友邀请)| `personal_invite_code` | 发码人得手续费/通道费减免额度(必须有硬上限) | **限次数 / 限时** · 用完恢复 · **不改被邀请人 tier** |
+| **优惠码**（支付 / 提号时）| `coupon_code` | 单次提号价 5~20%（后台可配） | 单次 · **不改 tier · 不建 referral** |
 
-**对外**：两种系统码在 UI 上都叫「专属邀请码」——用户只需要输入 · 后端按码定 tier。
+**对外**:两种专属邀请码 UI 上都叫「专属邀请码」——用户只需要输入 · 后端按码定 tier · **不暴露 community/wholesale 内档**。**只有 wholesale 能看 vendor 真名** —— community 也不看。
 
 **通道费不在这条链里** —— 它在**充值**时收一次（`decisions §8.21`），不在每次拉号时扣。
 
@@ -334,9 +334,8 @@ bus-pooling 本体（Go 服务）
 - 全 vendor 缺货 → 排队等 webhook → `decider` + `webhookin`（1d）
 
 **拼车增强**：
-- 邀请码组队 bus（`kind: team`）→ `bus` + `coalescer/team`（2a）
-- 列队策略（多 bus 抢同 vendor 排队）→ `coalescer` + `decider`（2b）
-- 压车治理（bus 内 RPM/TPM 探测 + 隔离）→ `deathwatch` + `bus`（2c）
+- 列队策略（多 bus 抢同 vendor 排队 + bus 内集单窗口调优）→ `coalescer` + `decider`（2a）
+- 压车治理（bus 内 RPM/TPM 探测 + 隔离）→ `deathwatch` + `bus`（2b）
 
 **并发配置**（用户此轮明确列出的散点）：
 - 乘客并发上限（`max_rpm` / `max_tpm`）→ `strategy` + `bus`（2c，与压车治理绑定）
@@ -382,11 +381,19 @@ bus-pooling 本体（Go 服务）
 |---|---|---|
 | **1a** | 1 个 vendor（91kiro）+ 主入口拼车（1 人 bus）+ 次入口单独拉号 + 拉号记录 + housepool + handoff 三段式 | 无自动、无多 vendor、无兑换码、无 payment、无双写 |
 | **1b** | 加 5 家 vendor + 兑换码 + payment-gateway（waffo 5% pass-through） | 仍无拼车（多人）、无自动 |
-| **1c** | **搭车（anon）系统撮合** + **邀请码（team）** 两条多人拼车路径同时上 + 号价按 N 分摊 + 集单调度骨架 | 无自动、无压车治理 |
+| **1c** | **搭车（anon）系统撮合** + **拼车码加入用户车** 两条多人拼车路径同时上 + 号价按 N 分摊 + 集单调度骨架 | 无自动、无压车治理 |
 | **1d** | 自动模式（时钟 / 水位 / vendor webhook 触发）+ 号死自动补车 + 决策模型（比价 + fallback） | 无压车治理 |
 | **1e** | 去向 ② 推 passengerpool（双写）+ 对外 webhook | 无发车 |
 
-**为什么 anon + team 一起上**：单开 anon 需要陌生人凑到一辆车才有分摊·冷启动流量不够就体验为零。邀请码补冷启动·让种子用户能真拼上。两条路径任意一条能跑通产品就"活了"·两条都上覆盖面最完整（decisions §8.9 原本 anon→2b / team→2a·合并到 1c 一起做）。
+**为什么两条路径一起上**：单开 anon 需要陌生人凑到一辆车才有分摊·冷启动流量不够就体验为零。**拼车码**补冷启动·种子用户建车拿码拉朋友进来。两条路径任意一条能跑通产品就"活了"·两条都上覆盖面最完整。
+
+**术语铁律**（`CLAUDE §1` / `decisions §8.42` 四码分离）：
+- **拼车码** = `bus.invite_code` · 用来加入某辆车 · **只做进车这一件事** · 不改用户 tier · 不建立邀请关系
+- **好友邀请码** = `personal_invite_code` · 用来注册后建 referral · 收益给发码人 · **不改被邀请人 tier**
+- **专属邀请码** = `system_invite_code` · 绑定 tier(community / wholesale) · 只在注册链路或补绑
+- **优惠码** = `coupon_code` · 单次减免 · 不改 tier 不建 referral
+
+**四码分离** —— 任何 sprint / 场景 / API 文档提到"邀请码组队"都是老口径 · 应该说"拼车码加入"。
 
 **关于 handoff（拿走）时机说明**：**handoff 在 1a 就有**（三段式 token 交付实现）。1e 只加"推 passengerpool 双写"和"对外 webhook"，不涉及 handoff 本身。
 
@@ -394,7 +401,7 @@ bus-pooling 本体（Go 服务）
 
 | # | 交付 |
 |---|---|
-| **2a** | 列队策略（多 bus 抢同一 vendor 时排队；bus 内集单窗口调优）· 邀请码 / 搭车已在 1c 开·2a 起做上层调度 |
+| **2a** | 列队策略（多 bus 抢同一 vendor 时排队；bus 内集单窗口调优）· 1c 的 anon 撮合 + 拼车码加入已开·2a 起做上层调度增强 |
 | **2b** | 压车治理（bus 内噪邻探测 + 限速降级） |
 
 ### 阶段 3 · 生态扩张
@@ -467,7 +474,7 @@ bus-pooling 本体（Go 服务）
 | 车 / bus | `bus` | 拼车局实体（1 人或多人都是 bus）。housepool 里对应 `bus-<bus_id>` group |
 | 拉号记录 | `pull record` | **housepool 里的 `record-<pid>` group + `disabled=true`**。号已进池、被监控，但不发下游，等用户派去向 |
 | 系统撮合 | `anonymous match` | 匿名拼车：系统按标签匹配成员进同一 bus |
-| 邀请码组队 | `invite team` | 认识的人主动组车：建 bus + 邀请码分发 |
+| 拼车码加入 | `join by invite code` | 认识的人主动组车：车主拿**拼车码**(`bus.invite_code`)分享 · 好友输码加入 · **不是**好友邀请码 |
 | 补车 | `refill` | bus 内号死后触发新一轮拉号，补回目标水位 |
 | 集单 | `coalesce` | 同 bus 多成员补车意图在窗口内合流成一次拉号 |
 | 意图 | `intent` | 策略引擎产出的"要拉多少号 / 目的 bus 是谁 / 去向" |
