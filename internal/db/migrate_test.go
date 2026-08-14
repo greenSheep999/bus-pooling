@@ -21,6 +21,7 @@ var wantTables = []string{
 	"passenger_downstream", "passenger_strategy_default",
 	"pending_assignment", "pending_dissolution", "pending_handoff", "pending_purchase",
 	"pending_topup", // migration 010 · pending_topup 状态机（1b P1-C）
+	"pending_refill", // migration 037 · P6 自动补车队列（2026-08-14）
 	"pull_intent", "pull_round",
 	"redeem_code",
 	"session",

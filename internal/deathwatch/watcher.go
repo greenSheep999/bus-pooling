@@ -137,6 +137,8 @@ type SweepReport struct {
 	UnknownCredential int
 	// Errors 扫描过程中记录到但没让整轮挂掉的错（探活失败 / SQL 失败等）
 	Errors int
+	// RefillEnqueued P6 · 本轮标死后成功塞进 pending_refill 的条数（幂等 skip 不计）
+	RefillEnqueued int
 }
 
 // SweepOnce 拉一次号池全量、按判据分流、批量标死。
@@ -237,6 +239,23 @@ func (w *Watcher) markDead(ctx context.Context, cred *housepool.Credential, rep 
 	}
 	rep.MarkedDead++
 	w.log.Info("deathwatch 标死", "cred_id", uint64(cred.ID), "reason", cred.DisabledReason)
+
+	// **P6 · 自动补车**（2026-08-14）：标死后往 pending_refill 塞一条待补记录 ·
+	// worker 消费真拉（Step 1 只 log · Step 2 真 fire · 见 refill.go 注释）。
+	// 幂等 · 失败只 log 不影响标死本身（补车是增值 · 死号该标还得标）。
+	//
+	// 拿我方 credential_ledger.id · 得先反查（markDead 是用 kiro_rs_credential_id 匹配）
+	var ourID string
+	if err := w.db.QueryRowContext(ctx,
+		`SELECT id FROM credential_ledger WHERE kiro_rs_credential_id = ?`,
+		uint64(cred.ID)).Scan(&ourID); err == nil && ourID != "" {
+		if inserted, rerr := w.enqueueRefill(ctx, ourID, "dead"); rerr != nil {
+			w.log.Warn("塞 pending_refill 失败（不影响标死）",
+				"cred_id", uint64(cred.ID), "err", rerr)
+		} else if inserted {
+			rep.RefillEnqueued++
+		}
+	}
 }
 
 // credentialExists 查这个 kiro_rs_credential_id 是否在账里（不管什么状态）。
