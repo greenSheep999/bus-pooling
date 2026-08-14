@@ -762,6 +762,9 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		Deathwatch:    deathwatchTrigger,
 		// 抢号链：**最快的信号**（vendor push 200ms-2s · 抢到号主要靠这条）
 		Notifier: stockWatcher,
+		// v4.4 · 部分 vendor webhook 带 price/available · 顺手落 vendor_probe_zone
+		// source='webhook' · 补探针间隙 + 前端 price-trend 多一路
+		ProbeZone: probeZoneStore,
 	})
 	slog.Info("webhookin 分派器已装配")
 

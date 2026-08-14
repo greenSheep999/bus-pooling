@@ -357,6 +357,16 @@ func (a *Adapter) Parse(rawBody []byte, _ http.Header) (*providers.WebhookEvent,
 		ReceivedAt:      parseWebhookTime(wp),
 		RawPayload:      rawBody,
 	}
+	// v4.4 · 本家 webhook 独有的 price / available 字段 · 让 dispatcher 顺手
+	// 落 vendor_probe_zone（source='webhook'）· 补探针间隙 + 前端 price-trend 多一路
+	if wp.Price > 0 {
+		m := credits(int64(wp.Price))
+		evt.UnitPrice = &m
+	}
+	if wp.Available > 0 {
+		av := wp.Available
+		evt.Available = &av
+	}
 
 	// 本家只推"有新库存"一种业务事件（无 all_keys_dead / warranty_refund）。
 	// `stock` 是实测事件名 · 另两个是共性别名 · 兜底保留裸值。

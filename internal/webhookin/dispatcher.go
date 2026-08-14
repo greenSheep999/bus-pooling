@@ -69,12 +69,20 @@ type RestockNotifier interface {
 	Notify(ctx context.Context, p stockwatch.NotifyParams) error
 }
 
+// ProbeZoneSink · v4.4 · 部分 vendor webhook 带 price/available · 顺手落
+// vendor_probe_zone（source='webhook'）· 补 60s 探针间隙 + 前端 price-trend 多一路。
+// nil = 不落价 · 事件流不受影响。
+type ProbeZoneSink interface {
+	InsertWebhook(ctx context.Context, vendorID, zone string, priceCredits int64, available int, at time.Time) error
+}
+
 // Dispatcher 分派器 · 各字段允许 nil（老装配 / 测试兼容）。
 type Dispatcher struct {
 	db            *sql.DB
 	dispatchStore DispatchStore
 	deathwatch    SweepTrigger
 	notifier      RestockNotifier
+	probeZone     ProbeZoneSink
 	logger        *slog.Logger
 }
 
@@ -84,7 +92,9 @@ type Config struct {
 	Deathwatch    SweepTrigger
 	// Notifier 抢号链通知口 · new_keys 到时唤醒挂单 · nil = 不通知
 	Notifier RestockNotifier
-	Logger   *slog.Logger
+	// ProbeZone v4.4 · webhook 带 price/available 时顺手落 · nil = 不落
+	ProbeZone ProbeZoneSink
+	Logger    *slog.Logger
 }
 
 func New(cfg Config) *Dispatcher {
@@ -97,6 +107,7 @@ func New(cfg Config) *Dispatcher {
 		dispatchStore: cfg.DispatchStore,
 		deathwatch:    cfg.Deathwatch,
 		notifier:      cfg.Notifier,
+		probeZone:     cfg.ProbeZone,
 		logger:        logger,
 	}
 }
@@ -294,7 +305,34 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 				"vendor", e.VendorID, "dispatch_key", dispatchKey, "err", err)
 		}
 	}
+
+	// v4.4 · 部分 vendor webhook 带 price/available · 顺手落 vendor_probe_zone
+	// source='webhook'· 补 60s 探针间隙 + 前端 price-trend 多一路第三源
+	d.recordWebhookPrice(ctx, e)
 	return "ok", nil
+}
+
+// recordWebhookPrice · e.UnitPrice / e.Available 都为空 → 无 op · 只对带 price/available 字段的 vendor 生效
+func (d *Dispatcher) recordWebhookPrice(ctx context.Context, e *providers.WebhookEvent) {
+	if d.probeZone == nil {
+		return
+	}
+	if e.UnitPrice == nil && e.Available == nil {
+		return
+	}
+	var priceCredits int64
+	if e.UnitPrice != nil {
+		// UnitPrice.Amount 是 microunit · 侧表 our_unit_credits 也是 microunit
+		priceCredits = e.UnitPrice.Amount
+	}
+	var avail int
+	if e.Available != nil {
+		avail = *e.Available
+	}
+	zone := string(providers.ZoneOf(string(e.Zone)))
+	if err := d.probeZone.InsertWebhook(ctx, string(e.VendorID), zone, priceCredits, avail, e.ReceivedAt); err != nil {
+		d.logger.Warn("webhookin: 写 vendor_probe_zone 失败", "vendor", e.VendorID, "err", err)
+	}
 }
 
 // onNewKeysPerZone · 双区合并通知的逐区处理。

@@ -85,7 +85,7 @@ func (s *ProbeZoneStore) InsertBatch(ctx context.Context, zones []ProbeZoneSampl
 //
 // **zone 参数是归一后的**（"us" / "eu" / ""）· 上游要先过 providers.ZoneOf。
 // zone 空表示"任意" —— 找该 vendor 最近一条有价的（跨 zone · 保 PricedFor 老兼容）。
-// LatestZoneCredits · 优先 vendor_self · fallback 到 xi8（second source · 补 vendor 单端只给一区的空缺）
+// LatestZoneCredits · 优先 vendor_self · fallback 到 webhook / xi8（second source · 补 vendor 单端只给一区的空缺）
 func (s *ProbeZoneStore) LatestZoneCredits(
 	ctx context.Context, vendorID string, zone providers.Zone,
 ) (credits int64, probedAt time.Time, found bool) {
@@ -96,16 +96,48 @@ func (s *ProbeZoneStore) LatestZoneCredits(
 	if c, at, ok := s.querySource(ctx, vendorID, zone, "vendor_self"); ok {
 		return c, at, true
 	}
-	// fallback ① 聚合源实时快照（部分 vendor EU 定价我方官端拿不到 · 聚合源有）
+	// fallback ① vendor 主动推来的实时价（v4.4 · 部分 vendor webhook 带 price · 60s 探针间隙的补丁）
+	if c, at, ok := s.querySource(ctx, vendorID, zone, "webhook"); ok {
+		return c, at, true
+	}
+	// fallback ② 聚合源实时快照（部分 vendor EU 定价我方官端拿不到 · 聚合源有）
 	if c, at, ok := s.querySource(ctx, vendorID, zone, "xi8"); ok {
 		return c, at, true
 	}
-	// fallback ② 聚合源历史通知（补探针上线前的价格空窗 · 最后兜）
+	// fallback ③ 聚合源历史通知（补探针上线前的价格空窗 · 最后兜）
 	if c, at, ok := s.querySource(ctx, vendorID, zone, "xi8_notif"); ok {
 		return c, at, true
 	}
 	// 老数据 · source 未填的行（migration 030 前）· 兜底最后一次
 	return s.querySource(ctx, vendorID, zone, "")
+}
+
+// InsertWebhook · v4.4 · webhookin 收到带 price/available 的事件后调用 · 落一行 source='webhook'
+//
+// priceCredits · microunit（0 = 不填价格 · 该 vendor 本次 webhook 没带）
+// available    · 库存快照（0 = 不填 · 部分 vendor 只推价不推库存）
+//
+// **不重试 · 不阻塞 webhookin** —— 落价只是"顺手" · 失败只 log · 事件流照走。
+func (s *ProbeZoneStore) InsertWebhook(
+	ctx context.Context, vendorID, zone string,
+	priceCredits int64, available int, at time.Time,
+) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	if priceCredits <= 0 && available <= 0 {
+		return nil // 都没数据 · 不落
+	}
+	sample := ProbeZoneSample{
+		VendorID:       vendorID,
+		ProbedAt:       at,
+		Zone:           zone,
+		Available:      available,
+		OurUnitCredits: priceCredits,
+		OurUnitSource:  "webhook",
+		Source:         "webhook",
+	}
+	return s.InsertBatch(ctx, []ProbeZoneSample{sample})
 }
 
 // querySource · source 空表示不加 source 过滤（兜底 · 命中老数据）

@@ -38,6 +38,13 @@ type WebhookEvent struct {
 	Zone            Zone
 	ReceivedAt      time.Time
 	RawPayload      json.RawMessage
+	// UnitPrice ★ 部分 vendor webhook 载荷里带的**当刻单价**（`price` 字段）·
+	// 非 nil 表示该 vendor 主动推来了一次实时价格 · 让 webhookin 顺手落 vendor_probe_zone
+	// 一行（source='webhook'）· 补 60s 探针间隙 · docs/22 v4.4。
+	UnitPrice *Money
+	// Available ★ 部分 vendor webhook 载荷里带的**当刻库存**（`available` 字段）·
+	// 非 nil 时跟 UnitPrice 一起落 vendor_probe_zone · 交叉核对探针。
+	Available *int
 	// PerZone · 逐区拆分（**只有发「双区合并通知」的 vendor 会填** · 其他家恒 nil）。
 	//
 	// 那家 vendor 一次到货只推 1 条 webhook · 但 body 里带两个区的完整信息 ·

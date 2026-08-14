@@ -96,3 +96,44 @@ func TestParse_NoTimeFallsBackToNow(t *testing.T) {
 		t.Errorf("应回落当下时刻 · 得 %v", evt.ReceivedAt)
 	}
 }
+
+// v4.4 · webhook 载荷带的 price / available 要暴露给 dispatcher 落 probe_zone
+func TestParse_ExposesPriceAndAvailable(t *testing.T) {
+	a := &Adapter{}
+	evt, err := a.Parse([]byte(realRestockBody), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evt.UnitPrice == nil {
+		t.Fatal("UnitPrice 应非空（webhook 带了 price=100）")
+	}
+	// price=100 积分 → 100 * 1_000_000 microunit
+	if evt.UnitPrice.Amount != 100_000_000 {
+		t.Errorf("UnitPrice.Amount = %d · want 100_000_000（100 积分 microunit）", evt.UnitPrice.Amount)
+	}
+	if evt.UnitPrice.Currency != providers.CurrencyCredit {
+		t.Errorf("UnitPrice.Currency 应 credit · 得 %v", evt.UnitPrice.Currency)
+	}
+	if evt.Available == nil {
+		t.Fatal("Available 应非空（webhook 带了 available=50）")
+	}
+	if *evt.Available != 50 {
+		t.Errorf("Available = %d · want 50", *evt.Available)
+	}
+}
+
+// price=0 / available=0 · 不该往 evt 里填（避免 dispatcher 落 0-价一行）
+func TestParse_ZeroPriceOmitted(t *testing.T) {
+	a := &Adapter{}
+	body := `{"event":"stock","id":"evt_y","count":3}`
+	evt, err := a.Parse([]byte(body), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evt.UnitPrice != nil {
+		t.Errorf("price 缺失时 UnitPrice 应 nil · 得 %+v", evt.UnitPrice)
+	}
+	if evt.Available != nil {
+		t.Errorf("available 缺失时 Available 应 nil · 得 %v", *evt.Available)
+	}
+}
