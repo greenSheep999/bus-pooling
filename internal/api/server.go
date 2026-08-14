@@ -169,6 +169,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/me", handler(s.RequireAuth(s.handleMe)))
 	mux.Handle("GET /api/me/wallet", handler(s.RequireAuth(s.handleWallet)))
 	mux.Handle("GET /api/me/ledger", handler(s.RequireAuth(s.handleLedger)))
+	mux.Handle("GET /api/me/history-summary", handler(s.RequireAuth(s.handleMeHistorySummary))) // v4.3 · 我买过多少号/花过多少
 	mux.Handle("GET /api/me/api-keys", handler(s.RequireAuth(s.handleListAPIKeys)))
 	mux.Handle("DELETE /api/me/api-keys/{id}", handler(s.RequireAuth(s.handleRevokeAPIKey)))
 	mux.Handle("GET /api/me/invite", handler(s.RequireAuth(s.handleGetMyInvite)))

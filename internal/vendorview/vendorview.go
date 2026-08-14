@@ -761,6 +761,16 @@ func (s *Service) VendorIDForAnon(anonID string) string {
 	return ""
 }
 
+// AnonIDFor · vendor_id → anon_id · 脱敏字段的公开出口（v4.3）
+func (s *Service) AnonIDFor(vendorID string) string {
+	return anonIDOf(providers.VendorID(vendorID))
+}
+
+// AnonLabelFor · vendor_id → 匿名 label（v4.3）
+func (s *Service) AnonLabelFor(vendorID string) string {
+	return anonLabelOf(providers.VendorID(vendorID))
+}
+
 // anonLabelOf 匿名显示名。编号顺序按 CLAUDE.md §1.1 六家列表定义。
 func anonLabelOf(id providers.VendorID) string {
 	if n, ok := anonIndex[id]; ok {
