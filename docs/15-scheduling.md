@@ -79,10 +79,15 @@ ratio ≤ 0.3     → ModeCool     冷 · 都不 fire · 用户来了现打 vend
 
 | source | tight | balance | cool | TURBO_ON |
 |---|---|---|---|---|
-| `webhook` | ✅ | ✅ | ❌ | ✅ |
-| `xi8_signal` | ✅ | ✅ | ❌ | ✅ |
-| `stock_delta`（探针推算） | ✅ | ❌ | ❌ | ✅ |
-| `manual`（CLI） | ✅ | ✅ | ✅ | ✅ |
+| `webhook`（vendor 主动 push 200ms-2s） | ✅ | ✅ | ❌ | ✅ |
+| `stock_delta`（我方探针 60s 采样对比推算） | ✅ | ❌ | ❌ | ✅ |
+| `manual`（CLI 手工调试） | ✅ | ✅ | ✅ | ✅ |
+
+**抢号信号源日常只有两个：`webhook` + `stock_delta`**。`manual` 是运营调试用 · 不算日常路径。
+
+**为什么探针比 webhook 更关键**（别只等 push）：号少时 · vendor 上新库存 → webhook 需要 200ms-2s 才到我方 · 而**其他家平台 / 手速快用户也在盯着** · 单靠 webhook = 跟他们赛跑；且部分 vendor webhook 会漏/延（生产实测过某家一天丢 21 条）。我方 60s 探针**主动去问 vendor** —— stock 比上一轮多了立即推 `stock_delta`·**不依赖 vendor 主动 push**·常常比 webhook 到得早。所以 ModeTight 时 `stock_delta` 必须 fire · 这是 webhook 慢/漏时的**关键补位**。
+
+**xi8 不是抢号信号源** —— xi8 backfiller 只写 `vendor_probe_zone` source='xi8' 和 `vendor_dispatch` source='xi8'（数据补齐 · 对账用）· **从不调 `stockwatch.Notify`**。`stockwatch/store.go` 代码里保留 `xi8_signal` 字符串常量是历史设计残留 · 从未使用。
 
 ### 3.2 文件哨兵（`internal/stockwatch/killswitch.go` · 5s poll）
 
@@ -137,7 +142,7 @@ ratio ≤ 0.3     → ModeCool     冷 · 都不 fire · 用户来了现打 vend
 | `janitor.Tick` | 1min | 扫 `pending_purchase` 卡态 · 恢复 | ❌ |
 | `webhookHealth` | 1min | 长期无 webhook 报警 | ❌ |
 | `StalenessChecker` | 5min | 扫 `pipeline_health` · 陈旧管线 ERROR | ❌ |
-| `bus.Scheduler` | 5min | 扫 auto_refill 车水位 · 触发 refill | ✅ 读 bus.Strategy |
+| `bus.Scheduler` | 5min | 扫 auto_refill 车里还剩几个号 · 触发 refill | ✅ 读 bus.Strategy |
 
 ---
 
@@ -148,7 +153,7 @@ ratio ≤ 0.3     → ModeCool     冷 · 都不 fire · 用户来了现打 vend
 | 字段 | 类型 | 语义 | 谁读 |
 |---|---|---|---|
 | `AutoRefillEnabled` | bool | 自动补车总开关 | `bus.Scheduler` · `deathwatch.RefillTick` |
-| `RefillWatermark` | int | 水位阈值（**语义待定** · 见 `decisions §12` 位置 6）| `bus.Scheduler.ScanOnce` |
+| `RefillWatermark` | int | 补到几个（**语义待定** · 见 `decisions §12` 位置 6）| `bus.Scheduler.ScanOnce` |
 | `RefillMinCount` | \*int | 每次补几个 · nil 用差额 | `bus.Scheduler` · `RefillTick` |
 | `PerRoundCount` | \*int | 手动拉号默认数 | `handleBusPull` |
 | `MaxUnitPrice` | \*int64 | 单价上限 microunit · 车级 ∧ 全局取严 | `strategy.CanPull` |
@@ -169,29 +174,210 @@ ratio ≤ 0.3     → ModeCool     冷 · 都不 fire · 用户来了现打 vend
 | `PreferredVendor` | \*string | 新车默认值 | 建车时读 |
 | `DefaultZone` | string | 新车默认值 · `auto/us/eu` | 建车时读 |
 
+### 4.3 参数解析优先级 · 三类字段不同规则
+
+**用户拍板 2026-08-15**：读同一个字段值时按类别走不同解析规则 —— 不是全部"车级降级到全局到系统"。
+
+**类① · 硬上限 · 取最严**（不是降级 · 是 `min()`）：
+
+| 字段 | 规则 | 为什么 |
+|---|---|---|
+| `MaxUnitPrice` | `min(bus.MaxUnitPrice, passenger.MaxUnitPrice, +∞)` | 全局是"这个人不想超" · 车级是"这辆车不想超" · 任一层触发都要拦。降级会让用户在某辆车设 max=1000 就绕开全局 max=100 · 全局就没用了 |
+| `DailyRoundLimit` | 只读全局 · 车级 deprecated | 跨所有车累加 · 车级没意义 |
+| `DailySpendLimit` | 只读全局 · 车级 deprecated | 同上 |
+
+**类② · 偏好 · 车级 > 全局 > 系统内建**（真正的降级链）：
+
+| 字段 | 规则 |
+|---|---|
+| `PerRoundCount` | `bus.PerRoundCount ?? passenger.PerRoundCount ?? config.pull.DefaultCount` |
+| `PreferredVendor` | `bus.PreferredVendor ?? passenger.PreferredVendor ?? AutoPick(比价选)` |
+| `DefaultZone` | 只在全局层 · 否则代码默认 `auto` |
+
+**类③ · 每车专属 · 只在车级** · 无全局对应：
+
+| 字段 | 说明 |
+|---|---|
+| `AutoRefillEnabled` | 每辆车自己决定要不要自动补 · 全局默认无意义 |
+| `RefillWatermark`（补到几个）| 每辆车目标数量不同 |
+| `RefillMinCount`（每次补几个）| 同上 |
+
+**类④ · 系统内建 · 用户碰不着**：
+
+`config.pull.{MinCount, MaxCount, MaxConcurrent*}` · `vendor.{WarrantyMinutes, MaxPerOrder, MinPerOrder}` · `surcharge_rule` 加价率 · `stockwatch.ModeMgr` 阈值 · `TURBO_ON` / `KILL_PULLS` 文件哨兵。
+
+**UI 展示规范**（决策 2026-08-15）：给用户看"**实际生效值**" 而不是"你设的值" —— 让用户一眼看到全局有没有把他压低。例："你设的 max=1000·全局 max=100·**实际生效 100**"。
+
 ---
 
-## 5 · 触发路径矩阵
+## 5 · 统一决策器（六步串行判据）
 
-**六条已存在的触发** —— 全部最终落到 `decider.Pull`（唯一号入库出口）：
+**核心洞察**（2026-08-15 用户拍板）：**六种触发源共享同一套判据** —— 写一次·用六处。不是"六个平行场景选一个"·是"决策器有六个维度"。
 
-| # | 触发源 | 代码位置 | 判据（读什么字段）| 是否已装配 |
-|---|---|---|---|---|
-| **T1 · 号死立即补** | `deathwatch.markDead` → `pending_refill` 入队 → `RefillTick` 1min 扫 | `internal/deathwatch/refill.go:117` | 读 `bus.Strategy.AutoRefillEnabled`（关了则 skipped）· 反查 owner / bus | ✅ |
-| **T2 · vendor webhook 新号** | `webhookin.onNewKeys` → `stockwatch.Notify` → fire 挂单 | `internal/webhookin/dispatcher.go:244` · `internal/stockwatch/store.go:495` | 只 fire `status='watching'` 的挂单 · 挂单里读 `max_unit_price` 涨价保护 | ✅ |
-| **T3 · 缺货挂单** | `decider.Pull` 判 `ErrNoStock` → `maybeEnqueueOnNoStock` → `stockwatch.Enqueue` | `internal/stockwatch/store.go:164` | 记录 `client_order_id` / `max_unit_price` / TTL | ✅ |
-| **T4 · 水位巡检** | `bus.Scheduler.ScanOnce` 5min 扫 | `internal/bus/autorefill.go:130` | 读 `bus.Strategy.AutoRefillEnabled` + `RefillWatermark` + `RefillMinCount` | ✅ 装配 · 语义待改 |
-| **T5 · vendor 余额切换** | `decider.Pull` 打 vendor 前预检 → 不够 → `PickBestVendorExcluding` | `internal/decider/orchestrator.go` | `vendorbalance.Cache.Enough` + `bus.Strategy.PreferredVendor` | ✅ |
-| **T6 · 探针推算 restock** | `prober.deriveStockDelta` 60s 采样 → `stockwatch.Notify` source='stock_delta' | `internal/vendorview/prober.go` | ModeMgr `sourceShouldFire('stock_delta')` | ✅ |
+代码上对应**一个** `func Decide(input) DecideResult` · 六个触发源都调它·不再一个后台 goroutine 各写各的判据。
 
-**六条已识别但语义待补的位置**（见 `decisions §12` · 拍板后更新本文）：
+### 5.1 决策器输入 / 输出
 
-1. **webhook 唤醒范围** —— T2 现只喂"缺货挂单车" · 开了 auto_refill 但没挂单的车收不到
-2. **prebuy-pool 分配** —— stockwatch 抢到无主号 5min TTL 到期只能退回 vendor · 没有分配路径
-3. **多 vendor 同车判据** —— T4 只看整车 alive · 不看"vendor01 死了但 vendor02 撑得住"
-4. **建拼车后第一次一律手动** —— T4 会给刚建的空 auto 车立即拉一批 · 违反约定
-5. **保底触发方式** —— T4 应挂 stockwatch 等 webhook · 不是硬 Pull
-6. **用户字段命名** —— `RefillWatermark` 是目标还是红线不清
+**输入**（一次触发的四个变量）：
+
+```
+① 触发源类型   webhook / probe / death / usage / manual / scheduler
+② 目标 bus_id  哪辆车
+③ 当刻 mode    Cool / Balance / Tight（stockwatch.ModeMgr 30s 自采样）
+④ 车里活号快照 按 vendor 分组的 alive 数（credential_ledger 查）
+```
+
+**输出**（三种）：
+
+```
+【拒·<原因>】    不动 · 附拒因
+【下单】         立刻 decider.Pull(count, vendor, maxPrice)
+【挂单】         立刻 stockwatch.Enqueue(vendor, count, maxPrice, TTL)
+```
+
+### 5.2 六步串行判据（一步失败直接返"拒"）
+
+**Step 1 · 系统闸门**（用户绕不开·第一件事）
+- `KILL_PULLS` 文件存在 → 【拒·全停】
+- 否则继续
+
+**Step 2 · 用户 auto 开关**（用户没授权就不主动）
+- 触发源 == `manual`（用户点手动拉号）→ 跳过 · 直进 Step 5
+- 触发源 == `death`（号死质保退款）→ 跳过 · 直进 Step 5（退款是天赋权利·不受 auto 影响）
+- 触发源 == 用户主动 API POST prebuy → 跳过 · 直进 Step 5（用户明说要 · 但 Step 5/6 仍要过参数解析和限额）
+- 其他触发源：读 `bus.Strategy.AutoRefillEnabled`
+  - false → 【拒·auto off】
+  - true → 继续
+
+**Step 3 · 车里活号快照 + 多 vendor 备胎判据**
+
+按 vendor 分组数 `alive`：
+
+- **Case A · `alive_total == 0`**（整车挂）→ 档 = 急 · 直跳 Step 4 · Step 4 会强制 output = 挂 stockwatch（Tight 时）or 下单（Cool/Balance 时）
+- **Case B · 任一 vendor 单独 `alive >= RefillMinCount`** → 【拒·有备胎】· 那家撑得住·等它也见底再动（**你的 S6 原话**：vendor01 死 5 · vendor02 活 6 · min=3 → vendor02 撑得住·不拉）
+- **Case C · 所有 vendor `alive < RefillMinCount` 且 `alive_total < RefillWatermark`** → 档 = 常规·继续 Step 4
+- **Case D · `alive_total >= RefillWatermark`** → 【拒·已达目标】
+
+**Step 4 · 上游 mode × 触发源 → 决定 output 类型**
+
+| 触发源 \ mode | Cool（号多）| Balance（一般）| Tight（号紧俏）|
+|---|---|---|---|
+| `webhook` | 【拒·cool 不响应】| 【下单】vendor push 说有货·冲上去 | 【下单】除非车里也慢 · 此时改挂 stockwatch |
+| `probe`（stock_delta）| 【拒·cool 不响应】| 【拒·balance 只 webhook fire · 省 API】| 【下单】关键补位·webhook 慢/漏时靠它 |
+| `death`（号死立补）| 【下单】vendor 有货 · 大概率成 | 【下单】| 【挂单】紧俏时下单大概率 ErrNoStock |
+| `usage`（用量见底 · 数据未采集）| 【下单】| 【下单】| 【挂单】|
+| `scheduler`（5min 兜底扫）| 【下单】货多下单不亏 | 【下单】| 【挂单】兜底扫在紧俏时改挂不 Pull |
+| `manual`（用户手动 / prebuy API）| 【下单】任何 mode 都 fire | 【下单】| 【下单】用户明说要·系统硬上 |
+
+**Case A（整车挂）强制路径**：
+- Cool → 【下单】
+- Balance / Tight → 【挂单】
+
+**Step 5 · 参数解析**（读用户各字段·按 §4.3 三类规则）
+
+```
+count = bus.RefillMinCount ?? (RefillWatermark - alive_total)
+  · 必须 config.pull.MinCount ≤ count ≤ config.pull.MaxCount
+  · 且 count ≤ vendor.MaxPerOrder(vendor 内建)
+
+maxPrice = min(bus.MaxUnitPrice ?? +∞, passenger.MaxUnitPrice ?? +∞)   · 类①
+
+preferredVendor = bus.PreferredVendor
+               ?? passenger.PreferredVendor
+               ?? AutoPick(比价选)                                      · 类②
+
+rates = surcharge_rule 查表 · 叠加价栈
+  · 用户开 prebuy_enabled → capability 层加率
+  · 用户是 wholesale 档 → 跳 vendor + zone 层
+```
+
+**Step 6 · 每日限额 + vendor 可行性**（最后一关）
+
+- `passenger.DailyRoundLimit` 累计已用 rounds + 1 > 上限 → 【拒·当日轮次到顶】
+- `passenger.DailySpendLimit` 累计已用 + est > 上限 → 【拒·当日花费到顶】
+- `vendorbalance.Enough(preferredVendor, est)` 不够 → 排除该 vendor · 走 `PickBestVendorExcluding` 找下一家；都不够 → 【拒·vendor 侧全没钱】
+- `MaxConcurrentPerVendor` / `MaxConcurrentPerPassenger` 满 → 【拒·并发到顶】
+
+以上都过 → 按 Step 4 的 output 类型执行：
+- 【下单】→ `decider.Pull(count, vendor, maxPrice)`
+- 【挂单】→ `stockwatch.Enqueue(vendor, count, maxPrice, TTL)`
+
+**注**：Step 6 的每日限额判定是**乐观的** —— 两辆车同时触发 · 都读到"还有额度" · 都过决策器 · 靠 `wallet.Reserve` 事务 + `MaxConcurrentPerPassenger` 兜底防超限。真正的原子扣款在 `decider.Pull` 内的事务里。
+
+### 5.3 决策器 × 你的场景 · 验证表
+
+| 场景 | Step 1 | Step 2 | Step 3 | Step 4 | 结果 |
+|---|---|---|---|---|---|
+| S1 死号 · 一家死另一家活 6 · min=3 | 过 | death 跳过 | Case B 备胎撑着 | - | **拒·有备胎** ✓ |
+| S1 死号 · 两家都见底 | 过 | death 跳过 | Case C 常规 | 视 mode 决定 | **执行** ✓ |
+| S1 死号 · 整车挂 | 过 | death 跳过 | Case A 急 | Tight 挂单 / Cool 下单 | **执行** ✓ |
+| S3 vendor 新号 · 用户开 prebuy | 过 | webhook · auto on | Case C | Balance/Tight 下单 · 叠 capability_fee | **执行 + 收能力费** ✓ |
+| S3 vendor 新号 · 用户没开 prebuy | 过 | 同上 | Case C | 同上 · 不叠 capability_fee | **执行** ✓ |
+| S4 保底 · 剩号少于紧急线 | 过 | probe/scheduler | Case C | Tight 挂 stockwatch | **挂单** ✓ |
+| S5 用户没开 auto · 上游有货 | 过 | auto off | - | - | **拒·auto off** · 想拉手动点 ✓ |
+| S8 新建拼车 · 空车 · auto 默认关 | 过 | auto off | - | - | **不动** · 第一批手动 ✓ |
+| S8 建车后用户开 auto · 空车 | 过 | auto on | Case A 急 | 挂 stockwatch | **挂单等抢** ✓ |
+
+**S8 最后一条重要**：**代码不需要"从没拉过号的车跳过"这种特判** —— 靠 `AutoRefillEnabled` 默认 false 就够（见 `decisions §12.已定 2026-08-15`）。
+
+### 5.4 四象限投影（上游 × 用户设置）
+
+```
+                    Cool（号多）        Balance（一般）      Tight（号紧俏）
+                    ─────────────       ─────────────       ─────────────
+auto=off        →  拒·auto off         拒·auto off         拒·auto off
+                    (死号照常退款·手动 pull 照常)
+                    ─────────────────────────────────────────────────────
+auto=on         →  只 death / sched    webhook + sched      全触发·探针关键
+不开 prebuy         触发·下单           触发·下单            webhook/scheduler
+                                                             改挂 stockwatch
+                    ─────────────────────────────────────────────────────
+auto=on         →  同 auto on          webhook 时优先接      同 auto on(tight)
+开 prebuy           (cool 时 prebuy     · 叠 capability_fee   + capability_fee 全叠
+                    无用武之地)                               · 用户为紧俏付费
+```
+
+### 5.5 三层兜底 · 时间粒度递进
+
+**主链路失败或漏时的兜底顺序**：
+
+```
+① webhook  200ms-2s   vendor 主动 push
+   ↓ 漏了（vendor 挂 / 网络抖 / 我方接收挂）
+② probe    60s        我方主动 GET /stock 采样对比·关键补位
+   ↓ 漏了（服务重启窗口）
+③ scheduler 5min      bus.Scheduler 兜底扫
+   ↓ 触发了但被 Step 3 Case B 拒（备胎撑着）
+④ 下一轮   等 vendor02 也见底 · 决策器下轮再判
+```
+
+**"号少的时候等 webhook 就晚了"**（用户 S7 原话）—— 因此 Tight 时探针必须 fire（`stock_delta`）· 抢在其他家平台 / 手速快用户之前。
+
+### 5.6 五处待定 · 边落码边定
+
+未拍板的边角 · 拍板后在本节改：
+
+1. **备胎阈值 vs 每次补几个** —— 现在决策器用 `RefillMinCount` 同时表达两件事："这次拉几个"和"至少剩几个才算撑得住"。要不要新字段 `refill_backup_threshold`？倾向复用 · 简化但语义模糊。
+2. **prebuy 加价怎么收** —— 订阅式（开了就每次加）or 按次式（只在 tight 场景 fire 时加）？倾向订阅式（"你付的是能力资格·不是能力次数"）。
+3. **stockwatch 挂单 TTL** —— 现代码默认几分钟需查 · 决策器 Step 6 挂单时用多长？
+4. **usage 见底阈值** —— 号累计用量 ≥ 多少 % 才算"见底"？数据没采集 · 先在决策器里留 `usage` 触发源位。
+5. **用户主动 POST prebuy 的能力费** —— Step 2 允许 skip auto 检查 · 但 Step 5 rates 里 capability_fee 该按普通拉号叠 · 还是"用户主动付更多"叠更高？
+
+---
+
+
+**六条已存在的触发** —— 全部最终应该调 §5.2 决策器 · 由决策器决定 output（下单 / 挂单 / 拒）：
+
+| # | 触发源 | 代码位置 | 目前判据 | 是否已装配 | 决策器接入 |
+|---|---|---|---|---|---|
+| **T1 · 号死立即补** | `deathwatch.markDead` → `pending_refill` 入队 → `RefillTick` 1min 扫 | `internal/deathwatch/refill.go:117` | 读 `bus.Strategy.AutoRefillEnabled` · 反查 owner / bus | ✅ | ⏳ 待改成调 Decide(source=death) |
+| **T2 · vendor webhook 新号** | `webhookin.onNewKeys` → `stockwatch.Notify` → fire 挂单 | `internal/webhookin/dispatcher.go:244` · `internal/stockwatch/store.go:495` | 只 fire `status='watching'` 挂单 · 读挂单里 `max_unit_price` | ✅ | ⏳ 待改成调 Decide(source=webhook) · 决定唤醒范围 |
+| **T3 · 缺货挂单** | `decider.Pull` 判 `ErrNoStock` → `maybeEnqueueOnNoStock` → `stockwatch.Enqueue` | `internal/stockwatch/store.go:164` | 记录 `client_order_id` / `max_unit_price` / TTL | ✅ | 已符合 · 挂单是决策器 output 的一种 |
+| **T4 · 巡检车里还剩几个号** | `bus.Scheduler.ScanOnce` 5min 扫 | `internal/bus/autorefill.go:130` | 读 `bus.Strategy.AutoRefillEnabled` + `RefillWatermark` + `RefillMinCount` | ✅ 装配 · 逻辑粗版 | ⏳ 待改成调 Decide(source=scheduler) |
+| **T5 · vendor 余额切换** | `decider.Pull` 打 vendor 前预检 → 不够 → `PickBestVendorExcluding` | `internal/decider/orchestrator.go` | `vendorbalance.Cache.Enough` + `bus.Strategy.PreferredVendor` | ✅ | 已符合 · 内嵌在决策器 Step 6 |
+| **T6 · 探针推算 restock** | `prober.deriveStockDelta` 60s 采样 → `stockwatch.Notify` source='stock_delta' | `internal/vendorview/prober.go` | ModeMgr `sourceShouldFire('stock_delta')` | ✅ | ⏳ 待改成调 Decide(source=probe) |
+
+**语义待补位置** → 已收敛到 `decisions §12` 六条·和上面 §5.6 五处 · 拍板后更新本节和 §5。
 
 ---
 

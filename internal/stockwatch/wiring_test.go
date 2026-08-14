@@ -85,9 +85,9 @@ func TestWiring_ThreeSources_OnlyOneFires(t *testing.T) {
 
 	id := enqueueOne(t, w, "kiroceo", "race-1")
 
-	// 三个信号源依次打过来（真实场景是并发 · 这里串行也能验幂等：
+	// 两个信号源依次打过来 + 一个 manual（真实场景是并发·这里串行也能验幂等：
 	// 第一个把状态推到 fulfilled · 后两个的 conditional UPDATE 匹配不到 watching）
-	for _, src := range []string{"webhook", "stock_delta", "xi8_signal"} {
+	for _, src := range []string{"webhook", "stock_delta", "manual"} {
 		if err := w.Notify(ctx, NotifyParams{VendorID: "kiroceo", Source: src}); err != nil {
 			t.Fatalf("Notify(%s): %v", src, err)
 		}

@@ -228,7 +228,7 @@ type NotifyParams struct {
 	VendorID string // 哪家 vendor restock 了
 	Region   string // 具体 region · 空 = 全 region 都算命中
 	Count    int    // 这一波新到几个（可选 · 用于 log · 不影响筛选）
-	Source   string // webhook / stock_delta / xi8_signal / manual
+	Source   string // webhook / stock_delta / manual  (xi8 不走这条·数据补齐用)
 }
 
 // Notify · 三源都调这个 · 有 restock 事件时打过来。
@@ -236,10 +236,12 @@ type NotifyParams struct {
 // 逻辑：
 //  1. **急停 check**：kill switch engaged → 全 skip · log
 //  2. **运营态 check**：mode 决定这个 source 该不该 fire
-//     - stock_delta 源 · 只有 ModeTight 才 fire（省 API + 避免误抢）
-//     - webhook 源 · ModeTight + ModeBalance 都 fire（webhook 是最快信号 · 别浪费）
-//     - xi8_signal 源 · 同 webhook（xi8 signals 也是 push · 但比 webhook 慢）
-//     - ModeCool · 都不 fire（库存充足 · 用户来了现打）
+//     - stock_delta 源（我方探针 60s 采样对比）· 只有 ModeTight 才 fire
+//       号少时 webhook 常慢/漏 · 探针主动去问是关键补位（docs/15 §3.1）
+//     - webhook 源（vendor 主动 push）· ModeTight + ModeBalance 都 fire · 最快信号别浪费
+//     - manual 源（CLI 手工调试）· 任何 mode 都 fire · 运营强制路径
+//     - ModeCool · 探针/webhook 都不 fire（库存充足 · 用户来了现打）
+//     - **xi8 不 fire** · xi8 只写 vendor_probe_zone / vendor_dispatch 数据补齐 · 从不 Notify
 //  3. 找 (vendor_id, status='watching') 按 started_at 队列（先挂先抢）
 //  4. 每条 · conditional UPDATE 抢到 fired 状态 · 抢到才 fire
 //  5. fire 委托到 Firer.FireByIntent（走 decider · 幂等 by client_order_id）
@@ -521,10 +523,12 @@ func (w *Watcher) Sweep(ctx context.Context) SweepResult {
 //
 //	source        | tight | balance | cool | turbo 开
 //	--------------|-------|---------|------|---------
-//	webhook       |  ✅   |   ✅    |  ❌  |   ✅
-//	xi8_signal    |  ✅   |   ✅    |  ❌  |   ✅
-//	stock_delta   |  ✅   |   ❌    |  ❌  |   ✅
-//	manual        |  ✅   |   ✅    |  ✅  |   ✅
+//	webhook       |  ✅   |   ✅    |  ❌  |   ✅     vendor 主动 push · 最快
+//	stock_delta   |  ✅   |   ❌    |  ❌  |   ✅     我方探针 60s 采样 · 号少时关键补位
+//	manual        |  ✅   |   ✅    |  ✅  |   ✅     CLI 调试强制
+//
+// **xi8 不参与抢号** —— 只写 vendor_probe_zone / vendor_dispatch 数据补齐 · 从不 Notify。
+// 老注释里 xi8_signal 是历史残留 · 已删。
 //
 // **turbo 的意义**：上游连续几天缺货时 · 自动判断可能算成 cool（supply 长期 0 ·
 // demand 也不高 · ratio 落 cool 区）· 但运营者知道"还要用 · 有货就抢" · 手工按住。
@@ -544,11 +548,11 @@ func (w *Watcher) sourceShouldFire(source string) bool {
 	mode := w.mode.Current()
 	switch source {
 	case "stock_delta":
-		return mode == ModeTight // 探针主动 · 只在紧张态 fire
-	case "webhook", "xi8_signal":
-		return mode == ModeTight || mode == ModeBalance // 事件驱动 · 除 cool 都 fire
+		return mode == ModeTight // 我方探针 60s 采样对比 · 只在紧张态 fire
+	case "webhook":
+		return mode == ModeTight || mode == ModeBalance // vendor 主动 push · 除 cool 都 fire
 	default:
-		return mode != ModeCool // 未知 source · 保守 · cool 不 fire
+		return mode != ModeCool // 未知 source（含 manual）· cool 不 fire · 其余保守 fire
 	}
 }
 

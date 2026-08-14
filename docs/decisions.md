@@ -2273,7 +2273,7 @@ vendor 供给（6 家 + xi8 聚合站）
   · 拉号出口：decider.Pull（唯一）· 内部 planSplit 按 bus 全员分摊
   · 抢号链：stockwatch 挂单等 webhook · ModeMgr tight/balance/cool + TURBO/KILL 哨兵
   · 号死链：deathwatch 探活 + webhook · 走 vendor 政策退款 · 分摊回乘客
-  · 补车链：deathwatch RefillTick 号死立即补 + bus.Scheduler 5min 兜底扫水位
+  · 补车链：deathwatch RefillTick 号死立即补 + bus.Scheduler 5min 兜底看车里还剩几个号
   · vendor 切换：BalanceChecker + PickBestVendorExcluding · 没钱切下一家
         ↓
 下游消费（乘客 + 乘客号池）
@@ -2304,13 +2304,27 @@ vendor 供给（6 家 + xi8 聚合站）
 2. **prebuy-pool 抢到无主号无处可去** · 5min TTL 到期只能退回 vendor
 3. **多 vendor 同车是否该拉** · 现只看整车 alive · 不看"另一家还撑得住"
 4. **建拼车后第一次一律手动** · 用户原则 · 但没有 UI 或代码保证
-5. **保底触发方式** · 水位低应挂 stockwatch 等 webhook · 不是硬下单
-6. **用户字段命名和语义** · `RefillWatermark` 目标还是红线不清 · `DailyRoundLimit`
+5. **保底触发方式** · 剩号少的时候应挂 stockwatch 等 webhook · 不是硬下单
+6. **用户字段命名和语义** · `RefillWatermark` 补到几个还是紧急线 · 语义不清 · `DailyRoundLimit`
    车级实际不生效但没删
 
 这六条**在同一条链上** · 拼车产品缺一个位置就漏一个 · 别再当独立需求各起文档。
 
 **下一步该在哪个位置动手 · 等用户拍板 · 拍完只改本节 · 不新开文档**。
+
+### 12.已定 · 建拼车"第一次一律手动"的具体含义（2026-08-15）
+
+**用户原话**："第一次手动就是开上车的时候不是手动选·首次如何拉吗？那个就是手动吧。"
+
+**决策**：**"第一次手动"= 建拼车流程 UI 里让用户选"首次如何拉第一批号"**。不是系统识别"这辆车从没拉过号就跳过 auto" —— 那是代码兜底 · 不是产品约定。
+
+- 建车向导包含"首次如何拉"这步 · 用户主动填 · 表单里的 count / vendor / zone 就是那次拉号的入参
+- 建车 API 完成时:如果用户在向导里填了首次拉 · 同步或异步跑一次 `decider.Pull` · 号进车
+- 建车后 `bus.Strategy.AutoRefillEnabled` **默认 false** —— 用户想自动补 · 到车详情里自己开开关
+- 只要 `AutoRefillEnabled=false` · 决策器 Step 2 就返"拒·auto off" · 不会主动动
+- 用户开 `AutoRefillEnabled=true` 后:决策器完全按 `docs/15-scheduling §5` 六步串行判据跑 · 不用为"这是不是新车"特判
+
+**这条覆盖了什么误解**：`decisions §12` 六条待补位置的第 4 条"建拼车后第一次一律手动 · UI 或代码保证" —— 现在明确了是 **UI 保证**（建车向导 + auto 默认 false）· 不是代码里加"首次跳过"特判。
 
 **死路 · 别再走**：
 - ❌ 造 v1/v2/v3/v4 或 P0/P1/P2 类第二套编号 —— 阶段号只用 `CLAUDE §7`（1a-1e / 2a-2b / 3a-3d）
