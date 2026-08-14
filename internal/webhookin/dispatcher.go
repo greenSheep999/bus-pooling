@@ -69,6 +69,15 @@ type RestockNotifier interface {
 	Notify(ctx context.Context, p stockwatch.NotifyParams) error
 }
 
+// AutoScanNotifier · 第五刀 · vendor 新号 webhook 到时 · 除了 fire 挂单车 ·
+// 也扫开了 auto 但没挂单的低水位车 · 逐辆调 decider.Decide(source=webhook)。
+//
+// 装配层实现(main.go webhookAutoScanBridge) · 避免 webhookin 硬依赖 bus/decider。
+// nil = 老行为(只 fire 挂单车 · 不扫 auto 车)。
+type AutoScanNotifier interface {
+	OnNewKeys(ctx context.Context, vendorID, zone string, newKeys int)
+}
+
 // ProbeZoneSink · 部分 vendor webhook 带 price/available · 顺手落
 // vendor_probe_zone（source='webhook'）· 补 60s 探针间隙 + 前端 price-trend 多一路。
 // nil = 不落价 · 事件流不受影响。
@@ -82,6 +91,7 @@ type Dispatcher struct {
 	dispatchStore DispatchStore
 	deathwatch    SweepTrigger
 	notifier      RestockNotifier
+	autoScan      AutoScanNotifier // 第五刀 · 唤醒低水位 auto 车 · nil = 只 fire 挂单
 	probeZone     ProbeZoneSink
 	logger        *slog.Logger
 }
@@ -92,6 +102,8 @@ type Config struct {
 	Deathwatch    SweepTrigger
 	// Notifier 抢号链通知口 · new_keys 到时唤醒挂单 · nil = 不通知
 	Notifier RestockNotifier
+	// AutoScan 第五刀 · new_keys 到时扫低水位 auto 车 · nil = 只 fire 挂单
+	AutoScan AutoScanNotifier
 	// ProbeZone webhook 带 price/available 时顺手落 · nil = 不落
 	ProbeZone ProbeZoneSink
 	Logger    *slog.Logger
@@ -107,6 +119,7 @@ func New(cfg Config) *Dispatcher {
 		dispatchStore: cfg.DispatchStore,
 		deathwatch:    cfg.Deathwatch,
 		notifier:      cfg.Notifier,
+		autoScan:      cfg.AutoScan,
 		probeZone:     cfg.ProbeZone,
 		logger:        logger,
 	}
@@ -306,6 +319,13 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 		}
 	}
 
+	// 第五刀 · 除了 fire 挂单车 · 也扫开了 auto 但没挂单的低水位车
+	// 装配层实现遍历 + Decide + Pull/Enqueue · webhookin 只负责喊一声
+	if d.autoScan != nil {
+		d.autoScan.OnNewKeys(ctx, string(e.VendorID),
+			string(providers.ZoneOf(string(e.Zone))), e.NewKeys)
+	}
+
 	// 部分 vendor webhook 带 price/available · 顺手落 vendor_probe_zone
 	// source='webhook'· 补 60s 探针间隙 + 前端 price-trend 多一路第三源
 	d.recordWebhookPrice(ctx, e)
@@ -382,6 +402,16 @@ func (d *Dispatcher) onNewKeysPerZone(ctx context.Context, e *providers.WebhookE
 				d.logger.Warn("webhookin: 逐区唤醒抢号链失败",
 					"vendor", e.VendorID, "zone", z.Zone, "err", err)
 			}
+		}
+	}
+
+	// 第五刀 · 逐区扫低水位 auto 车
+	if d.autoScan != nil {
+		for _, z := range e.PerZone {
+			if z.NewKeys <= 0 {
+				continue
+			}
+			d.autoScan.OnNewKeys(ctx, string(e.VendorID), string(z.Zone), z.NewKeys)
 		}
 	}
 	return "ok", nil

@@ -11,7 +11,9 @@ package main
 
 import (
 	"context"
+	crand "crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -789,6 +791,16 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		Deathwatch:    deathwatchTrigger,
 		// 抢号链：**最快的信号**（vendor push 200ms-2s · 抢到号主要靠这条）
 		Notifier: stockWatcher,
+		// 第五刀 · vendor 新号 webhook 到时扫低水位 auto 车 · 逐辆调 Decide
+		AutoScan: &webhookAutoScanBridge{
+			db:        database.DB,
+			orch:      orch,
+			modeMgr:   modeMgr,
+			killFlag:  killFlag,
+			turboFlag: turboFlag,
+			probeZone: probeZoneStore,
+			logger:    slog.Default(),
+		},
 		// 部分 vendor webhook 带 price/available · 顺手落 vendor_probe_zone
 		// source='webhook' · 补探针间隙 + 前端 price-trend 多一路
 		ProbeZone: probeZoneStore,
@@ -1323,4 +1335,200 @@ func strictestMaxPrice(a, b int64) int64 {
 		return a
 	}
 	return b
+}
+
+// webhookAutoScanBridge · 第五刀 · vendor 新号 webhook 到时 · 扫低水位 auto 车 · 逐辆调 Decide。
+//
+// 逻辑:
+//   1. 查所有 auto_refill_enabled=1 且 alive < watermark 的 bus(排除已挂 stockwatch 的)
+//   2. 逐辆调 decider.Decide(source=webhook) · 传当前 vendor/mode/价格数据
+//   3. Verdict=Pull → 调 orch.Pull(vendor 指定为 webhook 到的那家)
+//   4. Verdict=Enqueue → 交给 stockwatch 挂单(未来接·现在先 log)
+//   5. Verdict=Reject → 静默
+//
+// 出错只 log · 不影响 webhook 主流程返 200。
+type webhookAutoScanBridge struct {
+	db        *sql.DB
+	orch      *decider.Orchestrator
+	modeMgr   *stockwatch.ModeMgr
+	killFlag  *stockwatch.FileFlag
+	turboFlag *stockwatch.FileFlag
+	probeZone *vendorview.ProbeZoneStore
+	logger    *slog.Logger
+}
+
+func (b *webhookAutoScanBridge) OnNewKeys(ctx context.Context, vendorID, zone string, newKeys int) {
+	if b.orch == nil || b.db == nil {
+		return
+	}
+	// 查候选:auto_refill=1 且 status='active' 且 refill_watermark>0
+	// 排除已经在 stock_watcher watching 的 bus(那些走 stockwatch fire 路径)
+	rows, err := b.db.QueryContext(ctx, `
+		SELECT b.id, b.creator_passenger_id, b.refill_watermark,
+		       COALESCE(b.refill_min_count, 0),
+		       COALESCE(b.max_unit_price, 0),
+		       COALESCE(b.preferred_vendor, ''),
+		       COALESCE(SUM(CASE WHEN cl.status = 'alive' THEN 1 ELSE 0 END), 0) AS alive
+		  FROM bus b
+		  LEFT JOIN credential_ledger cl ON cl.owner_bus_id = b.id
+		 WHERE b.auto_refill_enabled = 1
+		   AND b.status = 'active'
+		   AND b.refill_watermark > 0
+		   AND NOT EXISTS (
+		     SELECT 1 FROM stock_watcher sw
+		      WHERE sw.bus_id = b.id AND sw.status = 'watching'
+		   )
+		 GROUP BY b.id
+		HAVING alive < b.refill_watermark`)
+	if err != nil {
+		b.logger.Warn("webhookAutoScanBridge: 扫候选失败", "err", err)
+		return
+	}
+	defer rows.Close()
+
+	mode := ""
+	if b.modeMgr != nil {
+		mode = b.modeMgr.Current().String()
+	}
+	kill := b.killFlag != nil && b.killFlag.Engaged()
+	turbo := b.turboFlag != nil && b.turboFlag.Engaged()
+
+	touched := 0
+	for rows.Next() {
+		var (
+			busID, ownerID  string
+			watermark       int
+			minCount        int
+			maxPrice        int64
+			preferredVendor string
+			aliveTotal      int
+		)
+		if err := rows.Scan(&busID, &ownerID, &watermark, &minCount, &maxPrice, &preferredVendor, &aliveTotal); err != nil {
+			continue
+		}
+		touched++
+		b.decideAndAct(ctx, busID, ownerID, watermark, minCount, maxPrice, preferredVendor, aliveTotal, vendorID, mode, kill, turbo)
+	}
+	if touched > 0 {
+		b.logger.Info("webhookAutoScanBridge: 扫低水位 auto 车",
+			"vendor", vendorID, "zone", zone, "new_keys", newKeys, "touched", touched)
+	}
+}
+
+// decideAndAct · 单车决策 + 动作
+func (b *webhookAutoScanBridge) decideAndAct(
+	ctx context.Context, busID, ownerID string,
+	watermark, minCount int, maxPrice int64, preferredVendor string,
+	aliveTotal int, webhookVendor string,
+	mode string, kill, turbo bool,
+) {
+	// 读乘客全局 max_price
+	var passengerMax int64
+	b.db.QueryRowContext(ctx,
+		`SELECT COALESCE(psd.max_unit_price, 0)
+		   FROM bus b JOIN passenger_strategy_default psd
+		     ON psd.passenger_id = b.creator_passenger_id
+		  WHERE b.id = ?`, busID).Scan(&passengerMax)
+
+	// 读车里活号按 vendor 分组
+	aliveByVendor := make(map[string]int)
+	arows, _ := b.db.QueryContext(ctx,
+		`SELECT vendor_id, COUNT(*) FROM credential_ledger
+		 WHERE owner_bus_id = ? AND status = 'alive' GROUP BY vendor_id`, busID)
+	if arows != nil {
+		for arows.Next() {
+			var v string
+			var n int
+			if err := arows.Scan(&v, &n); err == nil && v != "" {
+				aliveByVendor[v] = n
+			}
+		}
+		arows.Close()
+	}
+
+	// vendor 价格数据
+	prices := make(map[string]decider.VendorPriceSnapshot, len(aliveByVendor))
+	if b.probeZone != nil {
+		for vid := range aliveByVendor {
+			credits, at, ok := b.probeZone.LatestZoneCredits(ctx, vid, providers.Zone(""))
+			if !ok {
+				prices[vid] = decider.VendorPriceSnapshot{}
+				continue
+			}
+			prices[vid] = decider.VendorPriceSnapshot{
+				UnitPriceMicro: credits,
+				ObservedAt:     at,
+				Stale:          time.Since(at) > 2*time.Minute,
+			}
+		}
+	}
+
+	out, err := decider.Decide(ctx, decider.DecideInput{
+		Source:            decider.SourceWebhook,
+		BusID:             busID,
+		AliveByVendor:     aliveByVendor,
+		AutoRefillEnabled: true, // 扫时 SQL 已过滤
+		RefillWatermark:   watermark,
+		RefillMinCount:    minCount,
+		BusMaxUnitPrice:   maxPrice,
+		PassengerMaxPrice: passengerMax,
+		PreferredVendor:   preferredVendor,
+		Mode:              mode,
+		KillPulls:         kill,
+		Turbo:             turbo,
+		PricesByVendor:    prices,
+	})
+	if err != nil {
+		return
+	}
+
+	switch out.Verdict {
+	case decider.VerdictReject:
+		return
+	case decider.VerdictEnqueue:
+		b.logger.Info("webhookAutoScanBridge: Decide 判挂单 · 第五刀 · stockwatch 接入后填",
+			"bus", busID, "reason", out.RejectReason)
+		return
+	case decider.VerdictPull:
+		gap := watermark - aliveTotal
+		count := minCount
+		if count <= 0 {
+			count = gap
+		}
+		if count < 1 {
+			return
+		}
+		idem, err := newAutoScanIdemID()
+		if err != nil {
+			return
+		}
+		// vendor 优先用 webhook 推的那家(反正是刚来货的)· 兜底 preferred
+		v := webhookVendor
+		if v == "" {
+			v = preferredVendor
+		}
+		b.logger.Info("webhookAutoScanBridge: Decide→Pull",
+			"bus", busID, "vendor", v, "count", count)
+		_, perr := b.orch.Pull(ctx, decider.PullInput{
+			PassengerID:         ownerID,
+			BusID:               busID,
+			Count:               count,
+			VendorID:            providers.VendorID(v),
+			MaxUnitPrice:        strictestMaxPrice(maxPrice, passengerMax),
+			IdempotencyRecordID: idem,
+		})
+		if perr != nil {
+			b.logger.Info("webhookAutoScanBridge: Pull 失败·下次 webhook 再试",
+				"bus", busID, "err", perr)
+		}
+	}
+}
+
+// newAutoScanIdemID · 第五刀 webhook 扫每次生成幂等键
+func newAutoScanIdemID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := crand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
