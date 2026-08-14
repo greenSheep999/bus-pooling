@@ -1,6 +1,6 @@
 package api
 
-// v4.2 · 涨价历史端点 · GET /api/vendors/{anon_id}/price-trend
+// 涨价历史端点 · GET /api/vendors/{anon_id}/price-trend
 //
 // **公开** · 匿名（用 anon_id 不用 vendor_id）· 前端 vendors 页画价格走势。
 //

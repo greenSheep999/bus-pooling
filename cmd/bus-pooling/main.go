@@ -688,7 +688,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	// StalenessChecker · 定时扫 pipeline_health · 陈旧管线大声打 ERROR（系统自己盯）·
 	// 5min 一轮 · 首查延后一个间隔（等采集先盖上戳）
 	stalenessChecker := vendorview.NewStalenessChecker(healthStore, 5*time.Minute, slog.Default())
-	// v3.5 · 告警外发 · BP_ALERT_WEBHOOK 未设 = 只留 ERROR 日志（不外发）
+	// 告警外发 · BP_ALERT_WEBHOOK 未设 = 只留 ERROR 日志（不外发）
 	if alertURL := os.Getenv("BP_ALERT_WEBHOOK"); alertURL != "" {
 		notifier := vendorview.NewWebhookNotifier(alertURL, 30*time.Minute, slog.Default())
 		stalenessChecker.SetNotifier(notifier)
@@ -752,7 +752,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 			DB:      database.DB,
 			Pool:    poolClient,
 			Refunds: deathwatch.NewSQLRefundStore(database.DB),
-			// v3.2 · 号死后真调 decider.Pull 补车（Step 2）· puller 用 decider.RefillAdapter 桥接
+			// 号死后真调 decider.Pull 补车（Step 2）· puller 用 decider.RefillAdapter 桥接
 			RefillPuller: &refillPullerBridge{orch: orch},
 		})
 	}
@@ -769,7 +769,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		Deathwatch:    deathwatchTrigger,
 		// 抢号链：**最快的信号**（vendor push 200ms-2s · 抢到号主要靠这条）
 		Notifier: stockWatcher,
-		// v4.4 · 部分 vendor webhook 带 price/available · 顺手落 vendor_probe_zone
+		// 部分 vendor webhook 带 price/available · 顺手落 vendor_probe_zone
 		// source='webhook' · 补探针间隙 + 前端 price-trend 多一路
 		ProbeZone: probeZoneStore,
 	})
@@ -810,7 +810,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		VendorAccounts:      vaStore,           // vendor_account 表 · webhook 验签走这里读 secret
 		WebhookDispatcher:   webhookDispatcher, // vendor webhook 事件的分派器
 		Health:              healthStore,       // 数据管线心跳（migration 036）· data-health 端点用
-		Reconciler:          vendorview.NewReconciler(database.DB, vendorview.NewLedgerStore(database.DB)), // v3.1 对账
+		Reconciler:          vendorview.NewReconciler(database.DB, vendorview.NewLedgerStore(database.DB)), //  对账
 		AdminKey:            os.Getenv("BP_ADMIN_KEY"),
 	})
 	apiSrv.Routes(mux)
@@ -881,7 +881,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		go deathwatchWatcher.Run(ctx)
 		slog.Info("deathwatch 已启动")
 
-		// v3.2 · 自动补车 tick · 每 1min 消费 pending_refill · 装了 puller 才有意义
+		// 自动补车 tick · 每 1min 消费 pending_refill · 装了 puller 才有意义
 		if orch != nil {
 			go func() {
 				ticker := time.NewTicker(1 * time.Minute)
@@ -968,7 +968,7 @@ func (a *deathwatchTriggerAdapter) RefundOnce(ctx context.Context, limit int) we
 	}
 }
 
-// refillPullerBridge · v3.2 · 把 orch 转成 deathwatch.RefillPuller
+// refillPullerBridge · 把 orch 转成 deathwatch.RefillPuller
 //
 // 直接调 orch.Pull · 内部处理 err 分类（缺货保 pending / 硬错重试）。
 // 参考 decider/refill_puller.go 的 RefillAdapter · 但那份用 refillReq · 我们这里用

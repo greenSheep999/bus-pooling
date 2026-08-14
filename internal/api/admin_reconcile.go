@@ -1,8 +1,8 @@
 package api
 
-// admin_reconcile · v3.1 · 对账 dashboard 的 HTTP 入口
+// admin_reconcile · 对账 dashboard 的 HTTP 入口
 //
-// **背景**：docs/22 v3 · 上线后运维要看 wallet_ledger 跟 vendor_ledger 有没有对上 ·
+// **背景**：上线后运维要看 wallet_ledger 跟 vendor_ledger 有没有对上 ·
 // 老代码只在 CLI 有 `bus-pooling reconcile` · 后台看不见。这里挂个只读 HTTP 端点。
 //
 // **纯只读**：跟现有 Reconciler 一样只查 · 不改任何表。BP_ADMIN_KEY 头校验 · 绝不给前端。

@@ -72,7 +72,7 @@ type Server struct {
 	webhookDispatcher *webhookin.Dispatcher
 	// health · 数据管线心跳（migration 036）· admin data-health 端点读它 · 可 nil
 	health *vendorview.HealthStore
-	// reconciler · v3.1 对账器 · admin reconcile 端点读它 · 可 nil
+	// reconciler 对账器 · admin reconcile 端点读它 · 可 nil
 	reconciler *vendorview.Reconciler
 	// adminKey · BP_ADMIN_KEY · 非空才挂 /api/admin/* · 且请求要带 X-Admin-Key 匹配
 	adminKey string
@@ -111,7 +111,7 @@ type ServerDeps struct {
 	WebhookDispatcher *webhookin.Dispatcher
 	// Health 数据管线心跳（migration 036）· admin data-health 端点用 · 允许 nil
 	Health *vendorview.HealthStore
-	// Reconciler v3.1 对账器 · admin reconcile 端点用 · 允许 nil
+	// Reconciler  对账器 · admin reconcile 端点用 · 允许 nil
 	Reconciler *vendorview.Reconciler
 	// AdminKey BP_ADMIN_KEY · 非空才挂 /api/admin/* 运维端点（X-Admin-Key 头校验）
 	AdminKey string
@@ -169,7 +169,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/me", handler(s.RequireAuth(s.handleMe)))
 	mux.Handle("GET /api/me/wallet", handler(s.RequireAuth(s.handleWallet)))
 	mux.Handle("GET /api/me/ledger", handler(s.RequireAuth(s.handleLedger)))
-	mux.Handle("GET /api/me/history-summary", handler(s.RequireAuth(s.handleMeHistorySummary))) // v4.3 · 我买过多少号/花过多少
+	mux.Handle("GET /api/me/history-summary", handler(s.RequireAuth(s.handleMeHistorySummary))) // 我买过多少号/花过多少
 	mux.Handle("GET /api/me/api-keys", handler(s.RequireAuth(s.handleListAPIKeys)))
 	mux.Handle("DELETE /api/me/api-keys/{id}", handler(s.RequireAuth(s.handleRevokeAPIKey)))
 	mux.Handle("GET /api/me/invite", handler(s.RequireAuth(s.handleGetMyInvite)))
@@ -250,7 +250,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/vendors/status", handler(s.handleVendorsStatus))                         // 公开
 	mux.Handle("GET /api/vendors/status/{anon_id}/trend", handler(s.handleVendorStatusTrend))     // 公开 · 老契约（按 source 两种 schema）
 	mux.Handle("GET /api/vendors/status/{anon_id}/events", handler(s.handleVendorDispatchEvents)) // 公开 · 统一事件流 · /status 页用这个
-	mux.Handle("GET /api/vendors/status/{anon_id}/price-trend", handler(s.handlePriceTrend))      // v4.2 · 涨价历史 · 3 源合并
+	mux.Handle("GET /api/vendors/status/{anon_id}/price-trend", handler(s.handlePriceTrend))      // 涨价历史 · 3 源合并
 	mux.Handle("GET /api/vendors/stock", handler(s.RequireAuth(s.handleVendorsStock)))
 	mux.Handle("GET /api/vendors/prices", handler(s.RequireAuth(s.handleVendorsPrices)))
 	mux.Handle("GET /api/vendors/stats", handler(s.RequireAuth(s.handleVendorsStats)))
@@ -265,7 +265,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 		mux.Handle("GET /api/admin/data-health", handler(s.requireAdmin(s.handleDataHealth)))
 		// v1-E · 运维单页 · 每家 vendor 一屏：余额 + fleet 状态 + 今日 dispatch + zone 现价
 		mux.Handle("GET /api/admin/overview", handler(s.requireAdmin(s.handleAdminOverview)))
-		// v3.1 · 对账 dashboard · wallet_ledger vs vendor_ledger · ?since_days=N
+		// 对账 dashboard · wallet_ledger vs vendor_ledger · ?since_days=N
 		mux.Handle("GET /api/admin/reconcile", handler(s.requireAdmin(s.handleAdminReconcile)))
 	}
 

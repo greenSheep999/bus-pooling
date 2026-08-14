@@ -1,6 +1,6 @@
 package decider
 
-// RefillPuller · v3.2 · deathwatch 号死后调 Pull 补车的薄壳
+// RefillPuller · deathwatch 号死后调 Pull 补车的薄壳
 //
 // **为什么单独一个文件**：deathwatch 定义了 RefillPuller 接口 · orchestrator 实现它。
 // 但 orchestrator.go 已经很大 · 塞进去乱。抽出来这个 file 只做接口适配。

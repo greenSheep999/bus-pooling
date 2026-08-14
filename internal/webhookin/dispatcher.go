@@ -69,7 +69,7 @@ type RestockNotifier interface {
 	Notify(ctx context.Context, p stockwatch.NotifyParams) error
 }
 
-// ProbeZoneSink · v4.4 · 部分 vendor webhook 带 price/available · 顺手落
+// ProbeZoneSink · 部分 vendor webhook 带 price/available · 顺手落
 // vendor_probe_zone（source='webhook'）· 补 60s 探针间隙 + 前端 price-trend 多一路。
 // nil = 不落价 · 事件流不受影响。
 type ProbeZoneSink interface {
@@ -92,7 +92,7 @@ type Config struct {
 	Deathwatch    SweepTrigger
 	// Notifier 抢号链通知口 · new_keys 到时唤醒挂单 · nil = 不通知
 	Notifier RestockNotifier
-	// ProbeZone v4.4 · webhook 带 price/available 时顺手落 · nil = 不落
+	// ProbeZone webhook 带 price/available 时顺手落 · nil = 不落
 	ProbeZone ProbeZoneSink
 	Logger    *slog.Logger
 }
@@ -306,7 +306,7 @@ func (d *Dispatcher) onNewKeys(ctx context.Context, e *providers.WebhookEvent) (
 		}
 	}
 
-	// v4.4 · 部分 vendor webhook 带 price/available · 顺手落 vendor_probe_zone
+	// 部分 vendor webhook 带 price/available · 顺手落 vendor_probe_zone
 	// source='webhook'· 补 60s 探针间隙 + 前端 price-trend 多一路第三源
 	d.recordWebhookPrice(ctx, e)
 	return "ok", nil

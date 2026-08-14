@@ -1,6 +1,6 @@
 package vendorview
 
-// v3.5 · 告警外发 · 陈旧管线不止 ERROR 日志 · 主动 POST 到 webhook。
+// 告警外发 · 陈旧管线不止 ERROR 日志 · 主动 POST 到 webhook。
 //
 // **为什么要有这个**：日志里 ERROR 靠人 tail · 半夜没人看。把 stale 事件
 // POST 到一个 webhook（企业微信 / 钉钉 / Slack / 自建告警网关），配上

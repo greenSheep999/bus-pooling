@@ -1,9 +1,9 @@
 package api
 
-// v4.3 · 乘客对账页 · GET /api/me/history-summary
+// 乘客对账页 · GET /api/me/history-summary
 //
-// **给乘客看的**（不是 admin · 但只显示自己的）· docs/22 v4 目标：
-//   "乘客对账页 · 我买过多少号 · 死了多少 · 退了多少"
+// **给乘客看的**（不是 admin · 但只显示自己的）：
+//   "我买过多少号 · 死了多少 · 退了多少"
 //
 // 数据全从 credential_ledger + wallet_ledger 汇总 · 不打 vendor 端点。
 //
@@ -66,7 +66,7 @@ func loadMeHistorySummary(ctx context.Context, db *sql.DB, passengerID string, v
 	// 1. 从 credential_ledger 拿我拥有的号 · 按 vendor 分组
 	// credential_ledger 记的是分给我的号（owner_record_passenger_id 或经 bus_member 关联）
 	// 简化：这里只统计 owner_record_passenger_id = 我的 · bus 内的号需另外 join
-	// v4.3 首版：只统计 record group（单独拉的号）· bus 的号 v4.4 再补
+	// 首版：只统计 record group（单独拉的号）· bus 的号  再补
 	credRows, err := db.QueryContext(ctx, `
 		SELECT pr.vendor_id, cl.status,
 		       COALESCE(pr.key_cost_total / NULLIF(pr.count_purchased, 0), 0) AS cost_per_key
@@ -135,7 +135,7 @@ func loadMeHistorySummary(ctx context.Context, db *sql.DB, passengerID string, v
 			DeadKeys:   s.dead,
 			SpentMicro: s.spent,
 			// RefundMicro · 按 vendor 拆分需要 wallet_ledger.vendor_id 冗余列（不做）·
-			// v4.3 首版返 0 · 前端只显示总量
+			// 首版返 0 · 前端只显示总量
 			RefundMicro: 0,
 		})
 	}

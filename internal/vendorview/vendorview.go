@@ -364,13 +364,13 @@ func (s *Service) PickBestVendor(ctx context.Context, zoneHint string) (provider
 	return s.PickBestVendorExcluding(ctx, zoneHint, nil)
 }
 
-// PickBestVendorExcluding · v3.3 · 排除若干 vendor 后再选（余额自动切换用）
+// PickBestVendorExcluding · 排除若干 vendor 后再选（余额自动切换用）
 //
-// **v3.3 首版**：exclude 空 = PickBestVendor 老行为；exclude 非空 = 若最优不在 exclude 就返之 ·
+// **首版**：exclude 空 = PickBestVendor 老行为；exclude 非空 = 若最优不在 exclude 就返之 ·
 // 否则暂返 false（还没做 nth-best 打分器）。上层 orchestrator 收 false = 走 ErrVendorInsufficient
-// 兜底（跟 v3.3 前一致）· 不会退化。
+// 兜底（跟 之前一致）· 不会退化。
 //
-// **完整 nth-best 实现放 v3.4**：抽 AutoPick 内部 cand 数组返 · 上层遍历。改动集中 · 好回滚。
+// **完整 nth-best 实现放 **：抽 AutoPick 内部 cand 数组返 · 上层遍历。改动集中 · 好回滚。
 func (s *Service) PickBestVendorExcluding(ctx context.Context, zoneHint string, exclude []providers.VendorID) (providers.VendorID, providers.Zone, bool) {
 	vid, zn, ok := s.PickBestVendor(ctx, zoneHint)
 	if !ok {
@@ -378,7 +378,7 @@ func (s *Service) PickBestVendorExcluding(ctx context.Context, zoneHint string, 
 	}
 	for _, e := range exclude {
 		if e == vid {
-			// 最优在排除里 · v3.3 首版返 false（v3.4 会实现真正的 nth-best）
+			// 最优在排除里 · 首版返 false（后续会实现真正的 nth-best）
 			return "", "", false
 		}
 	}
@@ -745,7 +745,7 @@ func anonIDOf(id providers.VendorID) string {
 	return hex.EncodeToString(h[:])[:6]
 }
 
-// VendorIDForAnon · anon → 内部 vendor_id 反查（v4.2 · 2026-08-15）
+// VendorIDForAnon · anon → 内部 vendor_id 反查
 //
 // 匿名端点（前端传 anon_id）要落到真 vendor 表查数据。跟 StatusTrend 里的循环
 // 反查同一套逻辑 · 抽出来公开。未找到返 ""。
@@ -761,12 +761,12 @@ func (s *Service) VendorIDForAnon(anonID string) string {
 	return ""
 }
 
-// AnonIDFor · vendor_id → anon_id · 脱敏字段的公开出口（v4.3）
+// AnonIDFor · vendor_id → anon_id · 脱敏字段的公开出口
 func (s *Service) AnonIDFor(vendorID string) string {
 	return anonIDOf(providers.VendorID(vendorID))
 }
 
-// AnonLabelFor · vendor_id → 匿名 label（v4.3）
+// AnonLabelFor · vendor_id → 匿名 label
 func (s *Service) AnonLabelFor(vendorID string) string {
 	return anonLabelOf(providers.VendorID(vendorID))
 }

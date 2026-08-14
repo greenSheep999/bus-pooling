@@ -357,7 +357,7 @@ func (a *Adapter) Parse(rawBody []byte, _ http.Header) (*providers.WebhookEvent,
 		ReceivedAt:      parseWebhookTime(wp),
 		RawPayload:      rawBody,
 	}
-	// v4.4 · 本家 webhook 独有的 price / available 字段 · 让 dispatcher 顺手
+	// 本家 webhook 独有的 price / available 字段 · 让 dispatcher 顺手
 	// 落 vendor_probe_zone（source='webhook'）· 补探针间隙 + 前端 price-trend 多一路
 	if wp.Price > 0 {
 		m := credits(int64(wp.Price))

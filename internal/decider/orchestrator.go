@@ -78,7 +78,7 @@ type PricingLookup interface {
 type VendorPicker interface {
 	// PickBestVendor 返 (vendorID, zone, ok)。全网缺货 ok=false · 上层 defaultVendor 兜底。
 	PickBestVendor(ctx context.Context, zoneHint string) (providers.VendorID, providers.Zone, bool)
-	// PickBestVendorExcluding · v3.3 · 排除若干 vendor 后再选（余额不够切下一家用）·
+	// PickBestVendorExcluding · 排除若干 vendor 后再选（余额不够切下一家用）·
 	// 全排除后无 ok=false · 上层判 ErrVendorInsufficient。
 	PickBestVendorExcluding(ctx context.Context, zoneHint string, exclude []providers.VendorID) (providers.VendorID, providers.Zone, bool)
 }
@@ -446,12 +446,12 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 	// （不误伤 · 让 vendor 自己拒）· 只在真判定不够时拦。
 	if o.balanceChecker != nil {
 		if ok, remain := o.balanceChecker.Enough(vendor.ID(), reserved); !ok {
-			// **v3.3 · 2026-08-15**：当前 vendor 余额不够 · 尝试切下一家。
+			// ：当前 vendor 余额不够 · 尝试切下一家。
 			// 只当 in.VendorID 空时切（auto 模式）· 用户显式指定的不换（尊重意图）。
 			// 装了 picker 才切 · 切不到就走老逻辑返 ErrVendorInsufficient。
 			//
 			// **不重算 reserved**：切换后新 vendor 的 unitCostHint 可能不同 · 但严格重算
-			// 意味着大改主流程（rates / rawUnitPrice 都要跟着走）· v3.3 首版**保守用同一 reserved**
+			// 意味着大改主流程（rates / rawUnitPrice 都要跟着走）· 首版**保守用同一 reserved**
 			// 判 · 相当于"我方账户能覆盖当前价 · 换家至少不比当前贵才行"—— 这在同 zone 内多家
 			// 差价不大（1% 内 · docs 实测）时正确率够高。
 			if o.picker != nil && in.VendorID == "" {

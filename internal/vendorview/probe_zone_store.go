@@ -96,7 +96,7 @@ func (s *ProbeZoneStore) LatestZoneCredits(
 	if c, at, ok := s.querySource(ctx, vendorID, zone, "vendor_self"); ok {
 		return c, at, true
 	}
-	// fallback ① vendor 主动推来的实时价（v4.4 · 部分 vendor webhook 带 price · 60s 探针间隙的补丁）
+	// fallback ① vendor 主动推来的实时价（部分 vendor webhook 带 price · 60s 探针间隙的补丁）
 	if c, at, ok := s.querySource(ctx, vendorID, zone, "webhook"); ok {
 		return c, at, true
 	}
@@ -112,7 +112,7 @@ func (s *ProbeZoneStore) LatestZoneCredits(
 	return s.querySource(ctx, vendorID, zone, "")
 }
 
-// InsertWebhook · v4.4 · webhookin 收到带 price/available 的事件后调用 · 落一行 source='webhook'
+// InsertWebhook · webhookin 收到带 price/available 的事件后调用 · 落一行 source='webhook'
 //
 // priceCredits · microunit（0 = 不填价格 · 该 vendor 本次 webhook 没带）
 // available    · 库存快照（0 = 不填 · 部分 vendor 只推价不推库存）

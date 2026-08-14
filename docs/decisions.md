@@ -2254,6 +2254,69 @@ fire 触发的那轮缺货**不能再挂单**（否则刚 fire 的挂单被复�
 
 **xi8 credentials**：走 `vendor_account` 表加密存储 · `seed-vendor xi8 --api-key=<key>` · 白名单加了 xi8 但注释"非 vendor · 内部数据源"（`cmd/bus-pooling/seed_vendor.go`）。
 
+## §12 拼车链路端到端
+
+**这一节存在的理由**：08-14 到 08-15 我把同一个产品的同一条链路 · 造了四份文档
+（21/22/23/24）+ 一套私造版本号（v1/v2/v3/v4）· 跟阶段号 1a-1e 双轨 · 用户拍桌
+"vendor 全部做完了？1c 1d 都做完了？你到底看哪个编号？"—— **四份文档 + 私造版本号
+全部作废**。
+
+**产品只有一个：拼车**。所有工作围绕**同一条链路**：
+
+```
+vendor 供给（6 家 + xi8 聚合站）
+  · 事件源：webhook (new_keys/all_keys_dead/warranty_refund) · 探针 60s · xi8 30s/5min · Balance 5min
+  · 我方在 vendor 侧的钱：vendorbalance.Cache 5min 预检
+        ↓
+系统调度拼车（本仓库做的事）
+  · 加价栈叠：surcharge_rule 7 种 kind · 定价一次算清
+  · 拉号出口：decider.Pull（唯一）· 内部 planSplit 按 bus 全员分摊
+  · 抢号链：stockwatch 挂单等 webhook · ModeMgr tight/balance/cool + TURBO/KILL 哨兵
+  · 号死链：deathwatch 探活 + webhook · 走 vendor 政策退款 · 分摊回乘客
+  · 补车链：deathwatch RefillTick 号死立即补 + bus.Scheduler 5min 兜底扫水位
+  · vendor 切换：BalanceChecker + PickBestVendorExcluding · 没钱切下一家
+        ↓
+下游消费（乘客 + 乘客号池）
+  · 号进 bus group（拼车）or record-pid group（单独）
+  · 三种去向：留车里跑 / 复制到 passengerpool 双写 / handoff 拿走
+  · 拿走前均可看寿命 · 用量 · 退款历史
+```
+
+所有 vendor / 系统 / 用户策略都是这条链上的"位置" —— **谁在哪一段动手** ·
+不是三个平行产品。别再当三个产品拆断层 ABCDEF。
+
+**当前状态**（08-15 收工）：
+
+**已跑通的位置**（生产在跑 · 别再拆成独立"决策"）：
+- 号价 vendor 侧 pass-through · 加价栈叠 · 分摊到乘客
+- 号死 webhook 或探针任一到达 · 走 vendor 政策退款 · 分摊回乘客
+- 6 家 vendor 探针 60s + xi8 聚合 · webhook 带的 price/available 也落库
+- 缺货挂单 · vendor webhook 到 fire · 幂等到 vendor 不重扣
+- 匿名撮合 + 邀请码 + 分摊 · `decider.Pull` 内部 planSplit 已做
+- 号死立即补 · deathwatch.RefillTick 真调 decider.Pull
+- vendor 余额不够自动切下一家 · Picker + BalanceChecker
+- 陈旧管线告警外发 · StalenessChecker + AlertNotifier
+- 涨价历史 / 乘客对账 / 号寿命 端点
+
+**链路上待补的位置**（都在同一条链 · 少一个漏一个）：
+
+1. **vendor 新号 webhook 只喂"缺货挂单车"** · 开了 auto_refill 但没挂单的车收不到唤醒
+2. **prebuy-pool 抢到无主号无处可去** · 5min TTL 到期只能退回 vendor
+3. **多 vendor 同车是否该拉** · 现只看整车 alive · 不看"另一家还撑得住"
+4. **建拼车后第一次一律手动** · 用户原则 · 但没有 UI 或代码保证
+5. **保底触发方式** · 水位低应挂 stockwatch 等 webhook · 不是硬下单
+6. **用户字段命名和语义** · `RefillWatermark` 目标还是红线不清 · `DailyRoundLimit`
+   车级实际不生效但没删
+
+这六条**在同一条链上** · 拼车产品缺一个位置就漏一个 · 别再当独立需求各起文档。
+
+**下一步该在哪个位置动手 · 等用户拍板 · 拍完只改本节 · 不新开文档**。
+
+**死路 · 别再走**：
+- ❌ 造 v1/v2/v3/v4 或 P0/P1/P2 类第二套编号 —— 阶段号只用 `CLAUDE §7`（1a-1e / 2a-2b / 3a-3d）
+- ❌ 拉号相关新开 `docs/2N-xxx.md` —— 归本节 §12
+- ❌ 代码注释 / commit 里出现"v3.2" / "v4.4" —— 全是私造马甲 · 见 09-15 sed 清理
+
 ## 记录约定（未来加决策时）
 
 - 每条格式：`### N.M 提议 [❌ / ⏸ / ✅]` + 提议 + 状态说明 + 参考（若有）

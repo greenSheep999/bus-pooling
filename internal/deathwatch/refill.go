@@ -151,7 +151,7 @@ func (w *Watcher) RefillTick(ctx context.Context, limit int) (processed int, err
 	}
 
 	for _, r := range items {
-		// **Step 2**（v3.2 · 2026-08-15）：puller 装配了就真拉 · 未装配走 Step 1（只 log 标 skipped）
+		// **Step 2**：puller 装配了就真拉 · 未装配走 Step 1（只 log 标 skipped）
 		if w.refillPuller == nil {
 			w.log.Info("deathwatch: pending_refill 待补（未装 puller · 只 log）",
 				"refill_id", r.ID, "dead_cred", r.CredID, "bus", r.BusID,

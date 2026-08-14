@@ -40,7 +40,7 @@ type WebhookEvent struct {
 	RawPayload      json.RawMessage
 	// UnitPrice ★ 部分 vendor webhook 载荷里带的**当刻单价**（`price` 字段）·
 	// 非 nil 表示该 vendor 主动推来了一次实时价格 · 让 webhookin 顺手落 vendor_probe_zone
-	// 一行（source='webhook'）· 补 60s 探针间隙 · docs/22 v4.4。
+	// 一行（source='webhook'）· 补 60s 探针间隙 · decisions §12.3.6。
 	UnitPrice *Money
 	// Available ★ 部分 vendor webhook 载荷里带的**当刻库存**（`available` 字段）·
 	// 非 nil 时跟 UnitPrice 一起落 vendor_probe_zone · 交叉核对探针。

@@ -44,12 +44,12 @@ type Watcher struct {
 	now func() time.Time
 	// refunds 质保退款的库操作 · nil = 不跑退款（老装配 / 测试）
 	refunds RefundStore
-	// refillPuller · Step 2 真调拉号（v3.2 · 2026-08-15）· nil = 走 Step 1 只 log 不真拉
+	// refillPuller · Step 2 真调拉号· nil = 走 Step 1 只 log 不真拉
 	// 装配层实现 · 避免 deathwatch → decider 硬依赖
 	refillPuller RefillPuller
 }
 
-// RefillPuller · 号死后触发新一轮拉号的抽象（v3.2）
+// RefillPuller · 号死后触发新一轮拉号的抽象
 //
 // 实现方 decider.Orchestrator.Pull 的一个薄封装 · 从 pending_refill 一条记录
 // 重构造 decider.PullInput 并调用。
@@ -82,7 +82,7 @@ type Config struct {
 	Now func() time.Time
 	// Refunds 质保退款库操作 · nil = 不跑退款（1c 起装 NewSQLRefundStore(db)）
 	Refunds RefundStore
-	// RefillPuller · Step 2 · 号死后真调拉号（v3.2）· nil = Step 1 只 log
+	// RefillPuller · Step 2 · 号死后真调拉号· nil = Step 1 只 log
 	RefillPuller RefillPuller
 }
 
