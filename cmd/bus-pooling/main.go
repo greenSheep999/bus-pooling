@@ -49,6 +49,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/topup"
 	"github.com/bus-pooling/bus-pooling/internal/topupchannel"
 	"github.com/bus-pooling/bus-pooling/internal/vendoraccount"
+	"github.com/bus-pooling/bus-pooling/internal/vendorbalance"
 	"github.com/bus-pooling/bus-pooling/internal/vendorview"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
 	"github.com/bus-pooling/bus-pooling/internal/web"
@@ -619,6 +620,19 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	// decider.Pull 里 VendorID 空且 preferred 也空时 · 走 vendorSvc.PickBestVendor（同一套打分）。
 	// 装配顺序：orch → vendorSvc → orch.SetPicker（跟 stockwatch.SetFirer 一样解构造环）。
 	orch.SetPicker(vendorSvc)
+
+	// **P5 · 上游余额预检**（2026-08-14）：每 5min poll 一次每家 vendor 的 Balance() ·
+	// decider.Pull 拉号前查缓存 · 余额<预估总额直接拒 ErrVendorInsufficient · 不发下单请求。
+	// 避免 vendor 侧返 insufficient_balance 的被动失败。老装配 nil cache 走老行为。
+	balanceCache := vendorbalance.New(vendorbalance.Config{
+		Registry: vendorRegistry,
+		Logger:   slog.Default(),
+		Interval: 5 * time.Minute,
+		Timeout:  8 * time.Second,
+	})
+	balanceCache.Start(ctx)
+	defer balanceCache.Stop(3 * time.Second)
+	orch.SetBalanceChecker(balanceCache)
 
 	// vendor 状态探针 · 每 vendor 一个 goroutine · 每 60s 拨号 vendor.Stock
 	// 结果写 vendor_probe · /api/vendors/status 从表读，不实时打上游

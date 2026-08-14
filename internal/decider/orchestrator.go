@@ -48,6 +48,8 @@ type Orchestrator struct {
 	enqueuer StockEnqueuer
 	// picker · 自动选 vendor（P4）· nil = 走 defaultVendor（老行为 · 测试默认）
 	picker VendorPicker
+	// balanceChecker · 上游余额预检（P5）· nil = 不预检
+	balanceChecker BalanceChecker
 	// now / newID 可注入，测试里用来控时钟和 id 生成
 	now   func() time.Time
 	newID func() string
@@ -76,6 +78,17 @@ type PricingLookup interface {
 type VendorPicker interface {
 	// PickBestVendor 返 (vendorID, zone, ok)。全网缺货 ok=false · 上层 defaultVendor 兜底。
 	PickBestVendor(ctx context.Context, zoneHint string) (providers.VendorID, providers.Zone, bool)
+}
+
+// BalanceChecker · 上游余额预检的抽象（避免 decider → vendorbalance 硬依赖）。
+// 实现方 vendorbalance.Cache · 装配层注入。
+//
+// **P5 · 2026-08-14**：Pull 拉号前查缓存 · 余额<预估总额直接返 ErrVendorInsufficient ·
+// 不发下单请求 · 避免 vendor 侧返 insufficient_balance 的被动失败。
+type BalanceChecker interface {
+	// Enough 判定 vendor 余额是否够 estCredits · ok=false 表示不够 · remain 是剩余。
+	// 未 poll 过 / USD 家未换算币种 · 一律返 (true, _) 保守放行（不误伤）。
+	Enough(vendorID providers.VendorID, estCredits int64) (ok bool, remain int64)
 }
 
 // CreditsLookup · 读 vendor_probe / vendor_probe_zone 的积分（docs/18 §1.4）·
@@ -120,6 +133,8 @@ type Config struct {
 	Enqueuer StockEnqueuer
 	// Picker · 自动选 vendor（VendorID 空 + preferred 也空时用）· nil = 走 defaultVendor（老行为）
 	Picker VendorPicker
+	// BalanceChecker · 上游余额预检（P5）· nil = 不预检（老行为 · 测试默认）
+	BalanceChecker BalanceChecker
 }
 
 func New(cfg Config) *Orchestrator {
@@ -144,10 +159,19 @@ func New(cfg Config) *Orchestrator {
 		ratesResolver: cfg.RatesResolver,
 		limits:        cfg.Limits,
 		enqueuer:      cfg.Enqueuer,
-		picker:        cfg.Picker,
-		now:           func() time.Time { return time.Now().UTC() },
-		newID:         uuid.NewString,
+		picker:         cfg.Picker,
+		balanceChecker: cfg.BalanceChecker,
+		now:            func() time.Time { return time.Now().UTC() },
+		newID:          uuid.NewString,
 	}
+}
+
+// SetBalanceChecker · 装配后补设 · 跟 SetPicker 同样解构造环。
+func (o *Orchestrator) SetBalanceChecker(c BalanceChecker) {
+	if o == nil {
+		return
+	}
+	o.balanceChecker = c
 }
 
 // resolveRates · 1b P1-2B · 从 surcharge_rule 引擎按上下文求 Rates ·
@@ -293,6 +317,9 @@ var (
 	ErrPartialFill = errors.New("decider: 部分成交（差额已退回）")
 	// ErrUnknownVendor · 请求的 vendor 未装配（api 层应先校验挡·防走到这里）
 	ErrUnknownVendor = errors.New("decider: 未知 vendor")
+	// ErrVendorInsufficient · 上游 vendor 余额不足（P5 · 预检拦下 · 不发下单请求）
+	// **区分于 ErrInsufficientBalance** —— 那个是我方乘客积分不足 · 这个是我方在 vendor 侧的钱不够
+	ErrVendorInsufficient = errors.New("decider: 上游 vendor 余额不足")
 	// ErrInitiatorInsufficient · 发起人付不起自己那份分摊 · 整轮失败
 	// （不能让其他成员替他垫 · decisions §8.18）
 	ErrInitiatorInsufficient = errors.New("decider: 余额不足")
@@ -408,6 +435,18 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 	}
 	rates := o.resolveRates(ctx, rc)
 	reserved := Price(unitCostHint, in.Count, rates).Total
+
+	// **P5 · 上游余额预检**（2026-08-14）：查缓存 · 余额不够直接拒 · 不发下单请求。
+	//
+	// 老代码没做 —— 上游没钱只能等 vendor 返 insufficient_balance 被动失败 · 用户体验差 ·
+	// 我方账本也没预警。缓存 5min 一 poll · Enough 未 poll 过或 USD 家未换算币种保守放行
+	// （不误伤 · 让 vendor 自己拒）· 只在真判定不够时拦。
+	if o.balanceChecker != nil {
+		if ok, remain := o.balanceChecker.Enough(vendor.ID(), reserved); !ok {
+			return nil, fmt.Errorf("%w: 预估需 %d microunit · 余 %d",
+				ErrVendorInsufficient, reserved, remain)
+		}
+	}
 
 	// 涨价保护上限 · 用 vendor_pricing 的换算规则把积分上限折回 vendor 币种。
 	// 表里币种跟快照币种对不上时不设（配错的表会把上限放大几倍 · 见 quoteCurrencyMatches）
