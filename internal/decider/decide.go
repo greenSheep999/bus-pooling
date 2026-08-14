@@ -7,7 +7,7 @@ package decider
 // 谁调它:
 //   - bus.Scheduler(水位巡检 5min)
 //   - deathwatch.RefillTick(号死后是否补 1min)
-//   - stockwatch.Notify(webhook/probe 唤醒挂单 · 第五刀待接)
+//   - stockwatch.Notify(webhook/probe 唤醒挂单)
 //   - 未来:usage(用量见底) / prebuy(付费抢号 · 待决策能力)
 //
 // 谁不调它:
@@ -85,7 +85,7 @@ type VendorPriceSnapshot struct {
 //   - Verdict=VerdictEnqueue · 调用方调 stockwatch.Enqueue(带 EnqueueParams)
 type DecideOutput struct {
 	Verdict      Verdict
-	RejectReason string   // Verdict=Reject 时填
+	RejectReason string     // Verdict=Reject 时填
 	PullInput    *PullInput // Verdict=Pull 时填
 	// EnqueueParams · Verdict=Enqueue 时填(用 stockwatch.EnqueueParams)
 	// 类型改成 any 避免 decider → stockwatch 硬依赖(装配层判类型)
@@ -97,8 +97,8 @@ type Verdict int
 
 const (
 	VerdictReject  Verdict = iota // 拒
-	VerdictPull                    // 下单 · 调 decider.Pull
-	VerdictEnqueue                 // 挂单 · 调 stockwatch.Enqueue
+	VerdictPull                   // 下单 · 调 decider.Pull
+	VerdictEnqueue                // 挂单 · 调 stockwatch.Enqueue
 )
 
 // Decide · 六步串行判据 · 见 docs/15-scheduling.md §5.2
@@ -212,8 +212,9 @@ func vendorPriceOK(prices map[string]VendorPriceSnapshot, vendorID string, maxPr
 // decideOutputByMode · Step 4 表 · 返 (verdict, reason if reject)
 //
 // Case A 整车挂 · 强制规则 · 不看 source
-//   Cool → Pull(有货直拉)
-//   Balance / Tight → Enqueue(紧俏时下单必 ErrNoStock)
+//
+//	Cool → Pull(有货直拉)
+//	Balance / Tight → Enqueue(紧俏时下单必 ErrNoStock)
 //
 // Case C 常规(alive>0 但撑不住) · 看 source × mode
 func decideOutputByMode(in DecideInput, allDead bool) (Verdict, string) {

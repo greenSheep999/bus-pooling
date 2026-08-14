@@ -214,7 +214,7 @@
 - **P 标签**：1a 基础（探活 + 踢死号）→ 1d（webhook 归一化 + 自动补车 + 寿命统计）
 - **不做**：
   - **不 import `strategy`**（deathwatch → strategy 意图池是老思路 · 已废）
-  - **不自己决定要不要补车**（现代码 `RefillTick` 直接 Pull 是漂移 · 待第二刀改成调 `decider.Decide`）
+  - **不自己决定要不要补车**（现代码 `RefillTick` 已接 `decider.Decide` · 不再自己直拉）
   - **不选 vendor / 不动加价栈**（那是 decider 的活）
 - **规则 A**：见 §00.7.5
 

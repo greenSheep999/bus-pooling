@@ -846,9 +846,9 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		SecureCookie:        secureCookie,
 		Promos:              cfg.Promo.Items,
 		CommunityChannels:   cfg.Community.Channels,
-		VendorAccounts:      vaStore,           // vendor_account 表 · webhook 验签走这里读 secret
-		WebhookDispatcher:   webhookDispatcher, // vendor webhook 事件的分派器
-		Health:              healthStore,       // 数据管线心跳（migration 036）· data-health 端点用
+		VendorAccounts:      vaStore,                                                                       // vendor_account 表 · webhook 验签走这里读 secret
+		WebhookDispatcher:   webhookDispatcher,                                                             // vendor webhook 事件的分派器
+		Health:              healthStore,                                                                   // 数据管线心跳（migration 036）· data-health 端点用
 		Reconciler:          vendorview.NewReconciler(database.DB, vendorview.NewLedgerStore(database.DB)), //  对账
 		AdminKey:            os.Getenv("BP_ADMIN_KEY"),
 	})
@@ -1040,11 +1040,11 @@ func (b *refillPullerBridge) Refill(ctx context.Context, req deathwatch.RefillRe
 // refillDecideBridge · 第三刀 · 把 decider.Decide 接进 deathwatch.RefillTick
 //
 // 负责:
-//   1. 读 bus.Strategy(auto/watermark/min_count/max_price/preferred_vendor)
-//   2. 读 passenger_strategy_default(max_price)
-//   3. 组装 DecideInput(source=death_refill · 单车视角)
-//   4. 调 decider.Decide
-//   5. 输出翻译成 deathwatch.RefillVerdict
+//  1. 读 bus.Strategy(auto/watermark/min_count/max_price/preferred_vendor)
+//  2. 读 passenger_strategy_default(max_price)
+//  3. 组装 DecideInput(source=death_refill · 单车视角)
+//  4. 调 decider.Decide
+//  5. 输出翻译成 deathwatch.RefillVerdict
 //
 // 只处理有 bus_id 的 pending_refill · 无 bus_id(record group 单独号)直接放行。
 type refillDecideBridge struct {
@@ -1252,10 +1252,10 @@ func (b *autoRefillBridge) Refill(ctx context.Context, req bus.AutoRefillRequest
 // schedulerDecideBridge · 第二刀 · 把 decider.Decide 接进 bus.Scheduler
 //
 // 负责:
-//   1. 从 bus.SchedulerCandidate + stockwatch.ModeMgr + passenger_strategy_default
-//      + vendor_probe_zone 组装 decider.DecideInput
-//   2. 调 decider.Decide
-//   3. 输出翻译成 bus.SchedulerVerdict
+//  1. 从 bus.SchedulerCandidate + stockwatch.ModeMgr + passenger_strategy_default
+//     + vendor_probe_zone 组装 decider.DecideInput
+//  2. 调 decider.Decide
+//  3. 输出翻译成 bus.SchedulerVerdict
 //
 // 装配层给 SchedulerDecider 注入 · nil-safe(bus.Scheduler 未装配 decider 时走老路径)。
 type schedulerDecideBridge struct {
@@ -1415,11 +1415,11 @@ func strictestMaxPrice(a, b int64) int64 {
 // webhookAutoScanBridge · 第五刀 · vendor 新号 webhook 到时 · 扫低水位 auto 车 · 逐辆调 Decide。
 //
 // 逻辑:
-//   1. 查所有 auto_refill_enabled=1 且 alive < watermark 的 bus(排除已挂 stockwatch 的)
-//   2. 逐辆调 decider.Decide(source=webhook) · 传当前 vendor/mode/价格数据
-//   3. Verdict=Pull → 调 orch.Pull(vendor 指定为 webhook 到的那家)
-//   4. Verdict=Enqueue → 交给 stockwatch 挂单(未来接·现在先 log)
-//   5. Verdict=Reject → 静默
+//  1. 查所有 auto_refill_enabled=1 且 alive < watermark 的 bus(排除已挂 stockwatch 的)
+//  2. 逐辆调 decider.Decide(source=webhook) · 传当前 vendor/mode/价格数据
+//  3. Verdict=Pull → 调 orch.Pull(vendor 指定为 webhook 到的那家)
+//  4. Verdict=Enqueue → 交给 stockwatch 挂单
+//  5. Verdict=Reject → 静默
 //
 // 出错只 log · 不影响 webhook 主流程返 200。
 type webhookAutoScanBridge struct {
