@@ -31,6 +31,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/bus"
 	"github.com/bus-pooling/bus-pooling/internal/config"
 	"github.com/bus-pooling/bus-pooling/internal/coupon"
+	"github.com/bus-pooling/bus-pooling/internal/credplain"
 	"github.com/bus-pooling/bus-pooling/internal/db"
 	"github.com/bus-pooling/bus-pooling/internal/deathwatch"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
@@ -127,6 +128,8 @@ func run(cmd, cfgPath string, args []string) error {
 		return runReconcile(ctx, cfg, args)
 	case "vendor-probe":
 		return runVendorProbe(ctx, cfg, args)
+	case "seed-credplain":
+		return runSeedCredplain(ctx, cfg, args)
 	default:
 		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem | seed-vendor | list-vendors | xi8-backfill | xi8-audit | backfill-probe-zone | backfill-stock-delta | reconcile | vendor-probe）", cmd)
 	}
@@ -887,14 +890,19 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	}
 	var pusher passengerpool.Pusher
 	if downstreamStore != nil && cipher != nil {
+		// **P0-c 修(2026-08-16)**: credplain 表 · 拉号成功那一刻明文加密缓存 ·
+		// pusher 走这个查真明文 · 上游 kiro.rs 1.8.3 确认无 reveal 端点 ·
+		// 手动 seed 号走 seed-credplain CLI 塞明文 · 真拉号走 decider.settle 自动落。
+		// credplain Get 找不到 · pusher 走 placeholder 兜底(dev mock 环境)
+		credplainStore := credplain.New(database.DB, cipher)
 		pusher = passengerpool.NewPusher(passengerpool.PusherDeps{
 			Downstreams: downstreamStore,
-			// Plaintext nil = 走 placeholder · PLACEHOLDER_PLAINTEXT
-			HTTPX:  poolHTTPX,
-			DB:     database.DB,
-			Logger: slog.Default(),
+			Plaintext:   credplain.NewLookup(credplainStore),
+			HTTPX:       poolHTTPX,
+			DB:          database.DB,
+			Logger:      slog.Default(),
 		})
-		slog.Info("passengerpool.Pusher 已装配")
+		slog.Info("passengerpool.Pusher 已装配 · 走 credplain 表(P0-c)")
 	} else {
 		slog.Warn("passengerpool.Pusher 未装配 · handler 走 dry-run", "cipher_nil", cipher == nil)
 	}

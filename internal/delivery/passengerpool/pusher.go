@@ -280,18 +280,37 @@ func (p *realPusher) classifyResult(creds []PushCredential, res *kirors.BatchImp
 
 // fetchPlaintext 走 PlaintextLookup 拿明文 · nil 或占位开关开时走 placeholder。
 //
-// **明文缺口降级路径**(BP_ALLOW_PASSENGERPOOL_PLACEHOLDER=1)：
+// **明文缺口降级路径**(BP_ALLOW_PASSENGERPOOL_PLACEHOLDER=1):
 // housepool 后端 reveal 端点未接 · Pusher 用固定占位字符串填三字段 · 对家 mock 收到能识别。
 // 生产 · 未来接了 reveal 端点后 · Plaintext 依赖注入真实实现 · 环境变量应关。
 //
-// grep 关键字：**PLACEHOLDER_PLAINTEXT** 定位这里 · 等 housepool 后端 reveal 端点后替换。
+// grep 关键字:**PLACEHOLDER_PLAINTEXT** 定位这里 · 等 housepool 后端 reveal 端点后替换。
+//
+// **P0-c 修(2026-08-16)**: 走 credplain 时 · 某号找不到明文(未 seed 或 TTL 过期)
+// 不硬 fail 整批 · 而是**该号走 placeholder** · 其它号仍用真明文。这样单号缺失不影响批。
 func (p *realPusher) fetchPlaintext(ctx context.Context, credentialIDs []string) (map[string]PushCredential, error) {
 	usePlaceholder := os.Getenv(EnvAllowPlaceholder) == "1" || p.deps.Plaintext == nil
 	if usePlaceholder {
 		// 占位路径 · **PLACEHOLDER_PLAINTEXT** · 明文缺口
 		return placeholderPlaintext(credentialIDs), nil
 	}
-	return p.deps.Plaintext.FetchPlaintext(ctx, credentialIDs)
+	// 走真实 lookup · 拿不到某号时该号走 placeholder(不硬 fail 整批)
+	got, err := p.deps.Plaintext.FetchPlaintext(ctx, credentialIDs)
+	if err != nil {
+		// Lookup 整体失败(如 credplain 找不到任何一号)· 全 placeholder 兜底
+		p.deps.Logger.Warn("passengerpool.fetchPlaintext: 走全 placeholder 兜底",
+			"err", err, "count", len(credentialIDs))
+		return placeholderPlaintext(credentialIDs), nil
+	}
+	// 部分号缺失时 · 补 placeholder
+	if len(got) < len(credentialIDs) {
+		filled := placeholderPlaintext(credentialIDs)
+		for id, pc := range got {
+			filled[id] = pc
+		}
+		return filled, nil
+	}
+	return got, nil
 }
 
 // placeholderPlaintext 联调用 · 每号返"PLACEHOLDER:<id>"三字段。
