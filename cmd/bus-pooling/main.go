@@ -59,6 +59,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/web"
 	"github.com/bus-pooling/bus-pooling/internal/webhookin"
 	"github.com/bus-pooling/bus-pooling/internal/xi8"
+	"github.com/google/uuid"
 )
 
 func main() {
@@ -716,7 +717,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	// 1d · 自动补车 scheduler · 5min 扫水位低于阈值的 auto_refill bus · 走 decider.Pull
 	// 补的号自动进 bus-<id> group · 下次循环看得到。**这是 1d 阶段最关键的活的部件** ——
 	// 老代码只支持乘客手动点拉号 · scheduler 装上后车挂着就能自己补。
-	autoRefill := bus.NewScheduler(database.DB, &autoRefillBridge{orch: orch}, 5*time.Minute, slog.Default())
+	autoRefill := bus.NewScheduler(database.DB, &autoRefillBridge{orch: orch, db: database.DB}, 5*time.Minute, slog.Default())
 	// v1d-2 · 第二刀 · 装配 decider.Decide 适配器 · Scheduler 每辆车过统一决策器
 	autoRefill.SetDecider(&schedulerDecideBridge{
 		db:        database.DB,
@@ -1291,23 +1292,70 @@ func (b *refillDecideBridge) Decide(ctx context.Context, req deathwatch.RefillRe
 //
 // 跟 refillPullerBridge 平行 · 只是接口签名不同（bus 包不 import deathwatch · 单独一个）。
 // scheduler 5min 一轮 · 常见 err（余额不足 / 缺货 / 上限）都被吞成 nil · 下轮再试。
+//
+// **P0 fix(2026-08-15)**: 之前 scheduler 生成 32-hex idem 直接传给 decider.Pull ·
+// 但 pending_purchase.idempotency_record_id FK → idempotency_record.id · idem 从未落表 ·
+// 每 5min FK 787 崩一次 · 补车整链断。修法:落 idempotency_record 一行 · 传 UUID id。
 type autoRefillBridge struct {
 	orch *decider.Orchestrator
+	db   *sql.DB
 }
 
 func (b *autoRefillBridge) Refill(ctx context.Context, req bus.AutoRefillRequest) error {
 	if b.orch == nil {
 		return nil
 	}
-	_, err := b.orch.Pull(ctx, decider.PullInput{
+	recordID, err := b.ensureRefillIdemRecord(ctx, req)
+	if err != nil {
+		return fmt.Errorf("autoRefillBridge: 落 idempotency_record: %w", err)
+	}
+	_, err = b.orch.Pull(ctx, decider.PullInput{
 		PassengerID:         req.InitiatorPassengerID,
 		BusID:               req.BusID,
 		Count:               req.Count,
-		IdempotencyRecordID: req.IdempotencyRecordID,
+		IdempotencyRecordID: recordID,
 		VendorID:            providers.VendorID(req.PreferredVendor),
 		MaxUnitPrice:        req.MaxUnitPrice,
 	})
 	return err
+}
+
+// ensureRefillIdemRecord · scheduler 每轮 idem 是 32-hex · 转成 idempotency_record 行
+//
+// method/path 用虚拟值 `POST /internal/auto-refill` · 跟真 HTTP 路径隔开 · 幂等键仍是 req.IdempotencyRecordID
+// (32-hex · scheduler 每轮新生成) · 每 5min 一新键 · 不撞 API 层用户请求。
+// INSERT OR IGNORE 保证多进程/重启后同 key 不重复落。
+func (b *autoRefillBridge) ensureRefillIdemRecord(ctx context.Context, req bus.AutoRefillRequest) (string, error) {
+	if b.db == nil {
+		return "", errors.New("autoRefillBridge.db 未装配")
+	}
+	// scheduler idem 是唯一入参 · body 空(无请求 body) · fingerprint 用 idem 兜底
+	// (idempotency_record.request_fingerprint NOT NULL · 空串会撞 CHECK · 用 idem 保唯一)
+	id := uuid.NewString()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	const method = "POST"
+	const path = "/internal/auto-refill"
+	res, err := b.db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO idempotency_record
+		  (id, passenger_id, method, path, idempotency_key, request_fingerprint, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, req.InitiatorPassengerID, method, path, req.IdempotencyRecordID, req.IdempotencyRecordID, now)
+	if err != nil {
+		return "", err
+	}
+	if n, _ := res.RowsAffected(); n == 1 {
+		return id, nil
+	}
+	// 已存在 · 反查该 idem 对应的 id
+	var existing string
+	err = b.db.QueryRowContext(ctx, `
+		SELECT id FROM idempotency_record
+		 WHERE passenger_id = ? AND path = ? AND idempotency_key = ?`,
+		req.InitiatorPassengerID, path, req.IdempotencyRecordID).Scan(&existing)
+	if err != nil {
+		return "", err
+	}
+	return existing, nil
 }
 
 // schedulerDecideBridge · 第二刀 · 把 decider.Decide 接进 bus.Scheduler
