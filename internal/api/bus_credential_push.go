@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/bus-pooling/bus-pooling/internal/bus"
 	"github.com/bus-pooling/bus-pooling/internal/delivery/passengerpool"
@@ -82,11 +83,19 @@ func (s *Server) handleBusCredentialPush(w http.ResponseWriter, r *http.Request)
 	}
 
 	// 死号护栏:pool.TestCredential 失败 = 拒重推
+	// **P1-l 修(2026-08-16)**: 车内号是**共享资源** · dead 或 quota 都拒
+	// 用户澄清:"车拉的肯定不能推" · 车里号影响所有车友 · 严格
 	if s.pool != nil {
 		if terr := s.pool.TestCredential(r.Context(), housepool.CredentialID(krID)); terr != nil {
+			msg := terr.Error()
+			hint := "号探活失败 · 已失效不能重推"
+			if strings.Contains(msg, "quota_exceeded") || strings.Contains(msg, "MONTHLY_REQUEST_COUNT") ||
+				strings.Contains(msg, "Payment Required") || strings.Contains(msg, "reached the limit") {
+				hint = "号已用完额度 · 车里共享号需活号 · 请换号或等 quota 重置"
+			}
 			writeJSON(w, http.StatusOK, busCredentialPushResp{
 				State:   "dead",
-				Message: "号探活失败 · 已失效不能重推: " + truncate(terr.Error(), 200),
+				Message: hint + ": " + truncate(msg, 200),
 			})
 			return nil
 		}

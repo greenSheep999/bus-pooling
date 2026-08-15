@@ -401,46 +401,84 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 	pushErrItems := []assignErrItem{}
 	successIDs := req.CredentialIDs // 默认：全部成功 (dry-run / into_bus)
 
-	// **P1-f 修(2026-08-16)**: assign 前先探活 · 用尽/死号无论派哪都拒
-	// housepool.TestCredential 返 error = 号真死(429 quota_exceeded / 402 payment_required
-	// / 401 invalid_token 等)· UI 前提示"号已失效 · 不能派"
-	// 分支:s.pool != nil 才做 · mock 环境跳过(pool 是 DryRun 也走这条 · 别拒 dev-topup 流程)
+	// **P1-l 修(2026-08-16)**: 号状态分层拒推(用户澄清)
+	//
+	// **3 种状态**:
+	//   - dead(真死)  · 401/403 认证错 · 或 kiro.rs Invalid/Suspended reason · 无条件拒
+	//   - quota(用完) · 402 quota_exceeded · monthly 到限额 · 可能重置后恢复
+	//   - ok           · 正常 · 允许推
+	//
+	// **2 种目的地策略**:
+	//   - into_bus     · 共享资源 · dead + quota 都拒(车友取到废号影响所有人)
+	//   - push_pool    · 用户自己号池 · **只拒 dead** · quota 允许推(用户自己决定)
+	//     · 用户视角:"我知道用完了 · 先推到自己池等重置或换号"
 	if s.pool != nil {
 		krIDs, err := s.pullRecords.LookupKiroRSCredentialIDs(r.Context(), req.CredentialIDs, p.ID)
 		if err != nil {
 			return err
 		}
-		deadIDs := map[string]string{} // cid → 错误 message
+		type credErr struct {
+			kind    string // "dead" 或 "quota" 或其它
+			message string
+		}
+		badIDs := map[string]credErr{}
 		for _, cid := range req.CredentialIDs {
 			krID, ok := krIDs[cid]
 			if !ok {
 				continue
 			}
 			if err := s.pool.TestCredential(r.Context(), housepool.CredentialID(krID)); err != nil {
-				deadIDs[cid] = err.Error()
+				msg := err.Error()
+				kind := "dead"
+				// 用完 quota 场景:kiro.rs 返 402 · message 含 MONTHLY_REQUEST_COUNT / quota_exceeded
+				// 这类号 push_pool 允许 · into_bus 拒
+				if containsAny(msg, "quota_exceeded", "MONTHLY_REQUEST_COUNT", "402", "Payment Required", "reached the limit") {
+					kind = "quota"
+				}
+				badIDs[cid] = credErr{kind: kind, message: msg}
 			}
 		}
-		if len(deadIDs) > 0 {
-			// 有号死 · 走 need_manual + 返 errors 让前端展示
-			// 死号的 pending_assignment 已在 tx1 里 initial · 这里改成 need_manual
-			for cid, msg := range deadIDs {
+
+		// 按 destination 决定拒哪些
+		rejected := map[string]credErr{}
+		for cid, ce := range badIDs {
+			switch dest {
+			case "into_bus":
+				// 车里共享资源 · dead 和 quota 都拒
+				rejected[cid] = ce
+			case "push_pool":
+				// 用户自己号池 · 只拒 dead(quota 允许推 · 用户自己判)
+				if ce.kind == "dead" {
+					rejected[cid] = ce
+				}
+			}
+		}
+
+		if len(rejected) > 0 {
+			for cid, ce := range rejected {
+				code := "credential_dead"
+				userMsg := "号已失效 · 不能派(kiro.rs 探活返错)"
+				if ce.kind == "quota" {
+					code = "credential_quota_exceeded"
+					userMsg = "号已用完额度 · 拼车共享号需活号 · 请换号或等 quota 重置"
+				}
 				if _, uerr := s.db.ExecContext(r.Context(), `
 					UPDATE pending_assignment
 					   SET status = 'need_manual', updated_at = ?, error = ?
 					 WHERE credential_id = ? AND status = 'initial'`,
-					nowRFC3339(), "credential_dead: "+msg, cid); uerr != nil {
+					nowRFC3339(), code+": "+ce.message, cid); uerr != nil {
 					slogWarn("assign · 标 need_manual 失败", "cred", cid, "err", uerr)
 				}
 				pushErrItems = append(pushErrItems, assignErrItem{
 					CredentialID: cid,
-					Code:         "credential_dead",
-					Message:      "号已失效 · 不能派(kiro.rs 探活返错)",
+					Code:         code,
+					Message:      userMsg,
 				})
 			}
-			// 从 successIDs 里剔除死号
+			// successIDs 剔除被拒的号(quota 号在 push_pool 场景保留)
 			live := make([]string, 0, len(req.CredentialIDs))
 			for _, cid := range req.CredentialIDs {
-				if _, dead := deadIDs[cid]; !dead {
+				if _, rej := rejected[cid]; !rej {
 					live = append(live, cid)
 				}
 			}
@@ -766,4 +804,15 @@ func (s *Server) recordPushFailures(ctx context.Context, failed []passengerpool.
 		return err
 	}
 	return tx.Commit()
+}
+
+// containsAny · 简单帮手 · haystack 含任意一个 needle 就返 true(case-sensitive)
+// 用途:错误 message 里判 quota_exceeded / 402 等关键字
+func containsAny(haystack string, needles ...string) bool {
+	for _, n := range needles {
+		if n != "" && strings.Contains(haystack, n) {
+			return true
+		}
+	}
+	return false
 }
