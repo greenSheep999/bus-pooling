@@ -483,7 +483,7 @@
 | **专属邀请码** | `system_invite_code` | 绑定 tier(`community` / `wholesale`) | ✅ 注册后可补绑 | ✅ | ❌ |
 | **邀请码** | `personal_invite_code` | 好友拉新 · 收益给发码人手续费/通道费减免(必须有上限) | ❌ 只在注册链路建立 | ❌ **不改被邀请人 tier** | ✅ |
 | **拼车码** | `bus.invite_code` | 加入某辆车 | ❌ | ❌ | ❌ |
-| **优惠码** | `coupon_code` | 一次性充值减 USD 实付(见 §8.43) | ❌ | ❌ | ❌ |
+| **优惠码** | `coupon_code` | 两种 type:`topup_discount`(充值减 USD)/ `service_fee_waiver`(拉号免服务费)· 见 §8.43 | ❌ | ❌ | ❌ |
 
 **术语铁律**:
 - 车侧的码**只叫拼车码** · 绝不叫"邀请码"(会跟好友邀请码混)
@@ -505,66 +505,95 @@
 - 字段和表 → `docs/06-db-schema § passenger.tier` / `§ system_invite_code.grants_tier` / `§ bus.invite_code`
 - 接口命名 → `docs/05-api-contract`(bus join 场景只能写"拼车码")
 
-### 8.43 优惠码用于一次性充值 · 减实付 USD · 不加积分 ⚠️ 后端 P1 补(2026-08-15)
+### 8.43 优惠码 · 用 type 字段区分两种用途 ⚠️ 后端 P1 补(2026-08-15)
 
-**车主拍板**:社群里发的优惠码可以用在充值弹窗 · **一次性使用 · 触发减免 · 减 USD 实付金额 · 不加积分**。
+**车主拍板**:优惠码(`coupon_code`)不是单一形态 · **用 `type` 字段区分两种用途** · 各减不同层 · 各自独立发放:
+
+| coupon.type | 用户输码在 | 减在哪层 | 效果 |
+|---|---|---|---|
+| `topup_discount` | 充值弹窗 | USD 实付金额 | 到账不变 · 少付 USD |
+| `service_fee_waiver` | 拉号确认窗(ExtractConfirmModal) | 服务费层 · 免 N 轮 5% | 拉号扣积分少了 |
 
 **兑换码 vs 优惠码 铁律**(别再混):
 
-| 名称 | 表 | 作用 | 效果 | 场景 |
-|---|---|---|---|---|
-| **兑换码** `redeem_code`(KRC-XXXX / KIRO-XXXX)| `redeem_code` | **直接加积分** | wallet.balance += N | 钱包页 RedeemCard 独立入口 |
-| **优惠码** `coupon_code` | `coupon_code` | **减实付金额** · 不加积分 | 到账不变 · 少付 USD | 充值弹窗一次性输入 |
+| 名称 | 表 | 作用 | 效果 |
+|---|---|---|---|
+| **兑换码** `redeem_code`(KRC-XXXX / KIRO-XXXX)| `redeem_code` | **直接加积分** | wallet.balance += N · 独立入口 RedeemCard |
+| **优惠码** `coupon_code` | `coupon_code` · 有 `type` | **减免不同层** | 见上表 · 输码触发 · 不加积分 |
 
-**优惠码在充值弹窗的展示效果**(UI 铁律):
+**类型 1: `topup_discount` · 充值弹窗一次性优惠**
 
+想充 100 积分 · 通道费 5 积分 · 支付本来 15.00 USD · 输 10% 优惠码:
+- **到账仍是 100 积分**(积分永远不变 · 想充多少到账多少 · 不可能"充 100 到账 105")
+- 支付变 (100 + 5) × 0.9 / 7 = **13.50 USD** · 少付 1.50 USD
+
+内部账本:
+```
+recharge          +105    (乘客真金白银换到的总积分 · 不变)
+channel_fee       -5      (pass-through 立即扣回给 waffo · 不变)
+coupon_discount   -X      (X = 减免的等价积分 · gateway 侧少收 X/7 USD)
+────────────────────────
+wallet 净变化 = +100      (跟没用码时一致 · 优惠码不动钱包余额)
+```
+
+UI 展示效果(充值弹窗 · 输码后加优惠行):
 ```
 到账              100 积分
 手续费           +0.71 USD
-优惠             -X.XX USD    ← 输码后显示
+优惠             -1.50 USD    ← 输码后显示
 ─────────────────────────
-你需支付         Y.YY USD     ← 实付减了
+你需支付         13.50 USD
 ```
 
-**关键约束**:
-- 积分数字**永远不变** —— 想充 100 到账就是 100 · 想充 500 到账就是 500 · **不多不少 · 不可能"充 100 到账 105"**
-- 优惠只作用于 **USD 支付额** · 减到账积分 or 加积分**都不做**
-- 一次性 · **只能在充值场景用** · 不能拿到别处
+**类型 2: `service_fee_waiver` · 拉号服务费减免**
 
-**内部账本(不含混)**:
+**覆盖 §8.29 老方案**"个人邀请码奖励 N 轮服务费全免" —— 那方案已废(§8.42 已废概念)· 因为无底聚绑到邀请码上。**改由 coupon 承载**:营销发码 · 用户拿去拉号确认窗输 · 减免本次拉号的服务费层 5%(或整档免掉 · 后台可配)。
+
+- 限次数 or 限时(coupon 表 `remaining_uses` / `expires_at`)
+- 输入在 ExtractConfirmModal · 已存在 UI(1a-1c 落地 · 之前误判为该撤)
+- 减在 `service_fee` 层 · 不动 tier · 不动号价 · 不动通道费
+
+**跟其他减免独立叠加**(§8.32:1023):
+- 充值时:`topup_discount` coupon + `personal_invite_code` 通道费减免额度 · 两条各减各的层
+- 拉号时:`service_fee_waiver` coupon 独立生效 · 跟 tier 静态加价栈正交
+
+**⚠️ 覆盖历史决策 · 保留记录**:
+- 老 `§8.29` "个人邀请码奖励 N 轮服务费全免" · **改由 coupon type=service_fee_waiver 承载** · 效果一样 · 载体不同
+- 老 `§8.32` + `10-pricing §3.1` 里写过"提号确认窗填优惠码减 `single_pull` 层" · **本条覆盖** · 减的是**服务费层**不是 single_pull
+- 老 `10-pricing §3.1` 表里的"推广码 / 促销码" = `coupon.type=service_fee_waiver` · 别当作第五种码
+- 读老文本时以 §8.43 为准
+
+**coupon_code 表结构(阶段 1 待建 · 目前只在 topup_order 上落了字符串引用)**:
+
+```sql
+CREATE TABLE coupon_code (
+  id             TEXT PRIMARY KEY,
+  code           TEXT UNIQUE NOT NULL,      -- 用户输的码
+  type           TEXT NOT NULL,             -- topup_discount / service_fee_waiver
+  discount_bp    INTEGER,                   -- topup_discount 用:折扣 basis point
+  waive_rounds   INTEGER,                   -- service_fee_waiver 用:免几轮
+  remaining_uses INTEGER,                   -- NULL = 不限
+  expires_at     TEXT,
+  status         TEXT NOT NULL,             -- active / disabled
+  memo           TEXT,                      -- 批次说明
+  created_at     TEXT NOT NULL,
+  CHECK (type IN ('topup_discount','service_fee_waiver'))
+);
 ```
-recharge      +105    (乘客真金白银换到的总积分 · 不变)
-channel_fee   -5      (pass-through 立即扣回给 waffo · 不变)
-coupon_discount -X    (新增记录 · X = 减免的等价积分 · 表示 gateway 侧少收 X/7 USD)
-──────────────
-wallet 净变化 = +100  (跟没用码时一致 · 优惠码不动钱包余额)
-```
-
-差在哪:**没用码时 · 乘客付 15.00 USD 换 100 积分**;**用码 10% off · 乘客付 13.50 USD 换 100 积分**。省的 1.50 USD 从我方营销预算出(优惠码本来就是营销工具 · 车主的钱)。
-
-**跟 personal_invite_code 并存**(§8.32:1023 三条独立叠加):
-- personal 免通道费 5%(限额 · 自动)
-- coupon 减 5-20%(单次 · 输码)
-- 两条各减各的层 · 用户实付更少 · 账本分开记
 
 **后端接口约束**:
-- `POST /api/me/topup` 请求体加 `coupon_code?: string`
-- `topupRequest` struct(`internal/api/topup.go:28`)加 `CouponCode string`
-- `topup.OrderInput` 加 `CouponCode` · 落 `topup_order.coupon_code`
-- 校验 coupon 有效性(用过没 · 过期没)· **只在充值场景生效** · 拉号场景不认
-- 算折后 USD → 传给 gateway · 记 `wallet_ledger.coupon_discount`
-
-**⚠️ 覆盖历史决策**:老 `§8.32` + `docs/10-pricing §3.1` + `docs/00 §3` 里写过"提号确认窗填优惠码减 `single_pull` 层"—— **本条覆盖 · 拉号场景不做**。车主从未确认过拉号侧优惠码 · UI 里 ExtractConfirmModal 若有 coupon 输入框也要撤(或至少不做后端校验)。老决策文本保留作历史记录 · 但读到时以 §8.43 为准。
+- `POST /api/me/topup` 已加 `coupon_code?: string`(§8.43 第一版) · 服务端校验必须命中 `type=topup_discount`
+- `POST /api/me/pull/estimate` + `POST /api/me/buses/{id}/pull` 保留 `coupon_code`(hooks.ts:496)· 校验必须命中 `type=service_fee_waiver`
+- 校验错(type 不匹配 / 过期 / 用尽)· 返 4xx · 前端提示"码不适用此场景"
 
 **前端现状**:
-- ✅ 输入框已实现(`web/src/pages/WalletPage.tsx:481-495`)
-- ✅ 值收到本地 state
-- ✅ hook 已支持透传 · 有值才带
-- ❌ **preview 里没显"优惠 -X.XX USD"行**(需加)
-- ❌ 后端字段未加(Go 端 decodeStrict 会拒未知)
-- **P1(sprint-1e 收尾 or 1f 起手)**:后端 4 处 + 前端 preview 加优惠行
+- ✅ WalletPage 充值弹窗输入框(§8.43 v1 已接) · 走 `type=topup_discount`
+- ✅ ExtractConfirmModal 拉号侧输入框(1a-1c 落地 · **保留** · 走 `type=service_fee_waiver`)
+- ❌ 后端 coupon_code 表未建 · 校验逻辑未实现 · 阶段 1(sprint-1e)只透传落库
+- ❌ 前端 preview 未加"优惠 -X.XX USD"行(等后端返减免值)
+- **P1(sprint-1f 起手)**:coupon_code 表 + 校验 + 减免应用 + 两侧 preview
 
-**参考**:`§8.42` 四码分离 · `§8.32` 减免栈(三条独立叠加) · CLAUDE §1.4(充值口径)
+**参考**:`§8.42` 四码分离 · `§8.32` 减免栈(独立叠加) · CLAUDE §1.4(充值口径) · 覆盖 `§8.29`
 
 ### 8.40 UI 结构 · /me 是综合入口 · 账号设置从 /me 拆到 /settings/account ✅（1a 落地）
 
