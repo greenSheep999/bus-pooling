@@ -505,9 +505,12 @@ func dtoOf(cfg downstream.Config) downstreamResponse {
 		// 只显示纯打码 + 尾 4 位(1e-2 收尾 · P1-6 修正 · 避免"看着不像用户填的那个"错觉)
 		out.PassengerpoolTokenMasked = maskFromEncrypted("", cfg.PassengerpoolTokenEncrypted)
 	}
-	// connected / heartbeat / 统计：阶段 1e 后台推送 worker 起来之后才有真值。
-	// 阶段 1a 返 zero-value 让 UI 显示"未连接"，别造假数据。
-	out.Connected = false
+	// connected 语义:**配了 URL + token = 已配置** · 不等 push 真跑
+	// 之前硬编 false 让 UI 显示 "Disconnected" 跟 test 探活成功矛盾(用户困惑)
+	// 心跳时间(last_heartbeat_at)独立展示 · 首次真 push 才有值 · 前端做"No heartbeat yet"提示
+	// 阶段 1e 后台推送真活跃后 · Connected 应改判"最近 30s 内有 push 成功"
+	// 现在(阶段 1e 收尾)只有 test 探活证明连通 · 用"配置存在"作最保守可展示态
+	out.Connected = cfg.PassengerpoolURL != "" && cfg.PassengerpoolTokenConfigured
 	out.LastHeartbeatAt = nil
 	out.PushSuccessRate = 0
 	return out

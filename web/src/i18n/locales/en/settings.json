@@ -120,7 +120,7 @@
     "connection": {
       "heartbeat": "Last heartbeat {{time}}",
       "label": "Connection",
-      "no-heartbeat": "No heartbeat yet",
+      "no-heartbeat": "No pushes yet · configured · waiting for first push_pool",
       "value": {
         "down": "Down",
         "ok": "Healthy"

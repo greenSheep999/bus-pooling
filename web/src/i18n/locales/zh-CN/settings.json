@@ -120,7 +120,7 @@
     "connection": {
       "heartbeat": "最近心跳 {{time}}",
       "label": "连通状态",
-      "no-heartbeat": "还没有心跳",
+      "no-heartbeat": "还没推过号(配置就绪 · 等首次派 push_pool)",
       "value": {
         "down": "断开",
         "ok": "正常"
