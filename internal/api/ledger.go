@@ -31,11 +31,21 @@ var spendInternalReasons = []wallet.Reason{
 }
 
 // topupInternalReasons 对外 topup（充值）展开的内部 reason 集合。
-// 一次充值在内部拆两笔：recharge（乘客真金白银换到的总积分）+ channel_fee（pass-through
-// 给通道方的部分，立刻扣回）· 净变化 = 到账目标积分。详见 CLAUDE.md §1.4。
+//
+// **CLAUDE.md §12.6 术语双分离**：channel_fee 是 pass-through 给 waffo 的内部记账·
+// 用户视角 = "充了 N 积分 · 到账 N 积分" · 手续费展示在**充值弹窗**(preview + total)·
+// 不该再在钱包流水里以 "-0" 出现让用户困惑。
+//
+// 所以 topup 对外只暴露 recharge 一条 · channel_fee 内部保 wallet_ledger 用于对账·
+// 但不返给前端 /me/ledger。
 var topupInternalReasons = []wallet.Reason{
 	wallet.ReasonRecharge,
-	wallet.ReasonChannelFee,
+}
+
+// hiddenInternalReasons ledger 对外一律不显 · 但 wallet_ledger 表继续落库以做对账
+// 加进这里 = filter 掉列表返回结果。
+var hiddenInternalReasons = map[wallet.Reason]bool{
+	wallet.ReasonChannelFee: true,
 }
 
 // internalReasonsFor 把对外 LedgerType 展开成内部 reason，用于 ?type= 过滤。

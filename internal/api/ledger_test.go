@@ -53,9 +53,9 @@ func TestSpendDoesNotIncludeTopupOrAdjustReasons(t *testing.T) {
 	}
 }
 
-// topup 展开必须同时含 recharge 和 channel_fee —— 一次充值在内部是两条明细，
-// 前端筛 topup 应该两条都能看到（不然充值明细就断了）
-func TestTopupExpandsToRechargeAndChannelFee(t *testing.T) {
+// topup 对外只暴露 recharge · channel_fee 是 pass-through 内部记账 · 前端不显。
+// 详见 CLAUDE.md §12.6 术语双分离 + hiddenInternalReasons。
+func TestTopupExpandsToRechargeOnly(t *testing.T) {
 	got := internalReasonsFor(string(LedgerTopup))
 	seen := map[wallet.Reason]bool{}
 	for _, r := range got {
@@ -64,8 +64,15 @@ func TestTopupExpandsToRechargeAndChannelFee(t *testing.T) {
 	if !seen[wallet.ReasonRecharge] {
 		t.Error("topup 展开缺 recharge")
 	}
-	if !seen[wallet.ReasonChannelFee] {
-		t.Error("topup 展开缺 channel_fee —— 前端筛充值明细看不到手续费那条")
+	if seen[wallet.ReasonChannelFee] {
+		t.Error("topup 展开不该含 channel_fee · 那是 pass-through 内部记账 · 用户视角不显")
+	}
+}
+
+// channel_fee 必须在 hiddenInternalReasons 里 · 保证 ledger API 过滤掉
+func TestChannelFeeHidden(t *testing.T) {
+	if !hiddenInternalReasons[wallet.ReasonChannelFee] {
+		t.Error("channel_fee 未在 hiddenInternalReasons 里 · 会以 -0 出现在钱包流水")
 	}
 }
 

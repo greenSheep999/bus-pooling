@@ -623,21 +623,67 @@ func (s *Server) handleLedger(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	items := make([]map[string]any, 0, len(entries))
+	// **§12.6 术语双分离** · 过滤内部记账明细(channel_fee 等)
+	// 保 wallet_ledger 原样落库 · 只在对外响应过滤
+	//
+	// **净额聚合**:recharge 的 amount 是"含通道费的总积分"(如 1.05 积分)· 但通道费
+	// 立刻由 channel_fee -0.05 扣回 · 净到账 = 1.00 积分。用户看的 amount 应是净额 ·
+	// 跟 balance_after 差值对得上(否则会出现 +1.05 但 balance 只涨 1 的困惑)。
+	// 用同时刻的 channel_fee 从 recharge 的 amount 里扣掉 · balance_after 也用 channel_fee 后的净值。
+	// 前端才看得到"到账 +1 积分 · balance N + 1"一致的账。
+	type feeInfo struct {
+		amount           int64
+		netBalanceAfter  int64
+		netBalanceHasVal bool
+	}
+	channelFeeAt := map[string]*feeInfo{}
 	for _, e := range entries {
+		if e.Reason == wallet.ReasonChannelFee {
+			k := e.CreatedAt.Format(time.RFC3339Nano)
+			if channelFeeAt[k] == nil {
+				channelFeeAt[k] = &feeInfo{}
+			}
+			channelFeeAt[k].amount += e.Amount // negative
+			// 每次充值只有一条 channel_fee · balance_after 就是净值
+			channelFeeAt[k].netBalanceAfter = e.BalanceAfter
+			channelFeeAt[k].netBalanceHasVal = true
+		}
+	}
+
+	items := make([]map[string]any, 0, len(entries))
+	hidden := 0
+	for _, e := range entries {
+		if hiddenInternalReasons[e.Reason] {
+			hidden++
+			continue
+		}
+		amount := e.Amount
+		balance := e.BalanceAfter
+		if e.Reason == wallet.ReasonRecharge {
+			if fee, ok := channelFeeAt[e.CreatedAt.Format(time.RFC3339Nano)]; ok {
+				amount += fee.amount
+				if fee.netBalanceHasVal {
+					balance = fee.netBalanceAfter
+				}
+			}
+		}
 		items = append(items, map[string]any{
 			"id":            e.ID,
 			"type":          publicLedgerType(e.Reason),
-			"amount":        e.Amount,
-			"balance_after": e.BalanceAfter,
+			"amount":        amount,
+			"balance_after": balance,
 			"memo":          e.Memo,
 			"created_at":    e.CreatedAt.Format(time.RFC3339),
 		})
 	}
+	visibleTotal := total - hidden
+	if visibleTotal < 0 {
+		visibleTotal = 0
+	}
 
-	pages := (total + pageSize - 1) / pageSize
+	pages := (visibleTotal + pageSize - 1) / pageSize
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items": items, "total": total, "page": page, "page_size": pageSize, "pages": pages,
+		"items": items, "total": visibleTotal, "page": page, "page_size": pageSize, "pages": pages,
 	})
 	return nil
 }
