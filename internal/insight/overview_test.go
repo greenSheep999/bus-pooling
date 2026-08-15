@@ -24,8 +24,8 @@ func TestOverview_EmptyPassenger(t *testing.T) {
 	if out.KPI.PullTotal != 0 {
 		t.Errorf("空账号 pull_total=%d，应=0", out.KPI.PullTotal)
 	}
-	if len(out.Extract.ByDestination) != 3 {
-		t.Errorf("by_destination 应恒有 3 桶（pending/into_bus/push_pool），得 %d", len(out.Extract.ByDestination))
+	if len(out.Extract.ByDestination) != 4 {
+		t.Errorf("by_destination 应恒有 4 桶(pending/into_bus/push_pool/handoff)· 得 %d", len(out.Extract.ByDestination))
 	}
 	if out.Buses.BusCount != 1 {
 		t.Errorf("bus_count=%d，应=1（造账号时建了一辆单人车）", out.Buses.BusCount)

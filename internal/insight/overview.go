@@ -241,12 +241,13 @@ func (s *Store) overviewExtract(ctx context.Context, passengerID string) (Extrac
 		return out, fmt.Errorf("insight: 今日拉号: %w", err)
 	}
 
-	// 号池分布（3 桶）· push_pool 的判定是"已推"（pushed_to_passengerpool_at 非空）
-	// 待派（pending）= 我的 record group 里且状态 alive 且未推
-	// 进车（into_bus）= 我参与的 bus 里且 alive 且未推
-	// 推池（push_pool）= 上面二者且已推
-	// 结果桶按互斥拆：**已推 vs 未推**是首要分裂，未推里再拆车里 / record
-	var pending, intoBus, pushPool int
+	// 号池分布(4 桶)· 用户视角:拉出来的号最终去哪儿了?
+	// 待派(pending)  = 我的 record group 里 alive 且未推
+	// 进车(into_bus) = 我参与的 bus 里 alive 且未推
+	// 推池(push_pool)= 已推(pushed_to_passengerpool_at 非空)
+	// 拿走(handoff)  = 已 handoff · status='handed_off'(号已 DELETE 但台账留着做售后追溯)
+	// **handoff 也算一种去向** —— 用户视角"这号我下载拿走了"是 3 种去向之一(见 fixtures 里对齐)
+	var pending, intoBus, pushPool, handoff int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT
 		  COALESCE(SUM(CASE
@@ -259,19 +260,26 @@ func (s *Store) overviewExtract(ctx context.Context, passengerID string) (Extrac
 		    THEN 1 ELSE 0 END), 0),
 		  COALESCE(SUM(CASE
 		    WHEN status = 'alive' AND pushed_to_passengerpool_at IS NOT NULL
+		    THEN 1 ELSE 0 END), 0),
+		  COALESCE(SUM(CASE
+		    WHEN status = 'handed_off'
 		    THEN 1 ELSE 0 END), 0)
 		  FROM credential_ledger cl
 		 WHERE `+ownedCredentialWhere+``, passengerID, passengerID).
-		Scan(&pending, &intoBus, &pushPool)
+		Scan(&pending, &intoBus, &pushPool, &handoff)
 	if err != nil {
 		return out, fmt.Errorf("insight: 号池分布: %w", err)
 	}
 	out.Pending = pending
+	// TotalCredentials **= 池里还在的号数**(用户视角"我手上还有几个能用的")
+	// **不含 handoff** · 已拿走的号在池里已 DELETE · 不算池里
+	// handoff 单独统计走 by_destination 那里 · 展示"历史上拿走过多少"
 	out.TotalCredentials = pending + intoBus + pushPool
 	out.ByDestination = []DestinationRow{
 		{Destination: "pending", Count: pending},
 		{Destination: "into_bus", Count: intoBus},
 		{Destination: "push_pool", Count: pushPool},
+		{Destination: "handoff", Count: handoff},
 	}
 
 	// 今日提取花费（就是当日所有分项链的负号累加，跟 spend_today 语义一致；
