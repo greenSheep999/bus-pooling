@@ -228,26 +228,26 @@ export const handlers = [
   http.get("/api/topup/channels", () => ok({
     channels: [
       {
-        id: "waffo", display_name: "Waffo 支付", region: "overseas", rail: "hosted",
+        id: "waffo", display_name: "Waffo", region: "overseas", rail: "hosted",
         asset: "USD", enabled: true, requires_payer_reference: false,
-        note: "跳转 Waffo · 支持卡 / 电子钱包",
       },
       {
-        id: "bybit", display_name: "Bybit UID 内转", region: "overseas", rail: "direct",
+        id: "bybit", display_name: "Bybit ID", region: "overseas", rail: "direct",
         asset: "USDT", enabled: false, requires_payer_reference: true,
         payer_reference_label: "你的 Bybit UID",
-        note: "USDT · 即将支持",
       },
       {
-        id: "binance", display_name: "Binance ID 内转", region: "overseas", rail: "direct",
+        id: "binance", display_name: "Binance ID", region: "overseas", rail: "direct",
         asset: "USDT", enabled: false, requires_payer_reference: true,
         payer_reference_label: "你的 Binance ID",
-        note: "USDT · 即将支持",
       },
       {
-        id: "epusdt", display_name: "USDT 链上转账", region: "overseas", rail: "direct",
+        id: "usdt", display_name: "USDT", region: "overseas", rail: "direct",
         asset: "USDT", enabled: false, requires_payer_reference: false,
-        note: "USDT-TRC20/ERC20 · 即将支持",
+      },
+      {
+        id: "tron", display_name: "TRC20", region: "overseas", rail: "direct",
+        asset: "USDT", enabled: false, requires_payer_reference: false,
       },
     ],
   })),

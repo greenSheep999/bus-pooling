@@ -1,8 +1,8 @@
 {
   "balance": {
-    "available": "Available balance",
+    "available": "Available credits",
     "reserved": {
-      "hint": "Held by pulls in progress",
+      "hint": "Held by pulls / handoffs in progress",
       "label": "Reserved"
     },
     "spend-total": "Total spend",
@@ -10,8 +10,8 @@
     "unit": "credits"
   },
   "hero": {
-    "subtitle": "Top up to earn credits. Pulls and handoffs deduct from here. Keys that die within 30 minutes are auto-refunded.",
-    "title": "Wallet"
+    "subtitle": "Top up to earn credits. Pooling and key handoffs deduct from here. Keys that die within 30 minutes are auto-refunded.",
+    "title": "Credits"
   },
   "ledger": {
     "empty-filtered": {
@@ -19,7 +19,7 @@
       "title": "No entries match this filter"
     },
     "empty": {
-      "desc": "Top-ups, pull charges, and refunds all show up here",
+      "desc": "Top-ups, pooling charges, and refunds all show up here",
       "title": "No entries yet"
     },
     "filter": {
@@ -53,7 +53,7 @@
       "label": "Redeem code",
       "placeholder": "KIRO-XXXX"
     },
-    "sub": "Codes from the community · redeemed straight to balance",
+    "sub": "Codes from the community · redeemed straight to your credits",
     "submit": {
       "default": "Redeem",
       "pending": "Redeeming…"
@@ -73,8 +73,8 @@
       }
     },
     "hint": {
-      "default": "The fee goes to the payment channel — we don't collect or absorb it. Pulls and handoffs after this are credit-only, no more fees.",
-      "waived": "Fee waived this time (from your invite balance · <0>{{count}}</0> left). Pulls and handoffs after this are credit-only."
+      "default": "The fee goes to the payment channel — we don't collect or absorb it. Pooling and key handoffs after this are credit-only, no more fees.",
+      "waived": "Fee waived this time (from your invite balance · <0>{{count}}</0> left). Pooling and key handoffs after this are credit-only."
     },
     "modal": {
       "close": "Close",
@@ -89,41 +89,37 @@
       "label": "Payment method",
       "coming-soon": "Coming soon"
     },
+    "tier": {
+      "community": "Community member",
+      "community-tip": "Invite code linked · discounted pooling"
+    },
     "confirm": {
       "title": "Confirm top-up",
-      "sub": "Review your order and the terms before continuing to payment",
+      "sub": "Review your order · coupon optional",
       "channel": "Method",
       "credits": "You receive",
       "pay": "You pay",
       "cancel": "Cancel",
-      "submit": "Agree · continue to pay",
+      "submit": "Continue to pay",
       "submitting": "Redirecting…",
-      "terms": {
-        "title": "Purchase terms",
-        "provider": "The item is provided by an upstream vendor · we relay the purchase on your behalf",
-        "warranty": "Where upstream offers a warranty window · in-window failures are **refunded as credits** per upstream policy",
-        "no-refund": "**No cash refunds** · we never reverse the payment channel · all refunds are credits only",
-        "channel-fee": "The channel fee is paid to Waffo · **non-refundable** once payment starts"
+      "coupon": {
+        "label": "Coupon code",
+        "placeholder": "Enter code if you have one",
+        "hint": "One code per top-up · does not stack with other discounts"
       },
-      "agree": {
-        "aria": "Agree to terms",
-        "text": "I have read and agree to the purchase terms above"
-      }
+      "terms-short": "Credits arrive automatically after payment · items provided by upstream · refunds in credits only · channel fee non-refundable"
     },
-    "hint": {
-      "waived": "Invite quota · <0>{{count}}</0> fee-free top-ups remaining"
-    },
-    "preset": "{{value}} credits",
+    "preset": "{{value}}",
     "preview": {
       "credits-unit": "credits",
       "fee-label": "Service fee",
-      "fee-tooltip": "Charged by the payment channel (e.g. Waffo, ~5%) · pass-through · we don't keep it",
+      "fee-tooltip": "Charged by the payment channel (~5%) · pass-through · we don't keep it",
       "fee-waived-mark": "Waived",
       "fee-waived-note": "Channel fee waived on this order · covered by your invite quota",
       "paid-label": "You pay",
       "want": "You receive"
     },
-    "sub": "Redirects to Waffo · credits arrive automatically after payment",
+    "sub": "Credits arrive automatically after payment",
     "submit": {
       "default": "Continue to pay"
     },

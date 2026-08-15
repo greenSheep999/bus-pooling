@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
-  ArrowDownLeft, ArrowUpRight, Gift, Info, Loader2, Lock,
+  ArrowDownLeft, ArrowUpRight, Check, Gift, Info, Loader2, Lock,
   ShieldCheck, Ticket, TrendingDown, TrendingUp, Wallet as WalletIcon,
 } from "lucide-react";
 import {
-  useCreateTopup, useLedger, useMyInvite, useRedeem, useTopupChannels, useWallet,
+  useCreateTopup, useLedger, useMe, useMyInvite, useRedeem, useTopupChannels, useWallet,
 } from "@/api/hooks";
+import { BybitLogo, WaffoLogo } from "@/components/PaymentLogo";
 import {
   BareHead, BareList, BareRow, Card, Chip, Em, SectionHead, Segmented,
 } from "@/components/ui/primitives";
@@ -142,16 +143,6 @@ function MiniTotal({
 
 /* ─────────────── 充值 ─────────────── */
 
-/** 通道 logo · public/logos/payment/{id}.svg · 未来加通道 · **只放 SVG · 不用改代码** ·
- *  别名映射 · epusdt / usdt-trc20 / usdt-erc20 都用同一张 usdt.svg */
-const CHANNEL_LOGO_ALIAS: Record<string, string> = {
-  epusdt: "usdt",
-};
-function channelLogoSrc(id: string): string {
-  const key = CHANNEL_LOGO_ALIAS[id] ?? id;
-  return `/logos/payment/${key}.svg`;
-}
-
 function TopupCard() {
   const { t } = useTranslation("wallet");
   /* 输入的是**想到账的积分数** · CLAUDE §1.4 · 通道费 5% 加在上面 · 展示金额只用 USD */
@@ -162,11 +153,17 @@ function TopupCard() {
   const create = useCreateTopup();
   const { data: channelsResp } = useTopupChannels();
   const channels = channelsResp?.channels ?? [];
+  const { data: me } = useMe();
+  /* CLAUDE §1.3 铁律: UI 只区分"绑了专属邀请码 vs 没绑" · 不暴露 tier 具体档次
+     tier != "retail" 时统一显示"社群成员" · retail 时不显 chip */
+  const isCommunityMember = me?.tier && me.tier !== "retail";
 
   const credits = Math.max(0, Math.round(Number(wantCredits) || 0)) * MICRO;
   const { data: myInvite } = useMyInvite();
   const willWaive = (myInvite?.waiver_remaining ?? 0) > 0;
   const usdAmount = creditsToUSD(toCredits(credits), willWaive);
+  /* 手续费单独算 · 差额 · fee = (credits × 0.05) / 7 = credits / 140 · toFixed(2) */
+  const feeUSD = (toCredits(credits) / 140).toFixed(2);
   const valid = credits > 0;
 
   /* 默认选中第一个 enabled 通道 · channels 加载完后 · 一次性设 */
@@ -181,9 +178,12 @@ function TopupCard() {
     if (!valid || !activeChannel) return;
     setConfirmOpen(true);
   };
-  const onConfirmAndPay = async () => {
+  const onConfirmAndPay = async (couponCode: string) => {
     if (!valid || !activeChannel) return;
+    /* couponCode · 空串 = 不用 · 后端 topupRequest 加 coupon_code 字段后 hook 会传上去
+       目前 hooks.ts useCreateTopup 未加 · UI 层先接住 · 后端补字段前静默传空 */
     const o = await create.mutateAsync({ credits, channel: activeChannel });
+    void couponCode; // TODO(P1): hook 支持后传 coupon_code
     setConfirmOpen(false);
     /* 拿到 checkout_url 直接跳 · 无中间 dialog(hosted 通道就是要跳)*/
     if (o.checkout_url) {
@@ -194,10 +194,23 @@ function TopupCard() {
   return (
     <>
       <Card className="p-7">
-        <SectionHead
-          title={t("topup.title")}
-          sub={t("topup.sub")}
-        />
+        <div className="flex items-start justify-between gap-3">
+          <SectionHead
+            title={t("topup.title")}
+            sub={t("topup.sub")}
+          />
+          {isCommunityMember && (
+            <span
+              title={t("topup.tier.community-tip")}
+              aria-label={t("topup.tier.community-tip")}
+              className="shrink-0 cursor-help"
+            >
+              <Chip tone="brand" icon={<ShieldCheck className="size-3" />}>
+                {t("topup.tier.community")}
+              </Chip>
+            </span>
+          )}
+        </div>
 
         <div className="mt-4 space-y-4">
           <Field label={t("topup.field.want-credits.label")} hint={t("topup.field.want-credits.hint")}>
@@ -223,16 +236,18 @@ function TopupCard() {
             ))}
           </div>
 
-          {/* 通道选择 · 显示全部注册通道 · 未接的 disabled 灰态(§8.21 · docs/12)
-              logo 走 public/logos/payment/{id}.svg · 未来加通道时**只需放 SVG · 不用改代码** */}
+          {/* 通道卡片 · 一行 4 张(md+ 4 列 · 移动端 2 列)· logo-only + title tooltip
+              hover 显品牌名 · disabled 覆盖 "即将开放" · 单选 · brand 边框选中 · 无花花绿绿 */}
           <div className="space-y-2">
             <label className="text-label font-semibold text-fg-secondary">
               {t("topup.channel.label")}
             </label>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
               {channels.map((c) => {
                 const on = c.id === activeChannel;
-                const logoSrc = channelLogoSrc(c.id);
+                /* hover 只显名称 · disabled 状态视觉本身已经传达(灰化 + 不可点)
+                   把 coming-soon 塞进卡里挤爆布局 · 一直不能这么做 */
+                const hoverLabel = c.display_name;
                 return (
                   <button
                     key={c.id}
@@ -240,105 +255,111 @@ function TopupCard() {
                     disabled={!c.enabled}
                     onClick={() => c.enabled && setChannelId(c.id)}
                     className={cn(
-                      "inline-flex items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors",
-                      !c.enabled && "cursor-not-allowed border-hairline bg-bg-elevated/30 text-fg-tertiary opacity-60",
-                      c.enabled && on && "border-brand-hairline bg-brand-subtle/40 font-semibold text-brand-fg",
-                      c.enabled && !on && "border-hairline bg-bg-elevated/40 text-fg-secondary hover:bg-bg-elevated",
+                      "group relative grid h-8 place-items-center overflow-hidden rounded-md border bg-bg-elevated transition-all",
+                      c.enabled && on && "border-brand-strong ring-1 ring-brand-strong/20",
+                      c.enabled && !on && "border-hairline hover:border-fg-tertiary/60",
+                      !c.enabled && "cursor-not-allowed border-hairline opacity-60",
                     )}
+                    aria-pressed={c.enabled && on}
+                    aria-label={hoverLabel}
                   >
-                    {logoSrc && (
-                      /* wordmark 型 logo 主体白色(waffo/bybit)· 在白底看不见 · 加深色底衬托
-                         hex icon(usdt/binance)本身有色 · 也塞进同一个盒子 · 视觉统一 */
-                      <span
-                        className={cn(
-                          "grid h-7 w-16 shrink-0 place-items-center overflow-hidden rounded-md bg-neutral-900 px-2",
-                          !c.enabled && "grayscale opacity-60",
-                        )}
-                      >
+                    {/* logo · hover/focus 时淡出 */}
+                    <span className="transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
+                      {c.id === "bybit" ? (
+                        <BybitLogo className="h-2.5 w-auto" />
+                      ) : c.id === "waffo" ? (
+                        <WaffoLogo className="h-2.5 w-auto" />
+                      ) : (
                         <img
-                          src={logoSrc}
+                          src={`/logos/payment/${c.id}.svg`}
                           alt=""
-                          aria-hidden
-                          className="max-h-4 w-auto max-w-full object-contain"
+                          className="h-4 w-auto object-contain"
                           onError={(e) => { e.currentTarget.style.display = "none"; }}
                         />
-                      </span>
-                    )}
-                    <span className="flex min-w-0 flex-col">
-                      <span className="text-label">{c.display_name}</span>
-                      {!c.enabled && (
-                        <span className="text-[10px] text-fg-tertiary">{t("topup.channel.coming-soon")}</span>
                       )}
                     </span>
+                    {/* 名称覆盖 · 默认隐藏 · hover/focus 淡入 */}
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0 grid place-items-center text-[11px] font-semibold text-fg-secondary opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+                    >
+                      {hoverLabel}
+                    </span>
+                    {c.enabled && on && (
+                      <span aria-hidden className="absolute right-1 top-1 grid size-3 place-items-center rounded-full bg-brand-strong text-white">
+                        <Check className="size-2" strokeWidth={3} />
+                      </span>
+                    )}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* 预览 · 到账积分 + 通道费(付给 waffo · 我方 pass-through 不留) + 合计 USD
-              CLAUDE §1.4 · 通道费只在充值这一步展示 · 让用户知道钱花在哪(不是我方收) */}
-          <div className="space-y-2 rounded-xl border border-hairline bg-bg-elevated/50 p-3.5">
-            <Row
-              label={t("topup.preview.want")}
-              value={
-                <span>
-                  <Em tone="ok">{toCredits(credits).toLocaleString()}</Em>{" "}
-                  <span className="text-fg-tertiary">{t("topup.preview.credits-unit")}</span>
-                </span>
-              }
-            />
-            <Row
-              label={
-                <span className="inline-flex items-center gap-1">
-                  {t("topup.preview.fee-label")}
-                  <Info
-                    className="size-3 cursor-help text-fg-tertiary/70 transition-colors hover:text-fg-tertiary"
-                    aria-label={t("topup.preview.fee-tooltip")}
-                    /* 原生 title 属性 · 桌面 hover / 移动 long-press 都显示 · 不依赖 tooltip 组件 */>
-                    <title>{t("topup.preview.fee-tooltip")}</title>
-                  </Info>
-                </span>
-              }
-              value={
-                willWaive ? (
-                  <span className="flex items-baseline gap-1.5">
-                    <span className="text-fg-tertiary line-through">
-                      {(Number(creditsToUSD(toCredits(credits), false)) - toCredits(credits) / 7).toFixed(2)} USD
-                    </span>
-                    <Em tone="ok">{t("topup.preview.fee-waived-mark")}</Em>
-                  </span>
-                ) : (
-                  <Em tone="spend">
-                    +{(Number(creditsToUSD(toCredits(credits), false)) - toCredits(credits) / 7).toFixed(2)}
-                    {" "}<span className="text-fg-tertiary">USD</span>
-                  </Em>
-                )
-              }
-            />
-            <div className="border-t border-hairline pt-2">
+          {/* 预览 · 只默认色 · Total 大字号强调
+              个人邀请码免手续费额度直接内嵌 fee 行 · 不再单独 hint */}
+          <div className="rounded-xl border border-hairline bg-bg-elevated/50 p-4">
+            <div className="space-y-1.5 text-label">
               <Row
-                label={t("topup.preview.paid-label")}
+                label={t("topup.preview.want")}
                 value={
-                  <Em>
-                    {usdAmount} <span className="text-fg-tertiary">USD</span>
-                  </Em>
+                  <span>
+                    <span className="font-semibold tnum">{toCredits(credits).toLocaleString()}</span>{" "}
+                    <span className="text-fg-tertiary">{t("topup.preview.credits-unit")}</span>
+                  </span>
                 }
-                strong
+              />
+              <Row
+                label={
+                  <span className="group/tt relative inline-flex cursor-help items-center gap-1">
+                    {t("topup.preview.fee-label")}
+                    <Info className="size-3 text-fg-tertiary/60" aria-hidden />
+                    {/* CSS-only tooltip · group hover + focus 都可触发 · 定位在 label 上方
+                        原生 title 延迟 500ms 且小图标 hover 不稳 · 换自建 */}
+                    <span
+                      role="tooltip"
+                      className="pointer-events-none absolute left-0 top-full z-20 mt-1 w-max max-w-[260px] rounded-md bg-fg px-2 py-1.5 text-[11px] font-normal leading-tight text-bg opacity-0 shadow-lg transition-opacity duration-100 group-hover/tt:opacity-100"
+                    >
+                      {t("topup.preview.fee-tooltip")}
+                    </span>
+                  </span>
+                }
+                value={
+                  willWaive ? (
+                    <span className="flex items-baseline gap-1.5 tnum">
+                      <span className="text-fg-tertiary line-through">
+                        {feeUSD} USD
+                      </span>
+                      <span className="text-fg-tertiary">{t("topup.preview.fee-waived-mark")}</span>
+                    </span>
+                  ) : (
+                    <span className="tnum">
+                      +{feeUSD} <span className="text-fg-tertiary">USD</span>
+                    </span>
+                  )
+                }
               />
             </div>
+            {/* Total · You pay 稍粗 · 别太大挤 · text-lg bold */}
+            <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-hairline pt-3">
+              <span className="text-label font-semibold text-fg-secondary">
+                {t("topup.preview.paid-label")}
+              </span>
+              <span className="tnum text-lg font-bold text-fg">
+                {usdAmount} <span className="text-sm font-medium text-fg-tertiary">USD</span>
+              </span>
+            </div>
+            {willWaive && (
+              <p className="mt-2 text-[11px] text-fg-tertiary">
+                <Trans
+                  i18nKey="topup.hint.waived"
+                  ns="wallet"
+                  values={{ count: myInvite?.waiver_remaining ?? 0 }}
+                  components={[<span className="font-semibold text-fg" />]}
+                />
+              </p>
+            )}
           </div>
-
-          {willWaive && (
-            <p className="text-label text-fg-tertiary">
-              <Trans
-                i18nKey="topup.hint.waived"
-                ns="wallet"
-                values={{ count: myInvite?.waiver_remaining ?? 0 }}
-                components={[<Em plain />]}
-              />
-            </p>
-          )}
 
           <Button
             className="w-full"
@@ -357,8 +378,9 @@ function TopupCard() {
         onClose={() => setConfirmOpen(false)}
         credits={toCredits(credits)}
         usdAmount={usdAmount}
+        feeUSD={feeUSD}
+        willWaive={willWaive}
         channelName={selectedChannel?.display_name ?? ""}
-        channelLogo={selectedChannel ? channelLogoSrc(selectedChannel.id) : ""}
         submitting={create.isPending}
         onConfirm={onConfirmAndPay}
       />
@@ -385,81 +407,97 @@ function Row({
  *  - 勾选"同意"才启用支付按钮 · 留痕(乘客表示知晓)
  *  - 撤 CNY 展示 · 只显示 USD 金额(§0.1) */
 function TopupConfirmDialog({
-  open, onClose, credits, usdAmount, channelName, channelLogo, submitting, onConfirm,
+  open, onClose, credits, usdAmount, feeUSD, willWaive, channelName, submitting, onConfirm,
 }: {
   open: boolean;
   onClose: () => void;
   credits: number;
   usdAmount: string;
+  feeUSD: string;
+  willWaive: boolean;
   channelName: string;
-  channelLogo: string;
   submitting: boolean;
-  onConfirm: () => void;
+  onConfirm: (couponCode: string) => void;
 }) {
   const { t } = useTranslation("wallet");
-  const [agreed, setAgreed] = useState(false);
+  const [coupon, setCoupon] = useState("");
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && !submitting && onClose()}>
-      <DialogContent className="max-w-[480px]">
+      <DialogContent className="max-w-[440px]">
         <DialogHeader>
           <DialogTitle>{t("topup.confirm.title")}</DialogTitle>
           <p className="text-label text-fg-tertiary">{t("topup.confirm.sub")}</p>
         </DialogHeader>
         <DialogBody>
-          {/* 核心 3 行 · 支付方式 / 到账积分 / 支付金额 · 全 USD */}
-          <div className="space-y-2 rounded-xl border border-hairline bg-bg-elevated/50 p-3.5">
-            <Row
-              label={t("topup.confirm.channel")}
-              value={
-                <span className="inline-flex items-center gap-1.5">
-                  {channelLogo && (
-                    <img
-                      src={channelLogo}
-                      alt=""
-                      aria-hidden
-                      className="h-4 w-auto max-w-[60px] object-contain"
-                      onError={(e) => { e.currentTarget.style.display = "none"; }}
-                    />
-                  )}
-                  <Em>{channelName}</Em>
-                </span>
-              }
-            />
-            <Row
-              label={t("topup.confirm.credits")}
-              value={<Em tone="ok">{credits.toLocaleString()} {t("topup.preview.credits-unit")}</Em>}
-            />
-            <div className="border-t border-hairline pt-2">
+          {/* 订单摘要 · 通道 + 到账积分 · 无色 */}
+          <div className="rounded-xl border border-hairline bg-bg-elevated/50 p-4">
+            <div className="space-y-1.5 text-label">
+              <Row label={t("topup.confirm.channel")} value={<span className="font-semibold">{channelName}</span>} />
               <Row
-                label={t("topup.confirm.pay")}
-                value={<Em>{usdAmount} <span className="text-fg-tertiary">USD</span></Em>}
-                strong
+                label={t("topup.confirm.credits")}
+                value={
+                  <span>
+                    <span className="font-semibold tnum">{credits.toLocaleString()}</span>{" "}
+                    <span className="text-fg-tertiary">{t("topup.preview.credits-unit")}</span>
+                  </span>
+                }
               />
+              <Row
+                label={
+                  <span className="group/tt relative inline-flex cursor-help items-center gap-1">
+                    {t("topup.preview.fee-label")}
+                    <Info className="size-3 text-fg-tertiary/60" aria-hidden />
+                    <span
+                      role="tooltip"
+                      className="pointer-events-none absolute left-0 top-full z-20 mt-1 w-max max-w-[260px] rounded-md bg-fg px-2 py-1.5 text-[11px] font-normal leading-tight text-bg opacity-0 shadow-lg transition-opacity duration-100 group-hover/tt:opacity-100"
+                    >
+                      {t("topup.preview.fee-tooltip")}
+                    </span>
+                  </span>
+                }
+                value={
+                  willWaive ? (
+                    <span className="flex items-baseline gap-1.5 tnum">
+                      <span className="text-fg-tertiary line-through">{feeUSD} USD</span>
+                      <span className="text-fg-tertiary">{t("topup.preview.fee-waived-mark")}</span>
+                    </span>
+                  ) : (
+                    <span className="tnum">+{feeUSD} <span className="text-fg-tertiary">USD</span></span>
+                  )
+                }
+              />
+            </div>
+            <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-hairline pt-3">
+              <span className="text-label font-semibold text-fg-secondary">{t("topup.confirm.pay")}</span>
+              <span className="tnum text-lg font-bold">
+                {usdAmount} <span className="text-sm font-medium text-fg-tertiary">USD</span>
+              </span>
             </div>
           </div>
 
-          {/* 协议要点 · 精简 · 勾选才能付 · docs/00 §7.5 规则 B */}
-          <div className="mt-3 space-y-1.5 rounded-xl border border-hairline bg-bg-elevated/30 p-3.5 text-[12px] leading-relaxed text-fg-secondary">
-            <div className="font-semibold text-fg">{t("topup.confirm.terms.title")}</div>
-            <ul className="list-disc space-y-1 pl-4 marker:text-fg-tertiary">
-              <li>{t("topup.confirm.terms.provider")}</li>
-              <li>{t("topup.confirm.terms.warranty")}</li>
-              <li>{t("topup.confirm.terms.no-refund")}</li>
-              <li>{t("topup.confirm.terms.channel-fee")}</li>
-            </ul>
+          {/* 优惠券输入 · docs/00 §3.9 · CLAUDE §1.2 coupon_code · 单次减免
+              可选 · 空 = 不用 · 前端只做 UI · 后端 topupRequest 需补 coupon_code 字段(P1) */}
+          <div className="mt-4 space-y-2">
+            <label className="flex items-center gap-1.5 text-label font-semibold text-fg-secondary">
+              <Ticket className="size-3.5 text-fg-tertiary" aria-hidden />
+              {t("topup.confirm.coupon.label")}
+            </label>
+            <Input
+              value={coupon}
+              onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+              placeholder={t("topup.confirm.coupon.placeholder")}
+              className="font-mono uppercase tracking-wide"
+              maxLength={32}
+              disabled={submitting}
+            />
+            <p className="text-[11px] text-fg-tertiary">{t("topup.confirm.coupon.hint")}</p>
           </div>
 
-          <label className="mt-3 flex cursor-pointer items-start gap-2 text-label">
-            <input
-              type="checkbox"
-              checked={agreed}
-              onChange={(e) => setAgreed(e.target.checked)}
-              className="mt-0.5 size-4 shrink-0 cursor-pointer accent-brand-strong"
-              aria-label={t("topup.confirm.agree.aria")}
-            />
-            <span className="text-fg-secondary">{t("topup.confirm.agree.text")}</span>
-          </label>
+          {/* 简短协议 · neutral(灰)Alert · Info icon · 不用醒目色 */}
+          <Alert tone="neutral" icon={Info} className="mt-3 text-[11px]">
+            {t("topup.confirm.terms-short")}
+          </Alert>
         </DialogBody>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={submitting}>
@@ -467,8 +505,8 @@ function TopupConfirmDialog({
           </Button>
           <Button
             variant="brand"
-            onClick={onConfirm}
-            disabled={!agreed || submitting}
+            onClick={() => onConfirm(coupon.trim())}
+            disabled={submitting}
           >
             {submitting ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
             {submitting ? t("topup.confirm.submitting") : t("topup.confirm.submit")}

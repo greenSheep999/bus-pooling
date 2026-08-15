@@ -1,8 +1,8 @@
 {
   "balance": {
-    "available": "可用余额",
+    "available": "可用积分",
     "reserved": {
-      "hint": "拉号进行中占用",
+      "hint": "拼车 / 提取 key 进行中占用",
       "label": "冻结中"
     },
     "spend-total": "累计消费",
@@ -10,8 +10,8 @@
     "unit": "积分"
   },
   "hero": {
-    "subtitle": "充值得积分 · 拉号和提取从这里扣 · 号 30 分钟内失效自动退",
-    "title": "钱包"
+    "subtitle": "充值得积分 · 拼车、提取 key 从这里扣 · 号 30 分钟内失效自动退",
+    "title": "积分"
   },
   "ledger": {
     "empty-filtered": {
@@ -19,7 +19,7 @@
       "title": "这个筛选下没有记录"
     },
     "empty": {
-      "desc": "充值、拉号扣款、退款都会记在这里",
+      "desc": "充值、拼车扣款、退款都会记在这里",
       "title": "还没有流水"
     },
     "filter": {
@@ -28,7 +28,7 @@
       "out": "出账"
     },
     "header": {
-      "balance": "余额",
+      "balance": "积分余额",
       "change": "变动",
       "memo": "说明",
       "time": "时间",
@@ -53,7 +53,7 @@
       "label": "兑换码",
       "placeholder": "KIRO-XXXX"
     },
-    "sub": "社群发的码 · 兑换直接进余额",
+    "sub": "社群发的码 · 兑换直接进账",
     "submit": {
       "default": "兑换",
       "pending": "兑换中…"
@@ -73,8 +73,8 @@
       }
     },
     "hint": {
-      "default": "手续费由支付通道收取，我方不加收也不承担 · 之后拉号、提取都是积分抵扣，不再收手续费",
-      "waived": "这次免手续费（邀请好友攒的额度 · 还剩 <0>{{count}}</0> 次）· 之后拉号、提取都是积分抵扣"
+      "default": "手续费由支付通道收取,我方不加收也不承担 · 之后拼车、提取 key 都是积分抵扣,不再收手续费",
+      "waived": "这次免手续费(邀请好友攒的额度 · 还剩 <0>{{count}}</0> 次)· 之后拼车、提取 key 都是积分抵扣"
     },
     "modal": {
       "close": "关闭",
@@ -89,41 +89,37 @@
       "label": "支付方式",
       "coming-soon": "即将开放"
     },
+    "tier": {
+      "community": "社群成员",
+      "community-tip": "你已绑定专属邀请码 · 拼车享减免"
+    },
     "confirm": {
       "title": "确认充值",
-      "sub": "跳转支付前请确认订单和服务条款",
+      "sub": "确认订单信息 · 可选填优惠券码",
       "channel": "支付方式",
       "credits": "到账",
-      "pay": "支付金额",
+      "pay": "支付",
       "cancel": "取消",
-      "submit": "同意条款 · 去支付",
+      "submit": "去支付",
       "submitting": "跳转中…",
-      "terms": {
-        "title": "购买须知",
-        "provider": "本次商品由上游服务商提供 · 我方仅做代购转发",
-        "warranty": "上游有质保窗口的 · 窗口内失效我方按上游政策**退积分**",
-        "no-refund": "**不退现金** · 不走支付通道反向退款 · 所有退款只能是积分",
-        "channel-fee": "通道手续费已付给 waffo · 一旦发起支付**不退**"
+      "coupon": {
+        "label": "优惠券码",
+        "placeholder": "有优惠券就填 · 没有留空",
+        "hint": "输入后本次充值享减免 · 一次一码 · 不叠加"
       },
-      "agree": {
-        "aria": "同意条款",
-        "text": "我已阅读并同意上述购买须知"
-      }
+      "terms-short": "支付完成后积分自动到账 · 商品由上游提供 · 只退积分不退现金 · 通道费不退"
     },
-    "hint": {
-      "waived": "个人邀请码额度 · 剩 <0>{{count}}</0> 次免通道费"
-    },
-    "preset": "{{value}} 积分",
+    "preset": "{{value}}",
     "preview": {
       "credits-unit": "积分",
       "fee-label": "手续费",
-      "fee-tooltip": "由支付通道(如 Waffo)收取的手续费(约 5%)· pass-through · 我方不留",
+      "fee-tooltip": "由支付通道收取的手续费(约 5%)· pass-through · 我方不留",
       "fee-waived-mark": "免",
       "fee-waived-note": "本单免通道费 · 由个人邀请码额度承担",
       "paid-label": "跳转支付",
       "want": "到账"
     },
-    "sub": "跳转 Waffo 完成支付 · 到账后自动加积分",
+    "sub": "支付完成后积分自动到账",
     "submit": {
       "default": "去支付"
     },
