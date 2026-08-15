@@ -493,6 +493,7 @@
   "strategy-panel": {
     "title": "Refill strategy",
     "sub": "Strategy is scoped to this bus · doesn't affect others · changes apply instantly",
+    "goto-global": "Edit new-bus defaults / cross-bus guardrails → Settings › Preferences",
     "action": {
       "save": "Save strategy",
       "saving": "Saving…",
