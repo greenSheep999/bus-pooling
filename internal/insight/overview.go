@@ -271,10 +271,11 @@ func (s *Store) overviewExtract(ctx context.Context, passengerID string) (Extrac
 		return out, fmt.Errorf("insight: 号池分布: %w", err)
 	}
 	out.Pending = pending
-	// TotalCredentials **= 池里还在的号数**(用户视角"我手上还有几个能用的")
-	// **不含 handoff** · 已拿走的号在池里已 DELETE · 不算池里
-	// handoff 单独统计走 by_destination 那里 · 展示"历史上拿走过多少"
-	out.TotalCredentials = pending + intoBus + pushPool
+	// TotalCredentials **= 池里待派的号数**(pending)
+	// 用户视角"号池" = 拉出来还没派的号 · 派进车 / 推下游 / 拿走都算"派走了" · 不在池里
+	// **只等于 pending** · 不含 intoBus / pushPool / handoff
+	// by_destination 4 桶完整展示分布 · 卡片顶数字只显 pending
+	out.TotalCredentials = pending
 	out.ByDestination = []DestinationRow{
 		{Destination: "pending", Count: pending},
 		{Destination: "into_bus", Count: intoBus},

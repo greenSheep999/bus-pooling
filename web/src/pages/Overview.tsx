@@ -481,21 +481,25 @@ export default function Overview() {
             size="num"
           />
 
-          {/* 去向分布 · handoff 已离开池 · 单独 · 不算进堆栈条(会让 100% 溢出) */}
+          {/* 去向分布 · handoff 已离开池 · 单独展示 · 不算进堆栈条(会让 100% 溢出)
+              extractTotal 现在只是 pending · 堆栈条要按 pending+intoBus+pushPool 之和分比例 */}
           <div className="space-y-2.5">
             <Label>{t("card.extract.dest_dist_label")}</Label>
             <div className="flex h-2.5 overflow-hidden rounded-full bg-hairline">
-              {(ov?.extract.by_destination ?? [])
-                .filter((d) => d.destination !== "handoff")
-                .map((d) => (
+              {(() => {
+                const alive = (ov?.extract.by_destination ?? [])
+                  .filter((d) => d.destination !== "handoff");
+                const aliveTotal = alive.reduce((s, d) => s + d.count, 0);
+                return alive.map((d) => (
                   <div
                     key={d.destination}
                     style={{
-                      width: `${(d.count / Math.max(1, extractTotal)) * 100}%`,
+                      width: `${(d.count / Math.max(1, aliveTotal)) * 100}%`,
                       backgroundColor: DEST_COLOR[d.destination],
                     }}
                   />
-                ))}
+                ));
+              })()}
             </div>
             <div className="space-y-2.5 pt-1">
               {(ov?.extract.by_destination ?? []).map((d) => (

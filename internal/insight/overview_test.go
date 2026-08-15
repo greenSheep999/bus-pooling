@@ -127,8 +127,10 @@ func TestOverview_ExtractDestinationsMutuallyExclusive(t *testing.T) {
 	if counts["push_pool"] != 1 {
 		t.Errorf("push_pool=%d，应=1", counts["push_pool"])
 	}
-	if out.Extract.TotalCredentials != 3 {
-		t.Errorf("total=%d，应=3", out.Extract.TotalCredentials)
+	// TotalCredentials 语义 = 池里(pending only) · 用户视角"我池子里还有几个未派"
+	// 派进车 / 推下游 / 拿走都算派走 · 不在池里
+	if out.Extract.TotalCredentials != 1 {
+		t.Errorf("total=%d · 应=1(只 pending 一个)· 池里 = pending", out.Extract.TotalCredentials)
 	}
 }
 

@@ -2,7 +2,7 @@
   "hero": {
     "title": "概览",
     "buses_running_suffix": "辆拼车正在运转",
-    "pool_suffix": "个号在池"
+    "pool_suffix": "个号活着"
   },
   "pool_status": {
     "loading": "加载中",
@@ -73,15 +73,15 @@
     "view": "查看 →",
     "bus": {
       "title": "拼车",
-      "unit": "辆车 · {{total}} 个号在池",
-      "pool_dist_label": "号池分布",
+      "unit": "辆车 · {{total}} 个号活着",
+      "pool_dist_label": "号活跃分布",
       "row_suffix": "个",
       "footer_stat": "补车 {{refill}} 次 · 集单率 {{rate}}%",
       "credits_unit": "积分"
     },
     "extract": {
       "title": "提取 key",
-      "unit": "个 key 在池 · 今日拉 {{today}} 次",
+      "unit": "个待派 · 今日拉 {{today}} 次",
       "dest_dist_label": "去向分布",
       "row_suffix": "个",
       "footer_pending": "待派 {{pending}} 个",

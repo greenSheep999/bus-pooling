@@ -2,7 +2,7 @@
   "hero": {
     "title": "Overview",
     "buses_running_suffix": "buses running",
-    "pool_suffix": "keys in pool"
+    "pool_suffix": "keys alive"
   },
   "pool_status": {
     "loading": "Loading",
@@ -73,7 +73,7 @@
     "view": "View →",
     "bus": {
       "title": "Pooling",
-      "unit": "buses · {{total}} keys in pool",
+      "unit": "buses · {{total}} keys alive",
       "pool_dist_label": "Pool distribution",
       "row_suffix": "keys",
       "footer_stat": "Refill {{refill}} · Coalesce {{rate}}%",
@@ -81,7 +81,7 @@
     },
     "extract": {
       "title": "Extract key",
-      "unit": "keys in pool · {{today}} pulls today",
+      "unit": "pending dispatch · {{today}} pulls today",
       "dest_dist_label": "Destination",
       "row_suffix": "keys",
       "footer_pending": "Pending {{pending}}",
