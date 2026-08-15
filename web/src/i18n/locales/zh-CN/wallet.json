@@ -116,6 +116,9 @@
     "preset": "{{value}} 积分",
     "preview": {
       "credits-unit": "积分",
+      "fee-label": "通道手续费 5%",
+      "fee-note": "通道手续费按 5% 加在充值金额上 · 由支付通道(如 Waffo)收取 · 我方不留",
+      "fee-waived-mark": "免",
       "fee-waived-note": "本单免通道费 · 由个人邀请码额度承担",
       "paid-label": "跳转支付",
       "want": "到账"

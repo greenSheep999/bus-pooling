@@ -247,12 +247,22 @@ function TopupCard() {
                     )}
                   >
                     {logoSrc && (
-                      <img
-                        src={logoSrc}
-                        alt=""
-                        aria-hidden
-                        className={cn("size-6 shrink-0 rounded", !c.enabled && "grayscale")}
-                      />
+                      /* wordmark 型 logo 主体白色(waffo/bybit)· 在白底看不见 · 加深色底衬托
+                         hex icon(usdt/binance)本身有色 · 也塞进同一个盒子 · 视觉统一 */
+                      <span
+                        className={cn(
+                          "grid h-7 w-16 shrink-0 place-items-center overflow-hidden rounded-md bg-neutral-900 px-2",
+                          !c.enabled && "grayscale opacity-60",
+                        )}
+                      >
+                        <img
+                          src={logoSrc}
+                          alt=""
+                          aria-hidden
+                          className="max-h-4 w-auto max-w-full object-contain"
+                          onError={(e) => { e.currentTarget.style.display = "none"; }}
+                        />
+                      </span>
                     )}
                     <span className="flex min-w-0 flex-col">
                       <span className="text-label">{c.display_name}</span>
@@ -266,7 +276,8 @@ function TopupCard() {
             </div>
           </div>
 
-          {/* 简明预览 · 只展示"到账积分 + 支付金额 USD"两行 · 不再拆通道费(§0.1) */}
+          {/* 预览 · 到账积分 + 通道费(付给 waffo · 我方 pass-through 不留) + 合计 USD
+              CLAUDE §1.4 · 通道费只在充值这一步展示 · 让用户知道钱花在哪(不是我方收) */}
           <div className="space-y-2 rounded-xl border border-hairline bg-bg-elevated/50 p-3.5">
             <Row
               label={t("topup.preview.want")}
@@ -275,6 +286,26 @@ function TopupCard() {
                   <Em tone="ok">{toCredits(credits).toLocaleString()}</Em>{" "}
                   <span className="text-fg-tertiary">{t("topup.preview.credits-unit")}</span>
                 </span>
+              }
+            />
+            <Row
+              label={t("topup.preview.fee-label")}
+              value={
+                willWaive ? (
+                  <span className="flex items-baseline gap-1.5">
+                    <span className="text-fg-tertiary line-through">
+                      {creditsToUSD(toCredits(credits), false) === "0.00"
+                        ? "0.00"
+                        : (Number(creditsToUSD(toCredits(credits), false)) - Number(creditsToUSD(toCredits(credits), true))).toFixed(2)} USD
+                    </span>
+                    <Em tone="ok">{t("topup.preview.fee-waived-mark")}</Em>
+                  </span>
+                ) : (
+                  <Em tone="spend">
+                    +{(Number(creditsToUSD(toCredits(credits), false)) - toCredits(credits) / 7).toFixed(2)}
+                    {" "}<span className="text-fg-tertiary">USD</span>
+                  </Em>
+                )
               }
             />
             <div className="border-t border-hairline pt-2">
@@ -288,11 +319,9 @@ function TopupCard() {
                 strong
               />
             </div>
-            {willWaive && (
-              <p className="pt-1 text-[11px] text-ok-fg">
-                {t("topup.preview.fee-waived-note")}
-              </p>
-            )}
+            <p className="pt-1 text-[10px] leading-relaxed text-fg-tertiary">
+              {t("topup.preview.fee-note")}
+            </p>
           </div>
 
           {willWaive && (
@@ -379,7 +408,15 @@ function TopupConfirmDialog({
               label={t("topup.confirm.channel")}
               value={
                 <span className="inline-flex items-center gap-1.5">
-                  {channelLogo && <img src={channelLogo} alt="" aria-hidden className="size-5 rounded" />}
+                  {channelLogo && (
+                    <img
+                      src={channelLogo}
+                      alt=""
+                      aria-hidden
+                      className="h-4 w-auto max-w-[60px] object-contain"
+                      onError={(e) => { e.currentTarget.style.display = "none"; }}
+                    />
+                  )}
                   <Em>{channelName}</Em>
                 </span>
               }

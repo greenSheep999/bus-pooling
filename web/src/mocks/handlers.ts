@@ -239,7 +239,13 @@ export const handlers = [
         note: "USDT · 即将支持",
       },
       {
-        id: "epusdt", display_name: "USDT 链上", region: "overseas", rail: "direct",
+        id: "binance", display_name: "Binance ID 内转", region: "overseas", rail: "direct",
+        asset: "USDT", enabled: false, requires_payer_reference: true,
+        payer_reference_label: "你的 Binance ID",
+        note: "USDT · 即将支持",
+      },
+      {
+        id: "epusdt", display_name: "USDT 链上转账", region: "overseas", rail: "direct",
         asset: "USDT", enabled: false, requires_payer_reference: false,
         note: "USDT-TRC20/ERC20 · 即将支持",
       },

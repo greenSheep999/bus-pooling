@@ -116,6 +116,9 @@
     "preset": "{{value}} credits",
     "preview": {
       "credits-unit": "credits",
+      "fee-label": "Channel fee 5%",
+      "fee-note": "Channel fee is 5% added on top · charged by the payment channel (e.g. Waffo) · we don't keep it",
+      "fee-waived-mark": "Waived",
       "fee-waived-note": "Channel fee waived on this order · covered by your invite quota",
       "paid-label": "You pay",
       "want": "You receive"
