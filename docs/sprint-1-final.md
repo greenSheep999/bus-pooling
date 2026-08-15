@@ -53,13 +53,16 @@
 - [x] refund / reversed / pending_topup janitor 恢复 · 单元测试覆盖
 - [x] **目的**:"钱进钱包" 的链路安全 · **达成**
 
-### Stage 2 · 切 housepool 真链路 ⚠️ 部分完成
+### Stage 2 · 切 housepool 真链路 ✅ 我方部分完成(2026-08-16)
 
 - [x] `housepool.base_url` = `https://kiro.aibbq.xyz`(config.yaml 已配)
-- [x] `housepool.admin_key` 通过环境变量(BP_HOUSEPOOL_ADMIN_KEY)读取 · 阶段 1a 已实装
-- [x] smoke-1f 已验证 housepool 真链路存活(kiro.aibbq.xyz `GET /admin/system/update/check` 返 running · docs/1f-live-test.md line 33)
-- [ ] 端到端拉号进 housepool `bus-<id>` group **未验**(依赖上游 vendor 支持 · 见 Stage 3 阻塞)
-- [ ] deathwatch 读 housepool 探活标 credential_ledger **未跑真流量**
+- [x] `housepool.admin_key` 通过 kiro.rs config.json adminApiKey 装配 · 阶段 1a 已实装
+- [x] smoke-1f 验证 housepool 存活(kiro.aibbq.xyz update/check 返 running)
+- [x] **手动 BatchImport 一号(2026-08-16 · ksk_...w4DV)进 `bus-<bus_id>` group · verify=true 通 · 返 KIRO PRO+ / usage 62/2000 · groups 挂对** —— 证 housepool 承载 API 全部工作
+- [ ] **bus-pooling 侧走真拉号流程写 credential_ledger** 未验(依赖 Stage 3 上游支持外部拉号)
+- [ ] deathwatch 读 housepool 探活标 credential_ledger 死 · 未跑(依赖上一条)
+
+**Stage 2 结论**: 号池 API 层全通 · 差 bus-pooling 侧走拉号链路把号从 vendor 拉进 housepool(依赖 Stage 3)
 
 ### Stage 3 · 切单家 vendor 真链路 ⚠️ **阻塞:上游只支持个人号 · 暂不支持外部拉号**
 
@@ -79,10 +82,15 @@
 - [x] bus.Scheduler / stockwatch / janitor 全装配 · 已经在跑(FK 787 修复后无崩溃)
 - [ ] 单车灰度打开 · 需 Stage 3 通了才有真号进车才能验
 
-### Stage 6 · 打开 1e 外发(最后) ⚠️ 依赖 Stage 3-5
+### Stage 6 · 打开 1e 外发(最后) ⚠️ 依赖 Stage 3
 
-- [ ] passengerpool 双写 · 已装配(sprint-1e)· 需真号才能验
-- [ ] outbound webhook · 装配层通(webhookout.Dispatcher retrier)· 需真拉号事件才能触发
+- [x] passengerpool 双写代码路径全通 · Pusher 装配 · smoke-1f 有单次手动触发(k2a `latency_ms=602 ok:true`)
+- [x] outbound webhook 分派器已装配(webhookout.Dispatcher · 3-attempts retrier · retry 队列)
+- [x] passenger_downstream 表结构就位(passengerpool_url + webhook_url + 加密 token)
+- [ ] **生产真流量验证**未做:leedx2011 账号未在设置里配下游 URL · 无从触发
+- [ ] 依赖 Stage 3 通了 · 真号拉进车才有 push_pool 事件驱动 outbound
+
+**Stage 6 结论**: 装配 + 单元测试全过 · 需 Stage 3 有真号 + 用户配下游 URL 才能真验
 
 ### Stage 7 · 打 tag · 部署 · 归档
 
