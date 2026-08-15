@@ -7,7 +7,7 @@ import {
   X, Zap, ZapOff,
 } from "lucide-react";
 import {
-  useBus, useBusCredentials, useBusPulls, useDownstream, useGlobalStrategy, useMe,
+  useBus, useBusCredentialPush, useBusCredentials, useBusPulls, useDownstream, useGlobalStrategy, useMe,
   useRegenInviteCode, useRemoveMember, useSetMemberSuspended,
 } from "@/api/hooks";
 import {
@@ -590,6 +590,33 @@ function TabCredentials({ busId }: { busId: string }) {
   );
 }
 
+/* 车内号手动重推按钮 · decisions §8.44 · Task #194
+   自动 push_pool 失败或从未推过时显示 · 点一次触发后端 push · 反馈 4 态 */
+function PushRetryButton({ busId, credId }: { busId: string; credId: string }) {
+  const { t } = useTranslation("buses");
+  const push = useBusCredentialPush();
+  const [lastResult, setLastResult] = useState<string | null>(null);
+  const onClick = async () => {
+    setLastResult(null);
+    try {
+      const r = await push.mutateAsync({ busId, credId });
+      setLastResult(r.state);
+    } catch (e) {
+      setLastResult("error: " + ((e as { message?: string })?.message || "unknown"));
+    }
+  };
+  return (
+    <button
+      onClick={onClick}
+      disabled={push.isPending}
+      className="text-[11px] font-medium text-brand-strong underline underline-offset-2 disabled:opacity-50"
+      title={lastResult || t("credentials.push.retry-tip")}
+    >
+      {push.isPending ? t("credentials.push.retrying") : t("credentials.push.retry")}
+    </button>
+  );
+}
+
 function CredentialRow({ c }: { c: Credential }) {
   const { t } = useTranslation("buses");
   const { data: me } = useMe();
@@ -618,11 +645,19 @@ function CredentialRow({ c }: { c: Credential }) {
         <span className="ml-0.5 font-medium text-fg-tertiary">{t("credentials.unit.credits")}</span>
       </span>
 
-      <span className="flex w-20 shrink-0 justify-center">
+      <span className="flex w-20 shrink-0 items-center justify-center gap-1">
         {c.pushed_at ? (
           <Chip tone="ok" icon={<Check className="size-3" />}>{t("credentials.push.pushed")}</Chip>
         ) : c.push_failed ? (
-          <Chip tone="danger" icon={<X className="size-3" />}>{t("credentials.push.failed")}</Chip>
+          <>
+            <Chip tone="danger" icon={<X className="size-3" />}>{t("credentials.push.failed")}</Chip>
+            <PushRetryButton busId={c.owner_bus_id!} credId={c.id} />
+          </>
+        ) : alive ? (
+          <>
+            <Chip tone="neutral">{t("credentials.push.none")}</Chip>
+            <PushRetryButton busId={c.owner_bus_id!} credId={c.id} />
+          </>
         ) : (
           <Chip tone="neutral">{t("credentials.push.none")}</Chip>
         )}

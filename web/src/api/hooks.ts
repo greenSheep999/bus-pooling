@@ -350,6 +350,23 @@ export const useBusCredentials = (id: string | undefined) =>
     enabled: !!id,
   });
 
+/** 车内号手动重推 · decisions §8.44 · 自动 push 失败后手动重试
+ *  state: pushed | already_pushed | failed | dead */
+export interface BusCredentialPushResult {
+  state: "pushed" | "already_pushed" | "failed" | "dead";
+  message?: string;
+}
+export const useBusCredentialPush = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ busId, credId }: { busId: string; credId: string }) =>
+      post<BusCredentialPushResult>(`/me/buses/${busId}/credentials/${credId}/push`, {}),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["busCredentials", vars.busId] });
+    },
+  });
+};
+
 /** 成员维度统计 · 多人车才有意义（1 人车返 1 条 100% 的行） */
 export const useBusMemberStats = (id: string | undefined) =>
   useQuery({

@@ -896,11 +896,12 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		// credplain Get 找不到 · pusher 走 placeholder 兜底(dev mock 环境)
 		credplainStore := credplain.New(database.DB, cipher)
 		pusher = passengerpool.NewPusher(passengerpool.PusherDeps{
-			Downstreams: downstreamStore,
-			Plaintext:   credplain.NewLookup(credplainStore),
-			HTTPX:       poolHTTPX,
-			DB:          database.DB,
-			Logger:      slog.Default(),
+			Downstreams:    downstreamStore,
+			Plaintext:      credplain.NewLookup(credplainStore),
+			PlaintextUsage: credplainStore, // 推成功后标 used_at · janitor 24h 硬删
+			HTTPX:          poolHTTPX,
+			DB:             database.DB,
+			Logger:         slog.Default(),
 		})
 		slog.Info("passengerpool.Pusher 已装配 · 走 credplain 表(P0-c)")
 	} else {

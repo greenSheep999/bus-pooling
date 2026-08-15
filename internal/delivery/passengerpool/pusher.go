@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/delivery/passengerpool/kirors"
 	"github.com/bus-pooling/bus-pooling/internal/downstream"
@@ -35,11 +36,19 @@ type PlaintextLookup interface {
 	FetchPlaintext(ctx context.Context, credentialIDs []string) (map[string]PushCredential, error)
 }
 
+// PlaintextUsage · 推 / handoff 成功后通知明文缓存标 used_at(24h 后 janitor 删)
+// 独立 interface · 因为 PlaintextLookup 是查 · 这是通知 · 语义分开
+type PlaintextUsage interface {
+	MarkUsed(ctx context.Context, credentialID string) error
+}
+
 // PusherDeps 是装配一个真实 Pusher 需要的依赖(main.go 用)。
 type PusherDeps struct {
 	Downstreams DownstreamStore
 	// Plaintext 明文查询 · nil = 走 placeholder 兜底(见 EnvAllowPlaceholder)
 	Plaintext PlaintextLookup
+	// PlaintextUsage 明文用完通知 · nil = 不标 used_at(TTL 24h 自然清)
+	PlaintextUsage PlaintextUsage
 	// HTTPX 出向 http · 统一走 internal/httpx
 	HTTPX *httpx.Client
 	// DB 用来读 credential_ledger 拿 masked / vendor / region(帮 Pusher 拼元数据 · 免得每号查两遍)
@@ -192,7 +201,27 @@ func (p *realPusher) Push(ctx context.Context, passengerID string, creds []PushC
 	}
 
 	// ⑥ 归错分类 · 每号按 SSE 事件里的 status 分流
-	return p.classifyResult(withPlain, res), nil
+	result := p.classifyResult(withPlain, res)
+
+	// ⑦ P1-i(2026-08-16) · 推成功的号标 credplain.used_at · 24h 后 janitor 硬删
+	// duplicate 也视为成功(号在 k2a 已存在 · 我方明文可以清)
+	if p.deps.PlaintextUsage != nil {
+		markCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		for _, id := range result.Success {
+			if err := p.deps.PlaintextUsage.MarkUsed(markCtx, id); err != nil {
+				p.deps.Logger.Warn("passengerpool.MarkUsed 失败·janitor 24h 后 TTL 兜底",
+					"credential_id", id, "err", err)
+			}
+		}
+		for _, id := range result.Duplicate {
+			if err := p.deps.PlaintextUsage.MarkUsed(markCtx, id); err != nil {
+				p.deps.Logger.Warn("passengerpool.MarkUsed 失败·janitor 24h 后 TTL 兜底",
+					"credential_id", id, "err", err)
+			}
+		}
+	}
+	return result, nil
 }
 
 // streamErrorToPushError 把 kirors.StreamError 翻译成对外脱敏的 PushError。

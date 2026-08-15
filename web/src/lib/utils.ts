@@ -141,13 +141,13 @@ export function vendorName(id: string): string {
   return VENDOR_NAME[id] ?? id;
 }
 
-/** vendor 匿名编号（散客视角）· decisions §8.20
-    无注册邀请码的用户看不到真名，只看 "AWS-Q Kiro Vendor 01"
-    编号顺序 = VENDOR_NAME 键顺序（跟 CLAUDE.md §1.1 六家列表一致）· 同一用户每次看到的编号一致 */
+/** vendor 匿名编号(散客视角)· decisions §8.20 · CLAUDE §0.1 §12.6
+    无注册邀请码的用户看不到真名 · 只看 "Vendor 01" · 别泄漏"AWS-Q"/"Kiro"内部术语
+    编号顺序 = VENDOR_NAME 键顺序(跟 CLAUDE.md §1.1 六家列表一致)· 同一用户每次看到的编号一致 */
 const VENDOR_ANON_INDEX: Record<string, string> = Object.fromEntries(
   Object.keys(VENDOR_NAME).map((id, i) => [
     id,
-    `AWS-Q Kiro Vendor ${String(i + 1).padStart(2, "0")}`,
+    `Vendor ${String(i + 1).padStart(2, "0")}`,
   ]),
 );
 
@@ -159,7 +159,7 @@ const VENDOR_ANON_INDEX: Record<string, string> = Object.fromEntries(
  *  一律传 `me?.tier`。 */
 export function vendorLabel(id: string, tier: PassengerTier | undefined): string {
   if (tier === "wholesale") return vendorName(id);
-  return VENDOR_ANON_INDEX[id] ?? "AWS-Q Kiro Vendor";
+  return VENDOR_ANON_INDEX[id] ?? "Vendor";
 }
 
 /** ⚠️ 档次名（retail/community/wholesale）**只在内部**用 · UI 上不要展示三档差别
@@ -182,8 +182,9 @@ export function fmtTime(iso: string): string {
   return `${mm}/${dd} ${hh}:${mn}`;
 }
 
-/** 寿命：秒 → "42h" / "3.2d" */
-export function fmtLifespan(seconds: number): string {
+/** 寿命:秒 → "42h" / "3.2d" · 空/NaN 返 "—"(避免 NaNd) */
+export function fmtLifespan(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "—";
   const h = seconds / 3600;
   if (h < 48) return `${Math.round(h)}h`;
   return `${(h / 24).toFixed(1)}d`;

@@ -89,7 +89,10 @@
     "push": {
       "failed": "推失败",
       "none": "未推",
-      "pushed": "已推"
+      "pushed": "已推",
+      "retry": "重推",
+      "retrying": "推送中…",
+      "retry-tip": "点重试自动 push · 号已失效会拒推"
     },
     "status": {
       "alive": "正常",

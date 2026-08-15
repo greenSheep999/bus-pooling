@@ -237,6 +237,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("PUT /api/me/buses/{bus_id}/members/{pid}", handler(s.RequireAuth(s.handleSetMemberSuspended)))
 	mux.Handle("DELETE /api/me/buses/{bus_id}/members/{pid}", handler(s.RequireAuth(s.handleRemoveMember)))
 	mux.Handle("GET /api/me/buses/{bus_id}/credentials", handler(s.RequireAuth(s.handleBusCredentials)))
+	// 车内号手动重推 · decisions §8.44 · Task #194
+	mux.Handle("POST /api/me/buses/{bus_id}/credentials/{cred_id}/push", handler(s.RequireAuth(s.handleBusCredentialPush)))
 	mux.Handle("GET /api/me/buses/{bus_id}/pulls", handler(s.RequireAuth(s.handleBusPulls)))
 	// 成员维度统计（decisions §8.19 · 1c 多人拼车落地后开放）
 	mux.Handle("GET /api/me/buses/{bus_id}/member-stats", handler(s.RequireAuth(s.handleBusMemberStats)))

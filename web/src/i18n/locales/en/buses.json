@@ -89,7 +89,10 @@
     "push": {
       "failed": "Push failed",
       "none": "Not pushed",
-      "pushed": "Pushed"
+      "pushed": "Pushed",
+      "retry": "Retry",
+      "retrying": "Pushing…",
+      "retry-tip": "Manually re-push · dead keys are rejected"
     },
     "status": {
       "alive": "Alive",

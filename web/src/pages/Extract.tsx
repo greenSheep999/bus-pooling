@@ -323,7 +323,7 @@ function RecordRow({
       </span>
       <span className="w-20 shrink-0 text-center text-label font-semibold tnum">
         {fmtCredits(c.credits_used)}
-        <span className="ml-0.5 font-medium text-fg-tertiary">{t("unit.credits")}</span>
+        <span className="ml-1 font-medium text-fg-tertiary">{t("unit.credits")}</span>
       </span>
       <span className="w-24 shrink-0 text-right text-label font-medium tnum text-fg-tertiary">
         {fmtTime(c.pulled_at)}
