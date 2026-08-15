@@ -557,13 +557,17 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		settlement = st
 	case "push_pool":
 		if pushResult == nil {
-			// dry-run 路径(s.pusher nil / ErrNoTarget)· 全部号只标时间戳
-			if err := pullrecord.MarkPushedTx(r.Context(), tx, req.CredentialIDs, p.ID); err != nil {
-				if errors.Is(err, pullrecord.ErrNotFound) {
-					return newFail(http.StatusConflict, "bad_assignment_plan",
-						"这批号里有一个不属于你或已被派出，请刷新后重试")
+			// dry-run 路径(s.pusher nil / ErrNoTarget)· 只标 successIDs 时间戳
+			// **P1-k 修(2026-08-16)**: 之前用 req.CredentialIDs 会把 verify 拒的死号也标 pushed_at
+			// 场景:K5 用尽号 · verify 拒 · successIDs=[] · 但 dry-run 走 req.CredentialIDs 落 pushed_at
+			if len(successIDs) > 0 {
+				if err := pullrecord.MarkPushedTx(r.Context(), tx, successIDs, p.ID); err != nil {
+					if errors.Is(err, pullrecord.ErrNotFound) {
+						return newFail(http.StatusConflict, "bad_assignment_plan",
+							"这批号里有一个不属于你或已被派出·请刷新后重试")
+					}
+					return err
 				}
-				return err
 			}
 		} else if len(successIDs) > 0 {
 			// 真推路径 · 成功号走 MarkPushSuccessTx(清 push_error_* + attempts+1 + 时间戳)
