@@ -163,15 +163,40 @@ func (d *DB) MigrateUp(ctx context.Context, dir string) ([]Migration, error) {
 		if applied[m.Version] {
 			continue
 		}
+		// FK 关闭 · 让"新表+复制+DROP+RENAME"模式可行(SQLite 里 DROP TABLE 会立刻扫依赖它的
+		// 外表 · defer_foreign_keys 只 defer INSERT/UPDATE 的 FK 校验 · 不 defer DROP)。
+		// 迁移完 tx commit 前 · 手动 PRAGMA foreign_key_check 校验一遍;失败就 rollback。
+		if _, err := d.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+			return ran, fmt.Errorf("迁移 %03d_%s · 关 FK: %w", m.Version, m.Name, err)
+		}
 		err := d.InTx(ctx, func(tx *sql.Tx) error {
 			if _, err := tx.ExecContext(ctx, m.Up); err != nil {
 				return fmt.Errorf("应用迁移 %03d_%s: %w", m.Version, m.Name, err)
 			}
-			_, err := tx.ExecContext(ctx,
+			// 手工 FK 校验 · 有违反就报错 · InTx 自动 rollback
+			rows, err := tx.QueryContext(ctx, "PRAGMA foreign_key_check")
+			if err != nil {
+				return fmt.Errorf("迁移 %03d_%s · FK 校验: %w", m.Version, m.Name, err)
+			}
+			defer rows.Close()
+			var violations []string
+			for rows.Next() {
+				var table, rowid, parent, fkid sql.NullString
+				_ = rows.Scan(&table, &rowid, &parent, &fkid)
+				violations = append(violations, fmt.Sprintf("%s → %s", table.String, parent.String))
+			}
+			if len(violations) > 0 {
+				return fmt.Errorf("迁移 %03d_%s · FK 违反: %v", m.Version, m.Name, violations)
+			}
+			_, err = tx.ExecContext(ctx,
 				`INSERT INTO schema_migration (version, name, applied_at) VALUES (?, ?, datetime('now'))`,
 				m.Version, m.Name)
 			return err
 		})
+		// 无论成功失败 · 恢复 FK
+		if _, e2 := d.ExecContext(ctx, "PRAGMA foreign_keys = ON"); e2 != nil && err == nil {
+			err = fmt.Errorf("迁移 %03d_%s · 恢复 FK: %w", m.Version, m.Name, e2)
+		}
 		if err != nil {
 			return ran, err
 		}
@@ -219,13 +244,34 @@ func (d *DB) MigrateDown(ctx context.Context, dir string, n int) ([]Migration, e
 			// 库里记了这个版本但文件没了 —— 不能瞎猜怎么回滚
 			return ran, fmt.Errorf("已应用的迁移版本 %d 找不到对应文件，无法回滚", v)
 		}
+		// 同 up · FK 关闭 + 手工校验(见 MigrateUp)
+		if _, err := d.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+			return ran, fmt.Errorf("回滚 %03d_%s · 关 FK: %w", m.Version, m.Name, err)
+		}
 		err := d.InTx(ctx, func(tx *sql.Tx) error {
 			if _, err := tx.ExecContext(ctx, m.Down); err != nil {
 				return fmt.Errorf("回滚迁移 %03d_%s: %w", m.Version, m.Name, err)
 			}
-			_, err := tx.ExecContext(ctx, `DELETE FROM schema_migration WHERE version = ?`, m.Version)
+			rows, err := tx.QueryContext(ctx, "PRAGMA foreign_key_check")
+			if err != nil {
+				return fmt.Errorf("回滚 %03d_%s · FK 校验: %w", m.Version, m.Name, err)
+			}
+			defer rows.Close()
+			var violations []string
+			for rows.Next() {
+				var table, rowid, parent, fkid sql.NullString
+				_ = rows.Scan(&table, &rowid, &parent, &fkid)
+				violations = append(violations, fmt.Sprintf("%s → %s", table.String, parent.String))
+			}
+			if len(violations) > 0 {
+				return fmt.Errorf("回滚 %03d_%s · FK 违反: %v", m.Version, m.Name, violations)
+			}
+			_, err = tx.ExecContext(ctx, `DELETE FROM schema_migration WHERE version = ?`, m.Version)
 			return err
 		})
+		if _, e2 := d.ExecContext(ctx, "PRAGMA foreign_keys = ON"); e2 != nil && err == nil {
+			err = fmt.Errorf("回滚 %03d_%s · 恢复 FK: %w", m.Version, m.Name, e2)
+		}
 		if err != nil {
 			return ran, err
 		}

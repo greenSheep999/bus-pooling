@@ -361,26 +361,42 @@ func (s *Service) VendorStock(ctx context.Context, vendorID string, v Viewer) (*
 // **P4 · 2026-08-14**：老代码 AutoPick 只喂 UI · 从不进下单决策。这个方法让 decider
 // 能拿到跟前端 UI 一致的选择 · 用户看到的推荐跟真拉时用的是同一家。
 func (s *Service) PickBestVendor(ctx context.Context, zoneHint string) (providers.VendorID, providers.Zone, bool) {
-	return s.PickBestVendorExcluding(ctx, zoneHint, nil)
+	return s.pickBestInternal(ctx, zoneHint, nil)
 }
 
 // PickBestVendorExcluding · 排除若干 vendor 后再选（余额自动切换用）
 //
-// **首版**：exclude 空 = PickBestVendor 老行为；exclude 非空 = 若最优不在 exclude 就返之 ·
+// **首版**：exclude 空 = 老行为；exclude 非空 = 若最优不在 exclude 就返之 ·
 // 否则暂返 false（还没做 nth-best 打分器）。上层 orchestrator 收 false = 走 ErrVendorInsufficient
-// 兜底（跟 之前一致）· 不会退化。
+// 兜底 · 不会退化。
 //
-// **完整 nth-best 实现放 **：抽 AutoPick 内部 cand 数组返 · 上层遍历。改动集中 · 好回滚。
+// **完整 nth-best 实现放**：抽 AutoPick 内部 cand 数组返 · 上层遍历。
 func (s *Service) PickBestVendorExcluding(ctx context.Context, zoneHint string, exclude []providers.VendorID) (providers.VendorID, providers.Zone, bool) {
-	vid, zn, ok := s.PickBestVendor(ctx, zoneHint)
-	if !ok {
+	return s.pickBestInternal(ctx, zoneHint, exclude)
+}
+
+// pickBestInternal · PickBestVendor 和 PickBestVendorExcluding 的共用实现 · **不递归**
+// (2026-08-15 修 stack overflow · 之前俩公开函数互相调造成无限递归 · 从没跑到过)
+func (s *Service) pickBestInternal(ctx context.Context, zoneHint string, exclude []providers.VendorID) (providers.VendorID, providers.Zone, bool) {
+	// 复用 AutoPick 的打分逻辑 · 只返 vendor id 不组装 View
+	// 简版:调 AutoPick 拿 top1 · 再判 exclude
+	view := s.AutoPick(ctx, zoneHint, Viewer{Tier: TierRetail})
+	if view == nil || view.VendorID == "" {
+		return "", "", false
+	}
+	vid := providers.VendorID(view.VendorID)
+	// 缺货态 view 会返"暂时缺货" label 但 AliveRate30d 会是 0 · 用它判
+	if view.Available <= 0 {
 		return "", "", false
 	}
 	for _, e := range exclude {
 		if e == vid {
-			// 最优在排除里 · 首版返 false（后续会实现真正的 nth-best）
 			return "", "", false
 		}
+	}
+	zn := providers.Zone("")
+	if view.Zone != nil && *view.Zone != "" {
+		zn = providers.Zone(*view.Zone)
 	}
 	return vid, zn, true
 }

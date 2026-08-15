@@ -1,5 +1,8 @@
 -- +migrate up
 
+-- **FK 由 migration runner 自动关+校验**(见 internal/db/migrate.go MigrateUp) ·
+-- DROP TABLE bus + RENAME 期间 FK OFF · commit 前 foreign_key_check 校验 · 违反自动 rollback。
+
 -- 039_strategy_nullable_and_globals.sql
 --
 -- 1f-B · 策略字段两分离 · 车级 nullable(方案 A) + 全局补 auto/refill 三字段
@@ -81,6 +84,7 @@ CREATE INDEX idx_bus_anon_match ON bus(kind, status, anon_zone);
 -- +migrate down
 
 -- 回滚 · bus 表恢复 NOT NULL DEFAULT 0(NULL 用 0 兜) · 删全局三字段
+-- FK 由 runner 自动关闭 + commit 前 foreign_key_check 校验
 
 DROP INDEX IF EXISTS idx_bus_creator;
 DROP INDEX IF EXISTS idx_bus_kind_status;

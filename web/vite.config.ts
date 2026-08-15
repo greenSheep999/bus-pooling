@@ -7,7 +7,10 @@ export default defineConfig({
   server: {
     port: 3100,
     strictPort: false,
-    proxy: { "/api": { target: "http://localhost:8080", changeOrigin: true } },
+    // 用 127.0.0.1 显式走 IPv4 · localhost 在 macOS 会优先 IPv6 · 但后端只绑 IPv4(BP_ADDR=127.0.0.1:8080)
+    // 别的进程占了 IPv6 8080(如 visualgo)时 localhost 会打错服务 · 返 404 迷惑
+    // 8080 被别的项目占了(visualgo · macOS opcon-xps 冲突) · 换 8090
+    proxy: { "/api": { target: "http://127.0.0.1:8090", changeOrigin: true } },
   },
   build: {
     // Vite 8 底层 Rolldown · codeSplitting API 拆 vendor
