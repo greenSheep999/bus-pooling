@@ -101,7 +101,10 @@ func (s *Server) handleBusCredentialPush(w http.ResponseWriter, r *http.Request)
 			return nil
 		}
 		// 边界:探活通过但 usage 快满 · 车里共享号该拒(下一次就 402)
-		if bal, berr := s.pool.GetBalance(r.Context(), housepool.CredentialID(krID)); berr == nil && bal != nil && bal.UsagePercentage >= 95.0 {
+		bal, berr := s.pool.GetBalance(r.Context(), housepool.CredentialID(krID))
+		slog.Info("busCredentialPush · GetBalance",
+			"cred", credID, "kr_id", krID, "bal", bal, "err", berr)
+		if berr == nil && bal != nil && bal.UsagePercentage >= 95.0 {
 			writeJSON(w, http.StatusOK, busCredentialPushResp{
 				State: "dead",
 				Message: fmt.Sprintf("号快用完(%.1f%%)· 车里共享号需活号 · 请换号或等 quota 重置",
