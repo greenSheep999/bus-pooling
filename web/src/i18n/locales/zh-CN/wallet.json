@@ -83,22 +83,46 @@
       "notice": "支付完成后积分自动到账 · 15 分钟内有效 · 未付款自动作废",
       "open-checkout": "打开支付页",
       "qr-alt": "收款二维码",
-      "summary": "付 <0>{{paid}}</0> 元 · 到账 <1>{{credits}}</1> 积分",
       "title": "去支付"
+    },
+    "channel": {
+      "label": "支付方式",
+      "coming-soon": "即将开放"
+    },
+    "confirm": {
+      "title": "确认充值",
+      "sub": "跳转支付前请确认订单和服务条款",
+      "channel": "支付方式",
+      "credits": "到账",
+      "pay": "支付金额",
+      "cancel": "取消",
+      "submit": "同意条款 · 去支付",
+      "submitting": "跳转中…",
+      "terms": {
+        "title": "购买须知",
+        "provider": "本次商品由上游服务商提供 · 我方仅做代购转发",
+        "warranty": "上游有质保窗口的 · 窗口内失效我方按上游政策**退积分**",
+        "no-refund": "**不退现金** · 不走支付通道反向退款 · 所有退款只能是积分",
+        "channel-fee": "通道手续费已付给 waffo · 一旦发起支付**不退**"
+      },
+      "agree": {
+        "aria": "同意条款",
+        "text": "我已阅读并同意上述购买须知"
+      }
+    },
+    "hint": {
+      "waived": "个人邀请码额度 · 剩 <0>{{count}}</0> 次免通道费"
     },
     "preset": "{{value}} 积分",
     "preview": {
-      "fee-label": "手续费 <0>5%</0>",
-      "fee-waived-mark": "免",
-      "paid-label": "你需支付",
-      "paid-value": "<0>{{paid}}</0> 元",
-      "want": "想到账",
-      "want-value": "<0>{{credits}}</0> 积分"
+      "credits-unit": "积分",
+      "fee-waived-note": "本单免通道费 · 由个人邀请码额度承担",
+      "paid-label": "跳转支付",
+      "want": "到账"
     },
-    "sub": "1 积分 = 1 元 · 通道费 5% 加在本金上",
+    "sub": "跳转 Waffo 完成支付 · 到账后自动加积分",
     "submit": {
-      "default": "生成充值单",
-      "pending": "生成中…"
+      "default": "去支付"
     },
     "title": "充值"
   }

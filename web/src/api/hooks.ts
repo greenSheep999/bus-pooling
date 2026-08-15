@@ -698,11 +698,36 @@ export const usePull = () => {
 /** 生成充值单 → 返回二维码 / 跳转链接 · 付到支付通道
  *  参数是**要净到账的积分**（CLAUDE.md §1.4）· 通道费 5% 加在本金上
  *  1 积分 ≡ 1 元 → paid = credits × 1.05 元 → 通道侧显示 USD = paid / 7 */
+/** 充值通道 · GET /api/topup/channels · 公开端点 · 前端确认窗按这个渲染
+ *  含 disabled 占位(未来接的通道也列出来 · 灰态)· CLAUDE §0.1 provider_kind 不暴露 */
+export interface TopupChannel {
+  id: string;
+  display_name: string;
+  region: "domestic" | "overseas";
+  rail: "direct" | "hosted";
+  asset: string; // USD / USDT / CNY / ...
+  enabled: boolean;
+  requires_payer_reference: boolean;
+  payer_reference_label?: string;
+  note?: string;
+}
+
+export const useTopupChannels = () =>
+  useQuery({
+    queryKey: ["topupChannels"],
+    queryFn: () => api<{ channels: TopupChannel[] }>("/topup/channels"),
+  });
+
+/** 建充值单 · 支持不同通道(hosted / direct rail)· 展示只对乘客说 USD */
 export const useCreateTopup = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (credits: Money) =>
-      postIdempotent<TopupOrder>("/me/topup", { credits, channel: "waffo" }),
+    mutationFn: (args: { credits: Money; channel: string; payerReference?: string }) =>
+      postIdempotent<TopupOrder>("/me/topup", {
+        credits: args.credits,
+        channel: args.channel,
+        payer_reference: args.payerReference,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["wallet"] });
       qc.invalidateQueries({ queryKey: ["ledger"] });

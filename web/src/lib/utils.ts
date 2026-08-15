@@ -21,11 +21,26 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-/** microunit → 积分整数（1 积分 = 1 元 = 1_000_000 microunit，decisions §8.7） */
+/** microunit → 积分整数(1 积分 = 1_000_000 microunit · CLAUDE §1.4 内部对账基准) */
 export const MICRO = 1_000_000;
 
 export function toCredits(micro: number): number {
   return Math.round(micro / MICRO);
+}
+
+/** 积分 → USD 支付额展示(CLAUDE §1.4 唯一对乘客展示的币种)
+ *
+ *  公式:`(credits + fee) / 7` · fee=credits×0.05 · 7 是 CNY/USD 汇率(展示层)。
+ *  返 2 位小数字符串 · 如 "15.00" · **绝不展示"元 / CNY"**(§0.1 铁律)。
+ *  中间计算走内部对账口径(1 积分 ≡ 1 CNY) · 但不告诉乘客。 */
+const TOPUP_FEE_RATE = 0.05;
+const USD_RATE = 7;
+
+export function creditsToUSD(credits: number, feeWaived = false): string {
+  if (!Number.isFinite(credits) || credits <= 0) return "0.00";
+  const fee = feeWaived ? 0 : credits * TOPUP_FEE_RATE;
+  const usd = (credits + fee) / USD_RATE;
+  return usd.toFixed(2);
 }
 
 /** 积分格式化：整数无小数点，带千分位 */

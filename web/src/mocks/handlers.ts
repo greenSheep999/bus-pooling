@@ -1,5 +1,5 @@
 import { http, HttpResponse, delay } from "msw";
-import { MICRO, topupBreakdown, vendorLabel } from "@/lib/utils";
+import { MICRO, vendorLabel } from "@/lib/utils";
 import * as fx from "./fixtures";
 
 const ok = async (data: any, ms = 120) => {
@@ -223,16 +223,39 @@ export const handlers = [
     return h ? ok(h) : HttpResponse.json({ error: "not_found" }, { status: 404 });
   }),
 
+  // ── 充值渠道注册表 · GET /api/topup/channels · 公开(§docs/05-api-contract §229)
+  //    前端确认窗按这个渲染 · disabled 通道也列出来做占位(§0.1 provider_kind 不暴露)
+  http.get("/api/topup/channels", () => ok({
+    channels: [
+      {
+        id: "waffo", display_name: "Waffo 支付", region: "overseas", rail: "hosted",
+        asset: "USD", enabled: true, requires_payer_reference: false,
+        note: "跳转 Waffo · 支持卡 / 电子钱包",
+      },
+      {
+        id: "bybit", display_name: "Bybit UID 内转", region: "overseas", rail: "direct",
+        asset: "USDT", enabled: false, requires_payer_reference: true,
+        payer_reference_label: "你的 Bybit UID",
+        note: "USDT · 即将支持",
+      },
+      {
+        id: "epusdt", display_name: "USDT 链上", region: "overseas", rail: "direct",
+        asset: "USDT", enabled: false, requires_payer_reference: false,
+        note: "USDT-TRC20/ERC20 · 即将支持",
+      },
+    ],
+  })),
+
   // ── 钱包 · 充值 / 兑换
-  /* 通道费 5% pass-through（decisions §2.13 §8.21）· 只在充值这一步收
-     付 200 元 → 通道费 10 → 到账 190 积分 */
+  /* 前端传 credits(到账积分) + channel · 通道费 5% pass-through(CLAUDE §1.4)
+     100 credits → fee 5 → 支付 105/7 ≈ 15.00 USD · 到账 100 积分 */
   http.post("/api/me/topup", async ({ request }) => {
-    const { paid } = (await request.json()) as { paid: number };
-    const { credits } = topupBreakdown(paid);
+    const body = (await request.json()) as { credits: number; channel: string };
+    const credits = body.credits;
+    const paid = Math.round(credits * 1.05); // 内部账目仍走 CNY 口径(§1.4)
     return ok({
       order_id: `to_${Date.now()}`,
-      // 真实环境是 gateway.instructions.checkout_url · mock 拿个假的
-      checkout_url: `https://pay.waffo.example/checkout/${Date.now()}?amount=${paid / 1_000_000}`,
+      checkout_url: `https://pay.waffo.example/checkout/${Date.now()}?amount=${(paid / 7 / 1_000_000).toFixed(2)}`,
       paid, credits,
       expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
       status: "pending" as const,

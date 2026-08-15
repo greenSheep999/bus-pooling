@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
-  ArrowDownLeft, ArrowUpRight, Check, Copy, Gift, Loader2, Lock,
+  ArrowDownLeft, ArrowUpRight, Gift, Loader2, Lock,
   ShieldCheck, Ticket, TrendingDown, TrendingUp, Wallet as WalletIcon,
 } from "lucide-react";
 import {
-  useCreateTopup, useLedger, useMyInvite, useRedeem, useWallet,
+  useCreateTopup, useLedger, useMyInvite, useRedeem, useTopupChannels, useWallet,
 } from "@/api/hooks";
 import {
   BareHead, BareList, BareRow, Card, Chip, Em, SectionHead, Segmented,
@@ -20,9 +20,9 @@ import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  cn, fmtCredits, fmtTime, MICRO, toCredits, TOPUP_PRESETS,
+  cn, creditsToUSD, fmtCredits, fmtTime, MICRO, toCredits, TOPUP_PRESETS,
 } from "@/lib/utils";
-import type { LedgerEntry, LedgerType, TopupOrder } from "@/types";
+import type { LedgerEntry, LedgerType } from "@/types";
 
 /* 充值快捷档 · 复用 lib/utils.ts 里的常量 · landing / wallet 单点更新 */
 const PRESETS = TOPUP_PRESETS;
@@ -144,24 +144,41 @@ function MiniTotal({
 
 function TopupCard() {
   const { t } = useTranslation("wallet");
-  /* 输入的是**想到账的积分数**（CLAUDE.md §1.4）· 通道费 5% 加在上面 · 支付 = 积分 × 1.05 */
+  /* 输入的是**想到账的积分数** · CLAUDE §1.4 · 通道费 5% 加在上面 · 展示金额只用 USD */
   const [wantCredits, setWantCredits] = useState<string>("100");
+  /* 选中的通道 · 默认 hosted 里第一个 enabled 的 */
+  const [channelId, setChannelId] = useState<string>("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const create = useCreateTopup();
-  const [order, setOrder] = useState<TopupOrder | null>(null);
+  const { data: channelsResp } = useTopupChannels();
+  const channels = channelsResp?.channels ?? [];
 
   const credits = Math.max(0, Math.round(Number(wantCredits) || 0)) * MICRO;
-  // 有个人邀请码额度时这单免手续费（decisions §8.29）· 真正的扣减在后端起单时做，
-  // 这里只是**预览** —— 并发下可能被别的单抢走额度，最终以后端返的 fee_waived 为准
   const { data: myInvite } = useMyInvite();
   const willWaive = (myInvite?.waiver_remaining ?? 0) > 0;
-  const fee = willWaive ? 0 : Math.round(credits * 0.05);
-  const paid = credits + fee; // 乘客实付（CNY 口径，1 积分 ≡ 1 元）
+  const usdAmount = creditsToUSD(toCredits(credits), willWaive);
   const valid = credits > 0;
 
-  const onCreate = async () => {
-    if (!valid) return;
-    const o = await create.mutateAsync(credits);
-    setOrder(o);
+  /* 默认选中第一个 enabled 通道 · channels 加载完后 · 一次性设 */
+  const defaultChannel = useMemo(
+    () => channels.find((c) => c.enabled)?.id ?? "",
+    [channels],
+  );
+  const activeChannel = channelId || defaultChannel;
+  const selectedChannel = channels.find((c) => c.id === activeChannel);
+
+  const onOpenConfirm = () => {
+    if (!valid || !activeChannel) return;
+    setConfirmOpen(true);
+  };
+  const onConfirmAndPay = async () => {
+    if (!valid || !activeChannel) return;
+    const o = await create.mutateAsync({ credits, channel: activeChannel });
+    setConfirmOpen(false);
+    /* 拿到 checkout_url 直接跳 · 无中间 dialog(hosted 通道就是要跳)*/
+    if (o.checkout_url) {
+      window.location.href = o.checkout_url;
+    }
   };
 
   return (
@@ -196,92 +213,98 @@ function TopupCard() {
             ))}
           </div>
 
-          {/* 通道费只在充值这一步展示（decisions §8.21）
-              拉号 / 提取 / 派号都是积分抵扣，跟通道费无关，那些地方不显示 */}
+          {/* 通道选择 · 显示全部注册通道 · 未接的 disabled 灰态(§8.21 · docs/12) */}
+          <div className="space-y-2">
+            <label className="text-label font-semibold text-fg-secondary">
+              {t("topup.channel.label")}
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {channels.map((c) => {
+                const on = c.id === activeChannel;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    disabled={!c.enabled}
+                    onClick={() => c.enabled && setChannelId(c.id)}
+                    className={cn(
+                      "inline-flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2 text-left transition-colors",
+                      !c.enabled && "cursor-not-allowed border-hairline bg-bg-elevated/30 text-fg-tertiary",
+                      c.enabled && on && "border-brand-hairline bg-brand-subtle/40 font-semibold text-brand-fg",
+                      c.enabled && !on && "border-hairline bg-bg-elevated/40 text-fg-secondary hover:bg-bg-elevated",
+                    )}
+                  >
+                    <span className="text-label">{c.display_name}</span>
+                    {!c.enabled && (
+                      <span className="text-[10px] text-fg-tertiary">{t("topup.channel.coming-soon")}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 简明预览 · 只展示"到账积分 + 支付金额 USD"两行 · 不再拆通道费(§0.1) */}
           <div className="space-y-2 rounded-xl border border-hairline bg-bg-elevated/50 p-3.5">
             <Row
               label={t("topup.preview.want")}
               value={
-                <Trans
-                  i18nKey="topup.preview.want-value"
-                  ns="wallet"
-                  values={{ credits: toCredits(credits) }}
-                  components={[<Em tone="ok" />]}
-                />
+                <span>
+                  <Em tone="ok">{toCredits(credits).toLocaleString()}</Em>{" "}
+                  <span className="text-fg-tertiary">{t("topup.preview.credits-unit")}</span>
+                </span>
               }
             />
-            {willWaive ? (
-              <Row
-                label={
-                  <Trans
-                    i18nKey="topup.preview.fee-label"
-                    ns="wallet"
-                    components={[<span className="text-fg-tertiary" />]}
-                  />
-                }
-                value={
-                  <span className="flex items-center gap-1.5">
-                    <span className="text-fg-tertiary line-through">
-                      +{toCredits(Math.round(credits * 0.05))}
-                    </span>
-                    <Em tone="ok">{t("topup.preview.fee-waived-mark")}</Em>
-                  </span>
-                }
-              />
-            ) : (
-              <Row
-                label={
-                  <Trans
-                    i18nKey="topup.preview.fee-label"
-                    ns="wallet"
-                    components={[<span className="text-fg-tertiary" />]}
-                  />
-                }
-                value={<Em tone="spend">+{toCredits(fee)}</Em>}
-              />
-            )}
             <div className="border-t border-hairline pt-2">
               <Row
                 label={t("topup.preview.paid-label")}
                 value={
-                  <Trans
-                    i18nKey="topup.preview.paid-value"
-                    ns="wallet"
-                    values={{ paid: toCredits(paid) }}
-                    components={[<Em />]}
-                  />
+                  <Em>
+                    {usdAmount} <span className="text-fg-tertiary">USD</span>
+                  </Em>
                 }
                 strong
               />
             </div>
+            {willWaive && (
+              <p className="pt-1 text-[11px] text-ok-fg">
+                {t("topup.preview.fee-waived-note")}
+              </p>
+            )}
           </div>
 
-          <p className="text-label text-fg-tertiary">
-            {willWaive ? (
+          {willWaive && (
+            <p className="text-label text-fg-tertiary">
               <Trans
                 i18nKey="topup.hint.waived"
                 ns="wallet"
                 values={{ count: myInvite?.waiver_remaining ?? 0 }}
                 components={[<Em plain />]}
               />
-            ) : (
-              t("topup.hint.default")
-            )}
-          </p>
+            </p>
+          )}
 
           <Button
             className="w-full"
             variant="brand"
-            onClick={onCreate}
-            disabled={!valid || create.isPending}
+            onClick={onOpenConfirm}
+            disabled={!valid || !activeChannel}
           >
-            {create.isPending ? <Loader2 className="animate-spin" /> : <WalletIcon />}
-            {create.isPending ? t("topup.submit.pending") : t("topup.submit.default")}
+            <WalletIcon />
+            {t("topup.submit.default")}
           </Button>
         </div>
       </Card>
 
-      <TopupOrderModal order={order} onClose={() => setOrder(null)} />
+      <TopupConfirmDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        credits={toCredits(credits)}
+        usdAmount={usdAmount}
+        channelName={selectedChannel?.display_name ?? ""}
+        submitting={create.isPending}
+        onConfirm={onConfirmAndPay}
+      />
     </>
   );
 }
@@ -297,87 +320,85 @@ function Row({
   );
 }
 
-/** 充值单 · 扫码或跳转到支付通道 */
-function TopupOrderModal({
-  order, onClose,
-}: { order: TopupOrder | null; onClose: () => void }) {
+/** 充值确认弹窗 · 点"生成充值单"后弹出 · 展示订单核心 + 协议条款 + 勾选同意才能付
+ *
+ *  为什么要有这一步(vs 直接跳):
+ *  - 支付是**用户实付真金白银**的动作 · 得二次确认防误操作
+ *  - 展示条款(不承诺可用时长 / 只退积分 / 通道费不退 · 见 docs/00 §7.5 规则 B)
+ *  - 勾选"同意"才启用支付按钮 · 留痕(乘客表示知晓)
+ *  - 撤 CNY 展示 · 只显示 USD 金额(§0.1) */
+function TopupConfirmDialog({
+  open, onClose, credits, usdAmount, channelName, submitting, onConfirm,
+}: {
+  open: boolean;
+  onClose: () => void;
+  credits: number;
+  usdAmount: string;
+  channelName: string;
+  submitting: boolean;
+  onConfirm: () => void;
+}) {
   const { t } = useTranslation("wallet");
-  const [copied, setCopied] = useState(false);
-
-  /* 有 checkout_url：跳支付通道收款页 · 有 qr_content：渲染二维码
-     两个都空是老 mock 单·退回旧提示 */
-  const checkoutURL = order?.checkout_url ?? "";
-  const qrContent = order?.qr_content ?? "";
+  const [agreed, setAgreed] = useState(false);
 
   return (
-    <Dialog open={!!order} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-[420px]">
+    <Dialog open={open} onOpenChange={(o) => !o && !submitting && onClose()}>
+      <DialogContent className="max-w-[480px]">
         <DialogHeader>
-          <DialogTitle>{t("topup.modal.title")}</DialogTitle>
-          <p className="text-label text-fg-tertiary">
-            <Trans
-              i18nKey="topup.modal.summary"
-              ns="wallet"
-              values={{
-                paid: order ? toCredits(order.paid) : 0,
-                credits: order ? toCredits(order.credits) : 0,
-              }}
-              components={[<Em />, <Em tone="ok" />]}
-            />
-          </p>
+          <DialogTitle>{t("topup.confirm.title")}</DialogTitle>
+          <p className="text-label text-fg-tertiary">{t("topup.confirm.sub")}</p>
         </DialogHeader>
         <DialogBody>
-          {/* 有 QR 显示 QR，有 checkout URL 显示"打开支付页"·托管通道一般是跳转不是扫码 */}
-          {qrContent ? (
-            <div className="grid place-items-center rounded-xl border border-hairline bg-bg-elevated p-6">
-              <img
-                alt={t("topup.modal.qr-alt")}
-                className="size-40 rounded-lg border border-hairline bg-white"
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrContent)}`}
+          {/* 核心 3 行 · 支付方式 / 到账积分 / 支付金额 · 全 USD */}
+          <div className="space-y-2 rounded-xl border border-hairline bg-bg-elevated/50 p-3.5">
+            <Row label={t("topup.confirm.channel")} value={<Em>{channelName}</Em>} />
+            <Row
+              label={t("topup.confirm.credits")}
+              value={<Em tone="ok">{credits.toLocaleString()} {t("topup.preview.credits-unit")}</Em>}
+            />
+            <div className="border-t border-hairline pt-2">
+              <Row
+                label={t("topup.confirm.pay")}
+                value={<Em>{usdAmount} <span className="text-fg-tertiary">USD</span></Em>}
+                strong
               />
             </div>
-          ) : (
-            <div className="grid place-items-center rounded-xl border border-hairline bg-bg-elevated p-6">
-              <p className="text-label text-fg-tertiary">{t("topup.modal.fallback")}</p>
-            </div>
-          )}
-
-          <div className="mt-3 flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-lg border border-hairline bg-bg-elevated px-3 py-2 font-mono text-label">
-              {checkoutURL || qrContent}
-            </code>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t("topup.modal.copy-aria")}
-              onClick={() => {
-                const s = checkoutURL || qrContent;
-                if (!s) return;
-                navigator.clipboard.writeText(s);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1600);
-              }}
-            >
-              {copied ? <Check /> : <Copy />}
-            </Button>
           </div>
 
-          {checkoutURL && (
-            <Button
-              className="mt-3 w-full"
-              variant="brand"
-              onClick={() => window.open(checkoutURL, "_blank", "noopener,noreferrer")}
-            >
-              {t("topup.modal.open-checkout")}
-            </Button>
-          )}
+          {/* 协议要点 · 精简 · 勾选才能付 · docs/00 §7.5 规则 B */}
+          <div className="mt-3 space-y-1.5 rounded-xl border border-hairline bg-bg-elevated/30 p-3.5 text-[12px] leading-relaxed text-fg-secondary">
+            <div className="font-semibold text-fg">{t("topup.confirm.terms.title")}</div>
+            <ul className="list-disc space-y-1 pl-4 marker:text-fg-tertiary">
+              <li>{t("topup.confirm.terms.provider")}</li>
+              <li>{t("topup.confirm.terms.warranty")}</li>
+              <li>{t("topup.confirm.terms.no-refund")}</li>
+              <li>{t("topup.confirm.terms.channel-fee")}</li>
+            </ul>
+          </div>
 
-          <Alert tone="neutral" icon={ShieldCheck} className="mt-3">
-            {t("topup.modal.notice")}
-          </Alert>
+          <label className="mt-3 flex cursor-pointer items-start gap-2 text-label">
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              className="mt-0.5 size-4 shrink-0 cursor-pointer accent-brand-strong"
+              aria-label={t("topup.confirm.agree.aria")}
+            />
+            <span className="text-fg-secondary">{t("topup.confirm.agree.text")}</span>
+          </label>
         </DialogBody>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>{t("topup.modal.close")}</Button>
+          <Button variant="ghost" onClick={onClose} disabled={submitting}>
+            {t("topup.confirm.cancel")}
+          </Button>
+          <Button
+            variant="brand"
+            onClick={onConfirm}
+            disabled={!agreed || submitting}
+          >
+            {submitting ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
+            {submitting ? t("topup.confirm.submitting") : t("topup.confirm.submit")}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

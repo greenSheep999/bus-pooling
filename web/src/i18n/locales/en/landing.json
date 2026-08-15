@@ -209,7 +209,7 @@
         "body": "The payment gateway takes 5%. We forward it as-is, in cash, not from your credits."
       }
     },
-    "note": "1 credit ≈ $0.14 · billed in USD · every line on the wallet page",
+    "note": "Billed in USD · every line on the wallet page",
     "topup": {
       "title": "Top up credits",
       "badge": "Instant",
@@ -274,7 +274,7 @@
       },
       {
         "q": "How much does it actually cost?",
-        "a": "Vendor key price, one service fee from us, and the payment gateway's own fee (pass-through). Every line is on your wallet page. Billed in USD, 1 credit ≈ $0.14."
+        "a": "Vendor key price, one service fee from us, and the payment gateway.s own fee (pass-through). Every line is on your wallet page. Billed in USD."
       }
     ]
   },

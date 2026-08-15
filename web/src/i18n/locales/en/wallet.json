@@ -83,22 +83,46 @@
       "notice": "Credits arrive automatically after payment · valid for 15 minutes · unpaid orders expire",
       "open-checkout": "Open payment page",
       "qr-alt": "Payment QR code",
-      "summary": "Pay <0>{{paid}}</0> CNY · receive <1>{{credits}}</1> credits",
       "title": "Pay now"
+    },
+    "channel": {
+      "label": "Payment method",
+      "coming-soon": "Coming soon"
+    },
+    "confirm": {
+      "title": "Confirm top-up",
+      "sub": "Review your order and the terms before continuing to payment",
+      "channel": "Method",
+      "credits": "You receive",
+      "pay": "You pay",
+      "cancel": "Cancel",
+      "submit": "Agree · continue to pay",
+      "submitting": "Redirecting…",
+      "terms": {
+        "title": "Purchase terms",
+        "provider": "The item is provided by an upstream vendor · we relay the purchase on your behalf",
+        "warranty": "Where upstream offers a warranty window · in-window failures are **refunded as credits** per upstream policy",
+        "no-refund": "**No cash refunds** · we never reverse the payment channel · all refunds are credits only",
+        "channel-fee": "The channel fee is paid to Waffo · **non-refundable** once payment starts"
+      },
+      "agree": {
+        "aria": "Agree to terms",
+        "text": "I have read and agree to the purchase terms above"
+      }
+    },
+    "hint": {
+      "waived": "Invite quota · <0>{{count}}</0> fee-free top-ups remaining"
     },
     "preset": "{{value}} credits",
     "preview": {
-      "fee-label": "Fee <0>5%</0>",
-      "fee-waived-mark": "Waived",
+      "credits-unit": "credits",
+      "fee-waived-note": "Channel fee waived on this order · covered by your invite quota",
       "paid-label": "You pay",
-      "paid-value": "<0>{{paid}}</0> CNY",
-      "want": "You receive",
-      "want-value": "<0>{{credits}}</0> credits"
+      "want": "You receive"
     },
-    "sub": "1 credit = 1 CNY · 5% channel fee added on top",
+    "sub": "Redirects to Waffo · credits arrive automatically after payment",
     "submit": {
-      "default": "Create top-up order",
-      "pending": "Creating…"
+      "default": "Continue to pay"
     },
     "title": "Top up"
   }
