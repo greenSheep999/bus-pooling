@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
-  ArrowDownLeft, ArrowUpRight, Gift, Loader2, Lock,
+  ArrowDownLeft, ArrowUpRight, Gift, Info, Loader2, Lock,
   ShieldCheck, Ticket, TrendingDown, TrendingUp, Wallet as WalletIcon,
 } from "lucide-react";
 import {
@@ -289,14 +289,22 @@ function TopupCard() {
               }
             />
             <Row
-              label={t("topup.preview.fee-label")}
+              label={
+                <span className="inline-flex items-center gap-1">
+                  {t("topup.preview.fee-label")}
+                  <Info
+                    className="size-3 cursor-help text-fg-tertiary/70 transition-colors hover:text-fg-tertiary"
+                    aria-label={t("topup.preview.fee-tooltip")}
+                    /* 原生 title 属性 · 桌面 hover / 移动 long-press 都显示 · 不依赖 tooltip 组件 */>
+                    <title>{t("topup.preview.fee-tooltip")}</title>
+                  </Info>
+                </span>
+              }
               value={
                 willWaive ? (
                   <span className="flex items-baseline gap-1.5">
                     <span className="text-fg-tertiary line-through">
-                      {creditsToUSD(toCredits(credits), false) === "0.00"
-                        ? "0.00"
-                        : (Number(creditsToUSD(toCredits(credits), false)) - Number(creditsToUSD(toCredits(credits), true))).toFixed(2)} USD
+                      {(Number(creditsToUSD(toCredits(credits), false)) - toCredits(credits) / 7).toFixed(2)} USD
                     </span>
                     <Em tone="ok">{t("topup.preview.fee-waived-mark")}</Em>
                   </span>
@@ -319,9 +327,6 @@ function TopupCard() {
                 strong
               />
             </div>
-            <p className="pt-1 text-[10px] leading-relaxed text-fg-tertiary">
-              {t("topup.preview.fee-note")}
-            </p>
           </div>
 
           {willWaive && (
