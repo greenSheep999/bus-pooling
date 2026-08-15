@@ -505,6 +505,39 @@
 - 字段和表 → `docs/06-db-schema § passenger.tier` / `§ system_invite_code.grants_tier` / `§ bus.invite_code`
 - 接口命名 → `docs/05-api-contract`(bus join 场景只能写"拼车码")
 
+### 8.45 企业号+个人号双线 + subscription 档位 ⏸ 阶段 2 主线(2026-08-16)
+
+**背景**: 阶段 1 只支持企业号(6 家 kiro91/kiroceo/...) · 从 xi8 拉。阶段 2 车主明确要支持:
+
+1. **个人号线**: 用户自己有的号(Kiro IDE 的私钥)· 上传/导入进池
+2. **企业号线**: 现有 6 家 vendor · 系统爬
+3. **subscription 档位**: Kiro 有 3 档(Power / PRO / PRO+)· 每档 quota 不同:
+   - **Power**: 10000 次/月
+   - **PRO**: 1000 次/月
+   - **PRO+**: 2000 次/月
+
+**UI 触点(拉号 + 拼车 · 双入口都要选)**:
+- vendor 类型(企业 / 个人)
+- 具体 vendor(kiro91 / kiroceo / vendor_x · 等)
+- subscription 档位
+
+**架构影响**:
+- vendor_pricing 表加 subscription_level 列(power / pro / pro_plus)
+- credential_ledger 加 subscription 列(kiro.rs BatchImport 已返)
+- vendor 表加 category(enterprise / personal)
+- 加 vendor_x 概念(用户上传/导入 · **无 vendor API 调**)
+- API 层拉号 + 建车都加 subscription_level 参数
+- 定价链按 subscription 分档
+
+**跟"上游只支持个人号"的关系**: 用户 2026-08-16 说的"上游只支持个人号"其实是**上游 vendor 不支持外部拉号 · 只有用户手动导入的个人号一条路**。上游真正的 blocker 不是 API 权限 · 而是**vendor 侧不给外部 partner 开自动化拉号** —— 所以我方**只能走个人号线**(用户手动上传)· 或者等上游企业 partnership 完成。
+
+**待建 Task**:
+- P0-arch · 阶段 2 主线大改(Task #202)· vendor 类型 + subscription + UI 3 维
+- P1-i · push/handoff 后 credplain.MarkUsed(Task #200 · 短期修)
+- P1-j · 真死号等生产触发验证(Task #201)
+
+**参考**: CLAUDE.md §1.3 计费术语(要扩 subscription 一维) · docs/10-pricing.md 定价大改 · sprint-1-final Stage 3+ 真阻塞
+
 ### 8.44 车内号手动重推 · 现状缺口 ⚠️ 待补(2026-08-16)
 
 **问题**:车里的号(`owner_bus_id` 非空)自动 push_pool 失败后 · **没有手动重试入口**。

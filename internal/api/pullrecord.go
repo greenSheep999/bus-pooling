@@ -400,13 +400,61 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 	var pushResult *passengerpool.PushResult
 	pushErrItems := []assignErrItem{}
 	successIDs := req.CredentialIDs // 默认：全部成功 (dry-run / into_bus)
-	if dest == "into_bus" && s.pool != nil {
+
+	// **P1-f 修(2026-08-16)**: assign 前先探活 · 用尽/死号无论派哪都拒
+	// housepool.TestCredential 返 error = 号真死(429 quota_exceeded / 402 payment_required
+	// / 401 invalid_token 等)· UI 前提示"号已失效 · 不能派"
+	// 分支:s.pool != nil 才做 · mock 环境跳过(pool 是 DryRun 也走这条 · 别拒 dev-topup 流程)
+	if s.pool != nil {
 		krIDs, err := s.pullRecords.LookupKiroRSCredentialIDs(r.Context(), req.CredentialIDs, p.ID)
 		if err != nil {
 			return err
 		}
-		targetGroups := []string{"bus-" + req.BusID}
+		deadIDs := map[string]string{} // cid → 错误 message
 		for _, cid := range req.CredentialIDs {
+			krID, ok := krIDs[cid]
+			if !ok {
+				continue
+			}
+			if err := s.pool.TestCredential(r.Context(), housepool.CredentialID(krID)); err != nil {
+				deadIDs[cid] = err.Error()
+			}
+		}
+		if len(deadIDs) > 0 {
+			// 有号死 · 走 need_manual + 返 errors 让前端展示
+			// 死号的 pending_assignment 已在 tx1 里 initial · 这里改成 need_manual
+			for cid, msg := range deadIDs {
+				if _, uerr := s.db.ExecContext(r.Context(), `
+					UPDATE pending_assignment
+					   SET status = 'need_manual', updated_at = ?, error = ?
+					 WHERE credential_id = ? AND status = 'initial'`,
+					nowRFC3339(), "credential_dead: "+msg, cid); uerr != nil {
+					slogWarn("assign · 标 need_manual 失败", "cred", cid, "err", uerr)
+				}
+				pushErrItems = append(pushErrItems, assignErrItem{
+					CredentialID: cid,
+					Code:         "credential_dead",
+					Message:      "号已失效 · 不能派(kiro.rs 探活返错)",
+				})
+			}
+			// 从 successIDs 里剔除死号
+			live := make([]string, 0, len(req.CredentialIDs))
+			for _, cid := range req.CredentialIDs {
+				if _, dead := deadIDs[cid]; !dead {
+					live = append(live, cid)
+				}
+			}
+			successIDs = live
+		}
+	}
+
+	if dest == "into_bus" && s.pool != nil {
+		krIDs, err := s.pullRecords.LookupKiroRSCredentialIDs(r.Context(), successIDs, p.ID)
+		if err != nil {
+			return err
+		}
+		targetGroups := []string{"bus-" + req.BusID}
+		for _, cid := range successIDs {
 			krID, ok := krIDs[cid]
 			if !ok {
 				continue
@@ -419,14 +467,14 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 					cid, krID, err)
 			}
 		}
-	} else if dest == "push_pool" && s.pusher != nil {
-		// 拉每号的元数据(vendor_id / region)喂给 pusher · 让对家看到打码 label
-		metas, err := s.selectPushMeta(r.Context(), req.CredentialIDs, p.ID)
+	} else if dest == "push_pool" && s.pusher != nil && len(successIDs) > 0 {
+		// 只推 verify 通过的号(死号 successIDs 已剔除 · pushErrItems 已记 credential_dead)
+		metas, err := s.selectPushMeta(r.Context(), successIDs, p.ID)
 		if err != nil {
 			return fmt.Errorf("assign push_pool · 查号 meta: %w", err)
 		}
-		creds := make([]passengerpool.PushCredential, 0, len(req.CredentialIDs))
-		for _, cid := range req.CredentialIDs {
+		creds := make([]passengerpool.PushCredential, 0, len(successIDs))
+		for _, cid := range successIDs {
 			m := metas[cid]
 			creds = append(creds, passengerpool.PushCredential{
 				CredentialID: cid,
@@ -452,12 +500,13 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 			for _, id := range pushResult.Duplicate {
 				ok[id] = true // duplicate 视为成功
 			}
-			successIDs = successIDs[:0]
-			for _, id := range req.CredentialIDs {
+			pushSuccess := successIDs[:0]
+			for _, id := range successIDs {
 				if ok[id] {
-					successIDs = append(successIDs, id)
+					pushSuccess = append(pushSuccess, id)
 				}
 			}
+			successIDs = pushSuccess
 			// 失败号 · 独立事务落 push_error_* + pending_assignment 保 initial
 			if len(pushResult.Failed) > 0 {
 				if err := s.recordPushFailures(r.Context(), pushResult.Failed, p.ID); err != nil {
