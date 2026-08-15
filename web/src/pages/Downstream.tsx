@@ -16,16 +16,18 @@ import { cn, fmtTime } from "@/lib/utils";
 import type { DownstreamConfig } from "@/types";
 import { useTranslation } from "react-i18next";
 
-/** 4 条推送规则 · 跟 DownstreamConfig.rules 一一对应
- *  技术页（spec §10）· 但对外文案一律用「你自己的号池」· 不出上游软件名（CLAUDE.md §12.6） */
+/** 推送规则 · 只保留真被后端消费的 toggle
+ *
+ *  **阶段 1 收官(2026-08-15 审计)撤 3 条死控件**:push_on_pull / resync_on_dead /
+ *  retry_on_failure 后端 DB 落库了 · 但 delivery / pullrecord / decider / deathwatch
+ *  没有任何读点 · 勾了不生效(CLAUDE §0.1 违反)· UI 撤掉避免误导。
+ *
+ *  只保留 bus_only · webhookout/events.go:92 真消费(BusOnly 过滤单号事件)。 */
 const RULES: {
   key: keyof DownstreamConfig["rules"];
   titleKey: string;
   descKey: string;
 }[] = [
-  { key: "push_on_pull", titleKey: "rules.push-on-pull.title", descKey: "rules.push-on-pull.desc" },
-  { key: "resync_on_dead", titleKey: "rules.resync-on-dead.title", descKey: "rules.resync-on-dead.desc" },
-  { key: "retry_on_failure", titleKey: "rules.retry-on-failure.title", descKey: "rules.retry-on-failure.desc" },
   { key: "bus_only", titleKey: "rules.bus-only.title", descKey: "rules.bus-only.desc" },
 ];
 

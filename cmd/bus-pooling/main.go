@@ -1165,6 +1165,12 @@ func (b *refillDecideBridge) Decide(ctx context.Context, req deathwatch.RefillRe
 		return deathwatch.RefillVerdict{Action: deathwatch.RefillReject, Reason: "effective_lookup_failed"}
 	}
 
+	// 全局跨车调度护栏检查(migration 040 · CLAUDE §1.5) · 自动补车路径
+	if reason, deny := autoRefillGuardrailsDeny(ctx, b.db, eff, req.PassengerID, req.VendorID); deny {
+		b.logger.Info("refillDecideBridge: 护栏拒", "bus", req.BusID, "reason", reason)
+		return deathwatch.RefillVerdict{Action: deathwatch.RefillReject, Reason: reason}
+	}
+
 	// 读车里活号按 vendor 分组(车级快照 · 不是策略字段)
 	aliveByVendor := make(map[string]int)
 	rows, err := b.db.QueryContext(ctx,
@@ -1331,6 +1337,12 @@ func (b *schedulerDecideBridge) Decide(ctx context.Context, busID string, cand b
 		b.logger.Warn("schedulerDecideBridge: Effective 失败·保守跳过",
 			"bus", busID, "err", err)
 		return bus.SchedulerVerdict{Action: bus.ActionReject, Reason: "effective_lookup_failed"}
+	}
+
+	// 全局跨车调度护栏(migration 040 · CLAUDE §1.5) · vendor 空传("")· 仅判钱包/预算
+	if reason, deny := autoRefillGuardrailsDeny(ctx, b.db, eff, cand.OwnerID, ""); deny {
+		b.logger.Info("schedulerDecideBridge: 护栏拒", "bus", busID, "reason", reason)
+		return bus.SchedulerVerdict{Action: bus.ActionReject, Reason: reason}
 	}
 
 	// 读 vendor 当前单价(freshness 判 stale)· 只查 cand.AliveByVendor 里的那几家
@@ -1540,6 +1552,12 @@ func (b *webhookAutoScanBridge) decideAndAct(
 		return
 	}
 
+	// 全局跨车调度护栏(migration 040 · CLAUDE §1.5)· webhook 触发有 vendor
+	if reason, deny := autoRefillGuardrailsDeny(ctx, b.db, eff, ownerID, webhookVendor); deny {
+		b.logger.Info("webhookAutoScanBridge: 护栏拒", "bus", busID, "vendor", webhookVendor, "reason", reason)
+		return
+	}
+
 	// 读车里活号按 vendor 分组
 	aliveByVendor := make(map[string]int)
 	arows, _ := b.db.QueryContext(ctx,
@@ -1744,4 +1762,65 @@ func (b *refillEnqueueBridge) Enqueue(ctx context.Context, req deathwatch.Refill
 		MaxUnitPrice:  req.MaxUnitPrice,
 	})
 	return err
+}
+
+// autoRefillGuardrailsDeny · 全局跨车调度护栏检查(migration 040 · CLAUDE §1.5)
+//
+// **只对自动补车链路生效** —— 手动拉号(请求带 override)**不受此约束** ·
+// 见 15 §4.3.4 "手动拉号不受 auto-only guardrail 拦"。
+//
+// 三个护栏:
+//  1. AutoRefillVendorAllowlist · 空表示不限 · 有值则被调度的 vendor 必须在列表里
+//  2. AutoRefillMinWalletReserve · 钱包余额 < 该值 · 全部 auto 车暂停自动补
+//  3. AutoRefillDailyBudget · 该乘客今日 auto 花费已 ≥ 该值 · 暂停自动补
+//
+// 返 (reason, deny) · deny=true 则调用方 return · 不进 Decide 后续步骤。
+// reason 会进 log(不出用户视野 · CLAUDE §0.1)。
+func autoRefillGuardrailsDeny(
+	ctx context.Context,
+	db *sql.DB,
+	eff strategy.EffectiveStrategy,
+	passengerID string,
+	vendorID string, // 空 = 未定 vendor(仅 min_wallet_reserve / daily_budget 生效)
+) (string, bool) {
+	// 1. vendor 白名单
+	if vendorID != "" && len(eff.AutoRefillVendorAllowlist) > 0 {
+		allowed := false
+		for _, v := range eff.AutoRefillVendorAllowlist {
+			if v == vendorID {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return "vendor_not_in_allowlist", true
+		}
+	}
+	// 2. 钱包保护线
+	if eff.AutoRefillMinWalletReserve > 0 {
+		var balance int64
+		if err := db.QueryRowContext(ctx,
+			`SELECT balance FROM wallet WHERE passenger_id = ?`, passengerID).Scan(&balance); err == nil {
+			if balance < eff.AutoRefillMinWalletReserve {
+				return "wallet_below_reserve", true
+			}
+		}
+	}
+	// 3. 每日预算 · 今日 auto 花费累加(wallet_ledger.type='spend' AND kind='auto')
+	if eff.AutoRefillDailyBudget > 0 {
+		// 今日 = UTC 起始
+		var spentToday int64
+		day := time.Now().UTC().Format("2006-01-02")
+		if err := db.QueryRowContext(ctx, `
+			SELECT COALESCE(SUM(-amount), 0)
+			  FROM wallet_ledger
+			 WHERE passenger_id = ? AND type = 'spend'
+			   AND substr(created_at, 1, 10) = ?`,
+			passengerID, day).Scan(&spentToday); err == nil {
+			if spentToday >= eff.AutoRefillDailyBudget {
+				return "daily_budget_reached", true
+			}
+		}
+	}
+	return "", false
 }

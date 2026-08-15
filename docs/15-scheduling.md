@@ -263,82 +263,22 @@ xi8 是数据补齐 · **不参与抢号**。
 
 **关键**:对 `bool` / `int` 字段 · `0` 和 `false` 是**合法覆盖值** · 不是"空"。**别用"非空"判"是否覆盖"** —— 判断依据是"是否存在 / 是否显式声明" · 见上表。
 
-**⚠️ `AutoRefillEnabled` / `RefillWatermark` / `RefillMinCount` · 现状 vs 目标口径**:
+**关键**:对 `bool` / `int` 字段 · `0` 和 `false` 是**合法覆盖值** · 不是"空"。**别用"非空"判"是否覆盖"** —— 判断依据是"是否存在 / 是否显式声明" · 见上表。
 
-**当前现状**(001_init.sql / 011_bus_anon_match.sql · sprint-1e 落地):
-- `passenger_strategy_default` **没有** `default_auto_refill_enabled` / `default_refill_watermark` / `default_refill_min_count` 三个字段
-- `bus.auto_refill_enabled` / `bus.refill_watermark` **NOT NULL DEFAULT 0** · 无法表达"NULL = 跟随全局"
-- 因此**当前 auto/refill 三字段仅存在于车级** · 无全局 fallback · 无"跟随全局"语义
+**⚠️ `AutoRefillEnabled` / `RefillWatermark` · 分层最终口径**(migration 040 · CLAUDE §1.5):
 
-**1f-B 目标口径**(等 sprint-1f-B 落 DB migration 后生效):
-- 新增全局字段 `default_auto_refill_enabled bool NOT NULL DEFAULT 0` / `default_refill_watermark int NOT NULL DEFAULT 0` / `default_refill_min_count int NULL`
-- 只作为**新车默认值 seed** + **车级"跟随全局"时的 fallback**
-- 继承语义(NULL = 跟随 vs 显式覆盖为 0)见 §4.3.2b
+- **车级**(`bus.auto_refill_enabled` / `bus.refill_watermark`):**纯车级值** · `NOT NULL DEFAULT 0` · 无"跟随全局"语义
+- **全局层的 `passenger_strategy_default.default_*` 三字段**:**只做建车向导 seed**(建车预填一次)· **不做**运行时 fallback · 改这里不影响老车
+- **全局层的 3 个跨车调度护栏**(migration 040 新加):`auto_refill_daily_budget` / `auto_refill_min_wallet_reserve` / `auto_refill_vendor_allowlist` —— 真正跨车才能表达的护栏 · 只对自动补车链路生效 · 手动拉号不受此约束(见 §4.3.4)
 
-**过渡期约束**:1f-B DB migration 未落之前 · `Effective()` 对 auto/refill 三字段**只读车级**·`grep` 验收(§4.3.4)不检查这三字段的 fallback 链。
+**已作废方案**(sprint-1f-A/B 期间的中间态 · 用户拍板撤回):
+- ❌ 车级 `auto_refill_enabled` / `refill_watermark` 改 nullable · NULL=跟随全局
+- ❌ 车级 3 个 Segmented toggle "跟随全局 / 覆盖本车"
+- ❌ 全局 `default_*` 作为运行时 fallback
 
-#### 4.3.2b 继承语义 · "跟随全局 vs 覆盖本车" 如何表达(sprint-1f-B 决策)
+**决策记录**:见 `docs/decisions.md §13.5`(migration 040 撤镜像的完整语义讨论)。
 
-**问题**:`bus.auto_refill_enabled` / `bus.refill_watermark` 现在是 `NOT NULL DEFAULT 0` · 用户改成 0 时**无法区分**"跟随全局(全局若为 0 就 0 · 若为 1 就 1)" vs "显式覆盖为 0(不管全局多少都是 0)"。
-
-**两种落库方案 · 1f-B 二选一**:
-
-**方案 A · nullable 字段表达继承**(推荐 · SQL 简单 · 无冗余):
-```sql
--- migration: 改 bus 表 auto/refill 三字段为可空
-ALTER TABLE bus …  auto_refill_enabled INTEGER NULL
-                   refill_watermark    INTEGER NULL
-                   refill_min_count    INTEGER NULL  -- 本来就可空 · 保留
-```
-- `NULL` = 跟随全局默认
-- 非 `NULL` = 覆盖本车(包括显式 0 / false)
-- `RefillMinCount` 本来就 NULL · 但要**跟"按 gap 补齐"的 nil 语义区分** —— 见 §4.3.2c
-
-**方案 B · 显式 inherit flag**(冗余但语义显式):
-```sql
--- 保留现有 NOT NULL 值字段 · 新增 inherit 标记
-ALTER TABLE bus ADD COLUMN auto_refill_inherit INTEGER NOT NULL DEFAULT 1
-ALTER TABLE bus ADD COLUMN refill_watermark_inherit INTEGER NOT NULL DEFAULT 1
-ALTER TABLE bus ADD COLUMN refill_min_count_inherit INTEGER NOT NULL DEFAULT 1
-```
-- `inherit=1` → 读全局
-- `inherit=0` → 读本车值(值字段仍 NOT NULL DEFAULT 0)
-- 场景:如果"覆盖为 0"是有意义的动作(比如车级明确关闭自动补)·inherit flag 更清晰
-
-**1f-B 决策要求**:落 migration 前先在 `docs/decisions.md §13.4` 补一条方案选择 · 拍板后再动 DB。
-
-**⚠️ 迁移保行为铁律**(无论选方案 A 还是 B · 硬约束):
-
-**核心**:1f-B migration **不允许**让历史车因为全局默认变化而突然开始补车。
-
-**方案 A(nullable)** 落库规则:
-- 现有 `bus` 行的 `auto_refill_enabled / refill_watermark / refill_min_count` 值 **一律保留为"显式覆盖本车"** · 不能一律转 NULL
-  - 用户建车时明确关了 auto(值为 0)· migration 后仍是 0(覆盖) · 全局 auto=1 也不影响
-  - 用户建车时明确开了 auto(值为 1)· migration 后仍是 1(覆盖) · 全局 auto=0 也不影响
-- 只有**新建车走"跟随全局"路径** · 或**存量车用户主动在 UI 选"跟随全局"** · 字段才置 NULL
-- SQL 层面 · `ALTER TABLE bus ALTER COLUMN auto_refill_enabled DROP NOT NULL` · 但**不 UPDATE 现有值**
-
-**方案 B(inherit flag)** 落库规则:
-- 现有 `bus` 行 `auto_refill_inherit / refill_watermark_inherit / refill_min_count_inherit` 一律 **DEFAULT 0(覆盖本车)** · 保留当前值字段的行为
-- 新建车是否默认 `inherit=1` · 由 1f-B 产品决策单独写入 `decisions.md §13.4`(默认跟随 vs 默认覆盖需拍板)
-
-**测试要求**(1f-B migration 落码时必带):
-- fixture:建一辆老 auto=1 车 · 一辆老 auto=0 车 · 各一辆 · 分别验 migration 后 `Effective()` 返值等于 migration 前
-- fixture:migration 后 global default_auto_refill_enabled 从 0 改成 1 · 老车 `Effective()` 结果**不变**
-- 只有 UI 显式改为"跟随全局"后 · 老车行为才随全局变化
-
-#### 4.3.2c RefillMinCount 三态语义
-
-**当前 `bus.refill_min_count` `*int`** · 但有**三种语义**混在同一个字段:
-1. **NULL** = 跟随全局默认(§4.3.2b 方案 A 语义)
-2. **NULL** = 按 `RefillWatermark - alive_total` gap 补差额(§4.1 原语义 · Step 3 已在用)
-3. **非 NULL** = 覆盖本车(每轮至少拉 N 个)
-
-**1 和 2 冲突** —— 同一个 NULL 值前一个说"跟随全局" · 后一个说"按 gap 补"。
-
-**1f-B 拍板要求**:方案 A 下必须选一:
-- **选项 X**:全局 fallback 优先 · NULL 走全局 · 若全局也 NULL 才走 gap
-- **选项 Y**:去掉"跟随全局"语义 · `refill_min_count` 只有"NULL = gap · 非 NULL = 显式"两态(auto_refill_enabled / refill_watermark 走继承 · min_count 不走)
+`RefillMinCount` 保持可空 · nil = 按 gap 补齐差额(§4.1 原语义 · Step 3 已在用)· 无"跟随全局"语义。
 
 #### 4.3.2d `request.count` vs `PerRoundCount` · 别混
 

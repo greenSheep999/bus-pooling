@@ -697,6 +697,51 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) erro
 	return nil
 }
 
+// handleSetMemberSuspended · PUT /api/me/buses/{bus_id}/members/{pid}
+//
+// 车主挂起 / 恢复成员(decisions §8.26)· body: { "suspended": bool }。
+// 挂起 → 不参与分摊 · 无 client_key。恢复 → skipped_count 归零(视为"已充值")。
+func (s *Server) handleSetMemberSuspended(w http.ResponseWriter, r *http.Request) error {
+	caller, err := mustCaller(r)
+	if err != nil {
+		return err
+	}
+	busID := r.PathValue("bus_id")
+	targetID := r.PathValue("pid")
+	if busID == "" || targetID == "" {
+		return ErrBadRequest("缺 bus_id 或成员 id")
+	}
+	var req struct {
+		Suspended bool `json:"suspended"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		return err
+	}
+	switch err := s.buses.SetMemberSuspended(r.Context(), busID, caller.ID, targetID, req.Suspended); {
+	case errors.Is(err, bus.ErrNotFound):
+		return ErrNotFound("找不到这辆车")
+	case errors.Is(err, bus.ErrNotMember):
+		return ErrNotFound("这个人不在车里")
+	case errors.Is(err, bus.ErrNotOwner):
+		return newFail(http.StatusForbidden, "not_owner", err.Error())
+	case errors.Is(err, bus.ErrDissolved):
+		return newFail(http.StatusGone, "bus_dissolved", "车已解散")
+	case err != nil:
+		return err
+	}
+	// 返回改后的车 · 前端刷新
+	b, err := s.buses.Get(r.Context(), busID)
+	if err != nil {
+		return err
+	}
+	resp, err := s.buildBusResponse(r, b)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, resp)
+	return nil
+}
+
 // handleRegenInviteCode · POST /api/me/buses/{bus_id}/invite-code · owner 换邀请码。
 //
 // 权限：只 owner 可换 · 非 owner 返 403。

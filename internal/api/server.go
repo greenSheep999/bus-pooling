@@ -225,6 +225,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /api/me/buses/join-by-invite", handler(s.RequireAuth(s.handleJoinByInvite)))
 	mux.Handle("POST /api/me/buses/{bus_id}/invite-code", handler(s.RequireAuth(s.handleRegenInviteCode)))
 	// 移除成员 · 剩下的人 share_pct 重算（decisions §8.18）
+	mux.Handle("PUT /api/me/buses/{bus_id}/members/{pid}", handler(s.RequireAuth(s.handleSetMemberSuspended)))
 	mux.Handle("DELETE /api/me/buses/{bus_id}/members/{pid}", handler(s.RequireAuth(s.handleRemoveMember)))
 	mux.Handle("GET /api/me/buses/{bus_id}/credentials", handler(s.RequireAuth(s.handleBusCredentials)))
 	mux.Handle("GET /api/me/buses/{bus_id}/pulls", handler(s.RequireAuth(s.handleBusPulls)))

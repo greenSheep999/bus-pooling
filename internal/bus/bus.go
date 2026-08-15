@@ -341,6 +341,53 @@ func (s *Store) JoinByInviteCode(ctx context.Context, code, passengerID string) 
 // **车主有权直接移除**（§8.36 覆盖了 §8.18 原先的"全员确认"要求）：
 // 车是车主建的、邀请码是车主发的·成员构成归他处置。全员确认在真实场景里会卡死 ——
 // 移除的典型原因是"这人欠钱不还"，等他点同意等不到。
+// SetMemberSuspended 挂起或恢复成员(decisions §8.26 车主权限)。
+//
+// suspended=true  · 挂起 · 不参与分摊 · 无 client_key(取不到号)
+// suspended=false · 恢复 · skipped_count 归零(视为"已充值 · 重新开始数")
+//
+// 只有 owner 能改 · 不能挂起自己(要退出走解散车)· 车已解散拒。
+// bus_member.status 是 `active | suspended` CHECK 枚举(001 init 已定)。
+func (s *Store) SetMemberSuspended(ctx context.Context, busID, callerID, targetID string, suspended bool) error {
+	if targetID == callerID {
+		return fmt.Errorf("%w: 不能改自己的状态(要退出走解散车)", ErrNotOwner)
+	}
+	b, err := s.Get(ctx, busID)
+	if err != nil {
+		return err
+	}
+	if b.CreatorID != callerID {
+		return ErrNotOwner
+	}
+	if b.Status != StatusActive {
+		return ErrDissolved
+	}
+
+	newStatus := "active"
+	if suspended {
+		newStatus = "suspended"
+	}
+
+	// 恢复态 · skipped_count 归零 + last_skipped_at 清空(视为"已充值")
+	// 挂起态 · 只改 status · 计数保留(为审计)
+	var query string
+	if suspended {
+		query = `UPDATE bus_member SET status = ?
+		          WHERE bus_id = ? AND passenger_id = ? AND left_at IS NULL`
+	} else {
+		query = `UPDATE bus_member SET status = ?, skipped_count = 0, last_skipped_at = NULL
+		          WHERE bus_id = ? AND passenger_id = ? AND left_at IS NULL`
+	}
+	res, err := s.db.ExecContext(ctx, query, newStatus, busID, targetID)
+	if err != nil {
+		return fmt.Errorf("bus: 改成员状态: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotMember
+	}
+	return nil
+}
+
 func (s *Store) RemoveMember(ctx context.Context, busID, callerID, targetID string) error {
 	if targetID == callerID {
 		return fmt.Errorf("%w: 不能移除自己（要退出请解散车）", ErrNotOwner)

@@ -52,9 +52,19 @@ type EffectiveStrategy struct {
 	// RefillWatermark · 覆盖字段 · 车级 → 全局(§4.3.2b 方案 A 落地后)
 	RefillWatermark int
 
-	// RefillMinCount · 覆盖字段 · 车级 → 全局(§4.3.2b + §4.3.2c 选项 X) ·
-	// nil = 按 gap 补齐差额(RefillWatermark - alive_total · Step 5 语义)
+	// RefillMinCount · 车级 · nil = 按 gap 补齐差额(RefillWatermark - alive_total · Step 5 语义)
 	RefillMinCount *int
+
+	// ── 全局跨车调度护栏(migration 040 · CLAUDE §1.5)· 只对自动补车链路生效 ──
+	// **注意**:这三字段只在**自动触发路径**判(webhook / probe / scheduler /
+	// deathwatch.RefillTick / stockwatch.Notify)· 手动拉号(RequestOverride!=nil)**不受此约束**。
+	//
+	// AutoRefillDailyBudget · 所有 auto 车加起来一天最多花 N microunit · 0 = 不限
+	AutoRefillDailyBudget int64
+	// AutoRefillMinWalletReserve · 钱包低于此值时所有 auto 车暂停 · 0 = 不设保护线
+	AutoRefillMinWalletReserve int64
+	// AutoRefillVendorAllowlist · 自动补车只允许的 vendor id 列表 · 空 = 不限
+	AutoRefillVendorAllowlist []string
 }
 
 // RequestOverride · 一次性动作参数 · 手动拉号 / 建车向导首次拉号带的字段。
@@ -245,6 +255,17 @@ func Effective(ctx context.Context, deps EffectiveDeps, passengerID, busID strin
 			v := *busSt.RefillMinCount
 			out.RefillMinCount = &v
 		}
+	}
+
+	// 全局跨车调度护栏(migration 040)· 3 字段透传给调用方 · 由 decideOutputByMode/桥判
+	if global.AutoRefillDailyBudget != nil {
+		out.AutoRefillDailyBudget = *global.AutoRefillDailyBudget
+	}
+	if global.AutoRefillMinWalletReserve != nil {
+		out.AutoRefillMinWalletReserve = *global.AutoRefillMinWalletReserve
+	}
+	if len(global.AutoRefillVendorAllowlist) > 0 {
+		out.AutoRefillVendorAllowlist = append([]string(nil), global.AutoRefillVendorAllowlist...)
 	}
 
 	return out, nil

@@ -814,7 +814,7 @@ X-Bus-Signature: sha256=<hex HMAC-SHA256(secret, timestamp + "." + body)>
 
 | 端点 | 形状 | 参考实现 |
 |---|---|---|
-| `POST /me/pull/estimate` | `{ key_cost, single_pull_fee, service_fee, total }` | `hooks.ts useEstimate` |
+| `POST /me/pull/estimate` | `{ unit_price, service_fee, total }` · CLAUDE §0.1 · 只返对外单价 + 服务费 + 总额 · 不出内部加价链分层 | `hooks.ts useEstimate` |
 | `GET /me/pull/events` | `Paged<ExtractEvent>` | `types` `ExtractEvent` |
 | `GET /me/assign/events` | `Paged<AssignEvent>` | `types` `AssignEvent` |
 | `GET /vendors/stock` | `StockSummary` | `types` `StockSummary` |

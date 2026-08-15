@@ -27,7 +27,7 @@
       "label": "Default region",
       "us": "US"
     },
-    "hint-runtime": "Also used at runtime when a bus opts to follow global"
+    "hint-runtime": "Used as seed when creating a new bus"
   },
   "head": {
     "crumb": "Pull preferences",
@@ -412,21 +412,40 @@
     "subtitle": "Pool connection · notifications · API access"
   },
   "defaults-auto": {
-    "title": "Auto refill defaults",
-    "sub": "Prefilled for new buses + used at runtime when a bus selects \"Follow global\"",
+    "title": "Auto refill · new-bus defaults",
+    "sub": "Only used as seed values when creating a new bus. Changing these doesn't affect existing buses.",
     "enabled": {
-      "label": "Enable auto refill by default",
-      "hint": "New buses start with this on. Existing buses set to \"Follow global\" track this value."
+      "label": "Enable auto refill on new buses",
+      "hint": "New buses will start with this on. Existing buses aren't affected."
     },
     "watermark": {
       "label": "Default watermark",
-      "hint": "Auto refill kicks in when live keys drop below this. 0 = disabled."
+      "hint": "New buses trigger auto refill when live keys drop below this. 0 = disabled by default."
     },
     "min-count": {
       "label": "Default minimum keys per refill",
-      "hint": "Auto refill pulls at least this many keys each time",
-      "placeholder": "blank = auto-fill the gap each round"
+      "hint": "New buses pull at least this many keys per auto refill",
+      "placeholder": "blank = fill the gap each round"
     },
-    "alert": "Each bus can override these. Global values only apply when a bus selects \"Follow global\"."
+    "alert": "Each bus can freely override these. Changing global doesn't affect existing buses."
+  },
+  "guardrails": {
+    "title": "Auto refill · cross-bus guardrails",
+    "sub": "Applied to all auto-refill buses combined. Manual pulls are never blocked.",
+    "daily-budget": {
+      "label": "Daily budget (credits)",
+      "hint": "Max credits all auto buses can spend per day. Auto refill pauses when hit. Manual pulls unaffected."
+    },
+    "min-reserve": {
+      "label": "Wallet reserve (credits)",
+      "hint": "If wallet drops below this, all auto refills pause. You can still pull manually."
+    },
+    "allowlist": {
+      "label": "Auto refill allowed upstreams",
+      "hint": "Only ticked upstreams may be used by auto refill. Empty = no restriction (all enabled upstreams). Manual pulls unaffected.",
+      "empty": "No restriction. Any enabled upstream may be used for auto refill."
+    },
+    "placeholder-unlimited": "blank = unlimited",
+    "alert": "These three only affect auto refill. Manual pulls (create bus, pull now, click pull) always work regardless."
   }
 }
