@@ -83,8 +83,9 @@ func (s *Server) handleBusCredentialPush(w http.ResponseWriter, r *http.Request)
 	}
 
 	// 死号护栏:pool.TestCredential 失败 = 拒重推
-	// **P1-l 修(2026-08-16)**: 车内号是**共享资源** · dead 或 quota 都拒
+	// **P1-l/m 修(2026-08-16)**: 车内号是**共享资源** · dead 或 quota 都拒
 	// 用户澄清:"车拉的肯定不能推" · 车里号影响所有车友 · 严格
+	// 判据:①TestCredential 失败 (真死) · ②usage_percentage >= 95%(边界保护)
 	if s.pool != nil {
 		if terr := s.pool.TestCredential(r.Context(), housepool.CredentialID(krID)); terr != nil {
 			msg := terr.Error()
@@ -96,6 +97,15 @@ func (s *Server) handleBusCredentialPush(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, http.StatusOK, busCredentialPushResp{
 				State:   "dead",
 				Message: hint + ": " + truncate(msg, 200),
+			})
+			return nil
+		}
+		// 边界:探活通过但 usage 快满 · 车里共享号该拒(下一次就 402)
+		if bal, berr := s.pool.GetBalance(r.Context(), housepool.CredentialID(krID)); berr == nil && bal != nil && bal.UsagePercentage >= 95.0 {
+			writeJSON(w, http.StatusOK, busCredentialPushResp{
+				State: "dead",
+				Message: fmt.Sprintf("号快用完(%.1f%%)· 车里共享号需活号 · 请换号或等 quota 重置",
+					bal.UsagePercentage),
 			})
 			return nil
 		}

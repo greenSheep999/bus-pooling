@@ -422,20 +422,32 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 			message string
 		}
 		badIDs := map[string]credErr{}
+		// **P1-m 修(2026-08-16)**: 除了 TestCredential(true dead 判)· 也查 GetBalance
+		// 拿 usage_percentage · >=95% 视为 quota(kiro.rs API 层 TestCredential 只在 100%
+		// 时才拒 · 99.9% 边界能过 · 但号推给车友下一次就 402)
+		const quotaThreshold = 95.0
 		for _, cid := range req.CredentialIDs {
 			krID, ok := krIDs[cid]
 			if !ok {
 				continue
 			}
+			// ① 探活 · 401/403/Invalid 直接判 dead
 			if err := s.pool.TestCredential(r.Context(), housepool.CredentialID(krID)); err != nil {
 				msg := err.Error()
 				kind := "dead"
-				// 用完 quota 场景:kiro.rs 返 402 · message 含 MONTHLY_REQUEST_COUNT / quota_exceeded
-				// 这类号 push_pool 允许 · into_bus 拒
 				if containsAny(msg, "quota_exceeded", "MONTHLY_REQUEST_COUNT", "402", "Payment Required", "reached the limit") {
 					kind = "quota"
 				}
 				badIDs[cid] = credErr{kind: kind, message: msg}
+				continue
+			}
+			// ② 探活通过 · 但看 usage · >=95% 也当 quota(边界保护)
+			bal, berr := s.pool.GetBalance(r.Context(), housepool.CredentialID(krID))
+			if berr == nil && bal != nil && bal.UsagePercentage >= quotaThreshold {
+				badIDs[cid] = credErr{
+					kind:    "quota",
+					message: fmt.Sprintf("usage %.1f%% >= %.0f%% (limit %.0f · used %.0f)", bal.UsagePercentage, quotaThreshold, bal.UsageLimit, bal.CurrentUsage),
+				}
 			}
 		}
 
