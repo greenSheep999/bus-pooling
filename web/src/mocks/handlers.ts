@@ -158,14 +158,26 @@ export const handlers = [
   // ── 提取 key（端点在 /me/pull* 名下 · 待派列表就是上面那个 pull-records，不另开一个）
   http.get("/api/me/pull/events", () => ok({ items: fx.extractEvents, total: fx.extractEvents.length, page: 1, page_size: 20 })),
   http.get("/api/me/assign/events", () => ok({ items: fx.assignEvents, total: fx.assignEvents.length, page: 1, page_size: 20 })),
+  /* 预估 · **对外只三项**(CLAUDE §0.1 · 不出内部加价链分层)
+   *
+   *  后端 internal/api/estimate.go:23-27 estimateResp:
+   *    unit_price  · 分项算完的**最终单价**(已含 vendor/zone/tier/service 全部加价)
+   *    service_fee · 服务费一项(对外唯一露出的分项)
+   *    total       · = unit_price × count
+   *
+   *  **别再返 key_cost / single_pull_fee** —— 那是内部加价链字段 · §0.1 明令禁 ·
+   *  而且前端 hooks.ts:497 + PullExtractForm.tsx:76 只认三字段 · 返旧形状会显示 NaN。 */
   http.post("/api/me/pull/estimate", async ({ request }) => {
-    const b = (await request.json()) as { count: number };
-    const unit = 20_000_000;
-    const keyCost = unit * b.count;
-    const single = b.count === 1 ? keyCost * 0.2 : 0;
-    // 服务费按号数（mock · 真实规则在后端）
-    const service = b.count * MICRO;
-    return ok({ key_cost: keyCost, single_pull_fee: single, service_fee: service, total: keyCost + single + service }, 80);
+    const b = (await request.json()) as { count: number; vendor_id?: string; zone?: string };
+    // mock 最终单价 · 跟 fixtures.finalPrice 一个量级(20 积分左右)
+    const unitPrice = 20_000_000;
+    // 服务费按号数(mock · 真实规则在后端 decider.PriceEstimate)
+    const serviceFee = b.count * MICRO;
+    return ok({
+      unit_price: unitPrice,
+      service_fee: serviceFee,
+      total: unitPrice * b.count,
+    }, 80);
   }),
   http.post("/api/me/pull", () => ok({ round_id: "rd_new", status: "initiated" }, 800)),
 
