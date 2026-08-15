@@ -377,7 +377,8 @@ func TestUpdateCredential(t *testing.T) {
 
 func TestGetBalance(t *testing.T) {
 	title := "Pro"
-	reset := "2026-09-01T00:00:00Z"
+	// kiro.rs 1.8.3 balance.nextResetAt 返 unix epoch number(不是 string)· json.Number 承接
+	reset := json.Number("1788220800")
 	_, c := newMock(t, func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(t, w, 200, wireBalance{
 			ID: 101, SubscriptionTitle: &title,

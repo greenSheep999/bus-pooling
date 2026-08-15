@@ -1,6 +1,7 @@
 package kirors
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/housepool"
@@ -59,7 +60,7 @@ func toBalance(w wireBalance) housepool.Balance {
 		UsageLimit:        w.UsageLimit,
 		Remaining:         w.Remaining,
 		UsagePercentage:   w.UsagePercentage,
-		NextResetAt:       parseTimePtr(w.NextResetAt),
+		NextResetAt:       parseTimeFromNumber(w.NextResetAt),
 		OverageEnabled:    w.OverageEnabled,
 		OverageCapable:    w.OverageCapable,
 	}
@@ -152,4 +153,21 @@ func parseTimePtr(s *string) *time.Time {
 	}
 	// 解不出来就当没有 —— 时间字段解析失败不该让整个请求失败
 	return nil
+}
+
+// parseTimeFromNumber · json.Number(unix epoch)→ *time.Time
+// kiro.rs 1.8.3 balance.nextResetAt 返 unix epoch number(小数)· 不是 string
+// 用 json.Number 兼容 · Float64() 解 · 无效返 nil
+func parseTimeFromNumber(n *json.Number) *time.Time {
+	if n == nil {
+		return nil
+	}
+	f, err := n.Float64()
+	if err != nil || f <= 0 {
+		return nil
+	}
+	sec := int64(f)
+	nsec := int64((f - float64(sec)) * 1e9)
+	t := time.Unix(sec, nsec).UTC()
+	return &t
 }

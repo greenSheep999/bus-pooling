@@ -1,5 +1,7 @@
 package kirors
 
+import "encoding/json"
+
 // housepool wire 类型。**不外暴** —— 上层只见 housepool 的归一化类型。
 //
 // 全部 camelCase：housepool admin 类型都带 #[serde(rename_all = "camelCase")]。
@@ -47,9 +49,11 @@ type wireBalance struct {
 	UsageLimit        float64 `json:"usageLimit"`
 	Remaining         float64 `json:"remaining"`
 	UsagePercentage   float64 `json:"usagePercentage"`
-	NextResetAt       *string `json:"nextResetAt"`
-	OverageEnabled    *bool   `json:"overageEnabled"`
-	OverageCapable    *bool   `json:"overageCapable"`
+	// NextResetAt · kiro.rs 1.8.3 返 unix epoch number(不是 string)·
+	// **强健用 json.Number** · 兼容 upstream 后续改回 string 也不 break
+	NextResetAt    *json.Number `json:"nextResetAt"`
+	OverageEnabled *bool        `json:"overageEnabled"`
+	OverageCapable *bool        `json:"overageCapable"`
 }
 
 type wireGroupList struct {

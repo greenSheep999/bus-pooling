@@ -102,8 +102,9 @@ func (s *Server) handleBusCredentialPush(w http.ResponseWriter, r *http.Request)
 		}
 		// 边界:探活通过但 usage 快满 · 车里共享号该拒(下一次就 402)
 		bal, berr := s.pool.GetBalance(r.Context(), housepool.CredentialID(krID))
-		slog.Info("busCredentialPush · GetBalance",
-			"cred", credID, "kr_id", krID, "bal", bal, "err", berr)
+		if berr != nil {
+			slog.Warn("busCredentialPush · GetBalance 失败·跳过 usage 检查", "cred", credID, "err", berr)
+		}
 		if berr == nil && bal != nil && bal.UsagePercentage >= 95.0 {
 			writeJSON(w, http.StatusOK, busCredentialPushResp{
 				State: "dead",
