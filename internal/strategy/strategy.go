@@ -13,6 +13,7 @@ package strategy
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -48,12 +49,20 @@ type Strategy struct {
 	PreferredVendor *string
 	DefaultZone     string
 
-	// ── 1f-B · auto/refill 全局默认(§4.3.2b 方案 A) ──
-	// 新车 seed + 车级 NULL 时 fallback(15-scheduling §4.3.2b) ·
-	// 不是硬上限 · 只是"跟随全局"时读的当前值。
+	// ── auto/refill 新车 seed(migration 040 撤回镜像后 · **只用于建车预填**)──
+	// 建车向导预填 · 之后车级独立演化(全局改这里不影响老车)。
+	// **不再是运行时 fallback** —— 车级 auto/refill NOT NULL · 直接从车级取值。
 	DefaultAutoRefillEnabled bool
 	DefaultRefillWatermark   int
-	DefaultRefillMinCount    *int // nil = 按 gap 补齐差额(§4.3.2c 选项 X)
+	DefaultRefillMinCount    *int // nil = 按 gap 补齐差额
+
+	// ── 全局跨车调度护栏(migration 040 新加 · 真正需要全局才能表达)──
+	// AutoRefillDailyBudget · 所有 auto 车加起来一天最多花 N 积分(microunit) · nil = 不限
+	AutoRefillDailyBudget *int64
+	// AutoRefillMinWalletReserve · 钱包低于 N 积分时所有 auto 车暂停(microunit) · nil = 不设保护线
+	AutoRefillMinWalletReserve *int64
+	// AutoRefillVendorAllowlist · 自动补车只允许从这几家 vendor 拉 · nil/空 = 不限(所有启用 vendor)
+	AutoRefillVendorAllowlist []string
 
 	UpdatedAt time.Time
 }
@@ -81,26 +90,32 @@ func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 func (s *Store) Get(ctx context.Context, passengerID string) (Strategy, error) {
 	out := Defaults(passengerID)
 	var (
-		maxUnitPrice     sql.NullInt64
-		roundLimit       sql.NullInt64
-		spendLimit       sql.NullInt64
-		perRound         sql.NullInt64
-		vendor           sql.NullString
-		zone             string
-		defaultAuto      int
-		defaultWatermark int
-		defaultMinCount  sql.NullInt64
-		updatedAt        string
+		maxUnitPrice      sql.NullInt64
+		roundLimit        sql.NullInt64
+		spendLimit        sql.NullInt64
+		perRound          sql.NullInt64
+		vendor            sql.NullString
+		zone              string
+		defaultAuto       int
+		defaultWatermark  int
+		defaultMinCount   sql.NullInt64
+		autoDailyBudget   sql.NullInt64
+		autoMinReserve    sql.NullInt64
+		autoAllowlistJSON sql.NullString
+		updatedAt         string
 	)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT max_unit_price, daily_round_limit, daily_spend_limit,
 		       per_round_count, preferred_vendor, default_zone,
 		       default_auto_refill_enabled, default_refill_watermark, default_refill_min_count,
+		       auto_refill_daily_budget, auto_refill_min_wallet_reserve, auto_refill_vendor_allowlist,
 		       updated_at
 		  FROM passenger_strategy_default
 		 WHERE passenger_id = ?`, passengerID).
 		Scan(&maxUnitPrice, &roundLimit, &spendLimit, &perRound, &vendor, &zone,
-			&defaultAuto, &defaultWatermark, &defaultMinCount, &updatedAt)
+			&defaultAuto, &defaultWatermark, &defaultMinCount,
+			&autoDailyBudget, &autoMinReserve, &autoAllowlistJSON,
+			&updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, nil
 	}
@@ -133,6 +148,21 @@ func (s *Store) Get(ctx context.Context, passengerID string) (Strategy, error) {
 		v := int(defaultMinCount.Int64)
 		out.DefaultRefillMinCount = &v
 	}
+	// migration 040 · 3 个跨车调度护栏字段
+	if autoDailyBudget.Valid {
+		v := autoDailyBudget.Int64
+		out.AutoRefillDailyBudget = &v
+	}
+	if autoMinReserve.Valid {
+		v := autoMinReserve.Int64
+		out.AutoRefillMinWalletReserve = &v
+	}
+	if autoAllowlistJSON.Valid && autoAllowlistJSON.String != "" {
+		var list []string
+		if jsonErr := json.Unmarshal([]byte(autoAllowlistJSON.String), &list); jsonErr == nil {
+			out.AutoRefillVendorAllowlist = list
+		}
+	}
 	out.UpdatedAt = parseTime(updatedAt)
 	return out, nil
 }
@@ -150,13 +180,19 @@ type Patch struct {
 	PreferredVendor **string
 	DefaultZone     *string
 
-	// ── 1f-B · auto/refill 全局默认三字段(§4.3.2b) ──
-	// auto/watermark 是 bool/int 值字段 · 用一层指针分"没提"vs"设值"就够
-	// (0/false 也是合法值 · 但全局默认不区分"跟随/覆盖" · 它本来就是最上层)
-	// min_count 沿用双层：外层 nil = 没提 · 内层 nil = 显式 null(按 gap 补差额)
+	// ── auto/refill 建车 seed 默认(1f-refactor · migration 040) ──
+	// 只在建车向导预填 · 不做运行时 fallback
+	// auto/watermark 是 bool/int 值字段 · 用一层指针分"没提"vs"设值"
+	// min_count 沿用双层:外层 nil = 没提 · 内层 nil = 显式 null(按 gap 补差额)
 	DefaultAutoRefillEnabled *bool
 	DefaultRefillWatermark   *int
 	DefaultRefillMinCount    **int
+
+	// ── 全局跨车调度护栏(1f-refactor · migration 040) ──
+	// double pointer 分"字段没出现" vs "显式设成 null(清空/不限)"
+	AutoRefillDailyBudget      **int64
+	AutoRefillMinWalletReserve **int64
+	AutoRefillVendorAllowlist  *[]string // nil = 没提 · []string{} = 清空(不限) · 非空 = 设列表
 }
 
 var (
@@ -203,6 +239,16 @@ func (s *Store) Put(ctx context.Context, passengerID string, p Patch) (Strategy,
 	if p.DefaultRefillMinCount != nil {
 		cur.DefaultRefillMinCount = *p.DefaultRefillMinCount
 	}
+	// 1f-refactor(migration 040) · 全局跨车调度护栏
+	if p.AutoRefillDailyBudget != nil {
+		cur.AutoRefillDailyBudget = *p.AutoRefillDailyBudget
+	}
+	if p.AutoRefillMinWalletReserve != nil {
+		cur.AutoRefillMinWalletReserve = *p.AutoRefillMinWalletReserve
+	}
+	if p.AutoRefillVendorAllowlist != nil {
+		cur.AutoRefillVendorAllowlist = *p.AutoRefillVendorAllowlist
+	}
 
 	if err := validate(cur); err != nil {
 		return Strategy{}, err
@@ -213,28 +259,41 @@ func (s *Store) Put(ctx context.Context, passengerID string, p Patch) (Strategy,
 	if cur.DefaultAutoRefillEnabled {
 		autoInt = 1
 	}
+	var allowlistJSON any = nil
+	if len(cur.AutoRefillVendorAllowlist) > 0 {
+		b, err := json.Marshal(cur.AutoRefillVendorAllowlist)
+		if err != nil {
+			return Strategy{}, fmt.Errorf("strategy: 编码 vendor_allowlist: %w", err)
+		}
+		allowlistJSON = string(b)
+	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO passenger_strategy_default
 		  (passenger_id, max_unit_price, daily_round_limit, daily_spend_limit,
 		   per_round_count, preferred_vendor, default_zone,
 		   default_auto_refill_enabled, default_refill_watermark, default_refill_min_count,
+		   auto_refill_daily_budget, auto_refill_min_wallet_reserve, auto_refill_vendor_allowlist,
 		   updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (passenger_id) DO UPDATE SET
-		  max_unit_price               = excluded.max_unit_price,
-		  daily_round_limit            = excluded.daily_round_limit,
-		  daily_spend_limit            = excluded.daily_spend_limit,
-		  per_round_count              = excluded.per_round_count,
-		  preferred_vendor             = excluded.preferred_vendor,
-		  default_zone                 = excluded.default_zone,
-		  default_auto_refill_enabled  = excluded.default_auto_refill_enabled,
-		  default_refill_watermark     = excluded.default_refill_watermark,
-		  default_refill_min_count     = excluded.default_refill_min_count,
-		  updated_at                   = excluded.updated_at`,
+		  max_unit_price                 = excluded.max_unit_price,
+		  daily_round_limit              = excluded.daily_round_limit,
+		  daily_spend_limit              = excluded.daily_spend_limit,
+		  per_round_count                = excluded.per_round_count,
+		  preferred_vendor               = excluded.preferred_vendor,
+		  default_zone                   = excluded.default_zone,
+		  default_auto_refill_enabled    = excluded.default_auto_refill_enabled,
+		  default_refill_watermark       = excluded.default_refill_watermark,
+		  default_refill_min_count       = excluded.default_refill_min_count,
+		  auto_refill_daily_budget       = excluded.auto_refill_daily_budget,
+		  auto_refill_min_wallet_reserve = excluded.auto_refill_min_wallet_reserve,
+		  auto_refill_vendor_allowlist   = excluded.auto_refill_vendor_allowlist,
+		  updated_at                     = excluded.updated_at`,
 		passengerID, nullInt64(cur.MaxUnitPrice), nullInt(cur.DailyRoundLimit),
 		nullInt64(cur.DailySpendLimit), cur.PerRoundCount,
 		nullString(cur.PreferredVendor), cur.DefaultZone,
 		autoInt, cur.DefaultRefillWatermark, nullInt(cur.DefaultRefillMinCount),
+		nullInt64(cur.AutoRefillDailyBudget), nullInt64(cur.AutoRefillMinWalletReserve), allowlistJSON,
 		cur.UpdatedAt.Format(time.RFC3339Nano))
 	if err != nil {
 		return Strategy{}, fmt.Errorf("strategy: 写策略: %w", err)

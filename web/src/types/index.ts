@@ -75,11 +75,11 @@ export type BusStatus = "active" | "dissolved"; // UI: 活跃 / 已解散
  *
  *  **车级 daily_* 已废弃**(§4.1) —— 后端只读全局 · 前端保留只读展示不再暴露编辑入口 */
 export interface BusStrategy {
-  /** null = 跟随全局 `default_auto_refill_enabled` · 非 null = 覆盖本车 */
-  auto_refill_enabled: boolean | null;
-  /** null = 跟随全局 `default_refill_watermark` · 非 null(含 0) = 覆盖本车 */
-  refill_watermark: number | null;
-  /** null = 跟随全局 `default_refill_min_count`(全局若也 null 则按 gap 补差额 · §4.3.2c 选项 X) */
+  /** 1f-refactor(migration 040) · **纯车级** · NOT NULL · false = 关闭自动补 */
+  auto_refill_enabled: boolean;
+  /** 1f-refactor · **纯车级** · NOT NULL · 0 = 不设水位(不触发自动补) */
+  refill_watermark: number;
+  /** null = 按 gap 补齐差额(RefillWatermark - alive_total) · 非 null = 每轮至少 N */
   refill_min_count: number | null;
   /** null = 跟随全局 `per_round_count` */
   per_round_count: number | null;
@@ -602,15 +602,21 @@ export interface GlobalStrategy {
   preferred_vendor: string | null;
   /** us | eu | auto */
   default_zone: string;
-  /** 1f-B · 建新车时的默认 auto_refill_enabled · 车级 null 时的运行时 fallback
-   *  非空(bool) —— 想"关"就传 false */
+  /** 1f-refactor · **仅**用于建车向导预填 seed · 不做运行时 fallback
+   *  改这里不影响已有的车(车级独立演化) */
   default_auto_refill_enabled: boolean;
-  /** 1f-B · 建新车时的默认 refill_watermark · 车级 null 时的运行时 fallback
-   *  非空(int) —— 0 = 该乘客默认不启用水位触发 */
+  /** 1f-refactor · 建车 seed · 0 = 建车默认不启用水位触发 */
   default_refill_watermark: number;
-  /** 1f-B · 建新车时的默认 refill_min_count · 车级 null 时的运行时 fallback
-   *  null = 按 gap 补差额(§4.3.2c 选项 X) · 非 null = 每轮至少拉这么多 */
+  /** 1f-refactor · 建车 seed · null = 建车默认按 gap 补齐差额 · 非 null = 每轮至少拉这么多 */
   default_refill_min_count: number | null;
+  /** 1f-refactor(migration 040) · 全局跨车调度护栏 3 字段 · 真正需要全局才能表达的 */
+  /** 所有 auto 车加起来一天最多花 N 积分(microunit) · null = 不限 */
+  auto_refill_daily_budget: Money | null;
+  /** 钱包低于 N 积分时所有 auto 车暂停(microunit) · null = 不设保护线 */
+  auto_refill_min_wallet_reserve: Money | null;
+  /** 自动补车只允许从这几家 vendor 拉 · null/空 = 不限(所有启用 vendor)
+   *  手动拉号不受此限 · 只是自动调度护栏 */
+  auto_refill_vendor_allowlist: string[] | null;
   /** 今日已用 · 只读，用来在 UI 上显示"还剩多少" */
   used_today: {
     rounds: number;

@@ -246,7 +246,8 @@ export const handlers = [
   }),
 
   // ── 全局策略（06-db-schema §16 · 提取 key 的限额就走这里）
-  //    1f-B 加 default_auto_refill_enabled / default_refill_watermark / default_refill_min_count 三字段
+  //    1f-refactor(migration 040) · default_* 三字段 = 建车 seed(不做运行时 fallback) ·
+  //    auto_refill_* 三字段 = 跨车调度护栏(daily_budget / min_wallet_reserve / vendor_allowlist)
   http.get("/api/me/strategy", () => ok(fx.globalStrategy)),
   http.put("/api/me/strategy", async ({ request }) => {
     const body = (await request.json()) as Record<string, unknown>;
@@ -254,6 +255,7 @@ export const handlers = [
       "daily_round_limit", "daily_spend_limit", "per_round_count",
       "max_unit_price", "preferred_vendor", "default_zone",
       "default_auto_refill_enabled", "default_refill_watermark", "default_refill_min_count",
+      "auto_refill_daily_budget", "auto_refill_min_wallet_reserve", "auto_refill_vendor_allowlist",
     ] as const) {
       if (k in body) (fx.globalStrategy as any)[k] = body[k];
     }

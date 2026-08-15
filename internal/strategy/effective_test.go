@@ -120,11 +120,13 @@ func TestEffective_OnlyGlobal(t *testing.T) {
 	if got.Zone != ZoneUS {
 		t.Errorf("Zone=%q · want %q", got.Zone, ZoneUS)
 	}
-	if !got.AutoRefillEnabled {
-		t.Errorf("AutoRefillEnabled=false · want true(全局)")
+	// 1f-refactor(migration 040) · auto/refill 不再走全局 fallback ·
+	// 无 bus 时车级零值(等价关闭)· 全局 default_* 只做建车 seed 不做运行时。
+	if got.AutoRefillEnabled {
+		t.Errorf("AutoRefillEnabled=true · 无 bus 应零值 false(migration 040 撤全局 fallback)")
 	}
-	if got.RefillWatermark != 3 {
-		t.Errorf("RefillWatermark=%d · want 3(全局)", got.RefillWatermark)
+	if got.RefillWatermark != 0 {
+		t.Errorf("RefillWatermark=%d · 无 bus 应零值 0", got.RefillWatermark)
 	}
 }
 
@@ -154,8 +156,8 @@ func TestEffective_GlobalPlusBusOverride(t *testing.T) {
 			MaxUnitPrice:      &busMax,
 			PerRoundCount:     &busPer,
 			PreferredVendor:   &busVendor,
-			AutoRefillEnabled: &busAuto,
-			RefillWatermark:   &busWm,
+			AutoRefillEnabled: busAuto,
+			RefillWatermark:   busWm,
 			RefillMinCount:    &busMin,
 		},
 		sys: defaultSys(),
@@ -395,8 +397,8 @@ func TestEffective_ZeroFalseIsValidOverride(t *testing.T) {
 			DefaultRefillWatermark:   10,
 		},
 		bus: &BusStrategy{
-			AutoRefillEnabled: &busAuto,
-			RefillWatermark:   &busWm,
+			AutoRefillEnabled: busAuto,
+			RefillWatermark:   busWm,
 		},
 		sys: defaultSys(),
 	}
@@ -433,8 +435,10 @@ func TestEffective_AutoTriggerNoRequest(t *testing.T) {
 		bus: &BusStrategy{
 			MaxUnitPrice:    &busMax,
 			PreferredVendor: &busVendor,
-			// AutoRefillEnabled=nil · 跟随全局 true
-			// RefillWatermark=nil · 跟随全局 5
+			// 1f-refactor(migration 040) · auto/refill 撤回 NOT NULL · 值字段直接就是车级值
+			// 全局 default_* 只做建车 seed · 不做运行时 fallback
+			AutoRefillEnabled: false, // 车级零值 · 就是 false · 全局 true 不影响
+			RefillWatermark:   0,     // 同上
 		},
 		sys: defaultSys(),
 	}
@@ -448,12 +452,12 @@ func TestEffective_AutoTriggerNoRequest(t *testing.T) {
 	if got.PreferredVendor != busVendor {
 		t.Errorf("PreferredVendor=%q · want %q", got.PreferredVendor, busVendor)
 	}
-	// 车级 auto/watermark nil · 走全局
-	if !got.AutoRefillEnabled {
-		t.Errorf("AutoRefillEnabled=false · 车级 nil 应跟随全局 true")
+	// migration 040 · 车级就是车级 · 全局不 fallback
+	if got.AutoRefillEnabled {
+		t.Errorf("AutoRefillEnabled=true · 车级 false 直接生效(migration 040 撤 fallback)")
 	}
-	if got.RefillWatermark != 5 {
-		t.Errorf("RefillWatermark=%d · 车级 nil 应跟随全局 5", got.RefillWatermark)
+	if got.RefillWatermark != 0 {
+		t.Errorf("RefillWatermark=%d · 车级 0 直接生效", got.RefillWatermark)
 	}
 	if got.PerRoundCount != 3 {
 		t.Errorf("PerRoundCount=%d · want 3(全局)", got.PerRoundCount)

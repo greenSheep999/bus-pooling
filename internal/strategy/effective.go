@@ -104,12 +104,16 @@ type EffectiveDeps interface {
 //	nil  = 跟随全局默认
 //	非 nil = 覆盖本车(包括显式 0 / false)
 type BusStrategy struct {
-	AutoRefillEnabled *bool
-	RefillWatermark   *int
-	RefillMinCount    *int
-	PerRoundCount     *int
-	MaxUnitPrice      *int64
-	PreferredVendor   *string
+	// AutoRefillEnabled / RefillWatermark · **纯车级** · NOT NULL DEFAULT 0
+	// (migration 040 撤回 nullable · 见 docs/15-scheduling.md §4.3.2b)
+	AutoRefillEnabled bool
+	RefillWatermark   int
+	// RefillMinCount 保持可空 · nil = 按 gap 补齐差额
+	RefillMinCount *int
+	// 以下覆盖字段仍走 nullable(nil = 跟随全局)
+	PerRoundCount   *int
+	MaxUnitPrice    *int64
+	PreferredVendor *string
 	// Zone · bus.Strategy 目前不存 zone(anon_zone 是撮合用)· 保留字段占位 · 常年 nil
 	Zone *string
 }
@@ -224,27 +228,23 @@ func Effective(ctx context.Context, deps EffectiveDeps, passengerID, busID strin
 		out.Zone = *req.Zone
 	}
 
-	// AutoRefillEnabled · 车级 → 全局(§4.3.2b 方案 A · nullable 已落 1f-B)
-	out.AutoRefillEnabled = global.DefaultAutoRefillEnabled
-	if busSt != nil && busSt.AutoRefillEnabled != nil {
-		out.AutoRefillEnabled = *busSt.AutoRefillEnabled
-	}
-
-	// RefillWatermark · 车级 → 全局(同上)
-	out.RefillWatermark = global.DefaultRefillWatermark
-	if busSt != nil && busSt.RefillWatermark != nil {
-		out.RefillWatermark = *busSt.RefillWatermark
-	}
-
-	// RefillMinCount · 车级 → 全局 → nil(gap · §4.3.2c 选项 X)
-	// 选项 X · 车级非 nil 直接用 · 车级 nil 走全局 · 全局也 nil 就是 nil(gap 语义)
-	if global.DefaultRefillMinCount != nil {
-		v := *global.DefaultRefillMinCount
-		out.RefillMinCount = &v
-	}
-	if busSt != nil && busSt.RefillMinCount != nil {
-		v := *busSt.RefillMinCount
-		out.RefillMinCount = &v
+	// AutoRefillEnabled / RefillWatermark / RefillMinCount · **纯车级** · 无全局 fallback
+	//
+	// **1f-refactor(migration 040)撤回镜像模型**:auto/refill 三字段之前在 §4.3.2b
+	// 走 "车级 → 全局" fallback · 造成两层字段镜像 · 用户误触。用户拍板改回:
+	//   · 车级就是车级 · NOT NULL DEFAULT 0(migration 040)· 全局层的 default_* 只做
+	//     建车 seed(handleCreateBus 里预填一次) · 不做运行时 fallback。
+	//   · 全局层的调度护栏走 daily_budget / min_wallet_reserve / vendor_allowlist ·
+	//     那是"跨车" · 不是"车级镜像"。
+	//
+	// 因此这里直接从车级取值 · 车级无表示或 busID 空则用零值(等价"关闭 / 阈值 0 / 按 gap")。
+	if busSt != nil {
+		out.AutoRefillEnabled = busSt.AutoRefillEnabled
+		out.RefillWatermark = busSt.RefillWatermark
+		if busSt.RefillMinCount != nil {
+			v := *busSt.RefillMinCount
+			out.RefillMinCount = &v
+		}
 	}
 
 	return out, nil

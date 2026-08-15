@@ -34,14 +34,14 @@ type busResponse struct {
 
 // busStrategyDT 对齐前端 BusStrategy（TS 是权威 · CLAUDE.md §0）
 //
-// 1f-B(15-scheduling §4.3.2b 方案 A) · auto/refill 三字段前端 TS 已改成 `| null` ·
-// null = 跟随全局默认 · 值(含 0 / false) = 覆盖本车。用指针接住"字段存在但值是 null"
-// 的差别 —— json.Unmarshal 会把 `"auto_refill_enabled": null` 解成 *bool = nil ·
-// 把 `"auto_refill_enabled": false` 解成 *bool = 指向 false。
+// 1f-refactor(migration 040) · auto_refill_enabled / refill_watermark 撤回 nullable ·
+// 车级就是车级 · **不再**做"跟随全局"继承。全局层的 default_* 只做建车 seed ·
+// 全局层的调度护栏走 daily_budget / min_wallet_reserve / vendor_allowlist(见 15 §4.3.2b)。
+// 其他覆盖字段(per_round_count / preferred_vendor / max_unit_price)仍 nullable(nil = 跟随全局)。
 type busStrategyDT struct {
-	AutoRefillEnabled *bool   `json:"auto_refill_enabled"`
-	RefillWatermark   *int    `json:"refill_watermark"`
-	RefillMinCount    *int    `json:"refill_min_count"`
+	AutoRefillEnabled bool    `json:"auto_refill_enabled"`
+	RefillWatermark   int     `json:"refill_watermark"`
+	RefillMinCount    *int    `json:"refill_min_count"` // 保持可空 · nil = 按 gap 补齐差额
 	PerRoundCount     *int    `json:"per_round_count"`
 	MaxUnitPrice      *int64  `json:"max_unit_price"`
 	DailyRoundLimit   *int    `json:"daily_round_limit"`

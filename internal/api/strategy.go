@@ -18,13 +18,16 @@ import (
 // strategyResponse 形状对齐 web/src/types/index.ts 的 GlobalStrategy。
 // 那份 TS 是可执行契约，有出入以它为准（契约 §625）。
 //
-// 1f-B(15-scheduling §4.3.2b) · 加 default_auto_refill_enabled /
-// default_refill_watermark / default_refill_min_count 三字段 · 作为：
-//  1. 新车 seed(建车向导预填)
-//  2. 车级 auto/refill 为 NULL 时的运行时 fallback(strategy.Effective)
+// 1f-refactor(migration 040) · 全局策略分两组:
 //
-// 三字段命名带 default_ 前缀 · 跟车级字段(auto_refill_enabled / refill_watermark /
-// refill_min_count)分开 · 免得前端把全局值当成车级值用。
+//  组 A · 新车 seed(default_*):建车向导预填 · **不做**运行时 fallback ·
+//    改这里不影响老车(车级独立演化)
+//  组 B · 跨车调度护栏(auto_refill_*):真正需要全局才能表达的
+//    · daily_budget:所有 auto 车加起来一天最多花 N 积分
+//    · min_wallet_reserve:钱包低于 N 积分时所有 auto 车暂停
+//    · vendor_allowlist:自动补车只允许从这几家 vendor 拉
+//
+// 三字段 default_ 前缀跟车级字段分开 · 免得前端把全局值当成车级值。
 type strategyResponse struct {
 	MaxUnitPrice             *int64            `json:"max_unit_price"`
 	DailyRoundLimit          *int              `json:"daily_round_limit"`
@@ -35,7 +38,11 @@ type strategyResponse struct {
 	DefaultAutoRefillEnabled bool              `json:"default_auto_refill_enabled"`
 	DefaultRefillWatermark   int               `json:"default_refill_watermark"`
 	DefaultRefillMinCount    *int              `json:"default_refill_min_count"`
-	UsedToday                usedTodayResponse `json:"used_today"`
+	// 1f-refactor(migration 040) · 全局跨车调度护栏
+	AutoRefillDailyBudget      *int64   `json:"auto_refill_daily_budget"`
+	AutoRefillMinWalletReserve *int64   `json:"auto_refill_min_wallet_reserve"`
+	AutoRefillVendorAllowlist  []string `json:"auto_refill_vendor_allowlist"`
+	UsedToday                  usedTodayResponse `json:"used_today"`
 }
 
 type usedTodayResponse struct {
@@ -67,17 +74,25 @@ func (s *Server) handleGetStrategy(w http.ResponseWriter, r *http.Request) error
 // buildStrategyResponse · 一处装填 strategyResponse · Get / Put 共用
 // 避免 1f-B 加了 3 字段后 Get / Put 两处漏改。
 func buildStrategyResponse(st strategy.Strategy, roundsToday int, spendToday int64) strategyResponse {
+	allowlist := st.AutoRefillVendorAllowlist
+	if allowlist == nil {
+		// json 序列化 nil slice → null · 但前端契约用 [] 也可 · 保 null 一致(strategy 未设)
+		allowlist = []string{}
+	}
 	return strategyResponse{
-		MaxUnitPrice:             st.MaxUnitPrice,
-		DailyRoundLimit:          st.DailyRoundLimit,
-		DailySpendLimit:          st.DailySpendLimit,
-		PerRoundCount:            st.PerRoundCount,
-		PreferredVendor:          st.PreferredVendor,
-		DefaultZone:              st.DefaultZone,
-		DefaultAutoRefillEnabled: st.DefaultAutoRefillEnabled,
-		DefaultRefillWatermark:   st.DefaultRefillWatermark,
-		DefaultRefillMinCount:    st.DefaultRefillMinCount,
-		UsedToday:                usedTodayResponse{Rounds: roundsToday, Spend: spendToday},
+		MaxUnitPrice:               st.MaxUnitPrice,
+		DailyRoundLimit:            st.DailyRoundLimit,
+		DailySpendLimit:            st.DailySpendLimit,
+		PerRoundCount:              st.PerRoundCount,
+		PreferredVendor:            st.PreferredVendor,
+		DefaultZone:                st.DefaultZone,
+		DefaultAutoRefillEnabled:   st.DefaultAutoRefillEnabled,
+		DefaultRefillWatermark:     st.DefaultRefillWatermark,
+		DefaultRefillMinCount:      st.DefaultRefillMinCount,
+		AutoRefillDailyBudget:      st.AutoRefillDailyBudget,
+		AutoRefillMinWalletReserve: st.AutoRefillMinWalletReserve,
+		AutoRefillVendorAllowlist:  allowlist,
+		UsedToday:                  usedTodayResponse{Rounds: roundsToday, Spend: spendToday},
 	}
 }
 
@@ -95,13 +110,17 @@ type strategyPutRequest struct {
 	PerRoundCount   json.RawMessage `json:"per_round_count"`
 	PreferredVendor json.RawMessage `json:"preferred_vendor"`
 	DefaultZone     json.RawMessage `json:"default_zone"`
-	// 1f-B · auto/refill 全局默认 · auto/watermark 非空值(required-like) ·
-	// min_count 允许 null(表"按 gap 补差额" · §4.3.2c 选项 X)
+	// 建车 seed 默认(1f-refactor) · auto/watermark 非空值(required-like) ·
+	// min_count 允许 null(表"按 gap 补差额")
 	DefaultAutoRefillEnabled json.RawMessage `json:"default_auto_refill_enabled"`
 	DefaultRefillWatermark   json.RawMessage `json:"default_refill_watermark"`
 	DefaultRefillMinCount    json.RawMessage `json:"default_refill_min_count"`
+	// 1f-refactor(migration 040) · 全局跨车调度护栏 3 字段
+	// daily_budget / min_wallet_reserve 允许 null(不限)· vendor_allowlist 允许 [](不限)
+	AutoRefillDailyBudget      json.RawMessage `json:"auto_refill_daily_budget"`
+	AutoRefillMinWalletReserve json.RawMessage `json:"auto_refill_min_wallet_reserve"`
+	AutoRefillVendorAllowlist  json.RawMessage `json:"auto_refill_vendor_allowlist"`
 	// UsedToday 是只读的 —— 允许它出现（前端常把整个对象 PUT 回来）但忽略。
-	// 不允许的话前端得先删字段，那是没必要的麻烦。
 	UsedToday json.RawMessage `json:"used_today"`
 }
 
@@ -200,6 +219,28 @@ func buildPatch(req strategyPutRequest) (strategy.Patch, error) {
 		return p, err
 	}
 	p.DefaultRefillMinCount = minCount
+
+	// 1f-refactor(migration 040) · 全局跨车调度护栏
+	budget, err := nullableField[int64]("auto_refill_daily_budget", req.AutoRefillDailyBudget)
+	if err != nil {
+		return p, err
+	}
+	p.AutoRefillDailyBudget = budget
+
+	reserve, err := nullableField[int64]("auto_refill_min_wallet_reserve", req.AutoRefillMinWalletReserve)
+	if err != nil {
+		return p, err
+	}
+	p.AutoRefillMinWalletReserve = reserve
+
+	// vendor_allowlist · JSON 数组 · 缺席 = 不动 · [] = 清空(不限) · [ids] = 设列表
+	if len(req.AutoRefillVendorAllowlist) > 0 {
+		var list []string
+		if err := json.Unmarshal(req.AutoRefillVendorAllowlist, &list); err != nil {
+			return p, fmt.Errorf("auto_refill_vendor_allowlist: %w", err)
+		}
+		p.AutoRefillVendorAllowlist = &list
+	}
 
 	return p, nil
 }

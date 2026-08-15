@@ -101,7 +101,8 @@ export const buses: Bus[] = [
     alive_count: 6, dead_count: 1, spend_today: C(5),
     avg_lifespan_seconds: 28 * 3600,
     strategy: {
-      auto_refill_enabled: null, refill_watermark: null, refill_min_count: null,
+      // 1f-refactor · auto/watermark 是纯车级 bool/int · 团车这里关自动补
+      auto_refill_enabled: false, refill_watermark: 0, refill_min_count: null,
       per_round_count: null, max_unit_price: null, daily_round_limit: null,
       daily_spend_limit: null, preferred_vendor: "91kiro",
     },
@@ -825,11 +826,14 @@ export const globalStrategy: GlobalStrategy = {
   per_round_count: 3,
   preferred_vendor: null,
   default_zone: "auto",
-  /* 1f-B 新加 · bus_kiro 在 fixtures 里 auto_refill_enabled = null 会 fallback 到这里
-     所以给个 true + 水位 2 · UI 展示"跟随全局 · 已开启 · 水位 2" · 让"跟随"态可见 */
+  /* 1f-refactor · 建车向导预填 seed(不做运行时 fallback) */
   default_auto_refill_enabled: true,
   default_refill_watermark: 2,
-  default_refill_min_count: null,      // null = 按 gap 补差额(§4.3.2c 选项 X)
+  default_refill_min_count: null,      // null = 按 gap 补差额
+  /* 1f-refactor(migration 040) · 全局跨车调度护栏 · 3 个真正全局才能表达的 */
+  auto_refill_daily_budget: C(300),           // 所有 auto 车加起来一天最多 300 积分
+  auto_refill_min_wallet_reserve: C(50),      // 钱包低于 50 积分时所有 auto 车暂停
+  auto_refill_vendor_allowlist: ["91kiro", "kiroceo"],  // 自动补车只从这两家拉
   /* 今日已用 · 拿 mock 里今天的拉号轮次和消费凑，别硬编一个跟别处矛盾的数 */
   used_today: {
     rounds: pullRounds.filter((r) => Date.now() - new Date(r.created_at).getTime() < 24 * 3600_000).length,

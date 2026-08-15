@@ -69,15 +69,19 @@ type Bus struct {
 // 别用"零值"当"跟随"判据 —— 用户显式关自动补(false)跟"跟随一个全局关的值"都合法 ·
 // 只有指针 nil 才能表达"没有覆盖 · 用全局那份"。
 type Strategy struct {
-	AutoRefillEnabled *bool
-	RefillWatermark   *int
-	RefillMinCount    *int
-	PerRoundCount     *int
-	MaxUnitPrice      *int64
+	// AutoRefillEnabled / RefillWatermark · **纯车级** · NOT NULL DEFAULT 0
+	// (migration 040 撤回 nullable · 见 docs/15-scheduling.md §4.3.2b)
+	AutoRefillEnabled bool
+	RefillWatermark   int
+	// RefillMinCount 保持可空 · nil = 按 gap 补齐差额(RefillWatermark - alive_total)
+	RefillMinCount *int
+	// PerRoundCount / PreferredVendor · 覆盖字段(nullable · nil = 跟随全局默认)
+	PerRoundCount   *int
+	MaxUnitPrice    *int64
+	PreferredVendor *string
 	// DailyRoundLimit / DailySpendLimit · **DEPRECATED · 车级不生效** · 见 struct 注释
 	DailyRoundLimit *int
 	DailySpendLimit *int64
-	PreferredVendor *string
 }
 
 // Member 是车里一个成员的行。
@@ -220,9 +224,10 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (*Bus, error) {
 		nullableString(&b.AnonZone),
 		nullableInt64Zero(b.AnonMaxUnitPrice),
 		nullableString(&b.InviteCode),
-		// 1f-B · nil = NULL(跟随全局) · 非 nil = 显式值(覆盖本车 · 含 0 / false)
-		nullableBool(b.Strategy.AutoRefillEnabled),
-		nullableInt(b.Strategy.RefillWatermark),
+		// migration 040 · auto_refill_enabled / refill_watermark NOT NULL · 直接落值
+		// refill_min_count 保持 nullable(nil = 按 gap 补齐差额)
+		boolToInt(b.Strategy.AutoRefillEnabled),
+		b.Strategy.RefillWatermark,
 		nullableInt(b.Strategy.RefillMinCount),
 		nullableInt(b.Strategy.PerRoundCount),
 		nullableInt64(b.Strategy.MaxUnitPrice),
@@ -776,7 +781,7 @@ func (s *Store) UpdateStrategy(ctx context.Context, busID, passengerID string, s
 		               per_round_count = ?, max_unit_price = ?,
 		               daily_round_limit = ?, daily_spend_limit = ?, preferred_vendor = ?
 		 WHERE id = ? AND status = 'active'`,
-		nullableBool(st.AutoRefillEnabled), nullableInt(st.RefillWatermark),
+		boolToInt(st.AutoRefillEnabled), st.RefillWatermark,
 		nullableInt(st.RefillMinCount),
 		nullableInt(st.PerRoundCount), nullableInt64(st.MaxUnitPrice),
 		nullableInt(st.DailyRoundLimit), nullableInt64(st.DailySpendLimit),
@@ -883,13 +888,12 @@ func scanBusFields(sc scanner, b *Bus) error {
 		t := parseTime(dissolvedAt.String)
 		b.DissolvedAt = &t
 	}
+	// migration 040 后 NOT NULL · 但 sql.Null* scan 仍可用(Valid=true 时读值)
 	if autoRefill.Valid {
-		v := autoRefill.Int64 != 0
-		b.Strategy.AutoRefillEnabled = &v
+		b.Strategy.AutoRefillEnabled = autoRefill.Int64 != 0
 	}
 	if refillWatermark.Valid {
-		v := int(refillWatermark.Int64)
-		b.Strategy.RefillWatermark = &v
+		b.Strategy.RefillWatermark = int(refillWatermark.Int64)
 	}
 	if refillMinCount.Valid {
 		v := int(refillMinCount.Int64)
