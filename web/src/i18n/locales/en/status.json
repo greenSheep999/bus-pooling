@@ -66,15 +66,17 @@
   "log": {
     "title": "Dispatch log",
     "count": "{{count}} records",
-    "col-time": "Time",
-    "col-region": "Region",
+    "col-listed": "Listed",
+    "col-delisted": "Delisted",
+    "col-duration": "Duration",
     "col-count": "Released",
     "col-alive": "Alive now",
     "col-status": "Status",
+    "still-live": "Ongoing",
     "status-running": "Live",
     "status-done": "Sold out",
     "status-dead": "All dead",
-    "derived-note": "This upstream exposes no batch query API. Records above are inferred from our per-minute stock probing: timestamps are when we observed the change (0–60s after the actual release), counts are the net increase. Survival data is not provided by upstream."
+    "derived-note": "This upstream exposes no batch query API. Records above are inferred from our per-minute stock probing: timestamps are when we observed the change (0–60s after the actual release), counts are the net increase. Survival data and delist times are not provided by upstream."
   },
   "table": {
     "title": "Quality comparison",

@@ -617,12 +617,14 @@ function EventLog({
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-hairline bg-surface">
-        {/* 表头 */}
-        <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 border-b border-hairline px-4 py-2.5 text-[10px] uppercase tracking-wider text-fg-tertiary md:grid-cols-[160px_60px_1fr_auto_auto] md:gap-4 md:px-5">
-          <span>{t("log.col-time")}</span>
-          <span className="hidden md:block">{t("log.col-region")}</span>
+        {/* 表头 · 6 段信息(对齐上游 restock 表的信息密度)
+            上架时间 / 下架时间 / 持续时长 / 数量 / 存活 / 状态 */}
+        <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-hairline px-4 py-2.5 text-[10px] uppercase tracking-wider text-fg-tertiary md:grid-cols-[150px_150px_110px_70px_60px_auto] md:gap-4 md:px-5">
+          <span>{t("log.col-listed")}</span>
+          <span className="hidden md:block">{t("log.col-delisted")}</span>
+          <span className="hidden md:block">{t("log.col-duration")}</span>
           <span className="md:text-left">{t("log.col-count")}</span>
-          <span className="text-right">{t("log.col-alive")}</span>
+          <span className="hidden text-right md:block">{t("log.col-alive")}</span>
           <span className="text-right">{t("log.col-status")}</span>
         </div>
 
@@ -630,19 +632,42 @@ function EventLog({
           <div
             key={`${e.at}-${i}`}
             className={cn(
-              "grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 px-4 py-2.5 text-label md:grid-cols-[160px_60px_1fr_auto_auto] md:gap-4 md:px-5",
+              "grid grid-cols-[1fr_auto_auto] items-center gap-3 px-4 py-2.5 text-label md:grid-cols-[150px_150px_110px_70px_60px_auto] md:gap-4 md:px-5",
               i < events.length - 1 && "border-b border-hairline",
             )}
           >
-            {/* 时间 · 绝对 + 相对 */}
+            {/* 上架时间 · 绝对 + 相对 + 区域 */}
             <div className="min-w-0">
               <div className="font-mono text-[11px] tabular-nums">{fmtDateTime(e.at)}</div>
-              <div className="text-[10px] text-fg-tertiary">{fmtRelative(e.at, i18n.language)}</div>
+              <div className="text-[10px] text-fg-tertiary">
+                {fmtRelative(e.at, i18n.language)}
+                {e.region && <span className="ml-1.5">· {e.region}</span>}
+              </div>
             </div>
 
-            {/* 区域 */}
-            <div className="hidden text-[11px] text-fg-secondary md:block">
-              {e.region || "—"}
+            {/* 下架时间 · 还在架上就显示"持续中" */}
+            <div className="hidden min-w-0 md:block">
+              {e.dead_at ? (
+                <>
+                  <div className="font-mono text-[11px] tabular-nums text-fg-secondary">
+                    {fmtDateTime(e.dead_at)}
+                  </div>
+                  <div className="text-[10px] text-fg-tertiary">
+                    {fmtRelative(e.dead_at, i18n.language)}
+                  </div>
+                </>
+              ) : e.status === "running" ? (
+                <span className="text-[11px] font-semibold text-ok-fg">{t("log.still-live")}</span>
+              ) : (
+                <span className="text-[11px] text-fg-tertiary">—</span>
+              )}
+            </div>
+
+            {/* 持续时长 · dead_at 有值算差 · running 算到现在 */}
+            <div className="hidden md:block">
+              <div className="font-mono text-[11px] font-semibold tabular-nums">
+                {fmtDuration(e.at, e.dead_at, e.status, i18n.language)}
+              </div>
             </div>
 
             {/* 数量 */}
@@ -654,7 +679,7 @@ function EventLog({
             </div>
 
             {/* 存活 · derived 源没有这个数据 */}
-            <div className="text-right font-mono text-[11px] tabular-nums">
+            <div className="hidden text-right font-mono text-[11px] tabular-nums md:block">
               {derived
                 ? <span className="text-fg-tertiary">—</span>
                 : e.alive
@@ -709,6 +734,41 @@ function fmtInterval(min: number): string {
   if (min < 60) return `${Math.round(min)}min`;
   if (min < 60 * 24) return `${(min / 60).toFixed(1)}h`;
   return `${Math.round(min / 60 / 24)}d`;
+}
+
+/** 持续时长 · 上架到下架撑了多久(对齐上游 restock 表的"持续时长"列)
+ *
+ *  running 态没有 dead_at · 算到"现在"(用户看到的是活的批次撑了多久) ·
+ *  done/dead 有 dead_at 就算差值 · 都没有返 "—"。
+ *
+ *  格式:> 1 天走 "3 天 4 小时" · > 1 小时走 "16 小时 3 分钟" · 否则 "43 分钟"。
+ *  中英走 lang 判 · 不硬编。 */
+function fmtDuration(
+  at: string,
+  deadAt: string | undefined,
+  status: string | undefined,
+  lang: string,
+): string {
+  const start = new Date(at).getTime();
+  const end = deadAt ? new Date(deadAt).getTime() : (status === "running" ? Date.now() : NaN);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return "—";
+
+  const totalMin = Math.round((end - start) / 60_000);
+  const zh = lang.startsWith("zh");
+  const D = zh ? "天" : "d";
+  const H = zh ? "小时" : "h";
+  const M = zh ? "分钟" : "m";
+  const sp = zh ? " " : "";
+
+  if (totalMin < 60) return `${totalMin}${sp}${M}`;
+  const hours = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  if (hours < 24) {
+    return mins > 0 ? `${hours}${sp}${H}${sp}${mins}${sp}${M}` : `${hours}${sp}${H}`;
+  }
+  const days = Math.floor(hours / 24);
+  const remainH = hours % 24;
+  return remainH > 0 ? `${days}${sp}${D}${sp}${remainH}${sp}${H}` : `${days}${sp}${D}`;
 }
 
 /** 相对时间 · 用 Intl.RelativeTimeFormat 走浏览器本地化 · 不硬编中文

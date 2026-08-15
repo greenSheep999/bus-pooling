@@ -66,15 +66,17 @@
   "log": {
     "title": "开号明细",
     "count": "共 {{count}} 条",
-    "col-time": "时间",
-    "col-region": "区域",
+    "col-listed": "上架",
+    "col-delisted": "下架",
+    "col-duration": "持续时长",
     "col-count": "放出",
     "col-alive": "现存活",
     "col-status": "状态",
+    "still-live": "持续中",
     "status-running": "在架",
     "status-done": "已发完",
     "status-dead": "已全挂",
-    "derived-note": "本家上游没有开放批次查询接口，以上记录由我方每分钟观测库存变化推算得出：时间为观测到的时刻（比实际放出晚 0~60 秒），数量为该时段净增量。存活情况上游未提供。"
+    "derived-note": "本家上游没有开放批次查询接口，以上记录由我方每分钟观测库存变化推算得出：时间为观测到的时刻（比实际放出晚 0~60 秒），数量为该时段净增量。存活情况和下架时间上游未提供。"
   },
   "table": {
     "title": "质量对比",
