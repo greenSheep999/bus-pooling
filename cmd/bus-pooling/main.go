@@ -30,6 +30,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/api"
 	"github.com/bus-pooling/bus-pooling/internal/bus"
 	"github.com/bus-pooling/bus-pooling/internal/config"
+	"github.com/bus-pooling/bus-pooling/internal/coupon"
 	"github.com/bus-pooling/bus-pooling/internal/db"
 	"github.com/bus-pooling/bus-pooling/internal/deathwatch"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
@@ -932,6 +933,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 			PerRoundCount: cfg.Pull.DefaultCount,
 			DefaultZone:   strategy.ZoneAuto,
 		},
+		// decisions §8.43 v2 · 优惠码服务 · topup / pull 两场景走 type 校验
+		Coupons: coupon.NewStore(database.DB),
 	})
 	apiSrv.Routes(mux)
 

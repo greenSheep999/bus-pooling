@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
   ArrowDownLeft, ArrowUpRight, Check, Gift, Info, Loader2, Lock,
   ShieldCheck, Ticket, TrendingDown, TrendingUp, Wallet as WalletIcon,
 } from "lucide-react";
 import {
-  useCreateTopup, useLedger, useMe, useMyInvite, useRedeem, useTopupChannels, useWallet,
+  useCouponLookup, useCreateTopup, useLedger, useMe, useMyInvite, useRedeem, useTopupChannels, useWallet,
 } from "@/api/hooks";
 import { BybitLogo, WaffoLogo } from "@/components/PaymentLogo";
 import {
@@ -426,6 +426,22 @@ function TopupConfirmDialog({
   const { t } = useTranslation("wallet");
   const [coupon, setCoupon] = useState("");
 
+  /* 优惠码 debounce · 输码 500ms 无变化才查后端 · 避免每 keystroke 一次请求 */
+  const [debouncedCoupon, setDebouncedCoupon] = useState("");
+  useEffect(() => {
+    const h = setTimeout(() => setDebouncedCoupon(coupon.trim()), 500);
+    return () => clearTimeout(h);
+  }, [coupon]);
+  const { data: couponInfo, error: couponError, isFetching: couponFetching } =
+    useCouponLookup(debouncedCoupon, "topup");
+
+  /* 折后 USD = usdAmount * (1 - discount_bp/10000)
+     usdAmount 是 "13.50" 字符串 · 折扣 basis point 转小数 · 保 2 位 */
+  const discountBP = couponInfo?.discount_bp ?? 0;
+  const usdNum = Number(usdAmount);
+  const discountUSD = discountBP > 0 ? (usdNum * discountBP / 10000).toFixed(2) : null;
+  const usdAmountAfter = discountBP > 0 ? (usdNum - usdNum * discountBP / 10000).toFixed(2) : usdAmount;
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && !submitting && onClose()}>
       <DialogContent className="max-w-[440px]">
@@ -471,11 +487,22 @@ function TopupConfirmDialog({
                   )
                 }
               />
+              {/* 优惠行 · 输码后 debounce lookup · 有效码返 discount_bp · 显减免 */}
+              {discountUSD && (
+                <Row
+                  label={t("topup.confirm.coupon.discount-label")}
+                  value={
+                    <span className="tnum text-fg-secondary">
+                      -{discountUSD} <span className="text-fg-tertiary">USD</span>
+                    </span>
+                  }
+                />
+              )}
             </div>
             <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-hairline pt-3">
               <span className="text-label font-semibold text-fg-secondary">{t("topup.confirm.pay")}</span>
               <span className="tnum text-lg font-bold">
-                {usdAmount} <span className="text-sm font-medium text-fg-tertiary">USD</span>
+                {usdAmountAfter} <span className="text-sm font-medium text-fg-tertiary">USD</span>
               </span>
             </div>
           </div>
@@ -497,7 +524,20 @@ function TopupConfirmDialog({
               maxLength={32}
               disabled={submitting}
             />
-            <p className="text-[11px] text-fg-tertiary">{t("topup.confirm.coupon.hint")}</p>
+            {/* 校验反馈 · 输码后立即显 · 空 = hint · 有码 = 校验中/valid/error */}
+            {debouncedCoupon.length === 0 ? (
+              <p className="text-[11px] text-fg-tertiary">{t("topup.confirm.coupon.hint")}</p>
+            ) : couponFetching ? (
+              <p className="text-[11px] text-fg-tertiary">{t("topup.confirm.coupon.checking")}</p>
+            ) : couponError ? (
+              <p className="text-[11px] text-danger-fg">
+                {(couponError as { message?: string })?.message || t("topup.confirm.coupon.invalid")}
+              </p>
+            ) : couponInfo ? (
+              <p className="text-[11px] text-brand-strong">
+                {t("topup.confirm.coupon.applied", { pct: (couponInfo.discount_bp ?? 0) / 100 })}
+              </p>
+            ) : null}
           </div>
 
           {/* 简短协议 · neutral(灰)Alert · Info icon · 不用醒目色 */}

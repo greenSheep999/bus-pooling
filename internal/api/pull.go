@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
+	"github.com/bus-pooling/bus-pooling/internal/coupon"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 	"github.com/bus-pooling/bus-pooling/internal/strategy"
@@ -63,6 +65,15 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 	}
 	if req.Count < 1 {
 		return ErrBadRequest("count 必须 ≥ 1")
+	}
+
+	// decisions §8.43 v2 · 优惠码 pull 场景校验 · service_fee_waiver type
+	// 阶段 1:只 Lookup 不 Redeem · 拉号本身还没真跑(需要上游 vendor 支持 · #190 挂起)
+	// 校验通过 = 前端 UI 收 200 · 不报错("码适用此场景")· 等真拉号联通后再补 Redeem + service_fee_waived 逻辑
+	if s.coupons != nil && strings.TrimSpace(req.CouponCode) != "" {
+		if _, err := s.coupons.Lookup(r.Context(), req.CouponCode, coupon.TypeServiceFeeWaiver); err != nil {
+			return translateCouponErr(err)
+		}
 	}
 	// 前端会发 "auto" 表示"让系统派" —— 服务端等价于空
 	if req.VendorID == "auto" {

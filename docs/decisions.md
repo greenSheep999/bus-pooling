@@ -586,12 +586,16 @@ CREATE TABLE coupon_code (
 - `POST /api/me/pull/estimate` + `POST /api/me/buses/{id}/pull` 保留 `coupon_code`(hooks.ts:496)· 校验必须命中 `type=service_fee_waiver`
 - 校验错(type 不匹配 / 过期 / 用尽)· 返 4xx · 前端提示"码不适用此场景"
 
-**前端现状**:
-- ✅ WalletPage 充值弹窗输入框(§8.43 v1 已接) · 走 `type=topup_discount`
-- ✅ ExtractConfirmModal 拉号侧输入框(1a-1c 落地 · **保留** · 走 `type=service_fee_waiver`)
-- ❌ 后端 coupon_code 表未建 · 校验逻辑未实现 · 阶段 1(sprint-1e)只透传落库
-- ❌ 前端 preview 未加"优惠 -X.XX USD"行(等后端返减免值)
-- **P1(sprint-1f 起手)**:coupon_code 表 + 校验 + 减免应用 + 两侧 preview
+**现状(2026-08-15 · sprint-1e 收尾完成)**:
+- ✅ `coupon_code` + `coupon_use` 表建好(migration 042)· 支持 type 字段互斥
+- ✅ `internal/coupon` 包 · Lookup / Redeem / Create · 原子核销 + 幂等
+- ✅ topup 场景全链路接通:handler 起单前 Lookup + 建 gateway 单减 USD + 建单后 Redeem
+- ✅ pull 场景 Lookup 已接(校验码适用性)· 减 service_fee 具体逻辑等 #190 vendor 真拉时补
+- ✅ `GET /api/me/coupons/lookup` 预校验端点(前端 preview 展示"优惠 -X.XX USD")
+- ✅ 前端 WalletPage 充值弹窗 · debounce lookup · 优惠行 · valid/error 提示
+- ✅ ExtractConfirmModal 拉号侧输入框(1a-1c 落地)保留 · 走 `type=service_fee_waiver` 校验
+- ⚠️ **service_fee 减免真扣除**: 阶段 1 收尾未做(#190 未通)· 拉号真跑通后补 wallet_ledger `service_fee_waived` 类型 + 退积分逻辑
+- **P1 尾巴(#190 + #191 后)**:pull 真链路联通 · 减 service_fee 真扣完
 
 **参考**:`§8.42` 四码分离 · `§8.32` 减免栈(独立叠加) · CLAUDE §1.4(充值口径) · 覆盖 `§8.29`
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/bus-pooling/bus-pooling/internal/bus"
 	"github.com/bus-pooling/bus-pooling/internal/config"
+	"github.com/bus-pooling/bus-pooling/internal/coupon"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
 	"github.com/bus-pooling/bus-pooling/internal/delivery/handoff"
 	"github.com/bus-pooling/bus-pooling/internal/delivery/passengerpool"
@@ -85,6 +86,9 @@ type Server struct {
 	// sysDefaults · 策略 Effective() 用的系统默认值(config.pull.*) · 1f-C · 装
 	// 配层从 config 传进来 · 零值时 EffectiveDeps 用 fallback(DefaultCount=1)
 	sysDefaults strategy.SystemDefaults
+	// coupons · 优惠码 · nil = 不算减免(阶段 1 只透传落 topup_order.coupon_code)
+	// 非 nil = topup / pull 起单时按 type 校验 + 折扣应用 · decisions §8.43 v2
+	coupons *coupon.Store
 }
 
 // WebhookOutSender · webhookout.Dispatcher 的对外接口(避免 api → webhookout 硬依赖)。
@@ -140,6 +144,8 @@ type ServerDeps struct {
 	// SysDefaults · 策略 Effective() 系统默认值(config.pull.*) · 1f-C ·
 	// 装配层从 config.Pull 组装 · nil 允许(用兜底 DefaultCount=1 / Zone=auto)
 	SysDefaults strategy.SystemDefaults
+	// Coupons · 优惠码服务 · nil 允许(阶段 1 只落码不减免 · 1f 起才注入)
+	Coupons *coupon.Store
 }
 
 func NewServer(d ServerDeps) *Server {
@@ -178,6 +184,7 @@ func NewServer(d ServerDeps) *Server {
 		pusher:              d.Pusher,
 		webhookOut:          d.WebhookOut,
 		sysDefaults:         d.SysDefaults,
+		coupons:             d.Coupons,
 	}
 }
 
@@ -197,6 +204,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/me", handler(s.RequireAuth(s.handleMe)))
 	mux.Handle("GET /api/me/wallet", handler(s.RequireAuth(s.handleWallet)))
 	mux.Handle("GET /api/me/ledger", handler(s.RequireAuth(s.handleLedger)))
+	// decisions §8.43 v2 · 优惠码预校验(不核销 · 前端预览 preview 展示"优惠 -X.XX USD"用)
+	mux.Handle("GET /api/me/coupons/lookup", handler(s.RequireAuth(s.handleCouponLookup)))
 	mux.Handle("GET /api/me/history-summary", handler(s.RequireAuth(s.handleMeHistorySummary))) // 我买过多少号/花过多少
 	mux.Handle("GET /api/me/api-keys", handler(s.RequireAuth(s.handleListAPIKeys)))
 	mux.Handle("DELETE /api/me/api-keys/{id}", handler(s.RequireAuth(s.handleRevokeAPIKey)))

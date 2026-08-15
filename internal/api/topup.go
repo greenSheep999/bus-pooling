@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bus-pooling/bus-pooling/internal/coupon"
 	"github.com/bus-pooling/bus-pooling/internal/paymentgw"
 	"github.com/bus-pooling/bus-pooling/internal/topup"
 	"github.com/bus-pooling/bus-pooling/internal/topupchannel"
@@ -56,6 +57,31 @@ type topupOrderResponse struct {
 // TopupOrderTTL 起单后未支付的过期时长。定 const 而不是配置：15 分钟是通道商
 // 收款链接的常规 TTL·改的话得同步改 gateway 侧。
 const TopupOrderTTL = 15 * time.Minute
+
+// couponAppliedInfo · 优惠码校验后传入建单/减 USD 的中间值
+type couponAppliedInfo struct {
+	CouponID   string // coupon_code.id
+	Code       string // 大写规范后的码
+	DiscountBP int64  // 折扣百分点(500=5%, 2000=20%)
+}
+
+// translateCouponErr · 把 coupon 包错误翻译成 Fail 返给前端
+func translateCouponErr(err error) error {
+	switch {
+	case errors.Is(err, coupon.ErrNotFound):
+		return ErrBadRequest("优惠码不存在")
+	case errors.Is(err, coupon.ErrDisabled):
+		return ErrBadRequest("优惠码已停用")
+	case errors.Is(err, coupon.ErrExpired):
+		return ErrBadRequest("优惠码已过期")
+	case errors.Is(err, coupon.ErrUsedUp):
+		return ErrBadRequest("优惠码额度已用尽")
+	case errors.Is(err, coupon.ErrWrongContext):
+		return ErrBadRequest("优惠码不适用此场景")
+	default:
+		return err
+	}
+}
 
 // usdRateCNY 展示层 CNY/USD 汇率（CLAUDE.md §1.4）。const 而不是配置：
 // 阶段 1a 汇率写死·等接了汇率服务再放开。前端和后端保持一致。
@@ -189,9 +215,26 @@ func (s *Server) handleCreateTopup(w http.ResponseWriter, r *http.Request) error
 		return ErrIdempotencyConflict()
 	}
 
-	// 步骤 1：**P1-2 修** · order + pending_topup 原子创建（同一事务）
+	// 步骤 0.5:优惠码校验 · decisions §8.43 v2
+	// coupons=nil 或 code 空 · 跳过 · 走无折扣路径
+	// 校验失败(码错/过期/用尽/type 不对) · 返 4xx 让前端提示
+	// **只 Lookup 不 Redeem** —— Redeem 在 gateway 建单成功后再做(防"码扣了但订单建失败")
+	var couponInfo *couponAppliedInfo
+	if s.coupons != nil && strings.TrimSpace(req.CouponCode) != "" {
+		c, err := s.coupons.Lookup(r.Context(), req.CouponCode, coupon.TypeTopupDiscount)
+		if err != nil {
+			return translateCouponErr(err)
+		}
+		couponInfo = &couponAppliedInfo{
+			CouponID:   c.ID,
+			DiscountBP: c.DiscountBP,
+			Code:       c.Code,
+		}
+	}
+
+	// 步骤 1:**P1-2 修** · order + pending_topup 原子创建(同一事务)
 	//        以前分两步·中间崩溃留 order 但 pending 缺失·janitor 扫不到。
-	//        pendingTopups 未装配（早期 DRY_RUN）时退化为单表 CreateOrderIn。
+	//        pendingTopups 未装配(早期 DRY_RUN)时退化为单表 CreateOrderIn。
 	placeholderURL := "pending://gateway"
 	var order topup.Order
 	if s.pendingTopups != nil {
@@ -255,6 +298,23 @@ func (s *Server) handleCreateTopup(w http.ResponseWriter, r *http.Request) error
 		// 内部积分永远是 CNY 微单位·计算展示汇率时按 asset 折算
 		// 1 积分 ≡ 1 CNY · USD/USDT 汇率约 7 · 展示层做换算（CLAUDE.md §1.4）
 		amountMicro := order.Paid / usdRateCNY
+
+		// 优惠码 topup_discount 减 USD 实付 · decisions §8.43 v2
+		// 折后金额 = 原额 × (1 - discount_bp/10000)
+		// **只减 gateway 侧收的额** —— 积分数量不动(想充 N 到账 N)· wallet_ledger recharge / channel_fee 也不动
+		// 差额从我方营销预算出(coupon_use.discount_amount 记账 · 未来结算再对)
+		if couponInfo != nil {
+			// discount = amountMicro * discount_bp / 10000
+			discount := amountMicro * couponInfo.DiscountBP / 10000
+			amountMicro = amountMicro - discount
+			if amountMicro < 1 {
+				amountMicro = 1 // 别减到 0/负 · gateway 会拒
+			}
+			slog.Info("topup coupon 折扣已应用",
+				"order_id", order.ID, "code", couponInfo.Code, "discount_bp", couponInfo.DiscountBP,
+				"amount_after_micro", amountMicro)
+		}
+
 		gwReq := paymentgw.CreatePaymentRequest{
 			ClientOrderID:    order.ID,
 			ProviderKind:     channel.ProviderKind,
@@ -320,6 +380,29 @@ func (s *Server) handleCreateTopup(w http.ResponseWriter, r *http.Request) error
 		// mock 路径也推到 gateway_ordered · dev-mark-paid 会一路推到 completed
 		if s.pendingTopups != nil {
 			_ = s.pendingTopups.EnsureAtLeast(r.Context(), order.ID, topup.PendingGatewayOrdered)
+		}
+	}
+
+	// 步骤 3:优惠码 Redeem · 落 coupon_use + 扣 remaining_uses(§8.43 v2)
+	// 到这里 order 已成功建 + gateway 已收单 · 可以安全消耗额度。
+	// 幂等: 同一 order.ID 二次调返 ErrAlreadyUsed · 不重复扣。
+	// 校验前面 Lookup 已过 · 这里再 Lookup 一次(race window 内可能被别人用光)· 极小概率不匹配 log warn
+	// discount_amount = 减了多少积分等值 microunit(用户视角看到的"少付了多少")
+	if couponInfo != nil && s.coupons != nil {
+		// 减免的等值积分 = order.Paid * discount_bp / 10000
+		discountMicro := order.Paid * couponInfo.DiscountBP / 10000
+		_, rerr := s.coupons.Redeem(r.Context(), coupon.RedeemInput{
+			Code:           couponInfo.Code,
+			PassengerID:    p.ID,
+			Context:        coupon.ContextTopup,
+			ContextRef:     order.ID,
+			DiscountAmount: discountMicro,
+		})
+		if rerr != nil && !errors.Is(rerr, coupon.ErrAlreadyUsed) {
+			// Redeem 失败但 gateway 已建单 —— 折扣已经在 gateway 侧生效
+			// 只 log · 不打断响应(避免让用户支付流程失败 · 差额从内部对账)
+			slog.Warn("topup coupon Redeem 失败·gateway 折扣已应用·后台对账",
+				"order_id", order.ID, "code", couponInfo.Code, "err", rerr)
 		}
 	}
 

@@ -105,7 +105,11 @@
       "coupon": {
         "label": "Coupon code",
         "placeholder": "Enter code if you have one",
-        "hint": "One code per top-up · does not stack with other discounts"
+        "hint": "One code per top-up · does not stack with other discounts",
+        "checking": "Checking…",
+        "invalid": "Coupon invalid",
+        "applied": "Coupon applied · {{pct}}% off",
+        "discount-label": "Discount"
       },
       "terms-short": "Credits arrive automatically after payment · items provided by upstream · refunds in credits only · channel fee non-refundable"
     },

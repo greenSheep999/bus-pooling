@@ -223,6 +223,23 @@ export const handlers = [
     return h ? ok(h) : HttpResponse.json({ error: "not_found" }, { status: 404 });
   }),
 
+  /* 优惠码 lookup · decisions §8.43 v2 · SAVE10 = topup_discount 10% off · 其他一律 not_found */
+  http.get("/api/me/coupons/lookup", ({ request }) => {
+    const url = new URL(request.url);
+    const code = (url.searchParams.get("code") || "").toUpperCase();
+    const context = url.searchParams.get("context");
+    if (code === "SAVE10" && context === "topup") {
+      return ok({ code: "SAVE10", type: "topup_discount", discount_bp: 1000 });
+    }
+    if (code === "FREE3" && context === "pull") {
+      return ok({ code: "FREE3", type: "service_fee_waiver", waive_rounds: 3 });
+    }
+    return HttpResponse.json(
+      { code: "bad_request", message: "优惠码不存在" },
+      { status: 400 },
+    );
+  }),
+
   // ── 充值渠道注册表 · GET /api/topup/channels · 公开(§docs/05-api-contract §229)
   //    前端确认窗按这个渲染 · disabled 通道也列出来做占位(§0.1 provider_kind 不暴露)
   http.get("/api/topup/channels", () => ok({

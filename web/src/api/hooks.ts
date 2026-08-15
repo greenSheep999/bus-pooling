@@ -756,6 +756,36 @@ export const useRedeem = () => {
   });
 };
 
+/** 优惠码预校验(不核销 · 用于 preview 展示"优惠 -X.XX USD")· decisions §8.43 v2
+ *  code 空 = 跳过 · disabled query · 前端 debounce 后调
+ *  context = topup(充值弹窗) / pull(拉号确认窗)
+ *  返回 4xx 时 hook 抛错 · 前端捕获显 error message(如"优惠码不存在") */
+export interface CouponLookup {
+  code: string;
+  type: "topup_discount" | "service_fee_waiver";
+  /** topup_discount 时给 · 折扣 basis point(500=5%, 2000=20%) */
+  discount_bp?: number;
+  /** service_fee_waiver 时给 · 免几轮 */
+  waive_rounds?: number;
+}
+export const useCouponLookup = (code: string, context: "topup" | "pull") =>
+  useQuery({
+    queryKey: ["couponLookup", code, context],
+    queryFn: () =>
+      api<CouponLookup>(
+        `/me/coupons/lookup?code=${encodeURIComponent(code)}&context=${context}`,
+      ),
+    enabled: code.trim().length > 0,
+    /* 校验错误(4xx)不重试 · 5xx 才重 */
+    retry: (n, err: unknown) => {
+      const e = err as { status?: number };
+      if (e.status && e.status >= 400 && e.status < 500) return false;
+      return n < 2;
+    },
+    /* 用户改字后立刻查新码 · 5s 内同码复用缓存 */
+    staleTime: 5000,
+  });
+
 /* ── 全局策略 ── */
 
 export const useGlobalStrategy = () =>
