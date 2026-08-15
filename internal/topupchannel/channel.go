@@ -40,9 +40,10 @@ type ID string
 
 const (
 	Waffo   ID = "waffo"
-	EPUSDT  ID = "epusdt"
 	Bybit   ID = "bybit"
 	Binance ID = "binance"
+	USDT    ID = "usdt"
+	Tron    ID = "tron"
 )
 
 // Channel 一个渠道的完整属性。
@@ -79,7 +80,8 @@ type Registry struct {
 //
 // Enabled 可从 env 覆盖：
 //   BP_TOPUP_WAFFO_ENABLED=1|0
-//   BP_TOPUP_EPUSDT_ENABLED=1|0
+//   BP_TOPUP_USDT_ENABLED=1|0
+//   BP_TOPUP_TRON_ENABLED=1|0
 //   BP_TOPUP_BYBIT_ENABLED=1|0
 //   BP_TOPUP_BINANCE_ENABLED=1|0
 //
@@ -89,43 +91,46 @@ func New(overrides map[ID]bool) *Registry {
 	// 注册顺序 = 前端展示顺序（先易用后小众）
 	channels := []Channel{
 		{
-			ID: Waffo, DisplayName: "Waffo 支付",
+			ID: Waffo, DisplayName: "Waffo",
 			Region: RegionOverseas, Rail: RailHosted,
 			ProviderKind:           "waffo_checkout",
 			Asset:                  "USD",
 			Enabled:                true,
 			RequiresPayerReference: false,
-			Note:                   "跳转 Waffo checkout · 支持卡 / 电子钱包",
 		},
 		{
-			ID: Bybit, DisplayName: "Bybit UID 内转",
+			ID: Bybit, DisplayName: "Bybit ID",
 			Region: RegionOverseas, Rail: RailDirect,
 			ProviderKind:           "bybit_internal",
 			Asset:                  "USDT",
 			Enabled:                false,
 			RequiresPayerReference: true,
-			PayerReferenceLabel:    "你的 Bybit UID（数字）",
-			Note:                   "Bybit 内部转账 · 免手续费",
+			PayerReferenceLabel:    "你的 Bybit UID",
 		},
 		{
-			ID: Binance, DisplayName: "Binance ID 内转",
+			ID: Binance, DisplayName: "Binance ID",
 			Region: RegionOverseas, Rail: RailDirect,
 			ProviderKind:           "binance_internal",
 			Asset:                  "USDT",
 			Enabled:                false,
 			RequiresPayerReference: true,
-			PayerReferenceLabel:    "你的 Binance ID（数字）",
-			Note:                   "Binance 内部转账 · 免手续费",
+			PayerReferenceLabel:    "你的 Binance ID",
 		},
 		{
-			ID: EPUSDT, DisplayName: "USDT 链上转账",
+			ID: USDT, DisplayName: "USDT",
 			Region: RegionOverseas, Rail: RailDirect,
-			ProviderKind:           "epusdt_onchain",
+			ProviderKind:           "usdt_onchain",
 			Asset:                  "USDT",
 			Enabled:                false,
-			RequiresPayerReference: false, // 链上地址可选·省了 dis-ambiguation
-			PayerReferenceLabel:    "发送钱包地址（可选）",
-			Note:                   "TRC-20 / BEP-20 链上转账",
+			RequiresPayerReference: false,
+		},
+		{
+			ID: Tron, DisplayName: "TRC20",
+			Region: RegionOverseas, Rail: RailDirect,
+			ProviderKind:           "tron_onchain",
+			Asset:                  "USDT",
+			Enabled:                false,
+			RequiresPayerReference: false,
 		},
 	}
 	for _, c := range channels {

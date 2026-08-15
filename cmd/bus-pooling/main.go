@@ -303,9 +303,10 @@ func topupChannelRegistry() *topupchannel.Registry {
 	}
 	return topupchannel.New(map[topupchannel.ID]bool{
 		topupchannel.Waffo:   envBool("BP_TOPUP_WAFFO_ENABLED", true),
-		topupchannel.EPUSDT:  envBool("BP_TOPUP_EPUSDT_ENABLED", false),
 		topupchannel.Bybit:   envBool("BP_TOPUP_BYBIT_ENABLED", false),
 		topupchannel.Binance: envBool("BP_TOPUP_BINANCE_ENABLED", false),
+		topupchannel.USDT:    envBool("BP_TOPUP_USDT_ENABLED", false),
+		topupchannel.Tron:    envBool("BP_TOPUP_TRON_ENABLED", false),
 	})
 }
 

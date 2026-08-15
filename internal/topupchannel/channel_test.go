@@ -7,10 +7,10 @@ import (
 
 func TestRegistry_DefaultsOnlyWaffoEnabled(t *testing.T) {
 	r := New(nil)
-	// 4 家全注册
+	// 5 家全注册
 	all := r.List()
-	if len(all) != 4 {
-		t.Fatalf("List() len=%d · want 4", len(all))
+	if len(all) != 5 {
+		t.Fatalf("List() len=%d · want 5", len(all))
 	}
 	enabled := 0
 	for _, c := range all {
@@ -61,9 +61,10 @@ func TestChannelAttributes(t *testing.T) {
 		provider string
 	}{
 		{Waffo, RegionOverseas, RailHosted, "waffo_checkout"},
-		{EPUSDT, RegionOverseas, RailDirect, "epusdt_onchain"},
 		{Bybit, RegionOverseas, RailDirect, "bybit_internal"},
 		{Binance, RegionOverseas, RailDirect, "binance_internal"},
+		{USDT, RegionOverseas, RailDirect, "usdt_onchain"},
+		{Tron, RegionOverseas, RailDirect, "tron_onchain"},
 	}
 	for _, tt := range tests {
 		c, err := r.Get(string(tt.id))
