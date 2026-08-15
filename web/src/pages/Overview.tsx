@@ -518,7 +518,12 @@ export default function Overview() {
           </div>
 
           <div className="mt-auto flex items-center justify-between border-t border-hairline pt-3.5">
-            <Muted className="font-medium">{t("card.extract.footer_pending", { pending: ov?.extract.pending ?? 0 })}</Muted>
+            <Muted className="font-medium">
+              {t("card.extract.footer_stat", {
+                pulls: kpi?.pull_total ?? 0,
+                keys: (ov?.extract.by_destination ?? []).reduce((s, d) => s + d.count, 0),
+              })}
+            </Muted>
             <span className="font-semibold tnum">
               {ov ? fmtCredits(-ov.extract.spend, { sign: true }) : "-"}
               <Muted className="ml-1 font-medium">{t("card.extract.credits_unit")}</Muted>

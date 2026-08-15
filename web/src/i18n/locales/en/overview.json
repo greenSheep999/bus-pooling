@@ -84,7 +84,7 @@
       "unit": "pending dispatch · {{today}} pulls today",
       "dest_dist_label": "Destination",
       "row_suffix": "keys",
-      "footer_pending": "Pending {{pending}}",
+      "footer_stat": "{{pulls}} pulls · {{keys}} keys total",
       "credits_unit": "credits"
     },
     "dispatch": {

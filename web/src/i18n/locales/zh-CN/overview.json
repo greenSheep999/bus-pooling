@@ -84,7 +84,7 @@
       "unit": "个待派 · 今日拉 {{today}} 次",
       "dest_dist_label": "去向分布",
       "row_suffix": "个",
-      "footer_pending": "待派 {{pending}} 个",
+      "footer_stat": "累计拉号 {{pulls}} 次 · 提取 {{keys}} 个",
       "credits_unit": "积分"
     },
     "dispatch": {
