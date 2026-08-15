@@ -505,6 +505,27 @@
 - 字段和表 → `docs/06-db-schema § passenger.tier` / `§ system_invite_code.grants_tier` / `§ bus.invite_code`
 - 接口命名 → `docs/05-api-contract`(bus join 场景只能写"拼车码")
 
+### 8.44 车内号手动重推 · 现状缺口 ⚠️ 待补(2026-08-16)
+
+**问题**:车里的号(`owner_bus_id` 非空)自动 push_pool 失败后 · **没有手动重试入口**。
+
+**发现场景**(2026-08-16 手动 seed key 验 3 流程时暴露):
+- 号已在 `bus-<id>` group · `credential_ledger.pushed_to_passengerpool_at IS NULL`
+- 若 push_on_pull 自动推挂了(k2a 502/rate-limit/token 过期)· `push_error_code` 有值
+- 用户想手动重推 —— **UI 无按钮 · API 无端点**
+
+**决定**:P1 加(独立可做 · 无阻塞):
+- 后端 `POST /api/me/buses/{bus_id}/credentials/{cred_id}/push` · 重跑一次 push_pool
+- 前端 `BusDetail` 号列表 · pushed_to_passengerpool_at 空 或 push_error_code 非空时 · 显 "重推"按钮
+- 幂等:已 pushed 二次调 no-op 200
+- 权限:bus.creator 或 bus 成员
+
+**跟拉号记录派去向的区别**:
+- 拉号记录 `POST /pull-records/assign destination=push_pool` **只处理 record group 号** · 车里的号进不了这个 handler
+- 本条只处理**已经在车里但没推成功**的号 · 是修复入口
+
+**参考**:§8.24 / §8.25 推送策略 4 条 · 见 Task #194
+
 ### 8.43 优惠码 · 用 type 字段区分两种用途 ⚠️ 后端 P1 补(2026-08-15)
 
 **车主拍板**:优惠码(`coupon_code`)不是单一形态 · **用 `type` 字段区分两种用途** · 各减不同层 · 各自独立发放:
