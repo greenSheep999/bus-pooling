@@ -361,8 +361,8 @@ func buildDecider(
 	var pool decider.PoolClient
 	var pubPool housepool.HousePool
 	if !live {
-		// mock 模式 · 装一个 default DryRunVendor（Vendor91Kiro 冒充） · api 层不指定 vendor 时用
-		// 加装 6 家 DryRunVendor · 让"指定 vendor" 也能 mock 走通
+		// mock 模式 · 装一个 default DryRunVendor(Vendor91Kiro 冒充) · api 层不指定 vendor 时用
+		// 加装 6 家 DryRunVendor · 让"指定 vendor"也能 mock 走通
 		vendor = &decider.DryRunVendor{VendorID: providers.Vendor91Kiro}
 		for _, id := range []providers.VendorID{
 			providers.Vendor91Kiro, providers.VendorKiroCEO, providers.VendorKiroOOO,
@@ -370,7 +370,34 @@ func buildDecider(
 		} {
 			vendors[id] = &decider.DryRunVendor{VendorID: id}
 		}
-		pool = &decider.DryRunPool{}
+		// **P1-g 修(2026-08-16)**: mock 模式下 housepool 若已配就装真 client ·
+		// vendor 走 mock 但 group 迁移 / credential 探活等 housepool 侧操作走真。
+		// 用途:手动 BatchImport 的号 + assign into_bus / push_pool 需真 housepool 同步 group。
+		// 不装 · 走 DryRunPool · assign 号 group 只改本地 DB · kiro.rs 侧不动 → 车友取号权限错。
+		if cfg.Housepool.BaseURL != "" && cfg.Secrets.HousepoolAdminKey != "" {
+			hc, herr := httpx.New(httpx.Config{
+				Timeout: cfg.HTTPX.Timeout, MaxRetries: cfg.HTTPX.MaxRetries,
+				RetryBaseWait: cfg.HTTPX.RetryBaseWait,
+				Proxy:         cfg.HTTPX.Proxy, NoProxy: cfg.HTTPX.NoProxy,
+			})
+			if herr != nil {
+				return nil, nil, decider.Rates{}, fmt.Errorf("mock+housepool · httpx: %w", herr)
+			}
+			poolClient, perr := kirors.New(kirors.Config{
+				BaseURL: cfg.Housepool.BaseURL, AdminKey: cfg.Secrets.HousepoolAdminKey,
+			}, hc)
+			if perr != nil {
+				return nil, nil, decider.Rates{}, fmt.Errorf("mock+housepool · client: %w", perr)
+			}
+			pool = poolClient
+			pubPool = poolClient
+			slog.Info("housepool 已装配(mock vendor + real housepool 组合)",
+				"base_url", cfg.Housepool.BaseURL)
+		} else {
+			pool = &decider.DryRunPool{}
+			slog.Warn("housepool 未配 · 走 DryRunPool · assign 号不同步 group",
+				"tip", "配 BP_HOUSEPOOL_URL + BP_HOUSEPOOL_ADMIN_KEY 让 mock+housepool 组合生效")
+		}
 		if !cfg.DryRun {
 			slog.Warn("拉号走 mock · 要接真链路请显式设 BP_ALLOW_LIVE_PULL=1")
 		}
