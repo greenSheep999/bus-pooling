@@ -142,6 +142,16 @@ function MiniTotal({
 
 /* ─────────────── 充值 ─────────────── */
 
+/** 通道 logo · public/logos/payment/{id}.svg · 未来加通道 · **只放 SVG · 不用改代码** ·
+ *  别名映射 · epusdt / usdt-trc20 / usdt-erc20 都用同一张 usdt.svg */
+const CHANNEL_LOGO_ALIAS: Record<string, string> = {
+  epusdt: "usdt",
+};
+function channelLogoSrc(id: string): string {
+  const key = CHANNEL_LOGO_ALIAS[id] ?? id;
+  return `/logos/payment/${key}.svg`;
+}
+
 function TopupCard() {
   const { t } = useTranslation("wallet");
   /* 输入的是**想到账的积分数** · CLAUDE §1.4 · 通道费 5% 加在上面 · 展示金额只用 USD */
@@ -213,7 +223,8 @@ function TopupCard() {
             ))}
           </div>
 
-          {/* 通道选择 · 显示全部注册通道 · 未接的 disabled 灰态(§8.21 · docs/12) */}
+          {/* 通道选择 · 显示全部注册通道 · 未接的 disabled 灰态(§8.21 · docs/12)
+              logo 走 public/logos/payment/{id}.svg · 未来加通道时**只需放 SVG · 不用改代码** */}
           <div className="space-y-2">
             <label className="text-label font-semibold text-fg-secondary">
               {t("topup.channel.label")}
@@ -221,6 +232,7 @@ function TopupCard() {
             <div className="flex flex-wrap gap-2">
               {channels.map((c) => {
                 const on = c.id === activeChannel;
+                const logoSrc = channelLogoSrc(c.id);
                 return (
                   <button
                     key={c.id}
@@ -228,16 +240,26 @@ function TopupCard() {
                     disabled={!c.enabled}
                     onClick={() => c.enabled && setChannelId(c.id)}
                     className={cn(
-                      "inline-flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2 text-left transition-colors",
-                      !c.enabled && "cursor-not-allowed border-hairline bg-bg-elevated/30 text-fg-tertiary",
+                      "inline-flex items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors",
+                      !c.enabled && "cursor-not-allowed border-hairline bg-bg-elevated/30 text-fg-tertiary opacity-60",
                       c.enabled && on && "border-brand-hairline bg-brand-subtle/40 font-semibold text-brand-fg",
                       c.enabled && !on && "border-hairline bg-bg-elevated/40 text-fg-secondary hover:bg-bg-elevated",
                     )}
                   >
-                    <span className="text-label">{c.display_name}</span>
-                    {!c.enabled && (
-                      <span className="text-[10px] text-fg-tertiary">{t("topup.channel.coming-soon")}</span>
+                    {logoSrc && (
+                      <img
+                        src={logoSrc}
+                        alt=""
+                        aria-hidden
+                        className={cn("size-6 shrink-0 rounded", !c.enabled && "grayscale")}
+                      />
                     )}
+                    <span className="flex min-w-0 flex-col">
+                      <span className="text-label">{c.display_name}</span>
+                      {!c.enabled && (
+                        <span className="text-[10px] text-fg-tertiary">{t("topup.channel.coming-soon")}</span>
+                      )}
+                    </span>
                   </button>
                 );
               })}
@@ -302,6 +324,7 @@ function TopupCard() {
         credits={toCredits(credits)}
         usdAmount={usdAmount}
         channelName={selectedChannel?.display_name ?? ""}
+        channelLogo={selectedChannel ? channelLogoSrc(selectedChannel.id) : ""}
         submitting={create.isPending}
         onConfirm={onConfirmAndPay}
       />
@@ -328,13 +351,14 @@ function Row({
  *  - 勾选"同意"才启用支付按钮 · 留痕(乘客表示知晓)
  *  - 撤 CNY 展示 · 只显示 USD 金额(§0.1) */
 function TopupConfirmDialog({
-  open, onClose, credits, usdAmount, channelName, submitting, onConfirm,
+  open, onClose, credits, usdAmount, channelName, channelLogo, submitting, onConfirm,
 }: {
   open: boolean;
   onClose: () => void;
   credits: number;
   usdAmount: string;
   channelName: string;
+  channelLogo: string;
   submitting: boolean;
   onConfirm: () => void;
 }) {
@@ -351,7 +375,15 @@ function TopupConfirmDialog({
         <DialogBody>
           {/* 核心 3 行 · 支付方式 / 到账积分 / 支付金额 · 全 USD */}
           <div className="space-y-2 rounded-xl border border-hairline bg-bg-elevated/50 p-3.5">
-            <Row label={t("topup.confirm.channel")} value={<Em>{channelName}</Em>} />
+            <Row
+              label={t("topup.confirm.channel")}
+              value={
+                <span className="inline-flex items-center gap-1.5">
+                  {channelLogo && <img src={channelLogo} alt="" aria-hidden className="size-5 rounded" />}
+                  <Em>{channelName}</Em>
+                </span>
+              }
+            />
             <Row
               label={t("topup.confirm.credits")}
               value={<Em tone="ok">{credits.toLocaleString()} {t("topup.preview.credits-unit")}</Em>}
