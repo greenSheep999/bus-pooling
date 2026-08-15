@@ -483,7 +483,7 @@
 | **专属邀请码** | `system_invite_code` | 绑定 tier(`community` / `wholesale`) | ✅ 注册后可补绑 | ✅ | ❌ |
 | **邀请码** | `personal_invite_code` | 好友拉新 · 收益给发码人手续费/通道费减免(必须有上限) | ❌ 只在注册链路建立 | ❌ **不改被邀请人 tier** | ✅ |
 | **拼车码** | `bus.invite_code` | 加入某辆车 | ❌ | ❌ | ❌ |
-| **优惠码** | `coupon_code` | 单次支付/提号减免 | ❌ | ❌ | ❌ |
+| **优惠码** | `coupon_code` | 一次性充值减 USD 实付(见 §8.43) | ❌ | ❌ | ❌ |
 
 **术语铁律**:
 - 车侧的码**只叫拼车码** · 绝不叫"邀请码"(会跟好友邀请码混)
@@ -551,8 +551,10 @@ wallet 净变化 = +100  (跟没用码时一致 · 优惠码不动钱包余额)
 - `POST /api/me/topup` 请求体加 `coupon_code?: string`
 - `topupRequest` struct(`internal/api/topup.go:28`)加 `CouponCode string`
 - `topup.OrderInput` 加 `CouponCode` · 落 `topup_order.coupon_code`
-- 校验 coupon 有效性(用过没 · 过期没 · 归 topup 场景还是 pull 场景)
+- 校验 coupon 有效性(用过没 · 过期没)· **只在充值场景生效** · 拉号场景不认
 - 算折后 USD → 传给 gateway · 记 `wallet_ledger.coupon_discount`
+
+**⚠️ 覆盖历史决策**:老 `§8.32` + `docs/10-pricing §3.1` + `docs/00 §3` 里写过"提号确认窗填优惠码减 `single_pull` 层"—— **本条覆盖 · 拉号场景不做**。车主从未确认过拉号侧优惠码 · UI 里 ExtractConfirmModal 若有 coupon 输入框也要撤(或至少不做后端校验)。老决策文本保留作历史记录 · 但读到时以 §8.43 为准。
 
 **前端现状**:
 - ✅ 输入框已实现(`web/src/pages/WalletPage.tsx:481-495`)
