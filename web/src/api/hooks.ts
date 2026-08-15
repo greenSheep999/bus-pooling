@@ -718,16 +718,26 @@ export const useTopupChannels = () =>
     queryFn: () => api<{ channels: TopupChannel[] }>("/topup/channels"),
   });
 
-/** 建充值单 · 支持不同通道(hosted / direct rail)· 展示只对乘客说 USD */
+/** 建充值单 · 支持不同通道(hosted / direct rail)· 展示只对乘客说 USD
+ *  couponCode(可选)· 社群发放的减免码 · decisions §8.43
+ *  后端识别前先透传 · Go 侧 decodeStrict 会拒未知字段 · 所以只在有值时才带 */
 export const useCreateTopup = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { credits: Money; channel: string; payerReference?: string }) =>
-      postIdempotent<TopupOrder>("/me/topup", {
+    mutationFn: (args: {
+      credits: Money;
+      channel: string;
+      payerReference?: string;
+      couponCode?: string;
+    }) => {
+      const body: Record<string, unknown> = {
         credits: args.credits,
         channel: args.channel,
-        payer_reference: args.payerReference,
-      }),
+      };
+      if (args.payerReference) body.payer_reference = args.payerReference;
+      if (args.couponCode) body.coupon_code = args.couponCode;
+      return postIdempotent<TopupOrder>("/me/topup", body);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["wallet"] });
       qc.invalidateQueries({ queryKey: ["ledger"] });

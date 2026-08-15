@@ -98,6 +98,9 @@ type OrderInput struct {
 	Credits        int64
 	PayURL         string
 	TTL            time.Duration
+	// CouponCode 社群发放的一次性充值优惠码(decisions §8.43)· 减实付 USD · 不加积分
+	// 阶段 1 只落库不算减免 · 减免规则在 sprint-1f 后接
+	CouponCode string
 }
 
 // Breakdown 是给起单时算钱的辅助结构。
@@ -197,12 +200,13 @@ func (s *Store) CreateOrderWithPending(ctx context.Context, in OrderInput, idemp
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO topup_order
 		  (id, passenger_id, channel, region, rail, credits, channel_fee, paid, pay_url,
-		   status, expires_at, provider_kind, payer_reference,
+		   status, expires_at, provider_kind, payer_reference, coupon_code,
 		   fee_waiver_applied, fee_subsidy, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
 		orderID, in.PassengerID, in.Channel, in.Region, in.Rail,
 		b.Credits, b.ChannelFee, b.Paid, in.PayURL, formatTime(exp),
 		nullIfEmpty(in.ProviderKind), nullIfEmpty(in.PayerReference),
+		nullIfEmpty(in.CouponCode),
 		boolToInt(waived), feeSubsidy, nowStr, nowStr); err != nil {
 		if isCheckConstraintErr(err) {
 			return Order{}, "", ErrUnsupportedChannel
@@ -267,12 +271,13 @@ func (s *Store) CreateOrderIn(ctx context.Context, in OrderInput) (Order, error)
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO topup_order
 		  (id, passenger_id, channel, region, rail, credits, channel_fee, paid, pay_url,
-		   status, expires_at, provider_kind, payer_reference, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
+		   status, expires_at, provider_kind, payer_reference, coupon_code, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
 		id, in.PassengerID, in.Channel, in.Region, in.Rail,
 		b.Credits, b.ChannelFee, b.Paid, in.PayURL,
 		formatTime(exp),
 		nullIfEmpty(in.ProviderKind), nullIfEmpty(in.PayerReference),
+		nullIfEmpty(in.CouponCode),
 		formatTime(now), formatTime(now))
 	if err != nil {
 		if isCheckConstraintErr(err) {

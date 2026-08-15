@@ -29,6 +29,9 @@ type topupRequest struct {
 	Credits        int64  `json:"credits"`
 	Channel        string `json:"channel"`
 	PayerReference string `json:"payer_reference,omitempty"` // direct rail 用（Bybit UID / Binance ID / wallet 地址）
+	// CouponCode 社群发放的一次性充值优惠码(decisions §8.43)· 减实付 USD · 不加积分
+	// 阶段 1(sprint-1e)只落库不算减免 · 减免规则 sprint-1f 起手接
+	CouponCode string `json:"coupon_code,omitempty"`
 }
 
 // topupOrderResponse 单张充值单的对外形状。
@@ -202,6 +205,7 @@ func (s *Server) handleCreateTopup(w http.ResponseWriter, r *http.Request) error
 			Credits:        req.Credits,
 			PayURL:         placeholderURL,
 			TTL:            TopupOrderTTL,
+			CouponCode:     strings.TrimSpace(req.CouponCode),
 		}, hit.recordID)
 		if err != nil {
 			return translateTopupErr(err)
@@ -218,6 +222,7 @@ func (s *Server) handleCreateTopup(w http.ResponseWriter, r *http.Request) error
 			Credits:        req.Credits,
 			PayURL:         placeholderURL,
 			TTL:            TopupOrderTTL,
+			CouponCode:     strings.TrimSpace(req.CouponCode),
 		})
 		if err != nil {
 			return translateTopupErr(err)

@@ -180,10 +180,14 @@ function TopupCard() {
   };
   const onConfirmAndPay = async (couponCode: string) => {
     if (!valid || !activeChannel) return;
-    /* couponCode · 空串 = 不用 · 后端 topupRequest 加 coupon_code 字段后 hook 会传上去
-       目前 hooks.ts useCreateTopup 未加 · UI 层先接住 · 后端补字段前静默传空 */
-    const o = await create.mutateAsync({ credits, channel: activeChannel });
-    void couponCode; // TODO(P1): hook 支持后传 coupon_code
+    /* couponCode · 空串 = 不用 · decisions §8.43
+       hook 已支持 · 后端 topupRequest 加字段 + 落库前 · 会被 decodeStrict 拒
+       所以先在 hook 内 gate 一下 · 有值才带 · Go 侧字段落地后自然生效 */
+    const o = await create.mutateAsync({
+      credits,
+      channel: activeChannel,
+      couponCode: couponCode || undefined,
+    });
     setConfirmOpen(false);
     /* 拿到 checkout_url 直接跳 · 无中间 dialog(hosted 通道就是要跳)*/
     if (o.checkout_url) {
@@ -476,8 +480,10 @@ function TopupConfirmDialog({
             </div>
           </div>
 
-          {/* 优惠券输入 · docs/00 §3.9 · CLAUDE §1.2 coupon_code · 单次减免
-              可选 · 空 = 不用 · 前端只做 UI · 后端 topupRequest 需补 coupon_code 字段(P1) */}
+          {/* 优惠码输入 · decisions §8.43 · 社群发放的一次性减免码
+              一次性充值使用 · 减实付 USD · 不加积分 · 到账 N 就是 N
+              可选 · 空 = 不用 · 前端只做输入 UI · 后端未接前不假算减免额
+              后端接通后 preview 里加"优惠 -X.XX USD"行(P1) */}
           <div className="mt-4 space-y-2">
             <label className="flex items-center gap-1.5 text-label font-semibold text-fg-secondary">
               <Ticket className="size-3.5 text-fg-tertiary" aria-hidden />

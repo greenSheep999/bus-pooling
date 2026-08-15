@@ -505,6 +505,65 @@
 - 字段和表 → `docs/06-db-schema § passenger.tier` / `§ system_invite_code.grants_tier` / `§ bus.invite_code`
 - 接口命名 → `docs/05-api-contract`(bus join 场景只能写"拼车码")
 
+### 8.43 优惠码用于一次性充值 · 减实付 USD · 不加积分 ⚠️ 后端 P1 补(2026-08-15)
+
+**车主拍板**:社群里发的优惠码可以用在充值弹窗 · **一次性使用 · 触发减免 · 减 USD 实付金额 · 不加积分**。
+
+**兑换码 vs 优惠码 铁律**(别再混):
+
+| 名称 | 表 | 作用 | 效果 | 场景 |
+|---|---|---|---|---|
+| **兑换码** `redeem_code`(KRC-XXXX / KIRO-XXXX)| `redeem_code` | **直接加积分** | wallet.balance += N | 钱包页 RedeemCard 独立入口 |
+| **优惠码** `coupon_code` | `coupon_code` | **减实付金额** · 不加积分 | 到账不变 · 少付 USD | 充值弹窗一次性输入 |
+
+**优惠码在充值弹窗的展示效果**(UI 铁律):
+
+```
+到账              100 积分
+手续费           +0.71 USD
+优惠             -X.XX USD    ← 输码后显示
+─────────────────────────
+你需支付         Y.YY USD     ← 实付减了
+```
+
+**关键约束**:
+- 积分数字**永远不变** —— 想充 100 到账就是 100 · 想充 500 到账就是 500 · **不多不少 · 不可能"充 100 到账 105"**
+- 优惠只作用于 **USD 支付额** · 减到账积分 or 加积分**都不做**
+- 一次性 · **只能在充值场景用** · 不能拿到别处
+
+**内部账本(不含混)**:
+```
+recharge      +105    (乘客真金白银换到的总积分 · 不变)
+channel_fee   -5      (pass-through 立即扣回给 waffo · 不变)
+coupon_discount -X    (新增记录 · X = 减免的等价积分 · 表示 gateway 侧少收 X/7 USD)
+──────────────
+wallet 净变化 = +100  (跟没用码时一致 · 优惠码不动钱包余额)
+```
+
+差在哪:**没用码时 · 乘客付 15.00 USD 换 100 积分**;**用码 10% off · 乘客付 13.50 USD 换 100 积分**。省的 1.50 USD 从我方营销预算出(优惠码本来就是营销工具 · 车主的钱)。
+
+**跟 personal_invite_code 并存**(§8.32:1023 三条独立叠加):
+- personal 免通道费 5%(限额 · 自动)
+- coupon 减 5-20%(单次 · 输码)
+- 两条各减各的层 · 用户实付更少 · 账本分开记
+
+**后端接口约束**:
+- `POST /api/me/topup` 请求体加 `coupon_code?: string`
+- `topupRequest` struct(`internal/api/topup.go:28`)加 `CouponCode string`
+- `topup.OrderInput` 加 `CouponCode` · 落 `topup_order.coupon_code`
+- 校验 coupon 有效性(用过没 · 过期没 · 归 topup 场景还是 pull 场景)
+- 算折后 USD → 传给 gateway · 记 `wallet_ledger.coupon_discount`
+
+**前端现状**:
+- ✅ 输入框已实现(`web/src/pages/WalletPage.tsx:481-495`)
+- ✅ 值收到本地 state
+- ✅ hook 已支持透传 · 有值才带
+- ❌ **preview 里没显"优惠 -X.XX USD"行**(需加)
+- ❌ 后端字段未加(Go 端 decodeStrict 会拒未知)
+- **P1(sprint-1e 收尾 or 1f 起手)**:后端 4 处 + 前端 preview 加优惠行
+
+**参考**:`§8.42` 四码分离 · `§8.32` 减免栈(三条独立叠加) · CLAUDE §1.4(充值口径)
+
 ### 8.40 UI 结构 · /me 是综合入口 · 账号设置从 /me 拆到 /settings/account ✅（1a 落地）
 
 **问题**：早期 `/me` 塞了「基本信息 + 改密码」两卡，`/settings` 索引底部带一段
