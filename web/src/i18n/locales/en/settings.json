@@ -275,7 +275,7 @@
   "account": {
     "created-at": "Joined",
     "email": "Email",
-    "sub": "Contact admin to change email or username · self-service arrives in phase 3+",
+    "sub": "Contact admin to change email or username · self-service coming soon",
     "title": "Account info",
     "username": "Username"
   },
@@ -287,7 +287,7 @@
     "error": {
       "title": "Couldn't update"
     },
-    "forgot-hint": "Password recovery lands in phase 3+ · for now, contact admin to reset",
+    "forgot-hint": "Self-service recovery coming soon · for now, contact admin to reset",
     "new": "New password",
     "placeholder": {
       "confirm": "Type it again",
@@ -309,7 +309,7 @@
   "password.new.too-short": "At least 8 characters",
   "social": {
     "coming-soon": "Coming soon",
-    "sub": "Sign in with Google or GitHub · arrives in phase 3+",
+    "sub": "Sign in with Google or GitHub · coming soon",
     "title": "Social sign-in",
     "unbound": "Not linked"
   },

@@ -300,6 +300,10 @@ export const handlers = [
   }),
   http.get("/api/me/downstream/webhook/deliveries", () => ok(fx.webhookDeliveries)),
 
+  // ── 我的邀请(好友邀请码 · 三码分离见 CLAUDE §1.2)
+  //    /wallet · /me · /invite 三页都用 useMyInvite · 缺这条会 401 踢回登录
+  http.get("/api/me/invite", () => ok(fx.myInvite)),
+
   // ── API key
   http.get("/api/me/api-keys", () => ok(fx.apiKeys)),
   http.post("/api/me/api-keys", async ({ request }) => {

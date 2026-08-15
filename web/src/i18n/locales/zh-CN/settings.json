@@ -275,7 +275,7 @@
   "account": {
     "created-at": "注册时间",
     "email": "邮箱",
-    "sub": "改邮箱或用户名要联系管理员 · 阶段 3+ 会加自助修改",
+    "sub": "改邮箱或用户名要联系管理员 · 自助修改即将开放",
     "title": "账号信息",
     "username": "用户名"
   },
@@ -287,7 +287,7 @@
     "error": {
       "title": "改不了"
     },
-    "forgot-hint": "忘记密码的找回流程阶段 3+ 才上 · 现在忘了得联系管理员重置",
+    "forgot-hint": "自助找回即将开放 · 现在忘了得联系管理员重置",
     "new": "新密码",
     "placeholder": {
       "confirm": "再输一次",
@@ -309,7 +309,7 @@
   "password.new.too-short": "至少 8 位",
   "social": {
     "coming-soon": "即将上线",
-    "sub": "用 Google / GitHub 直接登录 · 阶段 3+ 上线",
+    "sub": "用 Google / GitHub 直接登录 · 即将开放",
     "title": "第三方登录",
     "unbound": "未绑定"
   },

@@ -89,7 +89,7 @@
     },
     "dispatch": {
       "title": "My dispatch",
-      "phase_tag": "Phase 3",
+      "phase_tag": "Coming soon",
       "state_unavailable": "Not enabled",
       "desc": "Bind your AWS · we forward to the upstream vendor · the pool stays yours",
       "row_aws": "Linked AWS account",

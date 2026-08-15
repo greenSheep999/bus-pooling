@@ -89,7 +89,7 @@
     },
     "dispatch": {
       "title": "我的发车",
-      "phase_tag": "阶段 3",
+      "phase_tag": "即将开放",
       "state_unavailable": "未启用",
       "desc": "绑定你的 AWS 账户 · 我方转发上游 vendor 开号 · 号池归你",
       "row_aws": "绑定的 AWS 账户",

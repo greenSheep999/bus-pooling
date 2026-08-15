@@ -846,3 +846,22 @@ export const apiKeys: ApiKey[] = [
   { id: "k2", name: "CI 脚本", prefix: "usr-8c1b4d20", last_used_at: ago(3), created_at: ago(24 * 54), revoked: false },
   { id: "k3", name: "临时测试", prefix: "usr-5f9de762", last_used_at: null, created_at: ago(24 * 10), revoked: true },
 ];
+
+/** 我的邀请 · GET /api/me/invite(hooks.ts MyInvite · 后端 internal/api/invite.go inviteResp)
+ *
+ *  好友邀请码(personal_invite_code)· **不是**拼车码(bus.invite_code)· 也不是专属邀请码
+ *  (system_invite_code)· 三码分离见 CLAUDE §1.2。
+ *
+ *  waiver · 每邀请一人给 1 次充值手续费减免 · 用掉的进 waiver_used。
+ *  referrals · 被邀请人脱敏(第三方邮箱不给全)。 */
+export const myInvite = {
+  code: "DANLIO-7K2M",
+  invited_count: 3,
+  waiver_remaining: 2,
+  waiver_used: 1,
+  referrals: [
+    { invitee: "zha***@gmail.com", waiver_granted: 1, joined_at: ago(24 * 12) },
+    { invitee: "li***@outlook.com", waiver_granted: 1, joined_at: ago(24 * 26) },
+    { invitee: "wan***@qq.com", waiver_granted: 1, joined_at: ago(24 * 41) },
+  ],
+};
