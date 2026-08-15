@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ExternalLink, Save, Zap, ZapOff } from "lucide-react";
+import { Save, Settings2, Zap, ZapOff } from "lucide-react";
 import {
   useMe, useUpdateStrategy, useVendorStats,
 } from "@/api/hooks";
@@ -93,27 +93,28 @@ export function EditStrategyPanel({
         <div className="min-w-0 flex-1">
           <h2 className="text-section font-semibold">{t("strategy-panel.title")}</h2>
           <p className="text-label text-fg-tertiary">{t("strategy-panel.sub")}</p>
-          {/* 1f-refactor · 车级页面加"去全局设置"入口(用户吐槽埋太深 · 从车里找不到)
-              带 arrow 图标暗示"离开本页" · 语义:全局默认值 / 跨车调度护栏(daily_budget 等) */}
-          <Link
-            to="/settings/preferences"
-            className="mt-2 inline-flex items-center gap-1.5 text-label text-fg-tertiary hover:text-brand-fg transition-colors"
-          >
-            {t("strategy-panel.goto-global")}
-            <ExternalLink className="size-3" />
-          </Link>
         </div>
-        {/* 保存按钮 · 只在 dirty 或刚保存完的 2s toast 期间显示 · 未改动零动作零按钮 */}
-        {(dirty || saved) && (
-          <Button onClick={onSave} disabled={!dirty || upd.isPending}>
-            <Save />
-            {upd.isPending
-              ? t("strategy-panel.action.saving")
-              : saved
-                ? t("strategy-panel.action.saved")
-                : t("strategy-panel.action.save")}
+        <div className="flex shrink-0 items-center gap-2">
+          {/* 1f-refactor · 明显的"去全局设置"按钮(用户吐槽:灰字链接太弱看不到)
+              放跟保存按钮同高 · outline 主色 · 一眼能定位 */}
+          <Button asChild variant="subtle" size="sm">
+            <Link to="/settings/preferences">
+              <Settings2 className="size-3.5" />
+              {t("strategy-panel.goto-global")}
+            </Link>
           </Button>
-        )}
+          {/* 保存按钮 · 只在 dirty 或刚保存完的 2s toast 期间显示 · 未改动零动作零按钮 */}
+          {(dirty || saved) && (
+            <Button onClick={onSave} disabled={!dirty || upd.isPending}>
+              <Save />
+              {upd.isPending
+                ? t("strategy-panel.action.saving")
+                : saved
+                  ? t("strategy-panel.action.saved")
+                  : t("strategy-panel.action.save")}
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-6">
