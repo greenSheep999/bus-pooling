@@ -25,7 +25,8 @@ import (
 // 请求字段 `payer_reference`：direct rail 渠道需要（UID / ID / wallet 地址等）· hosted 可空。
 //
 // 响应字段对齐 web/src/types/index.ts 的 TopupOrder：
-//   order_id / checkout_url / paid / credits / expires_at + status
+//
+//	order_id / checkout_url / paid / credits / expires_at + status
 type topupRequest struct {
 	Credits        int64  `json:"credits"`
 	Channel        string `json:"channel"`
@@ -114,15 +115,15 @@ func microToDecimalString(micro int64) string {
 // 三维属性都暴露 · 前端可按 region 分区 · 按 rail 分组 · 按 enabled 决定能否点。
 // **provider_kind 是我方对 gateway 的实现细节 · 不暴露**（术语铁律 §12.6 · CLAUDE.md §0.1）。
 type topupChannelResp struct {
-	ID                     string `json:"id"`                                // 渠道稳定 id
-	DisplayName            string `json:"display_name"`                      // 前端展示名
-	Region                 string `json:"region"`                            // domestic | overseas
-	Rail                   string `json:"rail"`                              // direct | hosted
-	Asset                  string `json:"asset"`                             // USD | USDT | CNY | ...
-	Enabled                bool   `json:"enabled"`                           // 关的前端可展示但不能下单
-	RequiresPayerReference bool   `json:"requires_payer_reference"`          // direct rail 通常要
-	PayerReferenceLabel    string `json:"payer_reference_label,omitempty"`   // 前端表单标签
-	Note                   string `json:"note,omitempty"`                    // 展示给乘客的一行提示
+	ID                     string `json:"id"`                              // 渠道稳定 id
+	DisplayName            string `json:"display_name"`                    // 前端展示名
+	Region                 string `json:"region"`                          // domestic | overseas
+	Rail                   string `json:"rail"`                            // direct | hosted
+	Asset                  string `json:"asset"`                           // USD | USDT | CNY | ...
+	Enabled                bool   `json:"enabled"`                         // 关的前端可展示但不能下单
+	RequiresPayerReference bool   `json:"requires_payer_reference"`        // direct rail 通常要
+	PayerReferenceLabel    string `json:"payer_reference_label,omitempty"` // 前端表单标签
+	Note                   string `json:"note,omitempty"`                  // 展示给乘客的一行提示
 }
 
 func (s *Server) handleListTopupChannels(w http.ResponseWriter, r *http.Request) error {
@@ -320,7 +321,7 @@ func (s *Server) handleCreateTopup(w http.ResponseWriter, r *http.Request) error
 			ProviderKind:     channel.ProviderKind,
 			ExpectedAmount:   microToDecimalString(amountMicro),
 			ExpectedAsset:    channel.Asset,
-			PayerEmail:       p.Email, // hosted rail 用 · direct rail gateway 忽略
+			PayerEmail:       p.Email,  // hosted rail 用 · direct rail gateway 忽略
 			PayerReference:   payerRef, // direct rail 用（乘客提供的 UID）· hosted 也发不影响
 			ExpiresInSeconds: int(TopupOrderTTL / time.Second),
 		}

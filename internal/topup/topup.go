@@ -319,10 +319,10 @@ func isCheckConstraintErr(err error) bool {
 // SaveGatewayRequestSnapshot 冷冻 CreatePaymentRequest JSON 到 topup_order。
 //
 // 起单流程（P0 修 · codex 三轮）：
-//   1. handler 建 CreatePaymentRequest（含 payer_email / payer_reference / amount / asset ...）
-//   2. handler 序列化 request 调本方法落库（**先落库·再调 gateway**）
-//   3. handler 调 gateway.CreatePayment
-//   4. janitor 反查时读回 snapshot · **原样** POST · gateway 幂等指纹一致 → 200 replay
+//  1. handler 建 CreatePaymentRequest（含 payer_email / payer_reference / amount / asset ...）
+//  2. handler 序列化 request 调本方法落库（**先落库·再调 gateway**）
+//  3. handler 调 gateway.CreatePayment
+//  4. janitor 反查时读回 snapshot · **原样** POST · gateway 幂等指纹一致 → 200 replay
 //
 // 为什么必须冷冻：起单跟 janitor 反查中间·汇率可能变、channel config 可能改、
 // 甚至乘客 email 都可能改。从当前 config 重建 request → 幂等指纹不同 → gateway 侧

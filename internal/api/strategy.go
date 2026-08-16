@@ -20,28 +20,28 @@ import (
 //
 // 1f-refactor(migration 040) · 全局策略分两组:
 //
-//  组 A · 新车 seed(default_*):建车向导预填 · **不做**运行时 fallback ·
-//    改这里不影响老车(车级独立演化)
-//  组 B · 跨车调度护栏(auto_refill_*):真正需要全局才能表达的
-//    · daily_budget:所有 auto 车加起来一天最多花 N 积分
-//    · min_wallet_reserve:钱包低于 N 积分时所有 auto 车暂停
-//    · vendor_allowlist:自动补车只允许从这几家 vendor 拉
+//	组 A · 新车 seed(default_*):建车向导预填 · **不做**运行时 fallback ·
+//	  改这里不影响老车(车级独立演化)
+//	组 B · 跨车调度护栏(auto_refill_*):真正需要全局才能表达的
+//	  · daily_budget:所有 auto 车加起来一天最多花 N 积分
+//	  · min_wallet_reserve:钱包低于 N 积分时所有 auto 车暂停
+//	  · vendor_allowlist:自动补车只允许从这几家 vendor 拉
 //
 // 三字段 default_ 前缀跟车级字段分开 · 免得前端把全局值当成车级值。
 type strategyResponse struct {
-	MaxUnitPrice             *int64            `json:"max_unit_price"`
-	DailyRoundLimit          *int              `json:"daily_round_limit"`
-	DailySpendLimit          *int64            `json:"daily_spend_limit"`
-	PerRoundCount            int               `json:"per_round_count"`
-	PreferredVendor          *string           `json:"preferred_vendor"`
-	DefaultZone              string            `json:"default_zone"`
-	DefaultAutoRefillEnabled bool              `json:"default_auto_refill_enabled"`
-	DefaultRefillWatermark   int               `json:"default_refill_watermark"`
-	DefaultRefillMinCount    *int              `json:"default_refill_min_count"`
+	MaxUnitPrice             *int64  `json:"max_unit_price"`
+	DailyRoundLimit          *int    `json:"daily_round_limit"`
+	DailySpendLimit          *int64  `json:"daily_spend_limit"`
+	PerRoundCount            int     `json:"per_round_count"`
+	PreferredVendor          *string `json:"preferred_vendor"`
+	DefaultZone              string  `json:"default_zone"`
+	DefaultAutoRefillEnabled bool    `json:"default_auto_refill_enabled"`
+	DefaultRefillWatermark   int     `json:"default_refill_watermark"`
+	DefaultRefillMinCount    *int    `json:"default_refill_min_count"`
 	// 1f-refactor(migration 040) · 全局跨车调度护栏
-	AutoRefillDailyBudget      *int64   `json:"auto_refill_daily_budget"`
-	AutoRefillMinWalletReserve *int64   `json:"auto_refill_min_wallet_reserve"`
-	AutoRefillVendorAllowlist  []string `json:"auto_refill_vendor_allowlist"`
+	AutoRefillDailyBudget      *int64            `json:"auto_refill_daily_budget"`
+	AutoRefillMinWalletReserve *int64            `json:"auto_refill_min_wallet_reserve"`
+	AutoRefillVendorAllowlist  []string          `json:"auto_refill_vendor_allowlist"`
 	UsedToday                  usedTodayResponse `json:"used_today"`
 }
 

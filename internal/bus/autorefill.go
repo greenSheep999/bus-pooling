@@ -41,11 +41,11 @@ type AutoEnqueuer interface {
 
 // AutoEnqueueRequest · scheduler → stockwatch 桥的入参
 type AutoEnqueueRequest struct {
-	BusID           string
+	BusID                string
 	InitiatorPassengerID string
-	Count           int
-	PreferredVendor string // Decide 已挑好的 vendor
-	MaxUnitPrice    int64  // 涨价保护
+	Count                int
+	PreferredVendor      string // Decide 已挑好的 vendor
+	MaxUnitPrice         int64  // 涨价保护
 }
 
 // AutoRefillRequest · scheduler → decider 桥的入参
@@ -66,9 +66,9 @@ type AutoRefillRequest struct {
 // SchedulerDecide · 决策器接口 · 装配层实现为 decider.Decide 的适配器。
 //
 // 定义在 bus 包里·让 Scheduler 不直接 import decider。装配层负责:
-//   1. 从 bus + passenger + stockwatch + vendorview 组装 DecideInput
-//   2. 调 decider.Decide
-//   3. 把输出翻译成 SchedulerVerdict
+//  1. 从 bus + passenger + stockwatch + vendorview 组装 DecideInput
+//  2. 调 decider.Decide
+//  3. 把输出翻译成 SchedulerVerdict
 //
 // nil = 老行为(直接 puller.Refill · 不过决策器) · 保 1a-1c 回归。
 type SchedulerDecide interface {
@@ -105,8 +105,8 @@ type SchedulerAction int
 
 const (
 	ActionReject  SchedulerAction = iota // 不动
-	ActionPull                            // 调 puller.Refill 下单
-	ActionEnqueue                         // 挂 stockwatch(装配 AutoEnqueuer 时真调 · 未装配只 log)
+	ActionPull                           // 调 puller.Refill 下单
+	ActionEnqueue                        // 挂 stockwatch(装配 AutoEnqueuer 时真调 · 未装配只 log)
 )
 
 // Scheduler · 定时扫水位 · 过 Decide · 触发 decider.Pull 或挂 stockwatch
@@ -209,7 +209,7 @@ func (s *Scheduler) Stop(timeout time.Duration) {
 type autoRefillCandidate struct {
 	busID           string
 	ownerID         string
-	watermark       int // 车级原始值 · **不合并全局** · 用于 nil-decider 测试路径 + 传给 Decider 桥参考
+	watermark       int  // 车级原始值 · **不合并全局** · 用于 nil-decider 测试路径 + 传给 Decider 桥参考
 	autoRefill      bool // 车级原始 auto_refill_enabled · 同上
 	minCount        int  // 0 = 未设 · 用 watermark - alive 补齐
 	maxUnitPrice    int64

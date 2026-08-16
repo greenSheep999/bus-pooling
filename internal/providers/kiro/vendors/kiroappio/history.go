@@ -35,19 +35,19 @@ type ioOrder struct {
 }
 
 type ioKey struct {
-	ID            string `json:"id"`
-	Key           string `json:"key"`
-	Region        string `json:"region"`
-	Status        string `json:"status"`
-	OrderID       string `json:"order_id"`
-	CreatedAt     string `json:"created_at"`
-	DispatchedAt  string `json:"dispatched_at"`
-	DeadAt        string `json:"dead_at"`
-	DeadReason    string `json:"dead_reason"`
-	LastProbe     string `json:"last_probe"`
-	CurrentUsage  int    `json:"current_usage"`
-	UsageLimit    int    `json:"usage_limit"`
-	UnitPrice     int64  `json:"unit_price"`
+	ID           string `json:"id"`
+	Key          string `json:"key"`
+	Region       string `json:"region"`
+	Status       string `json:"status"`
+	OrderID      string `json:"order_id"`
+	CreatedAt    string `json:"created_at"`
+	DispatchedAt string `json:"dispatched_at"`
+	DeadAt       string `json:"dead_at"`
+	DeadReason   string `json:"dead_reason"`
+	LastProbe    string `json:"last_probe"`
+	CurrentUsage int    `json:"current_usage"`
+	UsageLimit   int    `json:"usage_limit"`
+	UnitPrice    int64  `json:"unit_price"`
 }
 
 func parseHistTime(s string) time.Time {

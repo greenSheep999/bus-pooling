@@ -53,10 +53,10 @@ func (s *Server) handleBusCredentialPush(w http.ResponseWriter, r *http.Request)
 
 	// 找号 · 校验属该 bus + alive
 	var (
-		krID       int64
-		pushedAt   sql.NullString
+		krID        int64
+		pushedAt    sql.NullString
 		pushErrCode sql.NullString
-		status     string
+		status      string
 	)
 	err = s.db.QueryRowContext(r.Context(), `
 		SELECT kiro_rs_credential_id, pushed_to_passengerpool_at, push_error_code, status

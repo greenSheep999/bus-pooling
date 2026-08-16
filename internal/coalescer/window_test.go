@@ -23,11 +23,11 @@ func providersVendorID(s string) providers.VendorID {
 
 // mockExecutor · 记调用参数 + 可控返值 / err
 type mockExecutor struct {
-	mu       sync.Mutex
-	calls    []*BatchIntent
-	returns  any
+	mu        sync.Mutex
+	calls     []*BatchIntent
+	returns   any
 	returnErr error
-	delay    time.Duration
+	delay     time.Duration
 }
 
 func (m *mockExecutor) Execute(_ context.Context, batch *BatchIntent) (any, error) {

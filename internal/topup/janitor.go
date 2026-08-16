@@ -13,24 +13,24 @@ import (
 // 场景（09-transactions §6）：
 //   - initial 超过 initialTimeout（默认 5min）· gateway 还没调过 · 双表 expire
 //   - gateway_creating 卡后 · 用 client_order_id 反查 gateway（POST replay CreatePayment）：
-//     - 反查确认 gateway 已建（200 replay / 201 新建）→ 回填 gateway_payment_id + 推 gateway_ordered
-//     - 反查失败（网络错 / 5xx / POST 4xx **含 404**）→ 累计 poll_fail_count · 到上限转 pending_manual · **绝不 expire**
-//     - 反查能力缺失（snapshot 空 / callback 未装配）→ 立即 pending_manual · **绝不 expire**
+//   - 反查确认 gateway 已建（200 replay / 201 新建）→ 回填 gateway_payment_id + 推 gateway_ordered
+//   - 反查失败（网络错 / 5xx / POST 4xx **含 404**）→ 累计 poll_fail_count · 到上限转 pending_manual · **绝不 expire**
+//   - 反查能力缺失（snapshot 空 / callback 未装配）→ 立即 pending_manual · **绝不 expire**
 //     · 特别注意：POST 404 ≠ "payment 不存在"·POST 是**写**语义·404 是端点错
 //   - gateway_ordered 超过 pollAfter · **主动** GET gateway 覆盖 webhook 丢失（P0-3 修）：
-//     - state=settled → 触发 MarkPaid + 一路推 completed
-//     - state=pending → 保留（下轮再 poll）
-//     - state=expired/cancelled/failed → 双表 expire
-//     - **GET 404** → 该 gateway_payment_id 明确不存在（读语义）→ 双表 expire
-//     - poll 网络错 → 累计 poll_fail_count · 不 expire · 到上限转 manual
+//   - state=settled → 触发 MarkPaid + 一路推 completed
+//   - state=pending → 保留（下轮再 poll）
+//   - state=expired/cancelled/failed → 双表 expire
+//   - **GET 404** → 该 gateway_payment_id 明确不存在（读语义）→ 双表 expire
+//   - poll 网络错 → 累计 poll_fail_count · 不 expire · 到上限转 manual
 //   - gateway_paid 卡多轮（webhook 到了但 MarkPaid 内部失败）· 重试 MarkPaid
 //   - credited 卡多轮（MarkPaid 成功但没推 completed）· 直推 completed
 //
 // **"未知不等于失败"**：poll 失败 / 反查能力缺失 / POST 404 都不能推断为 expired。
 // 只有三条**明确读语义**信号才当作"确认无单"·允许 expire：
-//   1. GET /payments/{id} 返 404（读语义 · 该 payment id 明确不存在）
-//   2. gateway 显式状态 = expired / cancelled / failed
-//   3. initial 超时（本地压根没发 CreatePayment）
+//  1. GET /payments/{id} 返 404（读语义 · 该 payment id 明确不存在）
+//  2. gateway 显式状态 = expired / cancelled / failed
+//  3. initial 超时（本地压根没发 CreatePayment）
 type Janitor struct {
 	orders    *Store
 	pending   *PendingStore
@@ -434,7 +434,7 @@ func (j *Janitor) recoverGatewayCreating(ctx context.Context, p Pending) string 
 //   - state != ""      · poll 成功·state = settled / pending / expired / cancelled / failed
 //   - state == "expired" 也可能来自"gateway 明确 404"（PollByGatewayPaymentID 内部翻译）
 //   - polled=false     · poller 未装配 / order 无 gateway_payment_id / poll 错误
-//                       上层不能推断"确认无单"·只能累计 poll_fail_count
+//     上层不能推断"确认无单"·只能累计 poll_fail_count
 func (j *Janitor) tryPoll(ctx context.Context, orderID string) (state string, polled bool) {
 	if j.poller == nil || j.orders == nil {
 		return "", false

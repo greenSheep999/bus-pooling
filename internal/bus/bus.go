@@ -61,6 +61,7 @@ type Bus struct {
 //   - **DailyRoundLimit / DailySpendLimit** —— **车级不生效**（strategy.decide 只判全局）·
 //     字段保留是因为 SQLite 不支持 DROP COLUMN · 别在 UI 上暴露车级设置入口 ·
 //     每日限额的意义是"人的预算"不是"车的预算"
+//
 // 1f-B(15-scheduling §4.3.2b 方案 A) · auto/refill 三字段改 *bool / *int：
 //
 //	NULL / nil  = **跟随全局默认**(strategy.Effective() 运行时读乘客全局)
@@ -96,16 +97,16 @@ type Member struct {
 }
 
 var (
-	ErrNotFound         = errors.New("bus: 找不到这辆车")
-	ErrNotMember        = errors.New("bus: 不是这辆车的成员")
-	ErrDissolved        = errors.New("bus: 车已解散")
-	ErrOwnerCantLeave   = errors.New("bus: owner 不能退出车，请解散")
-	ErrBadKind          = errors.New("bus: 不支持的 kind")
-	ErrAlreadyMember    = errors.New("bus: 已在车里")
-	ErrBusFull          = errors.New("bus: 车已满")
-	ErrInvalidInvite    = errors.New("bus: 邀请码无效")
-	ErrNotOwner         = errors.New("bus: 只有 owner 能操作")
-	ErrInviteExhausted  = errors.New("bus: 邀请码生成冲突过多·请重试")
+	ErrNotFound        = errors.New("bus: 找不到这辆车")
+	ErrNotMember       = errors.New("bus: 不是这辆车的成员")
+	ErrDissolved       = errors.New("bus: 车已解散")
+	ErrOwnerCantLeave  = errors.New("bus: owner 不能退出车，请解散")
+	ErrBadKind         = errors.New("bus: 不支持的 kind")
+	ErrAlreadyMember   = errors.New("bus: 已在车里")
+	ErrBusFull         = errors.New("bus: 车已满")
+	ErrInvalidInvite   = errors.New("bus: 邀请码无效")
+	ErrNotOwner        = errors.New("bus: 只有 owner 能操作")
+	ErrInviteExhausted = errors.New("bus: 邀请码生成冲突过多·请重试")
 )
 
 type Store struct {
@@ -624,11 +625,11 @@ func (s *Store) Join(ctx context.Context, busID, passengerID string) error {
 // MatchOptions · anon bus 撮合条件。
 //
 // 语义：找一辆**已存在的活跃 anon bus** 满足：
-//   1. status = active
-//   2. anon_zone 匹配（空 = 不限）
-//   3. anon_max_unit_price >= 请求上限（保护成员利益 · 上限更低的车不匹配）
-//   4. 未满（active 成员数 < max_members · max_members=0 视为不限）
-//   5. 该乘客还没加入过（不重复算成员）
+//  1. status = active
+//  2. anon_zone 匹配（空 = 不限）
+//  3. anon_max_unit_price >= 请求上限（保护成员利益 · 上限更低的车不匹配）
+//  4. 未满（active 成员数 < max_members · max_members=0 视为不限）
+//  5. 该乘客还没加入过（不重复算成员）
 //
 // 返回**最老**的一辆（先建先满 · 让新用户先填满旧车再开新车）· 找不到返 ErrNoMatch。
 type MatchOptions struct {

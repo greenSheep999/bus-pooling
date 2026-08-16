@@ -7,7 +7,6 @@ package api
 import (
 	"context"
 	"database/sql"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -16,16 +15,7 @@ import (
 
 func setupTrendDB(t *testing.T) *sql.DB {
 	t.Helper()
-	ctx := context.Background()
-	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "d.db"))
-	if err != nil {
-		t.Fatalf("开库: %v", err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-	if _, err := d.MigrateUp(ctx, "../db/migrations"); err != nil {
-		t.Fatalf("迁移: %v", err)
-	}
-	return d.DB
+	return db.NewTestDB(t).DB
 }
 
 // 空表 · 返空 zones
@@ -48,7 +38,7 @@ func TestLoadPriceTrend_GroupsByHourAndSource(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
 	// 同小时内 us / vendor_self 两条 · 应聚成 1 个 point · samples=2
 	for i, at := range []time.Time{
-		now.Add(-1 * time.Hour),           // 11:30
+		now.Add(-1 * time.Hour),                       // 11:30
 		now.Add(-1 * time.Hour).Add(10 * time.Minute), // 11:40 · 同小时
 	} {
 		_, err := sqldb.Exec(`

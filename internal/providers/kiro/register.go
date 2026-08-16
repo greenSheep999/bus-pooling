@@ -47,8 +47,8 @@ type VendorConfig struct {
 	SessionToken string
 	Timeout      time.Duration
 	MaxRetries   int
-	ProxyURL   string
-	NoProxy    string
+	ProxyURL     string
+	NoProxy      string
 }
 
 // Register 把 kiro 下的 vendor 装进 registry。

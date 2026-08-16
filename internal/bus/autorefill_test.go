@@ -7,7 +7,6 @@ package bus
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -37,15 +36,7 @@ func (m *mockRefiller) count() int {
 
 func setupSchedulerDB(t *testing.T) (*Scheduler, *mockRefiller, func(sql string, args ...any)) {
 	t.Helper()
-	ctx := context.Background()
-	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "d.db"))
-	if err != nil {
-		t.Fatalf("开库: %v", err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-	if _, err := d.MigrateUp(ctx, "../db/migrations"); err != nil {
-		t.Fatalf("迁移: %v", err)
-	}
+	d := db.NewTestDB(t)
 	// 建一个 passenger · 满足外键
 	if _, err := d.DB.Exec(`INSERT INTO passenger (id, username, email, password_hash, created_at, updated_at)
 	                        VALUES ('p1', 'alice', 'a@x.io', 'x', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`); err != nil {

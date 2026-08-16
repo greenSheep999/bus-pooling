@@ -2,11 +2,9 @@ package api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -39,15 +37,8 @@ func newPREnv(t *testing.T) *prEnv {
 // pool != nil 时 · assign into_bus 会调 pool.UpdateCredential 迁 group
 func newPREnvWithPool(t *testing.T, pool *fullMockPool) *prEnv {
 	t.Helper()
-	ctx := context.Background()
 
-	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "pr-api.db"))
-	if err != nil {
-		t.Fatalf("开库: %v", err)
-	}
-	if _, err := d.MigrateUp(ctx, "../db/migrations"); err != nil {
-		t.Fatalf("迁移: %v", err)
-	}
+	d := db.NewTestDB(t)
 
 	wallets := wallet.NewStore(d.DB)
 	prs := pullrecord.NewStore(d.DB)
@@ -462,7 +453,8 @@ func TestAssign_IntoBus_MigratesHousepoolGroup(t *testing.T) {
 // 场景：两个不同 idempotency key 同时对同一 credential 派往不同 bus。
 // 修前：R1 pool = bus-X · R2 pool = bus-Y · 只有一个台账成功 → 台账 / pool 分叉。
 // 修后：R2 在 tx1 落 initial 时 UNIQUE(credential_id) WHERE status='initial' 挡住 · 409。
-//       pool 只被调 1 次 · 台账跟 pool 都指向同一个 bus。
+//
+//	pool 只被调 1 次 · 台账跟 pool 都指向同一个 bus。
 func TestAssign_ConcurrentSameCredentialToDifferentBuses(t *testing.T) {
 	pool := &fullMockPool{}
 	e := newPREnvWithPool(t, pool)

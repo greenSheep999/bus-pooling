@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -72,14 +71,7 @@ func setupDB(t *testing.T) (*sql.DB, string, string, string) {
 	t.Helper()
 	ctx := context.Background()
 
-	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "d.db"))
-	if err != nil {
-		t.Fatalf("开库: %v", err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-	if _, err := d.MigrateUp(ctx, "../db/migrations"); err != nil {
-		t.Fatalf("迁移: %v", err)
-	}
+	d := db.NewTestDB(t)
 
 	const pid = "p1"
 	const busID = "b1"

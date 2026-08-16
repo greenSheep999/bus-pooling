@@ -3,7 +3,6 @@ package credplain_test
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,14 +14,7 @@ import (
 func setup(t *testing.T) *credplain.Store {
 	t.Helper()
 	ctx := context.Background()
-	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "d.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-	if _, err := d.MigrateUp(ctx, "../db/migrations"); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	d := db.NewTestDB(t)
 	// 建 passenger + pull_round + credential_ledger 前置 (FK)
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := d.DB.ExecContext(ctx, `

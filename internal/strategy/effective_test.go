@@ -136,7 +136,7 @@ func TestEffective_OnlyGlobal(t *testing.T) {
 
 func TestEffective_GlobalPlusBusOverride(t *testing.T) {
 	globalMax := int64(20 * 1_000_000)
-	busMax := int64(15 * 1_000_000)   // 车级更严 · 硬上限取 min = 15
+	busMax := int64(15 * 1_000_000) // 车级更严 · 硬上限取 min = 15
 	busPer := 10
 	busVendor := "kirodrop"
 	busAuto := false // 车级显式关(值字段 false · 非 nil = 覆盖)

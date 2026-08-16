@@ -381,4 +381,3 @@ func maskKirodropKey(k string) string {
 	}
 	return k[:8] + "****"
 }
-

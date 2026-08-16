@@ -22,12 +22,12 @@ import (
 type memberStatDTO struct {
 	PassengerID string `json:"passenger_id"`
 	Username    string `json:"username"`
-	Role        string `json:"role"`   // owner | member
+	Role        string `json:"role"` // owner | member
 	SharePct    int    `json:"share_pct"`
 	Status      string `json:"status"` // active | suspended
 
 	// 拉号参与：这个成员在这辆车里分到过多少号 · 参与了几轮
-	KeysTaken   int `json:"keys_taken"`
+	KeysTaken    int `json:"keys_taken"`
 	RoundsJoined int `json:"rounds_joined"`
 
 	// 消费：按 participants_split 里的号数占比摊到的积分（microunit · 正数表示花掉多少）

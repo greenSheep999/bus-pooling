@@ -252,7 +252,7 @@ func Default() Config {
 		Promo: Promo{},
 		// Community 默认空 —— 社群渠道链接也是运营内容
 		Community: Community{},
-		DryRun: true,
+		DryRun:    true,
 	}
 }
 

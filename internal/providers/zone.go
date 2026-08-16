@@ -12,10 +12,11 @@ import "strings"
 // stock_watcher.region 语义定死为 zone 名（"us" / "eu"）· Notify 前用本函数归一 · 一致 SQL 匹配。
 //
 // 匹配规则（case-insensitive）：
-//   "general"              → ZoneGeneral（不分区 vendor 的唯一一区 · 原样保留）
-//   包含 "us" / "美"        → ZoneUS
-//   包含 "eu" / "欧"        → ZoneEU
-//   其他                    → Zone("") 空 · 让 SQL "region IS NULL OR region=''" 分支放行
+//
+//	"general"              → ZoneGeneral（不分区 vendor 的唯一一区 · 原样保留）
+//	包含 "us" / "美"        → ZoneUS
+//	包含 "eu" / "欧"        → ZoneEU
+//	其他                    → Zone("") 空 · 让 SQL "region IS NULL OR region=''" 分支放行
 //
 // **为什么 general 要单独判**（2026-08-13 修）：不分区的 vendor 用 ZoneGeneral 当
 // 唯一一区。若归一成空串 · 它的侧表行 zone 列就是空 · PricedFor 按 zone 查匹配不到 ·

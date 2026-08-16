@@ -212,7 +212,7 @@ func TestZeroLimitIsValidAndMeansBlockAll(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
-func bp(v bool) *bool  { return &v }
+func bp(v bool) *bool   { return &v }
 
 // 1f-B(15-scheduling §4.3.2b) · 全局默认三字段读写。
 //
@@ -277,6 +277,7 @@ func TestGlobalAutoRefillDefaultsRoundTrip(t *testing.T) {
 // 全局默认字段的 0 / false 是合法值(不是"跟随"):
 //   - watermark=0 = 不触发自动补
 //   - auto=false  = 关闭自动补
+//
 // 都能落库 · 读回来一致。
 func TestGlobalAutoRefillZeroFalseIsExplicit(t *testing.T) {
 	s, pid := setup(t)

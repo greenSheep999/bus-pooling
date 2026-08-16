@@ -17,13 +17,13 @@ import (
 )
 
 type meHistorySummaryResp struct {
-	OK              bool                       `json:"ok"`
-	TotalKeys       int                        `json:"total_keys"`        // 我买过的总号数（含死）
-	AliveKeys       int                        `json:"alive_keys"`
-	DeadKeys        int                        `json:"dead_keys"`
-	TotalSpentMicro int64                      `json:"total_spent_micro"` // 我总共花过（含退回来的）· 积分 microunit
-	TotalRefundMicro int64                     `json:"total_refund_micro"` // 我从退款里收回来的
-	ByVendor        []meHistorySummaryVendor   `json:"by_vendor"`
+	OK               bool                     `json:"ok"`
+	TotalKeys        int                      `json:"total_keys"` // 我买过的总号数（含死）
+	AliveKeys        int                      `json:"alive_keys"`
+	DeadKeys         int                      `json:"dead_keys"`
+	TotalSpentMicro  int64                    `json:"total_spent_micro"`  // 我总共花过（含退回来的）· 积分 microunit
+	TotalRefundMicro int64                    `json:"total_refund_micro"` // 我从退款里收回来的
+	ByVendor         []meHistorySummaryVendor `json:"by_vendor"`
 }
 
 type meHistorySummaryVendor struct {
@@ -31,11 +31,11 @@ type meHistorySummaryVendor struct {
 	AnonID    string `json:"anon_id"`
 	AnonLabel string `json:"anon_label"`
 
-	TotalKeys       int   `json:"total_keys"`
-	AliveKeys       int   `json:"alive_keys"`
-	DeadKeys        int   `json:"dead_keys"`
-	SpentMicro      int64 `json:"spent_micro"`
-	RefundMicro     int64 `json:"refund_micro"`
+	TotalKeys   int   `json:"total_keys"`
+	AliveKeys   int   `json:"alive_keys"`
+	DeadKeys    int   `json:"dead_keys"`
+	SpentMicro  int64 `json:"spent_micro"`
+	RefundMicro int64 `json:"refund_micro"`
 }
 
 func (s *Server) handleMeHistorySummary(w http.ResponseWriter, r *http.Request) error {

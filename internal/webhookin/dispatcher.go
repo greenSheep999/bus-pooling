@@ -524,7 +524,8 @@ func (d *Dispatcher) onAllKeysDead(ctx context.Context, e *providers.WebhookEven
 //
 // **关联键优先级**：vendor_order_id > client_order_id (PurchaseOrderID)
 // （part 1: WebhookEvent.OrderID 是 vendor 侧订单号 · pull_round.vendor_order_id 就是它 ·
-//   part 2: 少数 vendor 只发 purchase_order_id · 那个就是我方 client_order_id）
+//
+//	part 2: 少数 vendor 只发 purchase_order_id · 那个就是我方 client_order_id）
 //
 // **幂等**：UPDATE 加 `WHERE status IN ('completed','partial')` · 已经 refunded 的不重刷 ·
 // 重放 webhook 不会造成重复退款（deathwatch 也有 warranty_refunded_at 幂等锚 · 双保险）。

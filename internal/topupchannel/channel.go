@@ -31,8 +31,8 @@ const (
 type Rail string
 
 const (
-	RailDirect Rail = "direct"  // 乘客直转 · 我方对账
-	RailHosted Rail = "hosted"  // 三方托管 checkout
+	RailDirect Rail = "direct" // 乘客直转 · 我方对账
+	RailHosted Rail = "hosted" // 三方托管 checkout
 )
 
 // ID 具体渠道 id（stable · 会落 topup_order.channel）。
@@ -48,13 +48,13 @@ const (
 
 // Channel 一个渠道的完整属性。
 type Channel struct {
-	ID              ID     // 稳定标识（DB 存这个）
-	DisplayName     string // 前端展示名（人类可读）
-	Region          Region
-	Rail            Rail
-	ProviderKind    string // payment-Gateway 侧的 provider_kind
-	Asset           string // gateway 侧结算币种（USD / USDT / CNY / ...）
-	Enabled         bool   // 是否开放乘客发起（关的前端可展示但不能下单）
+	ID           ID     // 稳定标识（DB 存这个）
+	DisplayName  string // 前端展示名（人类可读）
+	Region       Region
+	Rail         Rail
+	ProviderKind string // payment-Gateway 侧的 provider_kind
+	Asset        string // gateway 侧结算币种（USD / USDT / CNY / ...）
+	Enabled      bool   // 是否开放乘客发起（关的前端可展示但不能下单）
 	// RequiresPayerReference · direct rail 通常需要（Bybit UID / Binance ID / 钱包地址）·
 	// hosted rail 从 profile 拿（email）。前端根据这个决定确认窗要不要多问一个字段。
 	RequiresPayerReference bool
@@ -79,11 +79,12 @@ type Registry struct {
 // New 建注册表并注册当前四家渠道（一家启用 · 其余关但预留）。
 //
 // Enabled 可从 env 覆盖：
-//   BP_TOPUP_WAFFO_ENABLED=1|0
-//   BP_TOPUP_USDT_ENABLED=1|0
-//   BP_TOPUP_TRON_ENABLED=1|0
-//   BP_TOPUP_BYBIT_ENABLED=1|0
-//   BP_TOPUP_BINANCE_ENABLED=1|0
+//
+//	BP_TOPUP_WAFFO_ENABLED=1|0
+//	BP_TOPUP_USDT_ENABLED=1|0
+//	BP_TOPUP_TRON_ENABLED=1|0
+//	BP_TOPUP_BYBIT_ENABLED=1|0
+//	BP_TOPUP_BINANCE_ENABLED=1|0
 //
 // 默认（不设 env）：只主 hosted 渠道启用·其余关。
 func New(overrides map[ID]bool) *Registry {
