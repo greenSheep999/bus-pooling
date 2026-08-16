@@ -244,7 +244,8 @@
     },
     "vendor": {
       "auto": "系统派号（推荐）",
-      "auto-fallback": "系统派号"
+      "auto-fallback": "系统派号",
+      "out-of-stock": "暂时缺货"
     },
     "zone": {
       "auto": "让系统选",
