@@ -389,7 +389,16 @@ func (s *Service) VendorStock(ctx context.Context, vendorID string, v Viewer) (*
 // **P4 · 2026-08-14**：老代码 AutoPick 只喂 UI · 从不进下单决策。这个方法让 decider
 // 能拿到跟前端 UI 一致的选择 · 用户看到的推荐跟真拉时用的是同一家。
 func (s *Service) PickBestVendor(ctx context.Context, zoneHint string) (providers.VendorID, providers.Zone, bool) {
-	return s.pickBestInternal(ctx, zoneHint, nil)
+	return s.pickBestInternal(ctx, zoneHint, nil, providers.AccountEnterprise)
+}
+
+// PickBestVendorForKind · 按 account kind 选最优 vendor
+//
+// personal 请求必须走这条 —— 不带 kind 只会看企业池 · 手工池那家永远选不到。
+func (s *Service) PickBestVendorForKind(
+	ctx context.Context, zoneHint string, kind providers.AccountKind,
+) (providers.VendorID, providers.Zone, bool) {
+	return s.pickBestInternal(ctx, zoneHint, nil, kind)
 }
 
 // PickBestVendorExcluding · 排除若干 vendor 后再选（余额自动切换用）
@@ -400,15 +409,21 @@ func (s *Service) PickBestVendor(ctx context.Context, zoneHint string) (provider
 //
 // **完整 nth-best 实现放**：抽 AutoPick 内部 cand 数组返 · 上层遍历。
 func (s *Service) PickBestVendorExcluding(ctx context.Context, zoneHint string, exclude []providers.VendorID) (providers.VendorID, providers.Zone, bool) {
-	return s.pickBestInternal(ctx, zoneHint, exclude)
+	return s.pickBestInternal(ctx, zoneHint, exclude, providers.AccountEnterprise)
 }
 
 // pickBestInternal · PickBestVendor 和 PickBestVendorExcluding 的共用实现 · **不递归**
 // (2026-08-15 修 stack overflow · 之前俩公开函数互相调造成无限递归 · 从没跑到过)
-func (s *Service) pickBestInternal(ctx context.Context, zoneHint string, exclude []providers.VendorID) (providers.VendorID, providers.Zone, bool) {
+func (s *Service) pickBestInternal(
+	ctx context.Context, zoneHint string, exclude []providers.VendorID, kind providers.AccountKind,
+) (providers.VendorID, providers.Zone, bool) {
 	// 复用 AutoPick 的打分逻辑 · 只返 vendor id 不组装 View
 	// 简版:调 AutoPick 拿 top1 · 再判 exclude
-	view := s.AutoPick(ctx, zoneHint, Viewer{Tier: TierRetail})
+	//
+	// **必须传 wholesale viewer** —— 这里要的是真 vendor_id 去下单 ·
+	// retail viewer 会返 anon_id · 拿去 vendorFor() 查不到（老代码靠 kiro_market
+	// 恒返真 id 侥幸没炸 · 其他家都是错的）
+	view := s.autoPickForKind(ctx, zoneHint, Viewer{Tier: TierWholesale}, kind)
 	if view == nil || view.VendorID == "" {
 		return "", "", false
 	}
@@ -434,6 +449,16 @@ func (s *Service) pickBestInternal(ctx context.Context, zoneHint string, exclude
 // 打分：成活率 × 0.6 + (1 - 相对价) × 0.4；成活率 1a 未采集，等价于价低者胜。
 // 理由是给乘客看的（cheapest / most_stock / balanced），**不许透 decider 逻辑**。
 func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *AutoPickView {
+	return s.autoPickForKind(ctx, zoneHint, v, providers.AccountEnterprise)
+}
+
+// autoPickForKind · AutoPick 的带 kind 版本
+//
+// **kind 必须传到 Stock** —— 不传只查企业池 · personal 请求会挑到一个 personal
+// 库存为 0 的家（手工池那家永远选不到）· 冻结积分后 ErrNoStock。生产实测过。
+func (s *Service) autoPickForKind(
+	ctx context.Context, zoneHint string, v Viewer, kind providers.AccountKind,
+) *AutoPickView {
 	entries := s.registry.Enabled()
 
 	type cand struct {
@@ -457,7 +482,7 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			snaps[i], _ = s.stockOnce(ctx, e.Vendor)
+			snaps[i], _ = s.stockOnceKind(ctx, e.Vendor, kind)
 		}()
 	}
 	wg.Wait()

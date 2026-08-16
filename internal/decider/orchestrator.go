@@ -107,6 +107,13 @@ type PricingLookup interface {
 type VendorPicker interface {
 	// PickBestVendor 返 (vendorID, zone, ok)。全网缺货 ok=false · 上层 defaultVendor 兜底。
 	PickBestVendor(ctx context.Context, zoneHint string) (providers.VendorID, providers.Zone, bool)
+	// PickBestVendorForKind · 按 account kind 选（personal 请求必须走这条）
+	//
+	// **为什么必须带 kind**：PickBestVendor 只看企业池 · personal 请求用它会选到
+	// 一个 personal 库存为 0 的家 · 然后 Stock(Kind:personal) 返 0 → ErrNoStock ·
+	// **手工池那家永远选不到**。实测 2026-08-17 生产:personal PRO+ 有 2 个货 ·
+	// auto 模式却选了上游企业家 · 冻结 120 积分后 need_manual。
+	PickBestVendorForKind(ctx context.Context, zoneHint string, kind providers.AccountKind) (providers.VendorID, providers.Zone, bool)
 	// PickBestVendorExcluding · 排除若干 vendor 后再选（余额不够切下一家用）·
 	// 全排除后无 ok=false · 上层判 ErrVendorInsufficient。
 	PickBestVendorExcluding(ctx context.Context, zoneHint string, exclude []providers.VendorID) (providers.VendorID, providers.Zone, bool)
@@ -416,7 +423,11 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 	// 结果 auto 模式的缺货永远不进 stockwatch。修法:传独立的 requestedVendorID 快照。
 	requestedVendorID := in.VendorID
 	if in.VendorID == "" && o.picker != nil {
-		if pv, pz, ok := o.picker.PickBestVendor(ctx, string(in.Zone)); ok {
+		// **按 kind 选** —— 用不带 kind 的版本会让 personal 请求选到只有企业库存的家 ·
+		// 然后 Stock(Kind:personal) 返 0 → 冻结后 ErrNoStock（生产实测扣过积分）
+		if pv, pz, ok := o.picker.PickBestVendorForKind(
+			ctx, string(in.Zone), in.AccountKind.Normalize(),
+		); ok {
 			in.VendorID = pv
 			// zone 空时用 picker 的（用户没显式指定就跟推荐一致）
 			if in.Zone == "" {
