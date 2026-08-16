@@ -49,6 +49,20 @@ type Record struct {
 	PushFailed  bool       // 推送失败过（push_error_code 非空且 attempts 已到上限）
 	PushError   *PushError // 结构化推送失败详情 · nil = 从未失败或成功
 	SourceRound string     // pull_round_id（用于关联到一次拉号动作 · 前端可点击回溯）
+
+	// Offer 维度 · 落 credential_ledger.subscription / account_kind（migration 046）
+	// 空 = 老数据 · 前端按 subscription 决定 quota 上限（power=10k / pro=1k / pro+=2k）
+	AccountKind  string // enterprise | personal · 空 = enterprise（老数据）
+	Subscription string // power | pro | pro_plus | pro_max · 空 = 未知
+
+	// 用量真值 · 来自 credential_usage_snapshot 最近一条（migration 048 · 5min 采样）
+	// 前端进度条真值 · 替掉写死的 QUOTA_MAX
+	//
+	// UsageLimit 是 microunit · 一号一档 · Balance.usageLimit × 1e6 · 0 = 快照未落
+	// UsageCurrent 也 microunit · 号池"当前用量"实时快照 · 死号时 credits_used 是最后快照
+	// 两者语义不同：credits_used 是**死那一刻**冻结值 · UsageCurrent 是**最近一次采样**值
+	UsageLimit   int64
+	UsageCurrent int64
 }
 
 // PushError 是推 passengerpool 失败详情的对外形状（对齐 web `PushError` 类型）。
@@ -90,20 +104,28 @@ func (s *Store) List(ctx context.Context, passengerID string, opt ListOptions) (
 	// 未 handoff 且属于该乘客的 record group 号（owner_record_passenger_id 非 null）
 	// **不包含** owner_bus_id 非 null 的号（那些属于车，不叫拉号记录）
 	// **不包含** status='handed_off' 的号（handoff 后不再列出 · 台账行仍在库供追溯）
-	where := `WHERE owner_record_passenger_id = ? AND owner_bus_id IS NULL AND status != 'handed_off'`
+	//
+	// **注意** WHERE 用 cl.* 前缀 · 因为 selectRecord 现在是 JOIN 查询（LEFT JOIN
+	// credential_usage_snapshot 拿用量真值 · 见 selectRecord 定义）
+	where := `WHERE cl.owner_record_passenger_id = ? AND cl.owner_bus_id IS NULL AND cl.status != 'handed_off'`
 	args := []any{passengerID}
 	if !opt.IncludeHistory {
-		where += ` AND status = 'alive'`
+		where += ` AND cl.status = 'alive'`
 	}
 
+	// COUNT 单表查 · 不涉及 join · 用原列名
+	countWhere := `WHERE owner_record_passenger_id = ? AND owner_bus_id IS NULL AND status != 'handed_off'`
+	if !opt.IncludeHistory {
+		countWhere += ` AND status = 'alive'`
+	}
 	var total int
 	if err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(1) FROM credential_ledger `+where, args...).Scan(&total); err != nil {
+		`SELECT COUNT(1) FROM credential_ledger `+countWhere, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("pullrecord: 计数: %w", err)
 	}
 
 	rows, err := s.db.QueryContext(ctx, selectRecord+where+
-		` ORDER BY pulled_at DESC LIMIT ? OFFSET ?`,
+		` ORDER BY cl.pulled_at DESC LIMIT ? OFFSET ?`,
 		append(args, opt.Limit, opt.Offset)...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("pullrecord: 查询: %w", err)
@@ -126,7 +148,7 @@ func (s *Store) List(ctx context.Context, passengerID string, opt ListOptions) (
 // **不用 ErrForbidden** —— 那会泄漏"记录存在但你不是主人"的信息。
 func (s *Store) Get(ctx context.Context, recordID, passengerID string) (*Record, error) {
 	row := s.db.QueryRowContext(ctx, selectRecord+
-		` WHERE id = ? AND owner_record_passenger_id = ? AND owner_bus_id IS NULL AND status != 'handed_off'`,
+		` WHERE cl.id = ? AND cl.owner_record_passenger_id = ? AND cl.owner_bus_id IS NULL AND cl.status != 'handed_off'`,
 		recordID, passengerID)
 	r, err := scanSingle(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -479,25 +501,39 @@ func withTx(ctx context.Context, db *sql.DB, fn func(*sql.Tx) error) error {
 
 // 选择列表：只选**对外**要的字段，vendor_order_id / kiro_rs_credential_id /
 // current_group / death_source **绝不出现在扫描列表里**（防止一时手滑把它们暴露）。
+//
+// LEFT JOIN credential_usage_snapshot 拿最近一条 · 空表就 usage_limit=0 · 前端知道降级。
+// **子查询 SELECT MAX(observed_at)** 保证每号只出一行 · 不重复。
 const selectRecord = `SELECT
-	id,
-	COALESCE(vendor_id, ''),
-	status,
-	COALESCE(key_masked, ''),
-	COALESCE(region, ''),
-	COALESCE(credits_used, 0),
-	pulled_at,
-	warranty_until,
-	dead_at,
-	pushed_to_passengerpool_at,
-	push_attempts,
-	COALESCE(push_error_code, ''),
-	push_error_status,
-	COALESCE(push_error_message, ''),
-	COALESCE(push_error_retriable, 0),
-	push_last_attempt_at,
-	source_pull_round_id
-FROM credential_ledger `
+	cl.id,
+	COALESCE(cl.vendor_id, ''),
+	cl.status,
+	COALESCE(cl.key_masked, ''),
+	COALESCE(cl.region, ''),
+	COALESCE(cl.credits_used, 0),
+	cl.pulled_at,
+	cl.warranty_until,
+	cl.dead_at,
+	cl.pushed_to_passengerpool_at,
+	cl.push_attempts,
+	COALESCE(cl.push_error_code, ''),
+	cl.push_error_status,
+	COALESCE(cl.push_error_message, ''),
+	COALESCE(cl.push_error_retriable, 0),
+	cl.push_last_attempt_at,
+	cl.source_pull_round_id,
+	COALESCE(cl.account_kind, ''),
+	COALESCE(cl.subscription, ''),
+	COALESCE(cus.usage_limit_micro, 0),
+	COALESCE(cus.current_usage_micro, 0)
+FROM credential_ledger cl
+LEFT JOIN credential_usage_snapshot cus
+	ON cus.kiro_rs_credential_id = cl.kiro_rs_credential_id
+	AND cus.observed_at = (
+		SELECT MAX(observed_at) FROM credential_usage_snapshot
+		 WHERE kiro_rs_credential_id = cl.kiro_rs_credential_id
+	)
+`
 
 // 通用扫描
 type rowScanner interface {
@@ -516,7 +552,9 @@ func scanRow(r rowScanner) (Record, error) {
 		&rec.KeyMasked, &rec.Region, &rec.CreditsUsed,
 		&pulledAt, &warranty, &deadAt, &pushedAt,
 		&pushAttempts, &pushCode, &pushStatus, &pushMsg, &pushRetriable, &pushLast,
-		&sourceRound)
+		&sourceRound,
+		&rec.AccountKind, &rec.Subscription,
+		&rec.UsageLimit, &rec.UsageCurrent)
 	if err != nil {
 		return rec, err
 	}
