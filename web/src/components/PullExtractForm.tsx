@@ -5,7 +5,6 @@ import { ArrowUpRight, KeyRound, Sparkles, TrendingUp } from "lucide-react";
 import {
   useAutoPick, useExtract, useMe,
   useVendorOffers, useVendorStock,
-  type OfferItem,
 } from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -48,40 +47,47 @@ export function PullExtractForm({
   const [zone, setZone] = useState<Zone | "auto">("auto");
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  /** 当前 tab 下 · 哪些 vendor **该 category 有货**(available > 0)才出现在下拉
-   *  supported=true available=0 走"暂时缺货"提示 · 不进下拉（避免用户选了没货） */
+  /** 当前 tab 下 · 列**所有 supported 的 vendor**(不 filter available)
+   *  缺货 vendor 也进下拉 · label 末尾标"· 暂时缺货" · 用户能看到全景
+   *  supported=false 才不进（该 vendor 根本不提供这种 kind） */
   const availableVendors = useMemo(() => {
+    const outOfStockLabel = t("pull-form.vendor.out-of-stock", { defaultValue: "暂时缺货" });
     return (offers?.vendors ?? [])
-      .filter((v) => v.categories[category]?.available > 0)
-      .map((v) => ({ vendor_id: v.vendor_id, vendor_label: v.vendor_label }));
-  }, [offers, category]);
+      .filter((v) => v.categories[category]?.supported)
+      .map((v) => {
+        const avail = v.categories[category]?.available ?? 0;
+        return {
+          vendor_id: v.vendor_id,
+          vendor_label: avail > 0 ? v.vendor_label : `${v.vendor_label} · ${outOfStockLabel}`,
+          available: avail,
+        };
+      });
+  }, [offers, category, t]);
 
-  /** subscription 下拉合法档 · 来自 Offer matrix · 不是硬编码
-   *  vendor=auto 时:全网该 category 下**存在** available>0 offer 的档位集合
-   *  vendor=具体 时:只看该 vendor 该 category 的档位 */
+  /** subscription 下拉合法档 · **纯从 Offer matrix 派生 · 不写死任何档**
+   *  vendor=auto 时:全网该 category 下**任何 vendor supported 的档**集合
+   *  vendor=具体 时:只看该 vendor 该 category 支持的档
+   *  缺货档在 label 末尾标"· 暂时缺货" —— supported 但 available=0
+   *  offers 未到手时返 [] · Select 空下拉自然禁用 · 加载完立即刷 · 不写前端硬编码档 */
   const subscriptionOptions = useMemo(() => {
-    const seen = new Set<string>();
-    const rows: OfferItem[] = [];
-    for (const v of offers?.vendors ?? []) {
-      if (vendorId !== "auto" && v.vendor_id !== vendorId) continue;
-      for (const o of v.categories[category]?.offers ?? []) {
-        if (o.available <= 0 || !o.subscription) continue;
-        if (seen.has(o.subscription)) continue;
-        seen.add(o.subscription);
-        rows.push(o);
-      }
-    }
-    if (rows.length === 0) {
-      // 兜底 · 没数据时给用户一个默认档避免下拉空白（提交时后端会拒）
-      return category === "enterprise"
-        ? [{ value: "power", label: "Power" }]
-        : [{ value: "pro", label: "PRO" }];
-    }
     const LABEL: Record<string, string> = {
       power: "Power 10000", pro: "PRO 1000", pro_plus: "PRO+ 2000", pro_max: "PRO Max",
     };
-    return rows.map((r) => ({ value: r.subscription, label: LABEL[r.subscription] ?? r.subscription }));
-  }, [offers, category, vendorId]);
+    const outOfStockLabel = t("pull-form.vendor.out-of-stock", { defaultValue: "暂时缺货" });
+    const availByPlan = new Map<string, number>();
+    for (const v of offers?.vendors ?? []) {
+      if (vendorId !== "auto" && v.vendor_id !== vendorId) continue;
+      if (!v.categories[category]?.supported) continue;
+      for (const o of v.categories[category]?.offers ?? []) {
+        if (!o.subscription) continue;
+        availByPlan.set(o.subscription, (availByPlan.get(o.subscription) ?? 0) + (o.available ?? 0));
+      }
+    }
+    return [...availByPlan.entries()].map(([plan, avail]) => ({
+      value: plan,
+      label: avail > 0 ? (LABEL[plan] ?? plan) : `${LABEL[plan] ?? plan} · ${outOfStockLabel}`,
+    }));
+  }, [offers, category, vendorId, t]);
 
   const [subscription, setSubscription] = useState<string>("");
   // category 切时重置 subscription 到该 category 的第一个可选档
@@ -224,11 +230,9 @@ export function PullExtractForm({
             </Select>
           </Field>
           <Field label={t("pull-form.field.subscription")}>
-            <Select
-              value={subscription}
-              onValueChange={setSubscription}
-              disabled={subscriptionOptions.length === 1}
-            >
+            {/* 不锁死 —— 就算只有一档 · 也让用户能点开看到"这一档"（能看即能选）
+                之前 disabled 是防误操作 · 但截图证明它让用户以为下拉挂了 */}
+            <Select value={subscription} onValueChange={setSubscription}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {subscriptionOptions.map((s) => (
