@@ -89,11 +89,12 @@ func buildE2E(t *testing.T) (*Orchestrator, *stockwatch.Watcher, *DryRunVendor, 
 // TestE2E_OutOfStock_Enqueues_ThenWebhookRestock_Fires · 全链路模拟
 //
 // 步骤：
-//   ① 用户 Pull · vendor 报 stock=0 → 返 ErrNoStock（用户端表现："暂无库存"）
-//   ② stock_watcher 表里有一条 watching（挂单成功）
-//   ③ 模拟 vendor 上货 · 调 Watcher.Notify("webhook") · Watcher fire → FireWatcher →
-//      Pull 走完整链 · 号进 credential_ledger · watcher 标 fulfilled
-//   ④ 断言钱扣了 · 冻结释放了
+//
+//	① 用户 Pull · vendor 报 stock=0 → 返 ErrNoStock（用户端表现："暂无库存"）
+//	② stock_watcher 表里有一条 watching（挂单成功）
+//	③ 模拟 vendor 上货 · 调 Watcher.Notify("webhook") · Watcher fire → FireWatcher →
+//	   Pull 走完整链 · 号进 credential_ledger · watcher 标 fulfilled
+//	④ 断言钱扣了 · 冻结释放了
 func TestE2E_OutOfStock_Enqueues_ThenWebhookRestock_Fires(t *testing.T) {
 	orch, watcher, vendor, d := buildE2E(t)
 	ctx := context.Background()

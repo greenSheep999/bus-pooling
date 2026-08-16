@@ -102,12 +102,40 @@ export function topupUsdBreakdown(wantCredits: number): {
   return { usdCredits, usdFee, usdTotal: usdCredits + usdFee };
 }
 
-/** 号额度阈值配色（decisions §8.14 · 10k 积分寿终阈值） */
+/** 号额度阈值配色（decisions §8.14）
+ *
+ *  ⚠️ **档位相关** —— 不同 subscription 的月度 quota 不同（docs/24 §5）：
+ *    - Power   · 10000 积分/月（企业档 · 阶段 1 只有这档 · 老 QUOTA_MAX 只对它成立）
+ *    - PRO     · 1000
+ *    - PRO+    · 2000
+ *    - PRO Max · 未定 · 保守用 5000
+ *
+ *  运行时应读 housepool `Balance.UsageLimit` 真值 · 硬编码是临时兜底（Step 7 未完成）。
+ *  Vendor 加新档 / 改配额时 · 表里 quota 数字要同步 · 但真正正确的做法是让后端下发。 */
+const QUOTA_BY_PLAN: Record<string, number> = {
+  power: 10_000,
+  pro: 1_000,
+  pro_plus: 2_000,
+  pro_max: 5_000,
+};
+
+/** 老 QUOTA_MAX 保留（企业档 Power = 10k）· 只 UI 里 vendor 未知档时的兜底 */
 export const QUOTA_MAX = 10_000;
 
-export function quotaLevel(used: number): "ok" | "warn" | "danger" {
-  if (used >= 9000) return "danger";
-  if (used >= 7000) return "warn";
+/** 按 subscription 查 quota 上限 · 未知档回落到 QUOTA_MAX */
+export function quotaMaxFor(subscription?: string | null): number {
+  if (!subscription) return QUOTA_MAX;
+  return QUOTA_BY_PLAN[subscription] ?? QUOTA_MAX;
+}
+
+/** 用量告警等级 · 传 max 决定阈值（默认按 Power 10k · 兼容老调用方）
+ *   danger  ≥ 90%
+ *   warn    ≥ 70%
+ *   ok      其他 */
+export function quotaLevel(used: number, max: number = QUOTA_MAX): "ok" | "warn" | "danger" {
+  const ratio = max > 0 ? used / max : 0;
+  if (ratio >= 0.9) return "danger";
+  if (ratio >= 0.7) return "warn";
   return "ok";
 }
 
@@ -117,9 +145,12 @@ export const QUOTA_COLOR: Record<ReturnType<typeof quotaLevel>, string> = {
   danger: "#EF4444",
 };
 
-/** vendor 内部 id → 展示名（12-frontend-pages.md · 绝不暴露 id） */
+/** vendor 内部 id → 展示名（12-frontend-pages.md · 绝不暴露 id）
+ *
+ *  ⚠️ key 必须跟后端 `providers.VendorID` 常量**逐字一致** —— 拼错会让 vendorName()
+ *  落到 `?? id` 分支、把原始 vendor_id 漏给 wholesale 档，且 VENDOR_ANON_INDEX 查不到编号。 */
 export const VENDOR_NAME: Record<string, string> = {
-  "91kiro": "Kiro Market",
+  kiro91: "Kiro Market",
   kiroceo: "Kiro CEO",
   kirooo: "Kiro OOO",
   kiroappio: "Kiro App IO",
@@ -129,7 +160,7 @@ export const VENDOR_NAME: Record<string, string> = {
 
 /** vendor 身份色（同色系紫深浅，不用杂色） */
 export const VENDOR_COLOR: Record<string, string> = {
-  "91kiro": "#9147FF",
+  kiro91: "#9147FF",
   kiroceo: "#A574FF",
   kirooo: "#E3D5FF",
   kiroappio: "#D4D4D8",
@@ -142,12 +173,18 @@ export function vendorName(id: string): string {
 }
 
 /** vendor 匿名编号(散客视角)· decisions §8.20 · CLAUDE §0.1 §12.6
-    无注册邀请码的用户看不到真名 · 只看 "Vendor 01" · 别泄漏"AWS-Q"/"Kiro"内部术语
-    编号顺序 = VENDOR_NAME 键顺序(跟 CLAUDE.md §1.1 六家列表一致)· 同一用户每次看到的编号一致 */
+    无注册邀请码的用户看不到真名 · 编号顺序 = VENDOR_NAME 键顺序(跟 CLAUDE.md §1.1 六家一致)
+
+    ⚠️ 文案必须跟后端 `vendorview.anonLabelOf` **逐字一致** —— 后端返
+    "AWS-Q Kiro Vendor 01"，前端算出 "Vendor 01" 会让同一家在不同页面显示成两个名字。
+
+    TODO(收口)：后端每个响应都带 `vendor_label`（已按 tier 判完），前端应直接用它、
+    删掉本地这套重算。`vendorLabel` 被 19 个文件引用 · 收口是独立一步 ·
+    见 docs/24-category-subscription.md §2。 */
 const VENDOR_ANON_INDEX: Record<string, string> = Object.fromEntries(
   Object.keys(VENDOR_NAME).map((id, i) => [
     id,
-    `Vendor ${String(i + 1).padStart(2, "0")}`,
+    `AWS-Q Kiro Vendor ${String(i + 1).padStart(2, "0")}`,
   ]),
 );
 
@@ -159,7 +196,7 @@ const VENDOR_ANON_INDEX: Record<string, string> = Object.fromEntries(
  *  一律传 `me?.tier`。 */
 export function vendorLabel(id: string, tier: PassengerTier | undefined): string {
   if (tier === "wholesale") return vendorName(id);
-  return VENDOR_ANON_INDEX[id] ?? "Vendor";
+  return VENDOR_ANON_INDEX[id] ?? "AWS-Q Kiro Vendor";
 }
 
 /** ⚠️ 档次名（retail/community/wholesale）**只在内部**用 · UI 上不要展示三档差别

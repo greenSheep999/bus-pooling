@@ -232,4 +232,3 @@ func TestRefillTick_NoDecider_LegacyPath(t *testing.T) {
 		t.Errorf("nil decider 应走老逻辑直接 puller · 得 %d 次", len(pull.calls))
 	}
 }
-

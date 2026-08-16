@@ -37,14 +37,14 @@ type AlertKey struct {
 
 // AlertPayload webhook POST body · 简单 JSON · 让下游随便接。
 type AlertPayload struct {
-	Type      string        `json:"type"`       // "stale" | "recovered"
-	At        string        `json:"at"`         // RFC3339 · 事件时间
-	Vendor    string        `json:"vendor"`     // 空 = 全局
-	Pipeline  string        `json:"pipeline"`   // probe / orders / keys / ...
-	LastOK    string        `json:"last_ok,omitempty"`     // 上次成功时间 · 空=从未
-	LastOKAge string        `json:"last_ok_age,omitempty"` // 人可读时长
-	Threshold string        `json:"threshold"`             // 陈旧阈值
-	LastErr   string        `json:"last_err,omitempty"`
+	Type      string `json:"type"`                  // "stale" | "recovered"
+	At        string `json:"at"`                    // RFC3339 · 事件时间
+	Vendor    string `json:"vendor"`                // 空 = 全局
+	Pipeline  string `json:"pipeline"`              // probe / orders / keys / ...
+	LastOK    string `json:"last_ok,omitempty"`     // 上次成功时间 · 空=从未
+	LastOKAge string `json:"last_ok_age,omitempty"` // 人可读时长
+	Threshold string `json:"threshold"`             // 陈旧阈值
+	LastErr   string `json:"last_err,omitempty"`
 }
 
 // WebhookNotifier 把 stale/recovered 事件 POST 到一个 URL。

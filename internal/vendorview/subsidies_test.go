@@ -15,10 +15,10 @@ func TestComputeSubsidyDelta(t *testing.T) {
 	}
 
 	cases := []struct {
-		name    string
-		kind    string
-		rule    string
-		want    int64
+		name string
+		kind string
+		rule string
+		want int64
 	}{
 		// service_fee · waive · 全免 ServiceFee 层
 		{"service_fee waive", "service_fee", `{"kind":"waive"}`, 2_400_000},

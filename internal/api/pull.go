@@ -26,6 +26,12 @@ type pullRequest struct {
 	// CouponCode 阶段 1a 收但不消费 —— 前端确认窗允许填优惠码 ·
 	// 后端估价还没接优惠逻辑（decisions §8.20）· 收下防 decodeStrict 拒未知字段
 	CouponCode string `json:"coupon_code,omitempty"`
+	// Offer 维度（docs/24 §5 · Step 5d）:
+	//   AccountKind · 本轮买 enterprise / personal · 空 = enterprise（兼容老前端）
+	//   Plan · 订阅档 power / pro / pro_plus / pro_max · 空 = 不指定
+	// 手动拉号时是**硬约束** —— 用户点了"拉个人号"不能因缺货降级买企业号（docs/24 §7）
+	AccountKind string `json:"account_kind,omitempty"`
+	Plan        string `json:"plan,omitempty"`
 }
 
 type pullResponse struct {
@@ -163,6 +169,9 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 		//   ① 缺货挂单时存进 stock_watcher · fire 时继续守同一上限
 		//   ② 换算成 vendor 币种传涨价保护(部分 vendor 原生支持)
 		MaxUnitPrice: eff.MaxUnitPrice,
+		// Offer 维度 · 空 = enterprise（兼容未升级的前端）
+		AccountKind: providers.AccountKind(req.AccountKind),
+		Plan:        providers.SubscriptionPlan(req.Plan),
 	})
 	if err != nil {
 		if fail := translateDeciderErr(err); fail != nil {

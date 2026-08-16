@@ -8,6 +8,7 @@ import (
 // TestComputeQuality_RealShape · 用生产实况数据形状验证排序 + 标签
 //
 // 5 种典型档位（数据来自 2026-08-11 生产快照 · 匿名）：
+//
 //	A · 98% uptime · 42 批 · 最新 17h 前 · stock=out（高产稳定）
 //	B · 16% uptime · 34 批 · 最新 5min 前 · stock=out（高产但极不稳）
 //	C · 99% uptime · 19 批 · 最新 5h 前 · stock=out（稳定中产）

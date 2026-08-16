@@ -335,6 +335,49 @@ export const useVendorStats = () =>
     queryFn: () => api<{ stats: VendorStat[]; share: VendorShare[] }>("/vendors/stats"),
   });
 
+/** Offer matrix · vendor × account_kind × subscription · 提取页**唯一数据源**（docs/24 §3）
+ *
+ *  拿一份定所有联动:tab 数字 · vendor 下拉 · subscription 下拉 · 数量分档单价。
+ *  supported=false → "该 vendor 不提供" · supported=true available=0 → "暂时缺货"。 */
+export interface OfferItem {
+  /** 手工池路径有 · registry vendor 无 */
+  offer_id?: string;
+  subscription: "" | "power" | "pro" | "pro_plus" | "pro_max";
+  /** "" = 无区 · "us" / "eu" = 有区 */
+  zone?: string;
+  available: number;
+  /** microunit · 已按数量档算好（前端切数量后重算 · 用 price_bands 匹配） */
+  unit_price: number;
+  /** 分档全表 · Upper=0 = 及以上 · 无分档时是空数组 */
+  price_bands?: { lower: number; upper: number; unit_price_credits: number; region?: string }[];
+  /** 号提供方 · 用户视角 · 可选展示 */
+  source?: string;
+}
+
+export interface CategoryOfferRow {
+  supported: boolean;
+  available: number;
+  offers: OfferItem[] | null;
+}
+
+export interface VendorOfferRow {
+  vendor_id: string;
+  vendor_label: string;
+  anon_id: string;
+  categories: {
+    enterprise: CategoryOfferRow;
+    personal: CategoryOfferRow;
+  };
+}
+
+export const useVendorOffers = () =>
+  useQuery({
+    queryKey: ["vendorOffers"],
+    queryFn: () => api<{ vendors: VendorOfferRow[] }>("/vendors/offers"),
+    /* stock 变化不算多 · 30s 缓存 · 手动 refetch 也可（提交拉号后 invalidate） */
+    staleTime: 30_000,
+  });
+
 /* ── Bus ── */
 
 export const useBuses = () =>
@@ -522,9 +565,11 @@ export const useExtract = () => {
   return useMutation({
     mutationFn: (body: {
       vendor_id: string; zone?: string; count: number;
-      /** 优惠码 · 本次减免 · 阶段 1a 后端估价还没接优惠码 · 前端先不发
-       *  避免 pullRequest decodeStrict 拒未知字段（bad_json） */
+      /** 优惠码 · 本次减免 · 阶段 1a 后端估价还没接优惠码 · 前端先不发 */
       coupon_code?: string;
+      /** Offer 维度（docs/24 §5）· 手动拉号是硬约束（不能因缺货降级）*/
+      account_kind?: "enterprise" | "personal";
+      plan?: "power" | "pro" | "pro_plus" | "pro_max";
     }) => {
       const { coupon_code: _unused, vendor_id, ...rest } = body;
       void _unused;
@@ -539,6 +584,8 @@ export const useExtract = () => {
       qc.invalidateQueries({ queryKey: ["extractEvents"] });
       qc.invalidateQueries({ queryKey: ["pullRecords"] });
       qc.invalidateQueries({ queryKey: ["wallet"] });
+      qc.invalidateQueries({ queryKey: ["vendorOffers"] });
+      qc.invalidateQueries({ queryKey: ["stock"] });
     },
   });
 };

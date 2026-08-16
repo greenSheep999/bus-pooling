@@ -62,11 +62,13 @@ type Breakdown struct {
 // Price 按配置的费率算出单价与分项。keyUnitCost 为 vendor 侧实付单价（microunit）。
 //
 // **分项计算顺序**（decisions §8.30 C）：
-//   号价 → vendor 附加 → region → single_pull(count==1) → retail → capability → adhoc → service
+//
+//	号价 → vendor 附加 → region → single_pull(count==1) → retail → capability → adhoc → service
 //
 // **落库分项**（pull_round 表列有限）：
-//   Retail / Adhoc 归到 capabilityFee 桶（capabilityFee = retail + capability + adhoc）·
-//   1c 加分离列时再拆。ServiceFee 单独列（对外可见）。
+//
+//	Retail / Adhoc 归到 capabilityFee 桶（capabilityFee = retail + capability + adhoc）·
+//	1c 加分离列时再拆。ServiceFee 单独列（对外可见）。
 func Price(keyUnitCost int64, count int, r Rates) Breakdown {
 	singlePull := r.SinglePull
 	if count != 1 {

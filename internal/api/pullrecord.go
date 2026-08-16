@@ -404,7 +404,7 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 	// **P1-l 修(2026-08-16)**: 号状态分层拒推(用户澄清)
 	//
 	// **3 种状态**:
-	//   - dead(真死)  · 401/403 认证错 · 或 kiro.rs Invalid/Suspended reason · 无条件拒
+	//   - dead(真死)  · 401/403 认证错 · 或 housepool 后端 Invalid/Suspended reason · 无条件拒
 	//   - quota(用完) · 402 quota_exceeded · monthly 到限额 · 可能重置后恢复
 	//   - ok           · 正常 · 允许推
 	//
@@ -423,7 +423,7 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		}
 		badIDs := map[string]credErr{}
 		// **P1-m 修(2026-08-16)**: 除了 TestCredential(true dead 判)· 也查 GetBalance
-		// 拿 usage_percentage · >=95% 视为 quota(kiro.rs API 层 TestCredential 只在 100%
+		// 拿 usage_percentage · >=95% 视为 quota(housepool 后端 API 层 TestCredential 只在 100%
 		// 时才拒 · 99.9% 边界能过 · 但号推给车友下一次就 402)
 		const quotaThreshold = 95.0
 		for _, cid := range req.CredentialIDs {
@@ -469,7 +469,7 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		if len(rejected) > 0 {
 			for cid, ce := range rejected {
 				code := "credential_dead"
-				userMsg := "号已失效 · 不能派(kiro.rs 探活返错)"
+				userMsg := "号已失效 · 不能派(housepool 后端 探活返错)"
 				if ce.kind == "quota" {
 					code = "credential_quota_exceeded"
 					userMsg = "号已用完额度 · 拼车共享号需活号 · 请换号或等 quota 重置"

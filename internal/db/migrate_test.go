@@ -51,6 +51,15 @@ var wantTables = []string{
 	"vendor_ledger",         // 033 · vendor 侧积分流水 · 交叉对账
 	"xi8_vendor_flags",      // 034 · 聚合源 buyable/blocked/floating · 抢号 guard
 	"pipeline_health",       // 036 · 各数据管线心跳 · 新鲜度自检
+	// migration 041-043 · 优惠码 + 明文缓存（表清单先前忘补 · 一直是残留错误）
+	"coupon_code",         // 041 · 优惠码
+	"coupon_use",          // 042 · 优惠码使用记录
+	"credential_plaintext", // 043 · 手上号明文加密缓存（减 handoff/push_pool 明文缺口）
+	// migration 047 · 我方第 7 家 Kiro Vendor Market 手工上架
+	"market_offer",      // 货架定义（vendor × kind × plan → 分档价 · 开关）
+	"market_stock_item", // 每一把预导入号 · available/reserved/sold 状态机
+	// migration 048 · 号用量快照 · 我方 housepool 侧粗数据（docs/06-db-schema §12.5a）
+	"credential_usage_snapshot",
 }
 
 func openTestDB(t *testing.T) *DB {

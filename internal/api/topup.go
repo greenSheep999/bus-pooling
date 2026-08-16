@@ -302,7 +302,7 @@ func (s *Server) handleCreateTopup(w http.ResponseWriter, r *http.Request) error
 		// 优惠码 topup_discount 减 USD 实付 · decisions §8.43 v2
 		// 折后金额 = 原额 × (1 - discount_bp/10000)
 		// **只减 gateway 侧收的额** —— 积分数量不动(想充 N 到账 N)· wallet_ledger recharge / channel_fee 也不动
-		// 差额从我方营销预算出(coupon_use.discount_amount 记账 · 未来结算再对)
+		// 差额由我方承担(coupon_use.discount_amount 记账 · 未来结算再对)
 		if couponInfo != nil {
 			// discount = amountMicro * discount_bp / 10000
 			discount := amountMicro * couponInfo.DiscountBP / 10000

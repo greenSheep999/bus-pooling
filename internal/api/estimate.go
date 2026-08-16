@@ -18,6 +18,9 @@ type estimateReq struct {
 	Zone       string `json:"zone,omitempty"`
 	Count      int    `json:"count"`
 	CouponCode string `json:"coupon_code,omitempty"` // 1a 阶段 mock：无实际减免
+	// Offer 维度 · 未来 PricedFor 分档要用 · 阶段 1 收下防 decodeStrict 拒 (Step 5d)
+	AccountKind string `json:"account_kind,omitempty"`
+	Plan        string `json:"plan,omitempty"`
 }
 
 type estimateResp struct {

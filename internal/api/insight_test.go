@@ -206,7 +206,8 @@ func TestActivities_Envelope(t *testing.T) {
 		},
 		total: 1,
 	}
-	h := handleActivitiesWith(f)
+	// vendorView 为 nil · 匿名化整段跳过（本测试只验信封字段）
+	h := (&Server{}).handleActivitiesWith(f)
 	status, body := call(t, h, "GET", "/api/me/activities?page=1&page_size=20", withPassenger("p1"))
 	if status != 200 {
 		t.Fatalf("status=%d body=%s", status, body)
@@ -229,7 +230,7 @@ func TestActivities_Envelope(t *testing.T) {
 func TestActivities_EmptyItemsAlwaysArray(t *testing.T) {
 	// activities nil 时前端会挂 · 必须回空数组
 	f := &fakeInsight{activities: nil, total: 0}
-	h := handleActivitiesWith(f)
+	h := (&Server{}).handleActivitiesWith(f)
 	_, body := call(t, h, "GET", "/api/me/activities", withPassenger("p1"))
 	var got struct {
 		Items json.RawMessage `json:"items"`

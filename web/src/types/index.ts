@@ -261,7 +261,7 @@ export interface VendorStock {
   warranty_minutes: number;                 // 0 = 无质保
   max_per_order: number;
   min_per_order: number;
-  hold_cap_remaining: number | null;        // 91kiro 才有 · 其他家 null
+  hold_cap_remaining: number | null;        // 只部分 vendor 有 · 其他家 null
   zones: {
     zone: Zone;
     label: string;                          // "美国区" / "欧洲区"
@@ -426,6 +426,11 @@ export interface VendorStat {
   pulls_today: number;
   fallback_count: number; // 拉这家失败、我方 fallback 到别家的次数
   out_of_stock: boolean;
+  /** 这家 vendor 当前有货的 account kind · 提取页按 tab 过滤 vendor 下拉
+   *  缺省时前端按 ["enterprise"] 处理（当前 6 家供的就是企业号）
+   *  ⚠️ 只表示"有货"· 分不清"不支持"vs"支持但缺货" —— 正式形状要 supported/available
+   *  分离，见 docs/24-category-subscription.md §3 */
+  categories?: ("enterprise" | "personal")[];
 }
 
 export interface VendorShare {
@@ -437,6 +442,13 @@ export interface VendorShare {
 export interface StockSummary {
   total_available: number;
   by_vendor: { vendor_id: string; available: number }[];
+  /** 按 account kind 分的存量 · 提取页 category tab 上的数字
+   *  后端未下发时前端按"企业= total · 个人=未开放"降级（见 Extract.tsx）
+   *  正式形状（含 supported/available 分离 + Offer 明细）见 docs/24-category-subscription.md §3 */
+  by_category?: {
+    enterprise: number;
+    personal: number;
+  };
 }
 
 // ── 概览

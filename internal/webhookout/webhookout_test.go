@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,6 +58,7 @@ func TestSignPayload(t *testing.T) {
 // ── mock DownstreamStore + HTTPDoer ────────────────────
 
 type mockStore struct {
+	mu         sync.Mutex // -race · InsertDelivery/断言 goroutine 之间同步 deliveries 切片
 	url        string
 	secret     string
 	configured bool
@@ -90,8 +92,19 @@ func (m *mockStore) DecryptWebhookSecret(b []byte) (string, error) {
 }
 
 func (m *mockStore) InsertDelivery(_ context.Context, a DeliveryAttempt) (DeliveryRow, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.deliveries = append(m.deliveries, a)
 	return DeliveryRow{ID: "row-" + a.EventID}, nil
+}
+
+// snapDeliveries · 测试断言用 · 返 deliveries 副本 · 读锁保护
+func (m *mockStore) snapDeliveries() []DeliveryAttempt {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]DeliveryAttempt, len(m.deliveries))
+	copy(out, m.deliveries)
+	return out
 }
 
 // mockHTTP · 转成 httptest.Server 拿到的响应
@@ -148,13 +161,18 @@ func setupTestDB(t *testing.T) *sql.DB {
 // ── 200 端到端 · 收到签名 · 落 delivered 台账 ──────────
 
 func TestDispatchDelivered(t *testing.T) {
-	var receivedSig string
-	var receivedEvent string
+	var (
+		mu            sync.Mutex // -race · handler goroutine 跟主 goroutine 同步 header 读取
+		receivedSig   string
+		receivedEvent string
+	)
 	var callCount int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&callCount, 1)
+		mu.Lock()
 		receivedSig = r.Header.Get("X-Bus-Signature")
 		receivedEvent = r.Header.Get("X-Bus-Event")
+		mu.Unlock()
 		w.WriteHeader(200)
 	}))
 	defer srv.Close()
@@ -178,15 +196,19 @@ func TestDispatchDelivered(t *testing.T) {
 
 	waitFor(t, 3*time.Second, func() bool { return atomic.LoadInt32(&callCount) >= 1 })
 
-	if !strings.HasPrefix(receivedSig, "sha256=") {
-		t.Errorf("对家应收到 sha256= 签名 · 得到 %q", receivedSig)
+	mu.Lock()
+	gotSig := receivedSig
+	gotEvent := receivedEvent
+	mu.Unlock()
+	if !strings.HasPrefix(gotSig, "sha256=") {
+		t.Errorf("对家应收到 sha256= 签名 · 得到 %q", gotSig)
 	}
-	if receivedEvent != "boarded" {
-		t.Errorf("X-Bus-Event = %q · 应是 boarded", receivedEvent)
+	if gotEvent != "boarded" {
+		t.Errorf("X-Bus-Event = %q · 应是 boarded", gotEvent)
 	}
-	waitFor(t, 3*time.Second, func() bool { return len(store.deliveries) > 0 })
-	if store.deliveries[0].Status != "delivered" {
-		t.Errorf("台账 status = %q · 应是 delivered", store.deliveries[0].Status)
+	waitFor(t, 3*time.Second, func() bool { return len(store.snapDeliveries()) > 0 })
+	if store.snapDeliveries()[0].Status != "delivered" {
+		t.Errorf("台账 status = %q · 应是 delivered", store.snapDeliveries()[0].Status)
 	}
 }
 
@@ -210,9 +232,9 @@ func TestDispatch4xxFailed(t *testing.T) {
 		CredentialIDs: []string{"c-1"},
 	})
 
-	waitFor(t, 3*time.Second, func() bool { return len(store.deliveries) > 0 })
-	if store.deliveries[0].Status != "failed" {
-		t.Errorf("4xx 应直接 failed · 得到 %q", store.deliveries[0].Status)
+	waitFor(t, 3*time.Second, func() bool { return len(store.snapDeliveries()) > 0 })
+	if store.snapDeliveries()[0].Status != "failed" {
+		t.Errorf("4xx 应直接 failed · 得到 %q", store.snapDeliveries()[0].Status)
 	}
 }
 
@@ -236,9 +258,9 @@ func TestDispatch5xxPending(t *testing.T) {
 		CredentialIDs: []string{"c-1"},
 	})
 
-	waitFor(t, 3*time.Second, func() bool { return len(store.deliveries) > 0 })
-	if store.deliveries[0].Status != "pending" {
-		t.Errorf("5xx 应 pending 让 retrier 重试 · 得到 %q", store.deliveries[0].Status)
+	waitFor(t, 3*time.Second, func() bool { return len(store.snapDeliveries()) > 0 })
+	if store.snapDeliveries()[0].Status != "pending" {
+		t.Errorf("5xx 应 pending 让 retrier 重试 · 得到 %q", store.snapDeliveries()[0].Status)
 	}
 }
 
@@ -258,7 +280,7 @@ func TestDispatchNoWebhook(t *testing.T) {
 	})
 	// 等一下 consume 跑完
 	time.Sleep(200 * time.Millisecond)
-	if len(store.deliveries) != 0 {
+	if len(store.snapDeliveries()) != 0 {
 		t.Errorf("未配 webhook 不该落台账 · 得到 %+v", store.deliveries)
 	}
 }
@@ -284,7 +306,7 @@ func TestSendTest(t *testing.T) {
 	if status != 200 {
 		t.Errorf("status = %d · 应是 200", status)
 	}
-	if len(store.deliveries) != 1 || store.deliveries[0].EventType != "test" {
+	if len(store.snapDeliveries()) != 1 || store.snapDeliveries()[0].EventType != "test" {
 		t.Errorf("SendTest 应落一条 test 台账 · 得到 %+v", store.deliveries)
 	}
 }
@@ -302,7 +324,7 @@ func TestQueueFullDropped(t *testing.T) {
 	// **不 Start** · 让 queue 塞满
 	d.Dispatch(context.Background(), "p1", EventBoarded, BoardedPayload{EnvelopeMeta: buildEnvelope(time.Now(), "e1", "p1", EventBoarded)})
 	d.Dispatch(context.Background(), "p1", EventBoarded, BoardedPayload{EnvelopeMeta: buildEnvelope(time.Now(), "e2", "p1", EventBoarded)})
-	if len(store.deliveries) != 1 || store.deliveries[0].Status != "dropped" {
+	if len(store.snapDeliveries()) != 1 || store.snapDeliveries()[0].Status != "dropped" {
 		t.Errorf("第二条应 dropped · 得到 %+v", store.deliveries)
 	}
 }
@@ -325,7 +347,7 @@ func TestBusOnlyFilter(t *testing.T) {
 	// Boarded 不带 bus_id · busOnly=true → 不发
 	d.Dispatch(context.Background(), "p1", EventBoarded, BoardedPayload{EnvelopeMeta: buildEnvelope(time.Now(), "e1", "p1", EventBoarded)})
 	time.Sleep(200 * time.Millisecond)
-	if len(store.deliveries) != 0 {
+	if len(store.snapDeliveries()) != 0 {
 		t.Errorf("bus_only 应过滤 boarded(无 bus_id) · 得到 %+v", store.deliveries)
 	}
 
@@ -335,8 +357,8 @@ func TestBusOnlyFilter(t *testing.T) {
 		BusID:        "bus-1",
 		NewKeys:      2,
 	})
-	waitFor(t, 3*time.Second, func() bool { return len(store.deliveries) > 0 })
-	if store.deliveries[0].EventType != "new_keys_available" {
+	waitFor(t, 3*time.Second, func() bool { return len(store.snapDeliveries()) > 0 })
+	if store.snapDeliveries()[0].EventType != "new_keys_available" {
 		t.Errorf("应发 new_keys_available · 得到 %+v", store.deliveries)
 	}
 }
@@ -384,8 +406,8 @@ func TestDispatchGetError(t *testing.T) {
 		EnvelopeMeta:  buildEnvelope(time.Now(), "e1", "p1", EventBoarded),
 		CredentialIDs: []string{"c1"},
 	})
-	waitFor(t, 3*time.Second, func() bool { return len(store.deliveries) > 0 })
-	if store.deliveries[0].Status != "dropped" {
-		t.Errorf("Get 失败应落 dropped · 得到 %q", store.deliveries[0].Status)
+	waitFor(t, 3*time.Second, func() bool { return len(store.snapDeliveries()) > 0 })
+	if store.snapDeliveries()[0].Status != "dropped" {
+		t.Errorf("Get 失败应落 dropped · 得到 %q", store.snapDeliveries()[0].Status)
 	}
 }

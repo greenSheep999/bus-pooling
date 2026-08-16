@@ -48,9 +48,9 @@ func (w *Watcher) enqueueRefill(ctx context.Context, credentialID string, reason
 	// 反查上下文 · owner_bus_id / owner_record_passenger_id 互斥（credential_ledger CHECK）
 	// 拿到 passenger_id 才能塞（passenger 是 pending_refill 的必填 FK）。
 	var (
-		busID        sql.NullString
-		recordPass   sql.NullString
-		pullRoundID  string
+		busID       sql.NullString
+		recordPass  sql.NullString
+		pullRoundID string
 	)
 	err := w.db.QueryRowContext(ctx, `
 		SELECT COALESCE(owner_bus_id, '') AS bid,

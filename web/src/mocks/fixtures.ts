@@ -43,7 +43,7 @@ export const wallet: Wallet = {
 export const stock: StockSummary = {
   total_available: 128,
   by_vendor: [
-    { vendor_id: "91kiro", available: 42 },
+    { vendor_id: "kiro91", available: 42 },
     { vendor_id: "kiroceo", available: 31 },
     { vendor_id: "kirooo", available: 24 },
     { vendor_id: "kirodrop", available: 18 },
@@ -104,7 +104,7 @@ export const buses: Bus[] = [
       // 1f-refactor · auto/watermark 是纯车级 bool/int · 团车这里关自动补
       auto_refill_enabled: false, refill_watermark: 0, refill_min_count: null,
       per_round_count: null, max_unit_price: null, daily_round_limit: null,
-      daily_spend_limit: null, preferred_vendor: "91kiro",
+      daily_spend_limit: null, preferred_vendor: "kiro91",
     },
     /* 多人车 · 分摊比例加起来 100 · decisions §8.18 §8.23 §8.26
        四个人刻意覆盖成员 tab 的全部状态：
@@ -169,8 +169,8 @@ const mkCred = (
   status: alive ? "alive" : "dead",
   key_masked: `ksk_live_${Math.random().toString(36).slice(2, 6)}…${Math.random().toString(36).slice(2, 5)}`,
   account: `aws-${Math.random().toString(36).slice(2, 6)}@kiro.tmp`,
-  region: vendor === "kirodrop" ? "eu-west-1" : vendor === "91kiro" ? "us-east-1" : "",
-  issuer_url: vendor === "91kiro" ? "auth.91kiro.com" : vendor === "kiroceo" ? "api.kiro.ceo" : "",
+  region: vendor === "kirodrop" ? "eu-west-1" : vendor === "kiro91" ? "us-east-1" : "",
+  issuer_url: vendor === "kiro91" ? "auth.91kiro.com" : vendor === "kiroceo" ? "api.kiro.ceo" : "",
   credits_used: C(used),
   pulled_at: ago(lifeH),
   /* 质保窗口 = 拉号后 30 分钟（vendor 档案里各家 10-30 分钟）
@@ -186,31 +186,31 @@ const mkCred = (
 });
 
 export const credentials: Credential[] = [
-  mkCred(1, "91kiro", 6400, 42, true, true, "bus_weekend"),
-  mkCred(2, "91kiro", 5800, 42, true, true, "bus_weekend"),
+  mkCred(1, "kiro91", 6400, 42, true, true, "bus_weekend"),
+  mkCred(2, "kiro91", 5800, 42, true, true, "bus_weekend"),
   mkCred(3, "kiroceo", 4100, 38, true, true, "bus_weekend"),
   mkCred(4, "kiroceo", 3700, 38, true, false, "bus_weekend", 0),   // 推送失败 · 401
   mkCred(5, "kirodrop", 8200, 31, true, true, "bus_weekend"),
   mkCred(6, "kirodrop", 10000, 22, false, false, "bus_weekend"),
-  mkCred(7, "91kiro", 2900, 28, true, true, "bus_weekend"),
+  mkCred(7, "kiro91", 2900, 28, true, true, "bus_weekend"),
   mkCred(8, "kiroceo", 5200, 24, true, true, "bus_weekend"),
   mkCred(9, "kiroceo", 4700, 24, true, true, "bus_weekend"),
-  mkCred(10, "91kiro", 7100, 19, true, false, "bus_weekend", 1),  // 推送失败 · 超时
+  mkCred(10, "kiro91", 7100, 19, true, false, "bus_weekend", 1),  // 推送失败 · 超时
   mkCred(11, "kirodrop", 3300, 16, true, true, "bus_weekend"),
   mkCred(12, "kirodrop", 2600, 16, true, true, "bus_weekend"),
   mkCred(13, "kirooo", 1800, 12, true, false, "bus_weekend"),
-  mkCred(14, "91kiro", 3100, 36, true, true, "bus_daily"),
-  mkCred(15, "91kiro", 2200, 36, true, true, "bus_daily"),
+  mkCred(14, "kiro91", 3100, 36, true, true, "bus_daily"),
+  mkCred(15, "kiro91", 2200, 36, true, true, "bus_daily"),
   mkCred(16, "kiroceo", 1500, 20, true, false, "bus_daily"),
   mkCred(17, "kiroceo", 900, 20, true, true, "bus_daily"),
   mkCred(18, "kirodrop", 4400, 28, true, true, "bus_kiro"),
   mkCred(19, "kirodrop", 3900, 28, true, true, "bus_kiro"),
-  mkCred(20, "91kiro", 5100, 26, true, true, "bus_kiro"),
+  mkCred(20, "kiro91", 5100, 26, true, true, "bus_kiro"),
   /* record group · owner_bus_id=null · 用户通过 /pull 拉的号，还没派去向
      `/pull-records` 页会列这批 · 派 3 种去向后此字段更新 */
   mkCred(21, "kirooo",  1200, 4,  true, false, null),
   mkCred(22, "kirooo",  980,  4,  true, false, null),
-  mkCred(23, "91kiro",  2200, 8,  true, false, null),
+  mkCred(23, "kiro91",  2200, 8,  true, false, null),
   mkCred(24, "kiroceo", 600,  2,  true, false, null),
   mkCred(25, "kirodrop",1450, 6,  true, false, null),
   /* 待派里的失效号 · decisions §8.25 —— 这两种是真实场景，必须能在 UI 上区分:
@@ -223,32 +223,32 @@ export const credentials: Credential[] = [
 /* ── 拉号历史 ── */
 
 export const pullRounds: PullRound[] = [
-  { id: "rd_01", vendor_id: "91kiro", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "success", count_requested: 5, count_purchased: 5, alive_count: 5, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(12), fail_reason: null, created_at: ago(0.5) },
+  { id: "rd_01", vendor_id: "kiro91", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "success", count_requested: 5, count_purchased: 5, alive_count: 5, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(12), fail_reason: null, created_at: ago(0.5) },
   { id: "rd_02", vendor_id: "kiroceo", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "partial", count_requested: 3, count_purchased: 3, alive_count: 2, dead_count: 1, push_state: "partial", push_ratio: "2/3", total_cost: -C(8), fail_reason: null, created_at: ago(2.7) },
   { id: "rd_03", vendor_id: "kirodrop", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "success", count_requested: 2, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(6), fail_reason: null, created_at: ago(7.8) },
   { id: "rd_04", vendor_id: "kirooo", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "failed", count_requested: 3, count_purchased: 0, alive_count: 0, dead_count: 0, push_state: "none", push_ratio: null, total_cost: 0, fail_reason: "缺货", created_at: ago(22) },
-  { id: "rd_05", vendor_id: "91kiro", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "success", count_requested: 2, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(6), fail_reason: null, created_at: ago(27) },
-  { id: "rd_06", vendor_id: "91kiro", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "success", count_requested: 1, count_purchased: 1, alive_count: 1, dead_count: 0, push_state: "none", push_ratio: null, total_cost: -C(4), fail_reason: null, created_at: ago(33) },
+  { id: "rd_05", vendor_id: "kiro91", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "success", count_requested: 2, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(6), fail_reason: null, created_at: ago(27) },
+  { id: "rd_06", vendor_id: "kiro91", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "success", count_requested: 1, count_purchased: 1, alive_count: 1, dead_count: 0, push_state: "none", push_ratio: null, total_cost: -C(4), fail_reason: null, created_at: ago(33) },
   { id: "rd_07", vendor_id: "kiroceo", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "success", count_requested: 2, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(7), fail_reason: null, created_at: ago(50) },
-  { id: "rd_08", vendor_id: "91kiro", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "partial", count_requested: 2, count_purchased: 1, alive_count: 1, dead_count: 1, push_state: "none", push_ratio: null, total_cost: -C(4), fail_reason: null, created_at: ago(58) },
+  { id: "rd_08", vendor_id: "kiro91", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "partial", count_requested: 2, count_purchased: 1, alive_count: 1, dead_count: 1, push_state: "none", push_ratio: null, total_cost: -C(4), fail_reason: null, created_at: ago(58) },
   { id: "rd_09", vendor_id: "kirodrop", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "success", count_requested: 2, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(5), fail_reason: null, created_at: ago(79) },
   { id: "rd_10", vendor_id: "kirooo", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "success", count_requested: 1, count_purchased: 1, alive_count: 1, dead_count: 0, push_state: "failed", push_ratio: null, total_cost: -C(8), fail_reason: null, created_at: ago(102) },
   { id: "rd_11", vendor_id: "kiroappio", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "refunded", count_requested: 1, count_purchased: 1, alive_count: 0, dead_count: 1, push_state: "none", push_ratio: null, total_cost: C(9), fail_reason: "30 分钟内失效 · 质保退款", created_at: ago(126) },
   { id: "rd_12", vendor_id: "kiroceo", bus_id: "bus_weekend", bus_name: "周末拼车局", result: "success", count_requested: 3, count_purchased: 3, alive_count: 3, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(10), fail_reason: null, created_at: ago(150) },
   /* 日常一号 · bus_daily */
-  { id: "rd_20", vendor_id: "91kiro",  bus_id: "bus_daily", bus_name: "日常一号", result: "success", count_requested: 2, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "pushed",  push_ratio: null,  total_cost: -C(8),  fail_reason: null, created_at: ago(3.2) },
+  { id: "rd_20", vendor_id: "kiro91",  bus_id: "bus_daily", bus_name: "日常一号", result: "success", count_requested: 2, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "pushed",  push_ratio: null,  total_cost: -C(8),  fail_reason: null, created_at: ago(3.2) },
   { id: "rd_21", vendor_id: "kiroceo", bus_id: "bus_daily", bus_name: "日常一号", result: "success", count_requested: 2, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "none",    push_ratio: null,  total_cost: -C(7),  fail_reason: null, created_at: ago(24) },
-  { id: "rd_22", vendor_id: "91kiro",  bus_id: "bus_daily", bus_name: "日常一号", result: "partial", count_requested: 3, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "partial", push_ratio: "2/3", total_cost: -C(8),  fail_reason: null, created_at: ago(76) },
+  { id: "rd_22", vendor_id: "kiro91",  bus_id: "bus_daily", bus_name: "日常一号", result: "partial", count_requested: 3, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "partial", push_ratio: "2/3", total_cost: -C(8),  fail_reason: null, created_at: ago(76) },
   /* Kiro 常驻车 · bus_kiro · 手动模式，拉号频率低 */
-  { id: "rd_30", vendor_id: "91kiro",  bus_id: "bus_kiro",  bus_name: "Kiro 常驻车", result: "success", count_requested: 2, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(8),  fail_reason: null, created_at: ago(18) },
+  { id: "rd_30", vendor_id: "kiro91",  bus_id: "bus_kiro",  bus_name: "Kiro 常驻车", result: "success", count_requested: 2, count_purchased: 2, alive_count: 2, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(8),  fail_reason: null, created_at: ago(18) },
   { id: "rd_31", vendor_id: "kirodrop", bus_id: "bus_kiro",  bus_name: "Kiro 常驻车", result: "success", count_requested: 3, count_purchased: 3, alive_count: 3, dead_count: 0, push_state: "pushed", push_ratio: null, total_cost: -C(9),  fail_reason: null, created_at: ago(52) },
 ];
 
 /* ── 上游库存（PullExtractModal 上游即时状态面板） · docs/14 §4.3 ── */
 
 export const vendorStocks: Record<string, VendorStock> = {
-  "91kiro": {
-    vendor_id: "91kiro",
+  "kiro91": {
+    vendor_id: "kiro91",
     currency: "credits",
     warranty_minutes: 10,
     max_per_order: 200,
@@ -323,7 +323,7 @@ export const vendorStocks: Record<string, VendorStock> = {
 /* ── 我方历史统计（近 30 天） ── */
 
 export const vendorHistories: Record<string, VendorHistory> = {
-  "91kiro":    { vendor_id: "91kiro",    avg_lifespan_seconds: 12 * 3600, alive_rate_30d: 87, total_pulled_30d: 142 },
+  "kiro91":    { vendor_id: "kiro91",    avg_lifespan_seconds: 12 * 3600, alive_rate_30d: 87, total_pulled_30d: 142 },
   "kiroceo":   { vendor_id: "kiroceo",   avg_lifespan_seconds: 18 * 3600, alive_rate_30d: 92, total_pulled_30d: 78  },
   "kirooo":    { vendor_id: "kirooo",    avg_lifespan_seconds: 4  * 3600, alive_rate_30d: 62, total_pulled_30d: 210 },
   "kiroappio": { vendor_id: "kiroappio", avg_lifespan_seconds: 24 * 3600, alive_rate_30d: 94, total_pulled_30d: 45  },
@@ -344,9 +344,9 @@ export function autoPick(zone: Zone | "auto", waived: boolean): AutoPickResult {
 
   if (candidates.length === 0) {
     /* 全网缺货 · 返回一个空壳让 UI 显示缺货态 */
-    const s = vendorStocks["91kiro"];
+    const s = vendorStocks["kiro91"];
     return {
-      vendor_label: "", vendor_id: "91kiro", zone: zone === "auto" ? "us" : zone,
+      vendor_label: "", vendor_id: "kiro91", zone: zone === "auto" ? "us" : zone,
       available: 0, unit_price: finalPrice(s.zones[0].unit_price, waived),
       warranty_minutes: s.warranty_minutes, max_per_order: s.max_per_order,
       min_per_order: s.min_per_order,
@@ -417,7 +417,7 @@ function mulberry32(seed: number) {
  *  noService = 某天完全不发车的概率
  *  roundsB   = 日均发车轮数基线（有的家车多，有的家一天就一两轮） */
 const VOL: Record<string, { range: number; noService: number; roundsB: number }> = {
-  "91kiro":   { range: 0.14, noService: 0.02, roundsB: 4 },
+  "kiro91":   { range: 0.14, noService: 0.02, roundsB: 4 },
   kiroceo:    { range: 0.09, noService: 0.03, roundsB: 2 },
   kirooo:     { range: 0.22, noService: 0.07, roundsB: 6 },   // 振幅最大 · 车最多
   kiroappio:  { range: 0.06, noService: 0.00, roundsB: 1 },   // 最稳 · 一天基本 1 轮
@@ -574,7 +574,7 @@ export const extractEvents: ExtractEvent[] = [
   { id: "ee_03", created_at: ago(6.0),  vendor_id: "kiroappcc", zone: null, count_requested: 2, count_purchased: 2, total_cost: -C(10), result: "success", fail_reason: null, assigned_count: 2, pending_count: 0 },
   { id: "ee_04", created_at: ago(9.7),  vendor_id: "kirooo",    zone: "us", count_requested: 3, count_purchased: 0, total_cost: 0,      result: "failed",  fail_reason: "缺货", assigned_count: 0, pending_count: 0 },
   { id: "ee_05", created_at: ago(22.3), vendor_id: "kirodrop",  zone: "us", count_requested: 2, count_purchased: 2, total_cost: -C(9),  result: "success", fail_reason: null, assigned_count: 2, pending_count: 0 },
-  { id: "ee_06", created_at: ago(28.1), vendor_id: "91kiro",    zone: "us", count_requested: 5, count_purchased: 2, total_cost: -C(6),  result: "partial", fail_reason: null, assigned_count: 2, pending_count: 0 },
+  { id: "ee_06", created_at: ago(28.1), vendor_id: "kiro91",    zone: "us", count_requested: 5, count_purchased: 2, total_cost: -C(6),  result: "partial", fail_reason: null, assigned_count: 2, pending_count: 0 },
   { id: "ee_07", created_at: ago(50.5), vendor_id: "kiroappio", zone: "eu", count_requested: 1, count_purchased: 1, total_cost: -C(4),  result: "success", fail_reason: null, assigned_count: 1, pending_count: 0 },
   { id: "ee_08", created_at: ago(74.0), vendor_id: "kiroceo",   zone: "us", count_requested: 3, count_purchased: 3, total_cost: -C(15), result: "success", fail_reason: null, assigned_count: 3, pending_count: 0 },
 ];
@@ -627,19 +627,19 @@ export const assignEvents: AssignEvent[] = [
   {
     id: "ae_04", created_at: ago(22.0), destination: "into_bus",
     bus_id: "bus_kiro", bus_name: "Kiro 常驻车", count: 2,
-    target_host: null, vendors: ["kirodrop", "91kiro"],
+    target_host: null, vendors: ["kirodrop", "kiro91"],
     keys: [
       mkKey("kirodrop", "3a91hb4", "us-east-1", 4.8, 18.2),
-      mkKey("91kiro", "8b6cjd7", "us-east-1", 5.5, 18.2),
+      mkKey("kiro91", "8b6cjd7", "us-east-1", 5.5, 18.2),
     ],
   },
   {
     id: "ae_05", created_at: ago(28.0), destination: "push_pool",
     bus_id: null, bus_name: null, count: 2,
-    target_host: "kiro-my.example.com", vendors: ["91kiro"],
+    target_host: "kiro-my.example.com", vendors: ["kiro91"],
     keys: [
-      mkKey("91kiro", "4c22ls0", "us-east-1", 7.1, 24.6),
-      mkKey("91kiro", "5d8eqf2", "us-east-1", 6.4, 24.6),
+      mkKey("kiro91", "4c22ls0", "us-east-1", 7.1, 24.6),
+      mkKey("kiro91", "5d8eqf2", "us-east-1", 6.4, 24.6),
     ],
   },
   {
@@ -666,7 +666,7 @@ export const activities: Activity[] = [
   // 号流转（走 vendor → 车/号池 双 badge）· target 简洁一点，箭头承担"去向"语义
   { id: "a1", kind: "extract",  source: vl("kirodrop"),   target: "我的号池",     target_kind: "push_pool",  count: 2,  count_unit: "个 key", summary: `${vl("kirodrop")} → 我的号池`,             amount: -C(6),   created_at: ago(0.5), link: "/extract" },
   { id: "a2", kind: "push",     source: "号池",         target: "我的号池",     target_kind: "push_pool",  count: 2,  count_unit: "个号",   summary: "号池 → 我的号池",                   amount: null,    created_at: ago(0.6), link: "/settings/downstream" },
-  { id: "a3", kind: "into_bus", source: vl("91kiro"), target: "Kiro 常驻车",   target_kind: "into_bus",   count: 3,  count_unit: "个号",   summary: `${vl("91kiro")} → Kiro 常驻车`,         amount: -C(8),   created_at: ago(1),   link: "/buses/bus_kiro" },
+  { id: "a3", kind: "into_bus", source: vl("kiro91"), target: "Kiro 常驻车",   target_kind: "into_bus",   count: 3,  count_unit: "个号",   summary: `${vl("kiro91")} → Kiro 常驻车`,         amount: -C(8),   created_at: ago(1),   link: "/buses/bus_kiro" },
   { id: "a5", kind: "into_bus", source: vl("kiroceo"),    target: "周末拼车局",    target_kind: "into_bus",   count: 5,  count_unit: "个号",   summary: `${vl("kiroceo")} → 周末拼车局`,             amount: -C(12),  created_at: ago(2.7), link: "/buses/bus_weekend" },
   { id: "a7", kind: "extract",  source: vl("kirooo"),    target: "待派",          target_kind: "pending",    count: 10, count_unit: "个 key", summary: `${vl("kirooo")} → 待派`,                   amount: -C(25),  created_at: ago(4.3), link: "/extract" },
 
@@ -681,7 +681,7 @@ export const activities: Activity[] = [
 
 /* avg_credits_per_cred = 每号平均能用多少积分才挂 · warranty_count = 被 30 分钟内挂退款的次数 */
 export const vendorStats: VendorStat[] = [
-  { vendor_id: "91kiro",    rank: 1, unit_price: C(20),   avg_lifespan_seconds: 42 * 3600, effective_cost: 0.48, avg_credits_per_cred: C(8200), warranty_count: 0, alive_rate: 98, pulls_today: 12, fallback_count: 0, out_of_stock: false },
+  { vendor_id: "kiro91",    rank: 1, unit_price: C(20),   avg_lifespan_seconds: 42 * 3600, effective_cost: 0.48, avg_credits_per_cred: C(8200), warranty_count: 0, alive_rate: 98, pulls_today: 12, fallback_count: 0, out_of_stock: false },
   { vendor_id: "kiroceo",   rank: 2, unit_price: C(18.5), avg_lifespan_seconds: 36 * 3600, effective_cost: 0.51, avg_credits_per_cred: C(6800), warranty_count: 0, alive_rate: 95, pulls_today: 8,  fallback_count: 0, out_of_stock: false },
   { vendor_id: "kirooo",    rank: 3, unit_price: C(22),   avg_lifespan_seconds: 38 * 3600, effective_cost: 0.58, avg_credits_per_cred: C(5900), warranty_count: 1, alive_rate: 92, pulls_today: 3,  fallback_count: 1, out_of_stock: false },
   { vendor_id: "kirodrop",  rank: 4, unit_price: C(15),   avg_lifespan_seconds: 22 * 3600, effective_cost: 0.68, avg_credits_per_cred: C(3800), warranty_count: 2, alive_rate: 88, pulls_today: 5,  fallback_count: 2, out_of_stock: false },
@@ -691,7 +691,7 @@ export const vendorStats: VendorStat[] = [
 
 /* 6 家 vendor 全列，跟 vendorStats 一一对应 · pulls=0 前端渲染成 "-" 而不是 "0 次" */
 export const vendorShare: VendorShare[] = [
-  { vendor_id: "91kiro",    pulls: 12, ratio: 0.43 },
+  { vendor_id: "kiro91",    pulls: 12, ratio: 0.43 },
   { vendor_id: "kiroceo",   pulls: 8,  ratio: 0.28 },
   { vendor_id: "kirodrop",  pulls: 5,  ratio: 0.18 },
   { vendor_id: "kirooo",    pulls: 3,  ratio: 0.11 },
@@ -745,7 +745,7 @@ const SCOPE_SHIFT: Record<string, { off: number; k: number }> = {
   bus_weekend: { off: 0, k: 0.55 },
   bus_daily: { off: 7, k: 0.20 },
   bus_kiro: { off: 14, k: 0.25 },
-  "91kiro": { off: 3, k: 0.42 },
+  "kiro91": { off: 3, k: 0.42 },
   kiroceo: { off: 10, k: 0.28 },
   kirooo: { off: 18, k: 0.18 },
   kirodrop: { off: 21, k: 0.22 },
@@ -833,7 +833,7 @@ export const globalStrategy: GlobalStrategy = {
   /* 1f-refactor(migration 040) · 全局跨车调度护栏 · 3 个真正全局才能表达的 */
   auto_refill_daily_budget: C(300),           // 所有 auto 车加起来一天最多 300 积分
   auto_refill_min_wallet_reserve: C(50),      // 钱包低于 50 积分时所有 auto 车暂停
-  auto_refill_vendor_allowlist: ["91kiro", "kiroceo"],  // 自动补车只从这两家拉
+  auto_refill_vendor_allowlist: ["kiro91", "kiroceo"],  // 自动补车只从这两家拉
   /* 今日已用 · 拿 mock 里今天的拉号轮次和消费凑，别硬编一个跟别处矛盾的数 */
   used_today: {
     rounds: pullRounds.filter((r) => Date.now() - new Date(r.created_at).getTime() < 24 * 3600_000).length,

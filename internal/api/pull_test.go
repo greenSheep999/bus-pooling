@@ -77,6 +77,12 @@ func (p *mockPool) BatchImport(_ context.Context, req housepool.BatchImportReque
 	return &housepool.BatchImportResult{Events: ev, Summary: sum, Err: func() error { return nil }}, nil
 }
 
+// UpdateCredential · 测试桩 · 满足 PoolClient 接口即可
+func (p *mockPool) UpdateCredential(_ context.Context, _ housepool.CredentialID, _ housepool.CredentialPatch) error {
+	return nil
+}
+
+
 // pullEnv 起一个装了 decider 的 env，乘客已充好钱。
 func pullEnv(t *testing.T, balance int64) (*testEnv, *mockVendor, func(*http.Request)) {
 	t.Helper()

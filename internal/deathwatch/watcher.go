@@ -112,22 +112,23 @@ func (w *Watcher) SetRefillEnqueuer(e RefillEnqueuer) {
 // 重构造 decider.PullInput 并调用。
 //
 // 返 (fulfilled bool, err error)：
-//   fulfilled=true · err=nil  → 补车成功 · pending_refill 标 fulfilled
-//   fulfilled=false · err=nil → vendor 缺货 · 挂号或跳过 · 保 pending 等下轮
-//   fulfilled=?    · err!=nil → 硬错 · attempts++ · 3 次后 expired
+//
+//	fulfilled=true · err=nil  → 补车成功 · pending_refill 标 fulfilled
+//	fulfilled=false · err=nil → vendor 缺货 · 挂号或跳过 · 保 pending 等下轮
+//	fulfilled=?    · err!=nil → 硬错 · attempts++ · 3 次后 expired
 type RefillPuller interface {
 	Refill(ctx context.Context, req RefillRequest) (fulfilled bool, err error)
 }
 
 // RefillRequest · 从 pending_refill 一条记录拿出的字段 · 上层装配 puller 用
 type RefillRequest struct {
-	RefillID     string             // pending_refill.id · 幂等键
-	PassengerID  string
-	BusID        string             // 空 = 单独提取
-	Count        int
-	VendorID     string             // 可空 · 让 decider auto-pick
+	RefillID    string // pending_refill.id · 幂等键
+	PassengerID string
+	BusID       string // 空 = 单独提取
+	Count       int
+	VendorID    string // 可空 · 让 decider auto-pick
 	// v1d-3 · 从 Decide 传下来的护栏字段
-	MaxUnitPrice int64              // microunit · 0 = 不限
+	MaxUnitPrice int64 // microunit · 0 = 不限
 }
 
 // RefillDecide · 第三刀 · Decide 接口注入(避免 deathwatch → decider 硬依赖)
@@ -174,7 +175,7 @@ type RefillVerdict struct {
 type RefillAction int
 
 const (
-	RefillReject  RefillAction = iota
+	RefillReject RefillAction = iota
 	RefillPull
 	RefillEnqueue
 )
@@ -298,6 +299,10 @@ func (w *Watcher) SweepOnce(ctx context.Context) SweepReport {
 			return rep
 		}
 		cred := &creds[i]
+		// 落 credential_usage_snapshot（§12.5a · 前端号详情进度条数据源）·
+		// 顺手兜底 credential_ledger.subscription（NULL 时才写）·
+		// **不写 credits_used** —— 那列由 markDead 一次性快照（§12.5c）
+		w.refreshUsageSnapshot(ctx, cred)
 		w.classify(ctx, cred, &rep)
 	}
 	return rep
@@ -345,14 +350,22 @@ func (w *Watcher) classify(ctx context.Context, cred *housepool.Credential, rep 
 // 用 kiro_rs_credential_id 匹配，因为号池只知道自己那侧的 u64 id。
 func (w *Watcher) markDead(ctx context.Context, cred *housepool.Credential, rep *SweepReport) {
 	now := w.now().UTC()
+	// A · 死号那一刻的用量快照（docs/06-db-schema §12.5c）· 落 credential_ledger.credits_used
+	// 之后**永不变更**（快照语义）· 用于事后归因"死时用到多少"、算平均寿命对应用量。
+	// housepool 侧 Balance.currentUsage 单位是"vendor 侧积分"（float）· 转 microunit 存。
+	var usedMicro int64
+	if cred.Balance != nil {
+		usedMicro = int64(cred.Balance.CurrentUsage * 1_000_000)
+	}
 	res, err := w.db.ExecContext(ctx, `
 		UPDATE credential_ledger
 		   SET status = 'dead',
 		       dead_at = ?,
-		       death_source = 'housepool_probe'
+		       death_source = 'housepool_probe',
+		       credits_used = ?
 		 WHERE kiro_rs_credential_id = ?
 		   AND status = 'alive'
-	`, formatTime(now), uint64(cred.ID))
+	`, formatTime(now), usedMicro, uint64(cred.ID))
 	if err != nil {
 		w.log.Error("deathwatch 标死 SQL 失败", "cred_id", uint64(cred.ID), "err", err)
 		rep.Errors++

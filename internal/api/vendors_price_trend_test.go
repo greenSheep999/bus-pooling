@@ -43,7 +43,9 @@ func TestLoadPriceTrend_Empty(t *testing.T) {
 // 3 家 source × 2 zone · 按小时聚合
 func TestLoadPriceTrend_GroupsByHourAndSource(t *testing.T) {
 	sqldb := setupTrendDB(t)
-	now := time.Date(2026, 8, 15, 12, 30, 0, 0, time.UTC)
+	// 用 time.Now() 相对时间 · 别硬编日期（loadPriceTrend 内部拿 time.Now() 算 cutoff·
+	// 硬编日期会随真实时钟漂移出窗口 · 老 bug 修）
+	now := time.Now().UTC().Truncate(time.Hour).Add(-30 * time.Minute)
 	// 同小时内 us / vendor_self 两条 · 应聚成 1 个 point · samples=2
 	for i, at := range []time.Time{
 		now.Add(-1 * time.Hour),           // 11:30

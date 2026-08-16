@@ -40,6 +40,9 @@ type wireCredential struct {
 	AccruedCost       *float64 `json:"accruedCost"`
 	BilledRequests    *uint64  `json:"billedRequests"`
 	CreatedAt         *string  `json:"createdAt"`
+	// Balance · ListCredentials 每条 credential 内嵌一份 balance（上游 1.8.3+ 起就有）·
+	// 之前 mapper 没接 · deathwatch 拿不到用量 → snapshot 永远为空
+	Balance *wireBalance `json:"balance"`
 }
 
 type wireBalance struct {

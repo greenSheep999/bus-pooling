@@ -2,7 +2,7 @@ package main
 
 // seed_credplain · 手动往 credential_plaintext 表塞一份加密明文
 //
-// 用途: 手动 BatchImport 到 kiro.rs 的号 · bus-pooling 侧从来不知道明文 ·
+// 用途: 手动 BatchImport 到 housepool 后端 的号 · bus-pooling 侧从来不知道明文 ·
 // 用这个 CLI 补一下 · 让 push_pool / handoff 能拿到真明文 · 不走 placeholder
 //
 // 用法(vps22 上 · docker compose run):

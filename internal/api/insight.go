@@ -7,6 +7,7 @@ import (
 
 	"github.com/bus-pooling/bus-pooling/internal/bus"
 	"github.com/bus-pooling/bus-pooling/internal/insight"
+	"github.com/bus-pooling/bus-pooling/internal/vendorview"
 )
 
 // 聚合读端点 · 首页 / 数据 tab / 活动流 / 价格走势
@@ -101,7 +102,10 @@ func handleTrendWith(rdr insightReader, buses busChecker) handler {
 }
 
 // handleActivitiesWith 构造 GET /api/me/activities 的 handler。
-func handleActivitiesWith(rdr insightReader) handler {
+//
+// **§0.1 · vendor 匿名化必须在服务端做** —— activities 的 Source 直接是 vendor_id ·
+// Summary 里也拼了真名（insight/activities.go）· 不匿名化会漏给 retail / community 档。
+func (s *Server) handleActivitiesWith(rdr insightReader) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		p, err := mustCaller(r)
 		if err != nil {
@@ -123,12 +127,39 @@ func handleActivitiesWith(rdr insightReader) handler {
 		if items == nil {
 			items = []insight.Activity{}
 		}
+		// § 0.1 · 匿名化 · 每条 activity 里的 vendor 真名 → 匿名 label
+		// wholesale 档看真名 · 其他档看 "AWS-Q Kiro Vendor NN"
+		if s.vendorView != nil {
+			viewer := viewerOf(p, r)
+			for i := range items {
+				items[i] = anonymizeActivity(items[i], s.vendorView, viewer)
+			}
+		}
 		pages := (total + pageSize - 1) / pageSize
 		writeJSON(w, http.StatusOK, map[string]any{
 			"items": items, "total": total, "page": page, "page_size": pageSize, "pages": pages,
 		})
 		return nil
 	}
+}
+
+// anonymizeActivity · 单条 activity 的 vendor 名 → 匿名 label 转换
+// 判据:Source 长得像 vendor_id(在 vendorview.AnonIDFor 能找到编号)· 就替换成 label
+// Summary 用 strings.Replace 把真名替换掉
+func anonymizeActivity(a insight.Activity, vsvc *vendorview.Service, v vendorview.Viewer) insight.Activity {
+	if vsvc == nil {
+		return a
+	}
+	// Source 可能是 vendor_id · 也可能是 bus_id 或别的东西 · 只在能匿名化时替换
+	if a.Source != "" {
+		anonLabel := vsvc.LabelFor(a.Source, v)
+		if anonLabel != "" && anonLabel != a.Source {
+			// 先替换 Summary 里的真名(Summary 里可能出现"<vendor 真名> · 拉 1 个")
+			a.Summary = strings.ReplaceAll(a.Summary, a.Source, anonLabel)
+			a.Source = anonLabel
+		}
+	}
+	return a
 }
 
 // vendorPriceTrendResp 单家 vendor 的价格走势响应块。字段跟 types.ts 的

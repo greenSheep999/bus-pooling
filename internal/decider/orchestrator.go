@@ -52,9 +52,18 @@ type Orchestrator struct {
 	balanceChecker BalanceChecker
 	// pullNotifier · 1e-2 · settle 成功后通知对外 webhook · nil = 不通知(1a 兼容)
 	pullNotifier PullSuccessNotifier
+	// marketStock · 手工池 SellTx 入口 · nil = 不接第 7 家 vendor（老装配兼容）·
+	// 有则 settle 里号进 ledger 的同 tx 会把对应 stock_item 从 reserved 转 sold。
+	marketStock MarketStockSeller
 	// now / newID 可注入，测试里用来控时钟和 id 生成
 	now   func() time.Time
 	newID func() string
+}
+
+// MarketStockSeller · 手工池"卖号"的抽象 · 避免 decider → marketstock 硬依赖。
+// 实现方 *marketstock.Store · settle 里跟 credential_ledger.INSERT 同 tx 调。
+type MarketStockSeller interface {
+	SellTx(ctx context.Context, tx *sql.Tx, stockItemID, ledgerID string) error
 }
 
 // PullSuccessNotifier · 拉号成功事件通知(避免 decider → webhookout 硬依赖)。
@@ -158,6 +167,9 @@ type Config struct {
 	Picker VendorPicker
 	// BalanceChecker · 上游余额预检（P5）· nil = 不预检（老行为 · 测试默认）
 	BalanceChecker BalanceChecker
+	// MarketStock · 我方第 7 家手工池 seller · nil = 未接入手工池
+	// 装配层传 *marketstock.Store（它满足 MarketStockSeller 接口）
+	MarketStock MarketStockSeller
 }
 
 func New(cfg Config) *Orchestrator {
@@ -171,19 +183,20 @@ func New(cfg Config) *Orchestrator {
 		}
 	}
 	return &Orchestrator{
-		db:            cfg.DB,
-		state:         cfg.State,
-		vendors:       vendors,
-		defaultVendor: cfg.Vendor,
-		pool:          cfg.Pool,
-		rates:         cfg.Rates,
-		pricing:       cfg.Pricing,
-		credits:       cfg.Credits,
-		ratesResolver: cfg.RatesResolver,
-		limits:        cfg.Limits,
-		enqueuer:      cfg.Enqueuer,
+		db:             cfg.DB,
+		state:          cfg.State,
+		vendors:        vendors,
+		defaultVendor:  cfg.Vendor,
+		pool:           cfg.Pool,
+		rates:          cfg.Rates,
+		pricing:        cfg.Pricing,
+		credits:        cfg.Credits,
+		ratesResolver:  cfg.RatesResolver,
+		limits:         cfg.Limits,
+		enqueuer:       cfg.Enqueuer,
 		picker:         cfg.Picker,
 		balanceChecker: cfg.BalanceChecker,
+		marketStock:    cfg.MarketStock,
 		now:            func() time.Time { return time.Now().UTC() },
 		newID:          uuid.NewString,
 	}
@@ -313,6 +326,17 @@ type PullInput struct {
 	// **decider 不重新判上限** —— api 层 strategy.CanPull 已经判过。这里带进来只为
 	// 缺货挂单时存进 stock_watcher · fire 时能继续守住同一个上限（涨价保护）。
 	MaxUnitPrice int64
+
+	// AccountKind 本轮买哪种货架 · 空 = enterprise（老调用方行为不变）。
+	//
+	// 手动拉号时是**硬约束** —— 用户点了"拉个人号"就不能因为个人号缺货去买企业号
+	// （docs/24 §7）。自动补车路径由上层按车级 allowed_categories 解析后传具体值。
+	AccountKind providers.AccountKind
+	// Plan 请求的订阅档 · 空 = 不指定。只在 vendor 支持买前选档时有意义
+	// （Capability.SelectablePlans）· 否则档位靠导入后号池回报。
+	Plan providers.SubscriptionPlan
+	// Source 号的提供方（用户视角"这号是谁提的"）· 我方手工上架的货源填运营标识
+	Source string
 }
 
 // PullResult 是**对外**结果（跟 05-api-contract §5 的 POST /me/pull 响应一致）。
@@ -412,7 +436,11 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 	}
 
 	// ── ① 估价 + 冻结（initial → reserved） ────────────────
-	stock, err := vendor.Stock(ctx, providers.StockOptions{Zone: nonZeroZone(in.Zone)})
+	stock, err := vendor.Stock(ctx, providers.StockOptions{
+		Zone: nonZeroZone(in.Zone),
+		// 两个池价和库存都不同 · 估价必须查对池（docs/24 §1）
+		Kind: in.AccountKind.Normalize(),
+	})
 	if err != nil {
 		return nil, translateVendorErr(err)
 	}
@@ -525,6 +553,10 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 		ClientOrderID:       clientOrderID,
 		CountRequested:      in.Count,
 		ReservedAmount:      reserved,
+		// Offer 维度落库 · 崩溃恢复重放时要用同一个 kind（migration 046）
+		AccountKind: in.AccountKind.Normalize(),
+		Plan:        in.Plan,
+		Source:      in.Source,
 	}
 	pendingID, err := o.state.Create(ctx, pending)
 	if err != nil {
@@ -553,6 +585,8 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 		// 涨价保护 · 把用户的**积分**上限换回 vendor 报价币种（部分 vendor 原生支持 ·
 		// 不支持的 adapter 忽略这个字段）。见 vendorMaxTotal 说明。
 		MaxTotal: vendorCap,
+		// **必须跟估价时同一个 kind** —— 用企业价估、按个人池下单会实扣不符
+		Kind: in.AccountKind.Normalize(),
 	})
 	if err != nil {
 		// 崩在这里的**不能**回 reserved 释放 —— vendor 可能已扣款。留在 purchasing，janitor 接手。
@@ -572,7 +606,9 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 	}
 
 	// ── ③ 号入池（purchased → imported） ─────────────────────
-	credIDs, err := o.importToPool(ctx, pending.TargetGroup, purchase)
+	// 用 WithMeta 版本 —— 号池回报的 subscription 是档位的唯一权威来源
+	// （多数 vendor 买前不给档位）· 要一路带到 settle 落库
+	imported, err := o.importToPoolWithMeta(ctx, pending.TargetGroup, purchase)
 	if err != nil {
 		_ = o.state.AdvanceWith(ctx, pendingID, StatusPurchased, StatusNeedManual,
 			Fields{Error: err.Error()})
@@ -583,7 +619,7 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 	}
 
 	// ── ④ 落账 + 落库 + 完成（imported → completed） ─────────
-	out, err := o.settle(ctx, pendingID, pending, purchase, credIDs, reservePlan)
+	out, err := o.settleWithMeta(ctx, pendingID, pending, purchase, imported, reservePlan)
 	if err != nil {
 		return nil, err
 	}

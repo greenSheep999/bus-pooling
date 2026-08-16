@@ -25,9 +25,12 @@ jobs:
 
       - name: go test
         # DRY_RUN=1：CI 里绝不真实调 vendor（会扣钱）
+        # -timeout 30m · -race 让 SQLite 慢 3-5x · api 包 300+ 测试单包 20 分钟才够
+        # 老 CI 默认 10 分钟 · billing 恢复后跑的第一次因为 timeout 挂了 · 拉大
+        # 后续优化 · setupTestDB 加 template db cache 减 migration 时间
         env:
           DRY_RUN: "1"
-        run: go test -race ./...
+        run: go test -race -timeout 30m ./...
 
       - name: 敏感字扫描
         # 交付验收要求（sprint-1a-backend）· 明文凭证不许进仓库

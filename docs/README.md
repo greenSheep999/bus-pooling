@@ -94,13 +94,14 @@ archive/sprint-1e-backend.md    阶段 1e 后端(推 passengerpool 双写 + 对�
 archive/sprint-1f-scope.md      阶段 1f(策略收口 + Effective() 唯一入口 + /docs 扩 · 已归档)
 ```
 
-### C 衍生 · 4 份 · 独立子系统方案 · 落码后合回 A
+### C 衍生 · 5 份 · 独立子系统方案 · 落码后合回 A
 
 ```
 20-page-extract.md            提取页方案 → 落码后合回 12-frontend-pages
 21-page-prices.md             价格页设计 → 落码后合回 12-frontend-pages
 22-buy-race.md                抢号链子系统 → 落码后合回 09-transactions + decisions §11.15
 23-endpoints-todo.md          端点补接施工蓝图 → 消化完删
+24-category-subscription.md   Offer 模型(vendor×category×subscription×zone) → 接完后拆回各主文档
 ```
 
 **C 类文件顶端**应标"归回目标 + 到期日"· 到期未归档 = 触发重整。

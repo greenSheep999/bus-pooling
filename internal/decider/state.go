@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/bus-pooling/bus-pooling/internal/providers"
 )
 
 // Status 是 pending_purchase 的状态。取值跟 06-db-schema §20 的 CHECK 约束一致。
@@ -56,13 +58,26 @@ type Pending struct {
 	ReservedAmount int64
 	// ReserveSplit 多人车这轮谁冻了多少（microunit）· 空 = 单人（老数据也是空）
 	// settle 和崩溃恢复都要它才知道"该退给谁多少"（migration 017）
-	ReserveSplit map[string]int64
+	ReserveSplit  map[string]int64
 	Status        Status
 	VendorOrderID string
 	PullRoundID   string
 	Error         string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+
+	// AccountKind 本轮买哪种货架（enterprise / personal）· 空 = enterprise（老数据）
+	//
+	// **必须落库** —— 崩溃恢复重放 Purchase 时要用同一个 kind，否则会去错的池子
+	// 下单（两池价和库存都不同 · docs/24 §1）。
+	AccountKind providers.AccountKind
+	// Plan 本轮请求的订阅档 · 空 = 不指定（多数 vendor 买前不能选 · 见 Capability.SelectablePlans）
+	//
+	// ⚠️ 这是**请求意图**。号的**实际**档位以号池 BatchImport 回报为准
+	// （落 credential_ledger.subscription）· 两者可能不同。
+	Plan providers.SubscriptionPlan
+	// Source 号的提供方（用户视角的"这号是谁提的"）· 空 = 不记
+	Source string
 }
 
 // SplitPlanFromReserve 把落库的 reserve_split 还原成 SplitPlan（崩溃恢复用）。
@@ -108,11 +123,14 @@ func (s *Store) Create(ctx context.Context, p Pending) (string, error) {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO pending_purchase
 		  (id, idempotency_record_id, passenger_id, bus_id, target_group, vendor_id,
-		   client_order_id, count_requested, reserved_amount, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		   client_order_id, count_requested, reserved_amount, status, created_at, updated_at,
+		   account_kind, plan, source)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID, p.IdempotencyRecordID, p.PassengerID, nullIfEmpty(p.BusID), p.TargetGroup,
 		p.VendorID, p.ClientOrderID, p.CountRequested, p.ReservedAmount,
-		string(StatusInitial), formatTime(now), formatTime(now))
+		string(StatusInitial), formatTime(now), formatTime(now),
+		// account_kind 必须落库 · 崩溃恢复重放 Purchase 要用同一个池（migration 046）
+		string(p.AccountKind.Normalize()), nullIfEmpty(string(p.Plan)), nullIfEmpty(p.Source))
 	if err != nil {
 		return "", fmt.Errorf("decider: 写 pending_purchase: %w", err)
 	}
@@ -196,7 +214,8 @@ const selectPending = `
 	SELECT id, idempotency_record_id, passenger_id, COALESCE(bus_id, ''), target_group,
 	       vendor_id, client_order_id, count_requested, reserved_amount, status,
 	       COALESCE(vendor_order_id, ''), COALESCE(pull_round_id, ''), COALESCE(error, ''),
-	       created_at, updated_at, COALESCE(reserve_split_json, '')
+	       created_at, updated_at, COALESCE(reserve_split_json, ''),
+	       COALESCE(account_kind, ''), COALESCE(plan, ''), COALESCE(source, '')
 	  FROM pending_purchase`
 
 // decodeReserveSplit 解 reserve_split_json · 空串 / 坏 JSON 返 nil（退回单人语义）。
@@ -214,9 +233,11 @@ func decodeReserveSplit(raw string) map[string]int64 {
 func (s *Store) scanOne(row *sql.Row) (*Pending, error) {
 	var p Pending
 	var status, createdAt, updatedAt, splitJSON string
+	var kind, plan, source string
 	err := row.Scan(&p.ID, &p.IdempotencyRecordID, &p.PassengerID, &p.BusID, &p.TargetGroup,
 		&p.VendorID, &p.ClientOrderID, &p.CountRequested, &p.ReservedAmount, &status,
-		&p.VendorOrderID, &p.PullRoundID, &p.Error, &createdAt, &updatedAt, &splitJSON)
+		&p.VendorOrderID, &p.PullRoundID, &p.Error, &createdAt, &updatedAt, &splitJSON,
+		&kind, &plan, &source)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrPendingNotFound
 	}
@@ -227,6 +248,10 @@ func (s *Store) scanOne(row *sql.Row) (*Pending, error) {
 	p.CreatedAt = parseTime(createdAt)
 	p.UpdatedAt = parseTime(updatedAt)
 	p.ReserveSplit = decodeReserveSplit(splitJSON)
+	// 老数据 account_kind 为空 → Normalize() 时按 enterprise 处理
+	p.AccountKind = providers.AccountKind(kind)
+	p.Plan = providers.SubscriptionPlan(plan)
+	p.Source = source
 	return &p, nil
 }
 
@@ -247,15 +272,21 @@ func (s *Store) FindStale(ctx context.Context, status Status, olderThan time.Dur
 	for rows.Next() {
 		var p Pending
 		var st, createdAt, updatedAt, splitJSON string
+		var kind, plan, source string
 		if err := rows.Scan(&p.ID, &p.IdempotencyRecordID, &p.PassengerID, &p.BusID, &p.TargetGroup,
 			&p.VendorID, &p.ClientOrderID, &p.CountRequested, &p.ReservedAmount, &st,
-			&p.VendorOrderID, &p.PullRoundID, &p.Error, &createdAt, &updatedAt, &splitJSON); err != nil {
+			&p.VendorOrderID, &p.PullRoundID, &p.Error, &createdAt, &updatedAt, &splitJSON,
+			&kind, &plan, &source); err != nil {
 			return nil, err
 		}
 		p.ReserveSplit = decodeReserveSplit(splitJSON)
 		p.Status = Status(st)
 		p.CreatedAt = parseTime(createdAt)
 		p.UpdatedAt = parseTime(updatedAt)
+		// 崩溃恢复要用原来那个 kind 重放 Purchase（别去错的池）
+		p.AccountKind = providers.AccountKind(kind)
+		p.Plan = providers.SubscriptionPlan(plan)
+		p.Source = source
 		out = append(out, p)
 	}
 	return out, rows.Err()

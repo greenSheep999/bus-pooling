@@ -219,7 +219,7 @@ func TestPlanSplit_ExactBalanceNotSkipped(t *testing.T) {
 func TestPlanSplit_CascadingSkip(t *testing.T) {
 	members := []splitMember{
 		{passengerID: "rich", sharePct: 25, balance: 100_000_000},
-		{passengerID: "mid", sharePct: 25, balance: 30_000_000},  // 25% 够·50% 不够
+		{passengerID: "mid", sharePct: 25, balance: 30_000_000}, // 25% 够·50% 不够
 		{passengerID: "poor1", sharePct: 25, balance: 1},
 		{passengerID: "poor2", sharePct: 25, balance: 1},
 	}

@@ -137,7 +137,7 @@ export const handlers = [
         credential_id: id,
         // 真实环境是后端从号池实时读的明文；mock 造一个完整形状的假 key
         key: `ksk_live_${crypto.randomUUID().replace(/-/g, "")}`,
-        vendor_id: c?.vendor_id ?? "91kiro",
+        vendor_id: c?.vendor_id ?? "kiro91",
         account: c?.account ?? "unknown",
       };
     });

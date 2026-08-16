@@ -19,6 +19,11 @@ type VendorClient interface {
 }
 
 // PoolClient 是 decider 用到的号池能力子集。
+//
+// 两组用途:
+//   - BatchImport · 前 6 家 vendor 拉到号后**新导入**号池
+//   - UpdateCredential · 我方手工池路径 · 号已在池 · 只搬 group（Step 3f · docs/24 §3）
 type PoolClient interface {
 	BatchImport(ctx context.Context, req housepool.BatchImportRequest) (*housepool.BatchImportResult, error)
+	UpdateCredential(ctx context.Context, id housepool.CredentialID, patch housepool.CredentialPatch) error
 }

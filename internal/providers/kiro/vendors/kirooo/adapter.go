@@ -66,10 +66,26 @@ func (a *Adapter) Capability() providers.Capability {
 		KeyPayloadShape:       providers.KeyPayloadFourTuple,
 		MinPerOrder:           1,
 		MaxPerOrder:           500, // 档案 §7：单次上限 500
+
+		// 两种账号类型都供（实测 2026-08-16 · 档案 §2.3b）
+		AccountKinds: []providers.AccountKind{
+			providers.AccountEnterprise,
+			providers.AccountPersonal,
+		},
+		// 两个池**买前都不能选订阅档**：
+		//   企业池 · 端点无 plan 参数
+		//   个人池 · 实测 ?plan=pro|pro_plus|pro_max 三值返回完全相同（参数被忽略）
+		// 号是哪档只能导入后从 housepool 的 Subscription 观察。
+		// 上游哪天开了按档下单 · 在这里补 map 即可（别在别处硬编码组合）。
+		SelectablePlans: nil,
 	}
 }
 
 func (a *Adapter) Stock(ctx context.Context, opts providers.StockOptions) (*providers.StockSnapshot, error) {
+	// 个人号走另一套端点（personal.go · 档案 §2.3b）· 两个池库存/价格完全独立
+	if opts.Kind.Normalize() == providers.AccountPersonal {
+		return a.stockPersonal(ctx)
+	}
 	// 优先打 /api/my/stock/regions（fleet 视角 · 有 regions[].stock 分区 + dispatches）
 	// 失败降级 /api/my/stock（我方账户视角 · 只单值 · 无 region 拆分）
 	//
@@ -103,6 +119,11 @@ func (a *Adapter) Stock(ctx context.Context, opts providers.StockOptions) (*prov
 }
 
 func (a *Adapter) Purchase(ctx context.Context, req providers.PurchaseRequest) (*providers.PurchaseResult, error) {
+	// 个人号走 claim-personal（personal.go · 档案 §2.4b）
+	// **必须跟估价时的 kind 一致** —— 两池价不同（50 vs 100）· 用错池会实扣与预估不符
+	if req.Kind.Normalize() == providers.AccountPersonal {
+		return a.purchasePersonal(ctx, req)
+	}
 	// 本 vendor 拉号入口：POST /my/keys/claim（档案 §7）
 	// Body 只吃 {count, client_order_id}，不带 zone 字段（档案未列 zone 参数）
 	body := purchaseReq{

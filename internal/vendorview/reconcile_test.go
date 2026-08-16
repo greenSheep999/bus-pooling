@@ -108,7 +108,7 @@ func TestReconcile_AmountMismatch(t *testing.T) {
 	ls := NewLedgerStore(d.DB)
 	_ = ls.UpsertLedger(context.Background(), "kiro91", []providers.VendorLedgerEntry{{
 		EntryID: "e1", OrderID: "ord-1", Reason: providers.LedgerPurchase,
-		Amount: providers.Money{Amount: -180_000_000, Currency: providers.CurrencyCredit},
+		Amount:    providers.Money{Amount: -180_000_000, Currency: providers.CurrencyCredit},
 		CreatedAt: time.Now().UTC(),
 	}})
 
@@ -132,7 +132,7 @@ func TestReconcile_RefundMissing(t *testing.T) {
 	// vendor 只有 purchase · 无 refund
 	_ = ls.UpsertLedger(context.Background(), "kiro91", []providers.VendorLedgerEntry{{
 		EntryID: "e1", OrderID: "ord-1", Reason: providers.LedgerPurchase,
-		Amount: providers.Money{Amount: -150_000_000, Currency: providers.CurrencyCredit},
+		Amount:    providers.Money{Amount: -150_000_000, Currency: providers.CurrencyCredit},
 		CreatedAt: time.Now().UTC(),
 	}})
 
@@ -182,7 +182,7 @@ func TestUpsertLedger_Idempotent(t *testing.T) {
 	ls := NewLedgerStore(d.DB)
 	e := []providers.VendorLedgerEntry{{
 		EntryID: "e1", OrderID: "ord-1", Reason: providers.LedgerPurchase,
-		Amount: providers.Money{Amount: -100_000_000, Currency: providers.CurrencyCredit},
+		Amount:    providers.Money{Amount: -100_000_000, Currency: providers.CurrencyCredit},
 		CreatedAt: time.Now().UTC(),
 	}}
 	_ = ls.UpsertLedger(context.Background(), "kiro91", e)

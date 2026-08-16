@@ -52,11 +52,11 @@ func (d *Dispatcher) sendOnce(
 		URL:    cfg.WebhookURL,
 		Method: "POST",
 		Headers: map[string]string{
-			"Content-Type":       "application/json",
-			"X-Bus-Event":        string(eventType),
-			"X-Bus-Event-Id":     eventID,
-			"X-Bus-Timestamp":    fmt.Sprintf("%d", timestamp.UTC().Unix()),
-			"X-Bus-Signature":    sig,
+			"Content-Type":    "application/json",
+			"X-Bus-Event":     string(eventType),
+			"X-Bus-Event-Id":  eventID,
+			"X-Bus-Timestamp": fmt.Sprintf("%d", timestamp.UTC().Unix()),
+			"X-Bus-Signature": sig,
 		},
 		Body: body,
 	}

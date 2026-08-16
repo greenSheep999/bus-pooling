@@ -71,8 +71,9 @@ func (s *Service) applySubsidies(ctx context.Context, passengerID string, bd Bre
 // computeSubsidyDelta · 单个减免可减多少
 //
 // amount_rule JSON 两种形态：
-//   {"kind":"waive"}          · 全免（返对应层的完整金额）
-//   {"kind":"pct","pct":10}   · 按百分比减
+//
+//	{"kind":"waive"}          · 全免（返对应层的完整金额）
+//	{"kind":"pct","pct":10}   · 按百分比减
 type amountRule struct {
 	Kind string  `json:"kind"` // waive / pct
 	Pct  float64 `json:"pct"`  // 0-100
@@ -139,14 +140,14 @@ func (s *Service) GrantSubsidy(ctx context.Context, in GrantSubsidyInput) (strin
 }
 
 type GrantSubsidyInput struct {
-	ID            string    // 空则自动生成
+	ID            string // 空则自动生成
 	PassengerID   string
-	Kind          string    // channel_fee / service_fee / single_pull / total_discount
-	Source        string    // personal_invite / promo / invite_reward / coupon
-	SourceRef     string    // 码 id / 奖励 id · 可空
+	Kind          string // channel_fee / service_fee / single_pull / total_discount
+	Source        string // personal_invite / promo / invite_reward / coupon
+	SourceRef     string // 码 id / 奖励 id · 可空
 	AmountRule    amountRule
-	RemainingUses *int      // nil = 不限次
-	ExpiresAt     string    // 空 = 不限时 · RFC3339
+	RemainingUses *int   // nil = 不限次
+	ExpiresAt     string // 空 = 不限时 · RFC3339
 }
 
 // ── 小工具 ──

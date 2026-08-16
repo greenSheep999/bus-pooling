@@ -75,9 +75,9 @@ func (s *ProbeStore) DeriveDispatchSummary(
 		prevSignal    int
 		prevBatchTime time.Time
 
-		out          = &DerivedDispatchSummary{}
-		gapTotalSec  float64
-		gapCount     int
+		out         = &DerivedDispatchSummary{}
+		gapTotalSec float64
+		gapCount    int
 	)
 
 	for rows.Next() {
