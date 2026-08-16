@@ -192,6 +192,10 @@ _ALLOWLIST = [
     # migration 注释 · 表说明里提到 vendor 真名（是数据契约文档 · 允许）
     (r"/migrations/028_pricing_normalize\.sql$",
      r"kirodrop"),
+    # migration 049 · vendor_plan_config seed · 6 家 kiro + 第 7 家 kiro_market
+    # (kiro_market 见 providers.VendorKiroMarket 常量)· 都是数据契约字面量
+    (r"/migrations/049_vendor_plan_config\.sql$",
+     r"'(kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)'"),
     # migrate_test.go 白名单表列表里的行注释 · 提到 kirodrop 分档说明
     (r"/db/migrate_test\.go$",
      r"^\s*\"[a-z_]+\",\s*//.*(kirodrop|kiro91|kiroceo|kirooo|kiroappio|kiroappcc)"),

@@ -648,7 +648,7 @@ func (s *Service) stockOnce(ctx context.Context, v providers.Vendor) (*providers
 }
 
 // stockOnceKind 带 account kind 打 Stock · Offers() 用这个走对个人/企业池
-// kirooo 个人池走 /api/my/stock/personal-pool · 不加 kind 会拿到企业池数据
+// 某些 vendor 个人池走独立端点(如 /stock/personal-pool)·不加 kind 会拿到企业池快照
 func (s *Service) stockOnceKind(ctx context.Context, v providers.Vendor, kind providers.AccountKind) (*providers.StockSnapshot, error) {
 	cctx, cancel := context.WithTimeout(ctx, s.stockTimeout)
 	defer cancel()

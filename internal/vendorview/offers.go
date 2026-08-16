@@ -166,7 +166,7 @@ func (s *Service) offersForVendor(
 	}
 
 	// ── 正常 vendor · Stock 拿实时库存/价 · 档位从 vendor_plan_config 拿开关 ─────
-	// **必须把 kind 传给 Stock**（kirooo 个人池走 stockPersonal · 企业池走 /stock/regions）
+	// **必须把 kind 传给 Stock**(部分 vendor 个人池走独立端点·企业池走 /stock/regions)
 	snap, snapErr := s.stockOnceKind(ctx, e.Vendor, kind)
 	// 档位从后台配置读 · 后台今天开 Power · 明天可以关 Power 开 Pro Max · 都不改代码
 	plans, _ := s.enabledPlansFor(ctx, string(e.VendorID), kind)
