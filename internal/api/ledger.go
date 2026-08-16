@@ -32,7 +32,7 @@ var spendInternalReasons = []wallet.Reason{
 
 // topupInternalReasons 对外 topup（充值）展开的内部 reason 集合。
 //
-// **CLAUDE.md §12.6 术语双分离**：channel_fee 是 pass-through 给 waffo 的内部记账·
+// **CLAUDE.md §12.6 术语双分离**：channel_fee 是 pass-through 给通道商的内部记账·
 // 用户视角 = "充了 N 积分 · 到账 N 积分" · 手续费展示在**充值弹窗**(preview + total)·
 // 不该再在钱包流水里以 "-0" 出现让用户困惑。
 //

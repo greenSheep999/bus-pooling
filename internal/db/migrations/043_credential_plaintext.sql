@@ -2,7 +2,7 @@
 --
 -- 043_credential_plaintext.sql · 手上号的明文加密缓存 · decisions §12.5 扩展
 --
--- 上游 kiro.rs 后端**未提供 reveal 端点** · bus-pooling 拉号成功那一刻拿到明文后
+-- 上游 housepool 后端 后端**未提供 reveal 端点** · bus-pooling 拉号成功那一刻拿到明文后
 -- 必须自己存一份(加密) · 否则 push_pool / handoff 都没明文可导出。
 --
 -- 独立表 · 不落 credential_ledger(那个表明文永不落 · CLAUDE §12.5 铁律)
@@ -27,4 +27,7 @@ CREATE INDEX idx_credential_plaintext_used ON credential_plaintext(used_at) WHER
 
 -- +migrate down
 
--- SQLite 3.35+ 支持 DROP · 保守回滚不删(空表不影响读写)
+-- 保测试契约（TestMigrateDownDropsEverything）· 显式 DROP
+DROP INDEX IF EXISTS idx_credential_plaintext_used;
+DROP INDEX IF EXISTS idx_credential_plaintext_expires;
+DROP TABLE IF EXISTS credential_plaintext;

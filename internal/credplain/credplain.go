@@ -1,6 +1,6 @@
 // Package credplain · 手上号明文加密缓存 · decisions §12.5 扩展(§199)
 //
-// 上游 kiro.rs 后端**未提供 reveal 端点** · 拉号成功那一刻拿到明文后
+// 上游 housepool 后端 后端**未提供 reveal 端点** · 拉号成功那一刻拿到明文后
 // bus-pooling 必须自己存一份(加密) · 否则 push_pool / handoff 都没明文可导出。
 //
 // TTL 24h · used_at 后 24h · janitor 定时清 · 走 AES-GCM 加密(复用 internal/secrets)。

@@ -218,7 +218,9 @@ _ALLOWLIST = [
     # ── 前 vendor adapter 自身文件里的 identifier 引用 ─
     # 各 vendor 包内 该家真名允许 · 是自身 identifier · 包内文件的注释里也可以引自己
     # 错误前缀 fmt.Errorf("kiroXX: ...") 也允许（内部日志 · 不面向用户）
-    (r"/providers/kiro/vendors/kiro91/", r'\bkiro91\b'),
+    # kirors client（housepool 后端的 Go client）自身注释里引 kiro.rs 版本 —— identifier
+    (r"/housepool/kirors/", r'kiro\.rs\s+\d'),
+  (r"/providers/kiro/vendors/kiro91/", r'\bkiro91\b'),
     (r"/providers/kiro/vendors/kiroceo/", r'\bkiroceo\b'),
     (r"/providers/kiro/vendors/kirooo/", r'\bkirooo\b'),
     (r"/providers/kiro/vendors/kiroappio/", r'\bkiroappio\b'),
@@ -273,7 +275,7 @@ _ALLOWLIST = [
     # lib/utils.ts · vendor_id → 展示名 / 身份色的映射表（键必须跟后端一致）
     # 这两张表**就是**把内部 id 翻译成对外展示名的地方 —— 不许它出现等于不许翻译
     (r"web/src/lib/utils\.ts$",
-     r'^\s*"?(91kiro|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)"?:\s*("|#)'),
+     r'^\s*"?(91kiro|kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)"?:\s*("|#)'),
 
     # types/index.ts · 字段注释里说明"哪家 vendor 才有这个字段"（数据契约描述）
     (r"web/src/types/index\.ts$",
@@ -287,8 +289,8 @@ _ALLOWLIST = [
     (r"web/src/api/hooks\.ts$", r'channel:\s*"waffo"'),
 
     # mocks/ · MSW 假数据里的 vendor_id / 渠道 id（identifier · 要跟后端契约一致才能测）
-    (r"web/src/mocks/", r'"?(91kiro|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)"?\s*[:,)]'),
-    (r"web/src/mocks/", r'mkKey\("(91kiro|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)"'),
+    (r"web/src/mocks/", r'"?(91kiro|kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)"?\s*[:,)]'),
+    (r"web/src/mocks/", r'mkKey\("(91kiro|kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)"'),
     (r"web/src/mocks/", r'vendor_id:\s*"'),
     (r"web/src/mocks/", r'channel:\s*"(waffo|bybit|binance|epusdt)'),
     # mocks 里的 vendor 三元判断 / 数组 / host / URL —— 全是喂给组件的 identifier
@@ -298,6 +300,16 @@ _ALLOWLIST = [
     (r"web/src/mocks/", r'vendorStocks\["'),
     (r"web/src/mocks/", r'(auth\.91kiro\.com|api\.kiro\.ceo|pay\.waffo\.example)'),
     (r"web/src/mocks/", r'(summary|memo):\s*"'),
+
+    # topup channel id 字面量 · 数据契约 · 前端按 c.id === "waffo" 做逻辑分支
+    (r"web/src/", r'\bid\b\s*[:=]==?\s*"waffo"'),
+    (r"web/src/", r'id:\s*"waffo",'),
+    # PaymentLogo 组件说明里的 wordmark 品牌名（跟 topupchannel.Waffo id 挂钩）
+    (r"web/src/components/PaymentLogo\.tsx$", r'wordmark\(bybit\s*/\s*waffo\)'),
+    # estimate mock 注释是术语文档 · 引 CLAUDE §0.1 分项链名字
+    (r"web/src/mocks/handlers\.ts$",
+     r'(不出内部加价链分层|已含 vendor/zone/tier/service 全部加价|内部加价链字段 · §0\.1)'),
+
 ]
 
 

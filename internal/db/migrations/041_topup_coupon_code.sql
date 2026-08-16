@@ -13,5 +13,6 @@ ALTER TABLE topup_order ADD COLUMN coupon_code TEXT;
 
 -- +migrate down
 
--- SQLite 3.35+ 支持 DROP COLUMN · 保守起见回滚不做(参考 004)
--- 单纯的空列 · 保留不影响读写
+-- SQLite 3.35+ 支持 DROP COLUMN · 单纯空列保留不影响读写
+-- 但 TestMigrateDownDropsEverything 要求 down 清干净 · 显式 DROP 保测试契约
+ALTER TABLE topup_order DROP COLUMN coupon_code;

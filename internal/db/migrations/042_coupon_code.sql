@@ -59,5 +59,10 @@ CREATE INDEX idx_coupon_use_passenger ON coupon_use(passenger_id, created_at);
 
 -- +migrate down
 
--- SQLite 3.35+ 支持 DROP · 保守起见回滚不删(参考 004 · 041)
--- 空表无副作用 · 保留不影响读写
+-- 保测试契约（TestMigrateDownDropsEverything）· 显式 DROP
+DROP INDEX IF EXISTS idx_coupon_use_passenger;
+DROP INDEX IF EXISTS idx_coupon_use_coupon;
+DROP TABLE IF EXISTS coupon_use;
+DROP INDEX IF EXISTS idx_coupon_code_active;
+DROP INDEX IF EXISTS idx_coupon_code_code;
+DROP TABLE IF EXISTS coupon_code;
