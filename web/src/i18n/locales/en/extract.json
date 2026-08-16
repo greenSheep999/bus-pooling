@@ -244,7 +244,8 @@
     },
     "vendor": {
       "auto": "Auto-assign (recommended)",
-      "auto-fallback": "Auto-assign"
+      "auto-fallback": "Auto-assign",
+      "out-of-stock": "Out of stock"
     },
     "zone": {
       "auto": "Let us pick",

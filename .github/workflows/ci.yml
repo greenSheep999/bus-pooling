@@ -62,3 +62,6 @@ jobs:
       - run: npm run build
 
       - run: npm run lint
+
+      # i18n 漏词条 · tsc/oxlint 都查不到（key 不存在时 i18next 静默回落）
+      - run: npm run check:i18n

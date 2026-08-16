@@ -50,7 +50,9 @@ export function PullExtractForm({
   const [zone, setZone] = useState<Zone | "auto">("auto");
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const outOfStockLabel = t("pull-form.vendor.out-of-stock", { defaultValue: "暂时缺货" });
+  /** 缺货 pill 文案 · **不写 defaultValue** —— 中文兜底会让英文用户看到中文
+   *  且 key 缺失时静默不报（实测踩过）· 缺 key 就让它显示 key 名 · 一眼能发现 */
+  const outOfStockLabel = t("pull-form.vendor.out-of-stock");
 
   /** 当前 tab 下 · 列**所有 supported 的 vendor** · 不 filter available
    *  缺货 vendor 也进下拉 · trigger label 保持干净·下拉项右边标缺货 pill
