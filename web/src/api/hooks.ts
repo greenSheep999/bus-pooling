@@ -527,7 +527,12 @@ export const useRegenInviteCode = (busId: string) => {
 export const usePullForBus = (busId: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { count: number; vendor_id?: string; zone?: string }) =>
+    mutationFn: (body: {
+      count: number; vendor_id?: string; zone?: string;
+      /** Offer 维度（docs/24 §5）· 手动拉号是硬约束（不能因缺货降级）*/
+      account_kind?: "enterprise" | "personal";
+      plan?: "power" | "pro" | "pro_plus" | "pro_max";
+    }) =>
       postIdempotent(`/me/buses/${busId}/pull`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["bus", busId] });

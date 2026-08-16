@@ -347,7 +347,7 @@ export interface ExtractEvent {
   zone: Zone | null;                        // null = kiroapp-cc 无区域
   count_requested: number;
   count_purchased: number;
-  total_cost: Money;                        // 负 = 支出 · 0 = 缺货未扣
+  total_cost: Money;                        // 这一轮花了多少 · 正数 · 0 = 缺货未扣
   result: PullResult;                       // success / partial / failed / refunded
   fail_reason: string | null;
   /** 派发进度 · UI 派发历史 tab 展开明细用 */

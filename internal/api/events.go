@@ -63,7 +63,20 @@ func listPullEvents(ctx context.Context, db *sql.DB, passengerID string, limit, 
 		       pr.count_requested, pr.count_purchased,
 		       pr.key_cost_total + pr.vendor_fee_total + pr.region_fee_total +
 		       pr.single_pull_fee_total + pr.capability_fee_total + pr.service_fee_total AS total_cost,
-		       pr.status
+		       pr.status,
+		       -- 已派：号已离开 record 组（进车 / 推池 / 拿走）
+		       (SELECT count(1) FROM credential_ledger cl
+		          WHERE cl.source_pull_round_id = pr.id
+		            AND (cl.owner_bus_id IS NOT NULL
+		                 OR cl.pushed_to_passengerpool_at IS NOT NULL
+		                 OR cl.status = 'handed_off')) AS assigned_count,
+		       -- 待派：号还在 record-<pid> 组等处置
+		       (SELECT count(1) FROM credential_ledger cl
+		          WHERE cl.source_pull_round_id = pr.id
+		            AND cl.owner_bus_id IS NULL
+		            AND cl.owner_record_passenger_id IS NOT NULL
+		            AND cl.status != 'handed_off'
+		            AND cl.pushed_to_passengerpool_at IS NULL) AS pending_count
 		  FROM pull_round pr
 		 WHERE pr.id IN (SELECT pull_round_id FROM pending_purchase WHERE passenger_id = ? AND pull_round_id IS NOT NULL)
 		 ORDER BY pr.created_at DESC
@@ -76,13 +89,12 @@ func listPullEvents(ctx context.Context, db *sql.DB, passengerID string, limit, 
 	for rows.Next() {
 		var e extractEventDTO
 		var internalStatus string
-		var totalCost int64
 		if err := rows.Scan(&e.ID, &e.CreatedAt, &e.VendorID,
-			&e.CountRequested, &e.CountPurchased, &totalCost, &internalStatus); err != nil {
+			&e.CountRequested, &e.CountPurchased, &e.TotalCost, &internalStatus,
+			&e.AssignedCount, &e.PendingCount); err != nil {
 			return 0, nil, err
 		}
-		// TotalCost 用**负数**表示扣款（跟前端 activities 的 amount 一致）
-		e.TotalCost = -totalCost
+		// TotalCost 对外语义是「这一轮花了多少」· 正数（记账符号不外泄）
 		// 内部 status → 对外 result（§12.5 收敛）
 		e.Result = mapPullRoundResult(internalStatus, e.CountRequested, e.CountPurchased)
 		items = append(items, e)
@@ -166,7 +178,7 @@ func listAssignEvents(ctx context.Context, db *sql.DB, passengerID string, limit
 	// 拉 assign 记录 + 关联的 credential 快照
 	rows, err := db.QueryContext(ctx, `
 		SELECT pa.id, pa.created_at, pa.target, pa.target_bus_id, pa.credential_id,
-		       cl.vendor_id, COALESCE(cl.pulled_at, ''),
+		       cl.vendor_id, COALESCE(cl.key_masked, ''), COALESCE(cl.pulled_at, ''),
 		       COALESCE(b.name, '')
 		  FROM pending_assignment pa
 		  LEFT JOIN credential_ledger cl ON cl.id = pa.credential_id
@@ -183,9 +195,9 @@ func listAssignEvents(ctx context.Context, db *sql.DB, passengerID string, limit
 		var e assignEventDTO
 		var target string
 		var targetBusID sql.NullString
-		var credID, vendorID, pulledAt, busName string
+		var credID, vendorID, keyMasked, pulledAt, busName string
 		if err := rows.Scan(&e.ID, &e.CreatedAt, &target, &targetBusID, &credID,
-			&vendorID, &pulledAt, &busName); err != nil {
+			&vendorID, &keyMasked, &pulledAt, &busName); err != nil {
 			return 0, nil, err
 		}
 		e.Destination = mapAssignDestination(target)
@@ -197,10 +209,10 @@ func listAssignEvents(ctx context.Context, db *sql.DB, passengerID string, limit
 			e.BusName = &busName
 		}
 		e.Count = 1
-		// 派发瞬时快照 · key 打码用固定 pattern（handoff 之前不出明文）
+		// key_masked 读 credential_ledger 真列 · 老数据该列为空时返空串（前端补占位）
 		e.Keys = []assignedKeyDTO{{
 			CredentialID: credID,
-			KeyMasked:    "ksk_" + shortID(credID) + "…" + tailID(credID),
+			KeyMasked:    keyMasked,
 			VendorID:     vendorID,
 			// region / credits_used / lifespan 1a 阶段查号池 stats 才有，先给 0/空
 			Region:          "",
@@ -215,19 +227,6 @@ func listAssignEvents(ctx context.Context, db *sql.DB, passengerID string, limit
 		items = append(items, e)
 	}
 	return total, items, rows.Err()
-}
-
-func shortID(id string) string {
-	if len(id) < 8 {
-		return id
-	}
-	return id[:8]
-}
-func tailID(id string) string {
-	if len(id) < 4 {
-		return id
-	}
-	return id[len(id)-4:]
 }
 
 // mapAssignDestination 内部 target → 对外 destination（§12.5 · 05-api-contract §5）
