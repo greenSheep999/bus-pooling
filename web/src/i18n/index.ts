@@ -20,6 +20,8 @@ export const NAMESPACES = [
   "common", "landing", "auth", "overview", "buses", "extract",
   "wallet", "settings", "profile", "community", "invite",
   "dispatch", "docs", "prices", "status",
+  // vendor · 只 Market 一条(中英对应)· 前 6 家是上游品牌名 / 匿名编号 · 不翻译
+  "vendor",
 ] as const;
 
 export const LANGUAGES = [

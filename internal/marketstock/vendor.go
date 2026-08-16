@@ -35,11 +35,12 @@ func NewVendor(s *Store) *Vendor {
 func (v *Vendor) ID() providers.VendorID           { return providers.VendorKiroMarket }
 func (v *Vendor) ProviderID() providers.ProviderID { return providers.ProviderKiro }
 
-// DisplayName 只 wholesale 档能看到 · 其他档在 vendorview 层匿名化成 "AWS-Q Kiro Vendor 07"
+// DisplayName · 我方自营手工池 · 没有上游品牌要防绕单 · 所有档都看这个真名
+// （前端 VENDOR_NAME["kiro_market"] 必须同值 · 别让两边漂）
 func (v *Vendor) DisplayName() string { return "Kiro Vendor Market - various sources" }
 
-// Capability · 目前只供个人号 · 档位从 offer 表运行时决定（这里返配置的空 map ·
-// vendorview 会按 market_offer 表当前启用行合成 SelectablePlans）。
+// Capability · 档位不在这里声明 · offers 端点直接读 market_offer 表当前启用行
+// （SelectablePlans 留 nil · 见 vendorview/offers.go offersFromMarket）。
 func (v *Vendor) Capability() providers.Capability {
 	return providers.Capability{
 		SupportsIdempotency:   true, // pending_purchase.client_order_id 幂等
@@ -52,9 +53,9 @@ func (v *Vendor) Capability() providers.Capability {
 		KeyPayloadShape:       providers.KeyPayloadJustKey, // 号已在池 · Key 字段传 credential id 字符串
 		MinPerOrder:           1,
 		MaxPerOrder:           500,
-		// 当前只上架了个人号（enterprise 也支持 · 只是没上架条目）
+		// 两类都能供 · 具体上架哪档看 market_offer 表(enabled=1 的行)
 		AccountKinds:    []providers.AccountKind{providers.AccountPersonal, providers.AccountEnterprise},
-		SelectablePlans: nil, // 运行时查 market_offer · vendorview 层合成
+		SelectablePlans: nil, // 不用 · 档位由 market_offer 表决定
 	}
 }
 

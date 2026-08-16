@@ -28,6 +28,8 @@ export const handlers = [
 
   // ── 上游库存（header badge）
   http.get("/api/vendors/stock", () => ok(fx.stock)),
+  /* Offer matrix · vendor/档位下拉 + header 库存 badge 的唯一数据源(docs/24 §3) */
+  http.get("/api/vendors/offers", () => ok(fx.vendorOffers)),
 
   // ── 概览
   http.get("/api/me/overview", () => ok(fx.overview)),

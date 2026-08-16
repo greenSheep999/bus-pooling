@@ -35,6 +35,9 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton, SkeletonTable } from "@/components/ui/skeleton";
 import type { AssignEvent, Credential, ExtractEvent, PullResult } from "@/types";
+/* 档位 tab 图标 · 企业 = 机器人幽灵 · 个人 = 猫幽灵 */
+import ghostRobotPng from "@/assets/marketing/ghost-robot.png";
+import ghostCatPng from "@/assets/marketing/ghost-cat.png";
 
 type TabKey = "pending" | "extract-history" | "assign-history";
 
@@ -151,6 +154,7 @@ export default function Extract() {
               sub={t("category.enterprise-sub")}
               count={enterpriseCount}
               outOfStockLabel={enterpriseSupported ? t("category.out-of-stock") : t("category.not-open")}
+              icon={ghostRobotPng}
               disabled={!enterpriseSupported}
             />
             <FolderTab
@@ -160,6 +164,7 @@ export default function Extract() {
               sub={t("category.personal-sub")}
               count={personalCount}
               outOfStockLabel={personalSupported ? t("category.out-of-stock") : t("category.not-open")}
+              icon={ghostCatPng}
               disabled={!personalSupported}
             />
           </div>
@@ -742,7 +747,10 @@ function SkeletonFolderTab({ active = false }: { active?: boolean }) {
       >
         <path
           d="M 0.5 12 Q 0.5 0.5 12 0.5 L 200 0.5 Q 208 0.5 211.5 8 L 219.5 59.5 L 0.5 59.5 Z"
-          fill={active ? "hsl(var(--brand-subtle))" : "hsl(var(--bg-elevated))"}
+          /* 骨架**不用品牌紫** —— 数据还没到 · 不该先把"选中"的强调色亮出来
+             （骨架只占位形状 · 一律中性灰 · 见 skeleton.tsx 用法原则）
+             active 只用底色深浅区分 · 保持两个 tab 的层次感 */
+          fill={active ? "hsl(var(--bg))" : "hsl(var(--bg-elevated))"}
           stroke="hsl(var(--hairline))"
           strokeWidth={1}
           vectorEffect="non-scaling-stroke"
@@ -751,13 +759,15 @@ function SkeletonFolderTab({ active = false }: { active?: boolean }) {
         {active && (
           <line
             x1="0.5" y1="59.5" x2="210" y2="59.5"
-            stroke="hsl(var(--brand-subtle))"
+            stroke="hsl(var(--bg))"
             strokeWidth={2}
             vectorEffect="non-scaling-stroke"
           />
         )}
       </svg>
       <div className="relative flex h-full items-center gap-3 pl-5 pr-10">
+        {/* 图标占位 · 跟真 tab 的 size-8 对齐 · 否则加载完文字会横向跳一下 */}
+        <Skeleton className="size-8 shrink-0 rounded-lg" />
         <div className="flex flex-col gap-1.5">
           <Skeleton className="h-4 w-16" />
           <Skeleton className="h-2.5 w-20" />
@@ -783,7 +793,7 @@ function SkeletonFolderTab({ active = false }: { active?: boolean }) {
  *  非 active:灰底 · 灰描边 · 有下边框(视觉上"没打开")
  *  count>0 显示数字 · count=0 显示"缺货" */
 function FolderTab({
-  active, onClick, label, sub, count, outOfStockLabel, disabled = false,
+  active, onClick, label, sub, count, outOfStockLabel, icon, disabled = false,
 }: {
   active: boolean;
   onClick: () => void;
@@ -791,6 +801,8 @@ function FolderTab({
   sub: string;
   count: number;
   outOfStockLabel: string;
+  /** 档位小图标 · 放在文字左边（企业 = 机器人幽灵 · 个人 = 猫幽灵） */
+  icon?: string;
   /** 该档还不能选（缺货 / 未开放）· §4.1 要求 tab 仍显示 · 只是点不动 */
   disabled?: boolean;
 }) {
@@ -822,7 +834,9 @@ function FolderTab({
              底边故意画在 60 · 与 card 顶 border 相接 · active 时会用一条覆盖线遮住 */
           d="M 0.5 12 Q 0.5 0.5 12 0.5 L 200 0.5 Q 208 0.5 211.5 8 L 219.5 59.5 L 0.5 59.5 Z"
           fill={active ? "hsl(var(--brand-subtle))" : "hsl(var(--bg-elevated))"}
-          stroke="hsl(var(--hairline))"
+          /* 选中 tab 的描边跟下方 focal card 的 border 同色(index.css .card-focal ·
+             brand 紫 12% 透明)· 否则紫底配灰边 · tab 跟 card 看着不是一体 */
+          stroke={active ? "rgb(145 71 255 / 0.12)" : "hsl(var(--hairline))"}
           strokeWidth={1}
           vectorEffect="non-scaling-stroke"
           strokeLinejoin="round"
@@ -842,6 +856,18 @@ function FolderTab({
       {/* 内容层 · relative 让它盖在 SVG 上 · 左内边距避圆角 · 右内边距避斜边
           企业版 / 个人版文字用 text-body(比 text-label 大一档 · 视觉更突出) */}
       <div className="relative flex items-center gap-3 pl-5 pr-10 py-3.5">
+        {/* 档位图标 · 装饰性(alt="") · 未选中时压暗 · 选中变实 · 跟文字色一起变化 */}
+        {icon && (
+          <img
+            src={icon}
+            alt=""
+            aria-hidden
+            className={
+              "size-8 shrink-0 select-none object-contain transition-opacity " +
+              (active ? "opacity-100" : "opacity-60 group-hover:opacity-80")
+            }
+          />
+        )}
         <div className="flex min-w-0 flex-col items-start leading-tight">
           <span className={"text-body font-semibold " + (active ? "text-brand-strong" : "text-fg-secondary")}>
             {label}

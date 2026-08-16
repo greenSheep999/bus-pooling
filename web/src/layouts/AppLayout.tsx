@@ -5,7 +5,7 @@ import {
   KeyRound, LayoutDashboard, LogOut, Moon, Send, Settings,
   User, Users, Wallet,
 } from "lucide-react";
-import { useLogout, useMe, useStock, useWallet } from "@/api/hooks";
+import { useLogout, useMe, useVendorOffers, useWallet } from "@/api/hooks";
 import { AppFooter } from "@/components/AppFooter";
 import { PromoBar } from "@/components/PromoBar";
 import { Muted } from "@/components/ui/primitives";
@@ -28,18 +28,72 @@ const TABS = [
 ];
 
 function StockBadge() {
-  const { data } = useStock();
+  const { data } = useVendorOffers();
   const { t } = useTranslation();
-  const n = data?.total_available;
-  /* 移动端只显示"呼吸点 + 数字" · md+ 显示完整"上游 128 个可拉"
-     跟 CreditPill 一样的响应式收缩策略 */
+  /** hover 打开明细 · 点击也能开(触屏 / 键盘可达)· 无 HoverCard 依赖 */
+  const [open, setOpen] = useState(false);
+  /* 从 Offer matrix 聚合总量 · 跟 Extract 页 tab 数字一致 · 不再单独调 /vendors/stock
+     badge 显示总数 · hover 弹企业/个人明细 */
+  const { total, enterprise, personal } = (() => {
+    const vs = data?.vendors ?? [];
+    let e = 0;
+    let p = 0;
+    for (const v of vs) {
+      e += v.categories.enterprise?.available ?? 0;
+      p += v.categories.personal?.available ?? 0;
+    }
+    return { total: e + p, enterprise: e, personal: p };
+  })();
+  const hasData = data !== undefined;
+  /* 移动端只显示"呼吸点 + 数字" · md+ 显示完整"上游 N 个可拉" */
   return (
-    <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-hairline bg-bg-elevated px-2.5 py-1 sm:gap-2 sm:px-3 sm:py-1.5">
-      <span className="size-1.5 rounded-full bg-ok-solid" />
-      <span className="hidden text-label font-medium text-fg-secondary md:inline">{t("header.stock_unit")}</span>
-      <span className="font-semibold tnum">{n ?? "-"}</span>
-      <Muted className="hidden font-medium md:inline">{t("header.stock_available_suffix")}</Muted>
-    </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      {/* hover handler 挂在外层 span —— PopoverTrigger asChild 会合并/覆盖子元素的
+          事件处理，挂在 button 上不生效（实测 aria-expanded 一直 false）*/}
+      <span
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        className="flex shrink-0"
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-hairline bg-bg-elevated px-2.5 py-1 transition-colors hover:bg-bg sm:gap-2 sm:px-3 sm:py-1.5"
+            aria-label={t("header.stock_unit")}
+          >
+            <span className="size-1.5 rounded-full bg-ok-solid" />
+            <span className="hidden text-label font-medium text-fg-secondary md:inline">{t("header.stock_unit")}</span>
+            <span className="font-semibold tnum">{hasData ? total : "-"}</span>
+            <Muted className="hidden font-medium md:inline">{t("header.stock_available_suffix")}</Muted>
+          </button>
+        </PopoverTrigger>
+      </span>
+      {/* §9.2 Popover 规范:w-64 上限 · rounded-[14px] · shadow-pop
+          hover 场景:指针移到面板上不关 · 且不抢焦点(否则 hover 完键盘焦点被吞) */}
+      <PopoverContent
+        align="end"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        className="w-64 rounded-[14px] p-3 shadow-pop"
+      >
+        <div className="mb-2 text-label font-semibold text-fg">{t("header.stock_breakdown")}</div>
+        <div className="space-y-1.5 text-label">
+          <div className="flex items-center justify-between">
+            <span className="text-fg-secondary">{t("header.stock_enterprise")}</span>
+            <span className="font-semibold tnum">{hasData ? enterprise : "-"}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-fg-secondary">{t("header.stock_personal")}</span>
+            <span className="font-semibold tnum">{hasData ? personal : "-"}</span>
+          </div>
+          <div className="mt-2 flex items-center justify-between border-t border-hairline pt-2">
+            <span className="text-fg-tertiary">{t("header.stock_total")}</span>
+            <span className="font-semibold tnum">{hasData ? total : "-"}</span>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

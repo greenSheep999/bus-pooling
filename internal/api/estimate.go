@@ -49,6 +49,14 @@ func (s *Server) handleEstimate(w http.ResponseWriter, r *http.Request) error {
 		return ErrBadRequest("count 必须 ≥ 1")
 	}
 
+	// 前端可能传 anon_id（/vendors/offers 对非 wholesale 档返匿名哈希）· 先反查真 id
+	// 跟 pull.go 同一处理 —— 否则散客选了具体 vendor 估价一律 ErrUnknownVendor
+	if req.VendorID != "" && s.vendorView != nil {
+		if real := s.vendorView.VendorIDForAnon(req.VendorID); real != "" {
+			req.VendorID = real
+		}
+	}
+
 	unit, err := s.estimateUnitCost(r.Context(), req.VendorID, req.Zone)
 	if err != nil {
 		if errors.Is(err, decider.ErrNoStock) {

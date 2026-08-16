@@ -52,6 +52,73 @@ export const stock: StockSummary = {
   ],
 };
 
+/** Offer matrix · GET /api/vendors/offers
+ *
+ *  4 行分别覆盖 docs/24 §12 验收矩阵的三态(supported/available 分离):
+ *    ① 企业有货 · 个人不支持       → 个人项"该 vendor 不提供"
+ *    ② 企业缺货 · 个人不支持       → 企业项 disabled + 缺货 pill
+ *    ③ 企业有货 · 个人两档(一档缺货)→ 档位下拉能出 disabled 态
+ *    ④ 手工池 · 企业不上架 · 个人 2 个 → 数量上限应该是 2(不是 1)
+ *  vendor_label 用匿名编号(retail 视角 · CLAUDE §0.1)· 跟后端 anonLabelOf 一致 */
+/** 一档 offer · [档位, 库存, 单价(积分), 数量分档表?]
+ *  分档表 = [下限, 上限(0=及以上), 该档单价] · 落 OfferItem.price_bands */
+type MockOffer = [string, number, number, [number, number, number][]?];
+
+const offerRow = (
+  vendorId: string,
+  label: string,
+  ent: { supported: boolean; offers: MockOffer[] },
+  per: { supported: boolean; offers: MockOffer[] },
+) => {
+  const cell = (c: { supported: boolean; offers: MockOffer[] }) => ({
+    supported: c.supported,
+    available: c.offers.reduce((n, [, a]) => n + a, 0),
+    offers: c.offers.map(([subscription, available, unit_price, bands]) => ({
+      subscription,
+      available,
+      unit_price,
+      ...(bands
+        ? {
+            price_bands: bands.map(([lower, upper, p]) => ({
+              lower, upper, unit_price_credits: p,
+            })),
+          }
+        : {}),
+    })),
+  });
+  return {
+    vendor_id: vendorId,
+    vendor_label: label,
+    anon_id: vendorId.slice(0, 6),
+    categories: { enterprise: cell(ent), personal: cell(per) },
+  };
+};
+
+export const vendorOffers = {
+  vendors: [
+    offerRow("kiro91", "AWS-Q Kiro Vendor 01",
+      { supported: true, offers: [["power", 42, 30_000_000]] },
+      { supported: false, offers: [] }),
+    offerRow("kiroceo", "AWS-Q Kiro Vendor 02",
+      { supported: true, offers: [["power", 0, 100_000_000]] },
+      { supported: false, offers: [] }),
+    offerRow("kirooo", "AWS-Q Kiro Vendor 03",
+      { supported: true, offers: [["power", 24, 70_000_000]] },
+      { supported: true, offers: [
+        // 库存 60 · 够跨两道阈值(10 / 30)· 1-9 档 50 · 10-29 档 40 · 30+ 档 35
+        ["pro", 60, 50_000_000, [[1, 9, 50_000_000], [10, 29, 40_000_000], [30, 0, 35_000_000]]],
+        ["pro_plus", 0, 80_000_000],
+      ] }),
+    // 我方自营那家 · 后端所有档都返真名(不匿名)· 前端再过 i18n 出中文
+    offerRow("kiro_market", "Kiro Vendor Market - various sources",
+      { supported: true, offers: [] },
+      { supported: true, offers: [
+        // 手工池 PRO+ · 库存 40 · 分档 1-9 / 10+ (对齐上游个人池实测形状)
+        ["pro_plus", 40, 250_000_000, [[1, 9, 250_000_000], [10, 0, 200_000_000]]],
+      ] }),
+  ],
+};
+
 /* ── Bus ── */
 
 /** 车主自己 · single 车只有这一条（100% 自付，没有分摊对象） */
@@ -322,6 +389,18 @@ export const vendorStocks: Record<string, VendorStock> = {
       { zone: "eu", label: "欧洲区", enabled: true, available: 10, unit_price: C(38) },
     ],
   },
+  // 第 7 家 · 手工池 · 无区(zones 单条 "全区")· 无质保(号池另配)
+  "kiro_market": {
+    vendor_id: "kiro_market",
+    currency: "credits",
+    warranty_minutes: 0,
+    max_per_order: 500,
+    min_per_order: 1,
+    hold_cap_remaining: null,
+    zones: [
+      { zone: "us", label: "全区", enabled: true, available: 2, unit_price: C(250) },
+    ],
+  },
 };
 
 /* ── 我方历史统计（近 30 天） ── */
@@ -333,6 +412,7 @@ export const vendorHistories: Record<string, VendorHistory> = {
   "kiroappio": { vendor_id: "kiroappio", avg_lifespan_seconds: 24 * 3600, alive_rate_30d: 94, total_pulled_30d: 45  },
   "kiroappcc": { vendor_id: "kiroappcc", avg_lifespan_seconds: 8  * 3600, alive_rate_30d: 70, total_pulled_30d: 30  },
   "kirodrop":  { vendor_id: "kirodrop",  avg_lifespan_seconds: 20 * 3600, alive_rate_30d: 90, total_pulled_30d: 88  },
+  "kiro_market": { vendor_id: "kiro_market", avg_lifespan_seconds: 0, alive_rate_30d: 0, total_pulled_30d: 0 },
 };
 
 /* ── 系统派号推荐（auto 模式）· decisions §8.20 ──
@@ -354,7 +434,8 @@ export function autoPick(zone: Zone | "auto", waived: boolean): AutoPickResult {
       available: 0, unit_price: finalPrice(s.zones[0].unit_price, waived),
       warranty_minutes: s.warranty_minutes, max_per_order: s.max_per_order,
       min_per_order: s.min_per_order,
-      avg_lifespan_seconds: 0, alive_rate_30d: 0, reason: "全网暂时缺货",
+      avg_lifespan_seconds: 0, alive_rate_30d: 0,
+      reason: "全网暂时缺货", reason_code: "out_of_stock",
     };
   }
 
@@ -369,14 +450,16 @@ export function autoPick(zone: Zone | "auto", waived: boolean): AutoPickResult {
   }));
   const best = scored.reduce((a, b) => (a.score >= b.score ? a : b));
 
-  /* 推荐理由 · 一句人话 */
+  /* 推荐理由 · reason_code 是前端出文案的依据 · reason 只当兜底
+     码值跟后端 vendorview.Reason* 常量对齐 */
   const cheapest = candidates.reduce((a, b) => (a.zone.unit_price <= b.zone.unit_price ? a : b));
-  const reason =
+  const mostStock = candidates.reduce((a, b) => (a.zone.available >= b.zone.available ? a : b));
+  const [reason, reason_code] =
     best.stock.vendor_id === cheapest.stock.vendor_id
-      ? "单价最低 · 库存充足"
-      : (best.hist?.alive_rate_30d ?? 0) >= 90
-        ? `30 天成活率 ${best.hist!.alive_rate_30d}% · 全网最稳`
-        : "库存足 · 单价与成活率综合最优";
+      ? ["当前单价最低 · 库存充足", "cheapest"]
+      : best.stock.vendor_id === mostStock.stock.vendor_id
+        ? ["当前库存最多 · 单价合理", "most_stock"]
+        : ["库存与单价综合最优", "balanced"];
 
   return {
     vendor_label: "",                 // handler 按身份填
@@ -390,6 +473,7 @@ export function autoPick(zone: Zone | "auto", waived: boolean): AutoPickResult {
     avg_lifespan_seconds: best.hist?.avg_lifespan_seconds ?? 0,
     alive_rate_30d: best.hist?.alive_rate_30d ?? 0,
     reason,
+    reason_code,
   };
 }
 

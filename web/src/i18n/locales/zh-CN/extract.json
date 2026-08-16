@@ -195,6 +195,12 @@
     "auto-arrow": "→",
     "vendor-title": "上游即时状态",
     "default-zone-prefix": "默认区 · ",
+    "reason": {
+      "out_of_stock": "全网暂时缺货",
+      "cheapest": "当前单价最低 · 库存充足",
+      "most_stock": "当前库存最多 · 单价合理",
+      "balanced": "库存与单价综合最优"
+    },
     "stat": {
       "stock": "库存",
       "unit-price": "单价",
@@ -249,6 +255,8 @@
       "title": "预估费用",
       "unit-line": "单价 · {{count}} 个",
       "unit-value": "{{unit}} × {{count}} 积分",
+      "qty-discount": "数量折扣",
+      "qty-discount-value": "原价 {{base}} · 已省 {{saved}}",
       "service-fee": "服务费",
       "service-fee-value": "{{value}} 积分",
       "total-label": "小计",

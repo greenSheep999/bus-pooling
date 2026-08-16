@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { AlertTriangle, Clock, Coins, Package, ShieldCheck, Sparkles, TrendingUp } from "lucide-react";
 import { useAutoPick, useVendorHistory, useVendorStock } from "@/api/hooks";
 import { Muted } from "@/components/ui/primitives";
-import { cn, fmtLifespan, toCredits } from "@/lib/utils";
+import { cn, fmtLifespan, toCredits, I18N_VENDOR_IDS } from "@/lib/utils";
 import type { Zone } from "@/types";
 
 /** 上游即时状态面板 · docs/14 §4.3 · decisions §8.20
@@ -19,6 +19,8 @@ export function UpstreamStatusPanel({
   inviteCode?: string;
 }) {
   const { t } = useTranslation("extract");
+  /** vendor 展示名的翻译 · 只我方自营那家要翻（前 6 家品牌名 / 匿名编号都不翻） */
+  const { t: tVendor } = useTranslation("vendor");
   const isAuto = vendorId === "auto";
   const { data: pick, isLoading: pickLoading } = useAutoPick(zone, inviteCode);
   const { data: stock, isLoading: stockLoading } = useVendorStock(
@@ -33,6 +35,9 @@ export function UpstreamStatusPanel({
       return <PanelShell><Muted>{t("upstream-panel.loading-auto")}</Muted></PanelShell>;
     }
     const outOfStock = pick.available === 0;
+    const pickVendorLabel = I18N_VENDOR_IDS.has(pick.vendor_id)
+      ? tVendor(pick.vendor_id, { defaultValue: pick.vendor_label })
+      : pick.vendor_label;
     return (
       <PanelShell>
         {/* 头 · 系统派号 + 推荐到谁 */}
@@ -44,12 +49,22 @@ export function UpstreamStatusPanel({
               {!outOfStock && (
                 <>
                   <span className="text-fg-tertiary">{t("upstream-panel.auto-arrow")}</span>
-                  <span className="font-semibold text-brand-strong">{pick.vendor_label}</span>
-                  {pick.zone && <span className="text-fg-tertiary">· {pick.zone}</span>}
+                  <span className="font-semibold text-brand-strong">{pickVendorLabel}</span>
+                  {pick.zone && (
+                    <span className="text-fg-tertiary">
+                      · {t(`pull-form.zone.${pick.zone}`, { defaultValue: pick.zone })}
+                    </span>
+                  )}
                 </>
               )}
             </div>
-            <p className="mt-0.5 text-label text-fg-tertiary">{pick.reason}</p>
+            {/* 推荐理由 · 走 reason_code 出本地化文案 · 后端 reason 原文只当兜底
+                （后端不知道调用者语言 · 直接显示它会让英文用户看到中文）*/}
+            <p className="mt-0.5 text-label text-fg-tertiary">
+              {pick.reason_code
+                ? t(`upstream-panel.reason.${pick.reason_code}`, { defaultValue: pick.reason })
+                : pick.reason}
+            </p>
           </div>
         </div>
 
@@ -115,13 +130,17 @@ export function UpstreamStatusPanel({
     return <PanelShell><Muted>{t("upstream-panel.loading-vendor")}</Muted></PanelShell>;
   }
 
-  /* 找该 zone 对应库存 · 无区域 vendor 用 zones[0]（label="全区"） */
-  const noRegion = stock.zones.length === 1 && stock.zones[0].label === "全区";
+  /* 无区域 vendor（手工池 / 单区家）· 只有一个 zone 就当无区
+     ⚠️ 别拿 label 文字判 —— 那是后端中文原文 · 一旦本地化就静默失效 */
+  const noRegion = stock.zones.length === 1;
   const activeZone = noRegion
     ? stock.zones[0]
     : zone === "auto"
       ? stock.zones.reduce((a, b) => (a.unit_price <= b.unit_price ? a : b))
       : stock.zones.find((z) => z.zone === zone) ?? stock.zones[0];
+  /** 区域显示名 · 用 zone code 走 i18n · 不用后端返的中文 label */
+  const zoneLabelOf = (z: string) =>
+    t(`pull-form.zone.${z}`, { defaultValue: t("extract-history.zone.all") });
 
   const outOfStock = activeZone.available === 0;
   const noWarranty = stock.warranty_minutes === 0;
@@ -132,7 +151,9 @@ export function UpstreamStatusPanel({
       <div className="mb-3 flex items-center justify-between text-label">
         <div className="font-semibold text-fg">{t("upstream-panel.vendor-title")}</div>
         {!noRegion && zone === "auto" && (
-          <span className="text-fg-tertiary">{t("upstream-panel.default-zone-prefix")}{activeZone.label}</span>
+          <span className="text-fg-tertiary">
+            {t("upstream-panel.default-zone-prefix")}{zoneLabelOf(activeZone.zone)}
+          </span>
         )}
       </div>
 

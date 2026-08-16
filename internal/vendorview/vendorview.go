@@ -275,8 +275,22 @@ type AutoPickView struct {
 	AvgLifespanSeconds int64   `json:"avg_lifespan_seconds"`
 	AliveRate30d       int     `json:"alive_rate_30d"`
 	// Reason 对乘客可见的一句人话（不许透"decider 逻辑"）
+	//
+	// **只当 i18n 兜底** —— 前端优先用 ReasonCode 出本地化文案。后端不知道
+	// 调用者的语言 · 这里返中文会让英文用户看到中文（实测 Extract 页 pill）。
 	Reason string `json:"reason"`
+	// ReasonCode 稳定机器码 · 前端 i18n key（extract:pull-form.upstream.reason.*）
+	// 加新理由时**同步加前端词条** · 前端查不到 key 就回落 Reason 原文。
+	ReasonCode string `json:"reason_code"`
 }
+
+// AutoPick 推荐理由的机器码 · 跟前端 i18n key 一一对应
+const (
+	ReasonOutOfStock = "out_of_stock" // 全网暂时缺货
+	ReasonCheapest   = "cheapest"     // 当前单价最低 · 库存充足
+	ReasonMostStock  = "most_stock"   // 当前库存最多 · 单价合理
+	ReasonBalanced   = "balanced"     // 库存与单价综合最优
+)
 
 // ── 错误哨兵 ──
 
@@ -479,10 +493,10 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 			return &AutoPickView{
 				VendorLabel: label, VendorID: visibleVendorID(entries[0].VendorID, v), AnonID: anon,
 				Zone: nonZeroZonePtr(zoneHint), Available: 0,
-				Reason: "全网暂时缺货",
+				Reason: "全网暂时缺货", ReasonCode: ReasonOutOfStock,
 			}
 		}
-		return &AutoPickView{Reason: "全网暂时缺货"}
+		return &AutoPickView{Reason: "全网暂时缺货", ReasonCode: ReasonOutOfStock}
 	}
 
 	// 打分：以候选中最高单价做分母做相对价（**用换算后的积分** · 见 cand.credits）
@@ -529,11 +543,11 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 			mostStock = c
 		}
 	}
-	reason := "库存与单价综合最优"
+	reason, reasonCode := "库存与单价综合最优", ReasonBalanced
 	if best.entry.VendorID == cheapest.entry.VendorID {
-		reason = "当前单价最低 · 库存充足"
+		reason, reasonCode = "当前单价最低 · 库存充足", ReasonCheapest
 	} else if best.entry.VendorID == mostStock.entry.VendorID {
-		reason = "当前库存最多 · 单价合理"
+		reason, reasonCode = "当前库存最多 · 单价合理", ReasonMostStock
 	}
 
 	label, anon := labelAndAnon(best.entry, v)
@@ -568,6 +582,7 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 		AvgLifespanSeconds: avgLifespan,
 		AliveRate30d:       aliveRate30d,
 		Reason:             reason,
+		ReasonCode:         reasonCode,
 	}
 }
 
@@ -758,6 +773,12 @@ func (s *Service) finalUnitPrice(unit int64, v Viewer) int64 {
 // 前端约定：优先渲染 VendorLabel；VendorID 只用于取色（vendorColor）不直接展示。
 func labelAndAnon(e providers.VendorEntry, v Viewer) (label, anon string) {
 	anon = anonIDOf(e.VendorID)
+	// 我方自营手工池 · 所有档都看真名。
+	// 匿名的目的是"别让乘客绕过我方直接找上游买"（decisions §8.20）· 这家的号是
+	// 运营自己导进来的 · **没有上游可绕** · 藏名字只会让用户看不懂这是哪来的号。
+	if e.VendorID == providers.VendorKiroMarket {
+		return e.DisplayName, anon
+	}
 	if v.canSeeVendorName() {
 		return e.DisplayName, anon
 	}
@@ -767,9 +788,13 @@ func labelAndAnon(e providers.VendorEntry, v Viewer) (label, anon string) {
 // visibleVendorID · **决定 vendor_id 字段是否泄漏真名**（CLAUDE.md §0.1 硬约束）：
 //   - tier=wholesale：返真 vendor_id
 //   - 其他档：返 anon_id
+//   - kiro_market:恒返真 id —— 我方自营(无上游可绕)· 且前端要认这个 id 出中文名
 //
 // 所有对外 view struct 的 VendorID 字段**必须**走这个函数拼装。
 func visibleVendorID(id providers.VendorID, v Viewer) string {
+	if id == providers.VendorKiroMarket {
+		return string(id)
+	}
 	if v.canSeeVendorName() {
 		return string(id)
 	}
