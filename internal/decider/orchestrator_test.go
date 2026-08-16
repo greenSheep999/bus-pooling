@@ -124,6 +124,10 @@ func (p *mockPool) UpdateCredential(_ context.Context, _ housepool.CredentialID,
 	return nil
 }
 
+func (p *mockPool) GetCredential(_ context.Context, id housepool.CredentialID) (*housepool.Credential, error) {
+	return &housepool.Credential{ID: id, MaskedKey: "ksk_...mock"}, nil
+}
+
 // ── 测试脚手架 ──────────────────────────────────────
 
 const testMicro = 1_000_000

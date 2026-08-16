@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/bus-pooling/bus-pooling/internal/housepool"
 	"github.com/bus-pooling/bus-pooling/internal/marketstock"
@@ -33,6 +34,28 @@ type ImportedCred struct {
 	// Source · 手工池路径有值（offer.source · "这号谁提的"）· 前 6 家路径为空
 	// settle 里落 credential_ledger.source · 如果 pending.Source 空 · 用这个兜底
 	Source string
+	// KeyMasked 打码 key（"ksk_...w4DV"）· 导入时**从明文自己算** ——
+	// 号池 BatchImport 事件流不回这个字段 · 而我方不留明文 ·
+	// 不在这里算就永远补不上（实测:credential_ledger.key_masked 全空 ·
+	// 前端待派列表渲染不出行 → 号勾不上 · 派不了）
+	KeyMasked string
+}
+
+// maskKey 打码 · 保留前缀 + 末 4 位（跟号池 maskedApiKey 同风格:"ksk_...w4DV"）
+//
+// 短到看不出前缀时一律返 "ksk_…"（**绝不返原文** —— 这函数的输出会进 DB 和前端）
+func maskKey(plain string) string {
+	if plain == "" {
+		return ""
+	}
+	prefix := "ksk_"
+	if i := strings.Index(plain, "_"); i > 0 && i < 8 {
+		prefix = plain[:i+1]
+	}
+	if len(plain) < len(prefix)+4 {
+		return prefix + "…"
+	}
+	return prefix + "..." + plain[len(plain)-4:]
 }
 
 // importToPool 把 vendor 拉到的号导入号池指定 group，返回号池侧的 credential id + 元数据。
@@ -111,10 +134,18 @@ func (o *Orchestrator) importToPoolWithMeta(
 		case housepool.ImportStatusVerified, housepool.ImportStatusDuplicate:
 			if evt.CredentialID != nil {
 				// Subscription / Usage 是号池对这个号的实测回报 · 一路带到 settle
+				//
+				// KeyMasked 用 evt.Index 回查这批明文自己算 —— 号池事件流不回打码值 ·
+				// 而我方落库后就不留明文了 · 这是唯一能算的时机
+				masked := ""
+				if evt.Index != nil && *evt.Index >= 0 && *evt.Index < len(purchase.Keys) {
+					masked = maskKey(purchase.Keys[*evt.Index].Key)
+				}
 				ids = append(ids, ImportedCred{
 					ID:           *evt.CredentialID,
 					Subscription: evt.Subscription,
 					Usage:        evt.Usage,
+					KeyMasked:    masked,
 				})
 			}
 		}
@@ -166,6 +197,12 @@ func (o *Orchestrator) moveMarketStockToGroup(
 		}); err != nil {
 			return nil, fmt.Errorf("decider: market 转 group[%d]: %w", i, err)
 		}
+		// 手工池路径拿不到明文（号早就在池里了）· 打码值只能问号池要 ·
+		// 拿不到就留空（不阻塞卖号 · 只是列表少个展示值）
+		masked := ""
+		if c, err := o.pool.GetCredential(ctx, credID); err == nil && c != nil {
+			masked = c.MaskedKey
+		}
 		out = append(out, ImportedCred{
 			ID: credID,
 			// 手工池的档位权威源是**运营上架时选的 offer.Subscription** ·
@@ -176,7 +213,8 @@ func (o *Orchestrator) moveMarketStockToGroup(
 			StockItemID: meta.StockItemIDs[i],
 			// Source 手工池 offer.source（"这号谁提的" · 运营配置）·
 			// settle 里如果 pending.Source 为空 · 用这个兜底
-			Source: meta.Source,
+			Source:    meta.Source,
+			KeyMasked: masked,
 		})
 	}
 	return out, nil
