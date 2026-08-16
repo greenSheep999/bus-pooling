@@ -468,38 +468,76 @@ CREATE TABLE vendor_lifespan_snapshot (
 
 **索引**：`(vendor_id, window, observed_at DESC)`。
 
-## 12.5 号用量快照 · `credential_usage_snapshot`
+## 12.5 号用量数据 · 两个数据源分开落库
 
-从 kiro.rs `GET /stats/by-credential` 定期拉快照落进本表，用于 UI 展示"每号用了多少 / 平均积分消耗 / 平均并发"。
+**关键区分**（车主 2026-08-16 澄清 · docs/24 §5 补充）：号用量数据来自**两个完全不同的源** ·
+用途和精度都不一样 · **不能混一张表**。
+
+| 来源 | 精度 | 用途 |
+|---|---|---|
+| **我方 housepool**（`kiro.rs.credentials[].balance`）| 粗 · 只有 currentUsage / usageLimit / subscription | 号还没派下游前的用量 · 号"死那一刻"的快照 · 前端"号详情"进度条粗展示 |
+| **用户下游 kiro.rs pool**（passengerpool · 待接）| 细 · 每次请求日志 · RPM / TPM / calls / errors | 拼车按用量比例分摊车费 · 并发限制 · 号推给用户下游**之后**才在下游产生用量 |
+
+### §12.5a 我方 pool 快照 · `credential_usage_snapshot`（粗数据 · 展示用）
+
+从 `kiro.rs.ListCredentials[].balance` 每 5-15min 一采 · **粗**：只有 currentUsage
+（累计积分数）+ usageLimit（月度上限）+ subscriptionTitle。**没有请求日志、没有 RPM / TPM**。
+
+用途：
+- 前端"号详情"用量进度条（`currentUsage / usageLimit`）
+- 死号那一刻 · 写进 `credential_ledger.credits_used`（§11.1 快照语义 · 一次性）
+- **不用于**分摊 · 不用于并发控制 —— 数据太粗
 
 ```sql
 CREATE TABLE credential_usage_snapshot (
-  id                        TEXT PRIMARY KEY,
-  kiro_rs_credential_id     INTEGER NOT NULL,           -- housepool 里的 credential id
-  window                    TEXT NOT NULL,              -- '1h' | '24h' | '7d' | '30d'   （1h 用于号详情抽屉 24 柱图）
-  calls                     INTEGER NOT NULL DEFAULT 0,
-  input_tokens              INTEGER NOT NULL DEFAULT 0,
-  output_tokens             INTEGER NOT NULL DEFAULT 0,
-  errors                    INTEGER NOT NULL DEFAULT 0,
-  credits_used              INTEGER NOT NULL DEFAULT 0, -- microunit，从 vendor 或 kiro.rs 拿
-  avg_credits_per_day       INTEGER NOT NULL DEFAULT 0, -- microunit
-  concurrency_avg           INTEGER,                     -- **kiro.rs 未直接给，可能是 null**
-  observed_at               TEXT NOT NULL,
-  UNIQUE (kiro_rs_credential_id, window, observed_at)
+  id                     TEXT PRIMARY KEY,
+  kiro_rs_credential_id  INTEGER NOT NULL,   -- housepool 里的 credential id · 一对一
+  -- 上游只给累计值 · 不给时间窗口分拆 · window 字段作废（跟老设计初稿的分歧）
+  current_usage_micro    INTEGER NOT NULL,   -- Balance.currentUsage × 1e6（保浮点精度）
+  usage_limit_micro      INTEGER NOT NULL,   -- Balance.usageLimit × 1e6（月度上限）
+  subscription_title     TEXT,               -- 原样存 "KIRO PRO+" 等 · 归一版本落 credential_ledger.subscription
+  next_reset_at          TEXT,               -- Balance.nextResetAt · 下次配额重置时刻
+  observed_at            TEXT NOT NULL,
+  UNIQUE (kiro_rs_credential_id, observed_at)
 );
 ```
 
-**索引**：`(kiro_rs_credential_id, window, observed_at DESC)`。
+**索引**：`(kiro_rs_credential_id, observed_at DESC)` · 前端 24h 柱图靠这个反查历史点。
 
-**采集节奏**：每 5-15 分钟一次（阶段 1d 可配置）。
+**采集节奏**：跟 deathwatch 复用 · 5min 一次（`ListCredentials` 一次拉回全池 · 逐号入表）。
 
-**`concurrency_avg` 字段现状**：
-- kiro.rs 未提供直接读端点（`POST /credentials/{id}/clear-concurrency` 存在为证——内部有并发计数）
-- 三条出路（详见 `03-modules.md · housepool/kirors` 备注）：
-  - (a) 给 kiro.rs 加 `GET /credentials/{id}/concurrency`
-  - (b) 我方采样聚合
-  - (c) 反推（不可用）
-- 未拍板前该字段常态 `NULL`，UI 显示 `—`
+**跟老设计初稿的分歧**：初稿有 `calls / input_tokens / output_tokens / errors / concurrency_avg` · 但**我方 housepool 端点根本不给这些** —— 只给 Balance 里的累计 currentUsage / usageLimit。请求日志 / RPM / TPM 是**下游用户 pool** 才有的数据 · 见 §12.5b。
+
+### §12.5b 下游用户 pool 用量 · `passenger_usage_log`（细数据 · 分摊/并发用）· ⏸ 未来阶段
+
+**为什么单独一张 · 单独接**：这些数据在**用户下游 kiro.rs pool** 里产生（号推给用户后 · 他们那边跑请求生成 RPM/TPM/calls）· **我方 housepool 完全没有**。
+
+字段规划：
+```
+kiro_rs_credential_id · downstream_pool_id · window(1h/24h)
+  calls · input_tokens · output_tokens · errors · rpm_avg · tpm_avg · concurrency_avg
+```
+
+用途：
+- **拼车按用量比例分摊车费**（谁用得多谁分得多 · docs/09-transactions §分摊 未定）
+- **拼车按请求次数分摊**
+- **限制单号并发**（车级 / 用户级并发上限）
+- 车级用量趋势图 · 死号事后归因
+
+前置条件（**都没做**）：
+1. 用户下游 kiro.rs pool 加 `GET /credentials/{id}/stats?window=1h` 端点
+2. 我方 passengerpool 契约加 `GetStats(id) → (calls, tokens, rpm, tpm, ...)` 方法（现在只有 `Push`）
+3. 建 `passenger_usage_log` 表 + 拉取器 tick + 前端展示
+
+**当前阶段（2026-08 · sprint-1e）不做**。等基础闭环稳后单独一轮做。
+
+### §12.5c 记录 credential_ledger.credits_used 语义
+
+`credits_used`（migration 004 建的列）**只在死号那一刻**从最近一次 `credential_usage_snapshot`
+拷贝一份进去 · 死后**不再变**（快照语义）· 用于事后归因"死时用到多少"、算平均寿命对应用量。
+
+写入路径：`deathwatch.markDead` · 打 dead_at 同时读最近 snapshot 的 current_usage_micro
+写进这列。**settle / 拉号阶段不写 credits_used** —— 那时候 currentUsage 是 0（号刚交付）。
 
 ## 12.6 Bus 用量聚合视图 · `bus_usage_snapshot`
 

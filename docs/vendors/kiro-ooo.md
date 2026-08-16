@@ -28,6 +28,8 @@
 |---|---|---|---|---|---|
 | 1 | GET | `/my/profile` | 账号 · 额度 · 速率 · 可领数量 | `Adapter.Balance()` | ✅ |
 | 2 | GET | `/my/stock` | 可领上限 / 可取库存 / 剩余配额（**单区聚合**）| — | ❌ 未接（用 #3 代替）|
+| 2b | GET | `/api/my/stock/personal-pool` | ★ **个人号货架** · `unit_price` + 内嵌 `tiers[{min_qty,unit_price}]` · 无区 | — | ❌ **未接 · 高价值**（§2.3b）|
+| 2c | POST | `/api/my/keys/claim-personal` | ★ **个人号下单** · `{count, client_order_id}` · 无 region/plan | — | ❌ **未接**（§2.4b）|
 | 3 | GET | `/my/stock/regions` | **双区货架** `[{region,label,open,unit_price,claimable,can_buy}]` | `Adapter.Stock()` | ✅ |
 | 4 | POST | `/my/keys/claim` | 自助领取 `{count, client_order_id, region}` | `Adapter.Purchase()` | ✅ |
 | 5 | GET | `/my/keys` | 我的 key 列表 · `?history=1` 含已失效 | `Adapter.KeyStats()` | ✅ |
@@ -223,9 +225,69 @@
 
 **⚠️ 数据缺口**：`label` / `open` / `can_buy` / `afford` / `short_credits` **都不落库**。`fleet_active` 只用于探针提频 · **不落库**（想事后分析"开号节奏 vs 我方抢号成功率"就没数据）。
 
+**这是企业号货架** —— 个人号是**另一套端点**，见 §2.3b。
+
 ---
 
-### 2.4 `POST /my/keys/claim`
+### 2.3b `GET /api/my/stock/personal-pool`（个人号货架 · ❌ 未接 · **高价值**）
+
+**实测响应**（2026-08-16 · 真调 · `X-API-Key`）：
+
+```json
+{
+  "ok": true,
+  "unit_price": 50,
+  "tiers": [{ "min_qty": 10, "unit_price": 40 }],
+  "stock": 0, "remaining": 10, "credits": 10,
+  "can_buy": false, "afford": 0, "short_credits": 0,
+  "user_special_price": false
+}
+```
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `unit_price` | int | **基准单价**（积分/个）· 实测 50 |
+| **`tiers[]`** | arr | ★ **数量分档** `{min_qty, unit_price}` · 实测「10 个起 40」 |
+| `stock` | int | 个人池库存（**跟企业池独立**）|
+| `remaining` | int | 剩余配额 |
+| `user_special_price` | bool | 是否走了我方专属价 |
+
+**跟企业池的区别**（`/api/my/stock/regions`）：
+
+| | 企业池 | 个人池 |
+|---|---|---|
+| 端点 | `/api/my/stock/regions` | `/api/my/stock/personal-pool` |
+| 分区 | ✅ 双区（`us-east-1` / `eu-central-1`）| ❌ **无区概念** |
+| 单价 | 100（两区各自） | 50 基准 |
+| 数量分档 | 走 `/api/my/key-price-tiers`（实测 4 档**全 100** · flat）| **响应内嵌 `tiers[]`** · 真有折扣 |
+| 下单 | `POST /api/my/keys/claim` | `POST /api/my/keys/claim-personal` |
+
+**⚠️ 不支持按订阅档查询** —— 实测 `?plan=pro` / `?plan=pro_plus` / `?plan=pro_max` /
+`?subscription=` / `?tier=` **全部被忽略**（三个 plan 值返回完全相同）。
+所以这家的个人池**买前不能选档** · 号是哪档只能导入后从 housepool `Subscription` 观察。
+→ `Capability.SelectablePlans[personal]` 留空。
+
+**映射到我方契约**：`tiers[]` + `unit_price` → `[]providers.QtyPriceBand`
+（`{Lower:1, Upper:9, 50×10⁶}` + `{Lower:10, Upper:0, 40×10⁶}` · `Region:""`）·
+复用现有 `KeyTierLister` 契约，不新造类型。
+
+---
+
+### 2.4b `POST /api/my/keys/claim-personal`（个人号下单 · ❌ 未接）
+
+**实测**（2026-08-16 · 真调 · 未成交）：
+
+| 请求 | 响应 |
+|---|---|
+| `{}` | `{"error":"count 必须大于 0"}` |
+| `{"count":1,"client_order_id":"…"}` | `{"error":"存活库存不足(仅剩 0 个)"}` |
+
+参数形状跟企业池 `claim` 一致（`count` + `client_order_id`）· **无 `region`**（个人池不分区）·
+**无 `plan`**（见 §2.3b）。`GET` 该路径返 `405 · 允许: POST` —— 端点确实存在。
+
+---
+
+### 2.4 `POST /my/keys/claim`（企业号下单）
 
 **请求**：`{ "count": 5, "client_order_id": "…", "region": "us-east-1" }`
 

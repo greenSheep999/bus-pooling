@@ -46,6 +46,32 @@
 - **kirooo 给 `claimable`** —— 比 `stock` 更准（考虑了我方配额）· 我方**没用**
 - **kiroappio 平铺** —— 无数组 · adapter 硬编码拆成 us/eu 两条
 
+### 1.1 个人号货架（`account_kind = personal` · ★ 2026-08-16 逐家实测）
+
+**上表全是企业号货架。** 个人号是**另一套端点** —— 逐家真调结果：
+
+| vendor | `GET /api/my/stock/personal-pool` | 结论 |
+|---|---|---|
+| **kirooo** | `200` · `{unit_price:50, tiers:[{min_qty:10,unit_price:40}], stock, remaining}` | ✅ **有个人池** · 详见 `vendors/kiro-ooo.md §2.3b` |
+| kiroceo | `200` 但返 **SPA HTML**（非 API）| ❌ 无 |
+| kiro91 | `404 page not found` | ❌ 无 |
+| kiroappio | `404 page not found` | ❌ 无 |
+| kiroappcc | `404`（空 body）| ❌ 无 |
+| kirodrop | `404` · `{"error":{"code":"NOT_FOUND"}}` | ❌ 无 |
+
+**⚠️ `200` 不等于有** —— kiroceo 的 SPA 对任意路径都返 HTML 200。判据是**响应体是不是 JSON**。
+
+**个人池 vs 企业池（kirooo 实测）**：不同端点 · 不同价（50 vs 100）· 不同库存 · 个人池**无区概念**。
+所以 `account_kind` 是**平级维度**，不是"vendor 属性"（`docs/24 §1`）。
+
+**档位可选性**：kirooo 个人池 `?plan=` 参数**被忽略**（`pro`/`pro_plus`/`pro_max` 三值返回全同）
+→ 这家买前不能选档 · `Capability.SelectablePlans[personal]` 留空 ·
+号是哪档只能导入后从 housepool `Subscription` 观察。
+
+**⚠️ 别把「当前只开了哪些档」写成代码假设** —— plan 与 kind **正交**（企业和个人都可能有
+power/pro/pro_plus/pro_max 任意档）。可买组合是运行时数据：真 vendor 看
+`Capability.SelectablePlans`，我方手工上架看 `market_inventory` 里有哪些行。
+
 ---
 
 ## 2 · 组 2 · 单价（★ 最重要 · 计费依赖）

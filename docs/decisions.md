@@ -507,19 +507,24 @@
 
 ### 8.45 企业号+个人号双线 + subscription 档位 ⏸ 阶段 2 主线(2026-08-16)
 
-**背景**: 阶段 1 只支持企业号(6 家 kiro91/kiroceo/...) · 从 xi8 拉。阶段 2 车主明确要支持:
+**背景**: 阶段 1 只支持企业号。车主要求拉号链能识别 / 查询 / 购买 / 落库两种 **account kind**:
 
-1. **个人号线**: 用户自己有的号(Kiro IDE 的私钥)· 上传/导入进池
-2. **企业号线**: 现有 6 家 vendor · 系统爬
-3. **subscription 档位**: Kiro 有 3 档(Power / PRO / PRO+)· 每档 quota 不同:
-   - **Power**: 10000 次/月
-   - **PRO**: 1000 次/月
-   - **PRO+**: 2000 次/月
+1. **enterprise**(企业号)
+2. **personal**(个人号)
+3. **subscription 档位**: Kiro 有 3 档(Power / PRO / PRO+)· 每档 quota 不同
+   (Power 10000 / PRO 1000 / PRO+ 2000 · **但运行时应读 housepool `UsageLimit` 真值 · 别硬编码**)
+
+⚠️ **2026-08-16 修正** —— 原文把"个人号"定义成"用户自己上传/导入"、"企业号"定义成
+"6 家 vendor 系统爬"。这是**未经协议证据的推断**，已作废。account kind 是**单个 Offer 的
+商品类型**，来自 vendor 的 Offer/capability，**不能**按供货来源或"在不在 registry"推导。
 
 **UI 触点(拉号 + 拼车 · 双入口都要选)**:
-- vendor 类型(企业 / 个人)
-- 具体 vendor(kiro91 / kiroceo / vendor_x · 等)
-- subscription 档位
+
+⚠️ **2026-08-16 修正** —— vendor / category / subscription / zone 是**平级 Offer 维度**
+(`Offer = vendor × category × subscription × zone`)· **不是**"先选 category 再选下属 vendor"·
+也**不是**"vendor 本身属于企业或个人"。同一家 vendor 可同时支持两个 category ·
+各自库存独立。UI 需 vendor↔category **双向联动** + `supported`/`available` 分离。
+详见 `docs/24-category-subscription.md §1 §3 §4`。
 
 **架构影响**:
 - vendor_pricing 表加 subscription_level 列(power / pro / pro_plus)
@@ -529,14 +534,29 @@
 - API 层拉号 + 建车都加 subscription_level 参数
 - 定价链按 subscription 分档
 
-**跟"上游只支持个人号"的关系**: 用户 2026-08-16 说的"上游只支持个人号"其实是**上游 vendor 不支持外部拉号 · 只有用户手动导入的个人号一条路**。上游真正的 blocker 不是 API 权限 · 而是**vendor 侧不给外部 partner 开自动化拉号** —— 所以我方**只能走个人号线**(用户手动上传)· 或者等上游企业 partnership 完成。
+**跟"上游只支持个人号"的关系**: ❌ **原结论作废**（原文推断成"只能用户手动上传"）。
+
+仓库内**没有任何** personal stock/purchase 的真实请求响应。必须先分清两种情况:
+- **A** · vendor API 仍可采购 · 只是商品类型变 personal → 可解锁 Stage 3
+- **B** · 上游不开采购 API · 只能手工导入 → Stage 3 **不能宣称解锁** · Stage 4/5/6 保持 blocked
+
+**拿到协议证据前不新增 DB / UI。** 详见 `docs/24-category-subscription.md §9`。
+
+**阶段归属修正**: 支持**一家** vendor 的 personal Offer 完成 Stage 3 smoke = **阶段 1 的
+live-readiness gate**；用户上传 / 运营预库存 / 公开市场 = 阶段 2/3 独立产品能力。
+两者绑在 Task #202 会让小范围解锁膨胀成完整 marketplace 重构。
 
 **待建 Task**:
-- P0-arch · 阶段 2 主线大改(Task #202)· vendor 类型 + subscription + UI 3 维
+- P0-arch · Offer 维度贯通(Task #202)· vendor × category × subscription × zone **平级**
 - P1-i · push/handoff 后 credplain.MarkUsed(Task #200 · 短期修)
 - P1-j · 真死号等生产触发验证(Task #201)
 
 **参考**: CLAUDE.md §1.3 计费术语(要扩 subscription 一维) · docs/10-pricing.md 定价大改 · sprint-1-final Stage 3+ 真阻塞
+
+**全链路状态 + 领域模型看 `docs/24-category-subscription.md`** —— 四维 Offer 模型 ·
+作废概念清单 · Offer matrix 形状 · UI 双向联动规则 · 车级拉号偏好(**不是**车类型) ·
+逐环节 ✅/❌ 表 · 冻结范围 · 验收矩阵。
+2026-08-16 实况:**已冻结** —— 既有实现(kiro_market / market_inventory / 三维 UI)领域模型错位。
 
 ### 8.46 死号三层语义 + usage 阈值 · assign 前置 verify ✅(2026-08-16 落定)
 
