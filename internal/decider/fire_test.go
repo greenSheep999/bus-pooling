@@ -128,7 +128,6 @@ func TestMaybeEnqueue_WithBus_TargetsBusGroup(t *testing.T) {
 	}
 }
 
-
 // **第四刀关键测试**：AutoPick 填了 in.VendorID 后·requestedVendorID 仍空·应挂单
 // 老 bug:老代码用 in.VendorID != "" 判非 auto · AutoPick 填后永远不挂 · 修法用 requestedVendorID
 func TestMaybeEnqueue_AutoPickFilled_StillEnqueues(t *testing.T) {

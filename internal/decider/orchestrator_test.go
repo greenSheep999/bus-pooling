@@ -120,6 +120,11 @@ func (p *mockPool) BatchImport(_ context.Context, req housepool.BatchImportReque
 	}, nil
 }
 
+// UpdateCredential · 测试桩 · 满足 PoolClient 接口即可
+func (p *mockPool) UpdateCredential(_ context.Context, _ housepool.CredentialID, _ housepool.CredentialPatch) error {
+	return nil
+}
+
 // ── 测试脚手架 ──────────────────────────────────────
 
 const testMicro = 1_000_000

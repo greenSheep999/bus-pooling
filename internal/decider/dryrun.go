@@ -171,6 +171,12 @@ func (p *DryRunPool) BatchImport(_ context.Context, req housepool.BatchImportReq
 	}, nil
 }
 
+// UpdateCredential · DryRun 兼容 · 满足 PoolClient 接口即可 · 不真做事
+// （手工池路径要求 · Step 3f · 见 deps.go PoolClient 注释）
+func (p *DryRunPool) UpdateCredential(_ context.Context, _ housepool.CredentialID, _ housepool.CredentialPatch) error {
+	return nil
+}
+
 func randHex(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)

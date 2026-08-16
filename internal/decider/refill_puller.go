@@ -69,8 +69,9 @@ func (a *RefillAdapter) Refill(ctx context.Context, req refillReq) (bool, error)
 // 装配层用**函数**桥接 · 见 cmd/bus-pooling/main.go
 //
 // 上层调用：
-//   refillAdapter := decider.NewRefillAdapter(orch)
-//   watcher.SetRefillPuller(refillPullerFrom(refillAdapter))
+//
+//	refillAdapter := decider.NewRefillAdapter(orch)
+//	watcher.SetRefillPuller(refillPullerFrom(refillAdapter))
 type refillReq struct {
 	RefillID    string
 	PassengerID string

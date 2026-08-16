@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/housepool"
@@ -27,6 +28,23 @@ func (o *Orchestrator) settle(
 	pending Pending,
 	purchase *providers.PurchaseResult,
 	credIDs []housepool.CredentialID,
+	reservePlan SplitPlan,
+) (*PullResult, error) {
+	// 无号池元数据的老调用路径（崩溃恢复）· 包成 ImportedCred 走同一实现
+	cs := make([]ImportedCred, 0, len(credIDs))
+	for _, id := range credIDs {
+		cs = append(cs, ImportedCred{ID: id})
+	}
+	return o.settleWithMeta(ctx, pendingID, pending, purchase, cs, reservePlan)
+}
+
+// settleWithMeta · settle 的真实现 · 带号池回报的 subscription 元数据。
+func (o *Orchestrator) settleWithMeta(
+	ctx context.Context,
+	pendingID string,
+	pending Pending,
+	purchase *providers.PurchaseResult,
+	imported []ImportedCred,
 	reservePlan SplitPlan,
 ) (*PullResult, error) {
 
@@ -100,7 +118,7 @@ func (o *Orchestrator) settle(
 	}
 
 	// credential_ledger 每号一行
-	ledgerIDs, err := o.insertCredentials(ctx, tx, pending, pullRoundID, purchase, credIDs)
+	ledgerIDs, err := o.insertCredentials(ctx, tx, pending, pullRoundID, purchase, imported)
 	if err != nil {
 		return nil, err
 	}
@@ -327,17 +345,24 @@ func (o *Orchestrator) insertPullRound(
 }
 
 // insertCredentials 每号一行 credential_ledger，返回我方 UUID 列表（对外派发用这个）。
+//
+// account_kind / subscription / source 三列（migration 046）：
+//   - account_kind · 本轮买的哪种货架（企业/个人）· 来自 pending.AccountKind
+//   - subscription · **号池回报的实测档位**（归一后）· 多数 vendor 买前不给档位 ·
+//     所以这里的值来自 BatchImport 事件而非请求参数（docs/24 §5）
+//   - source       · 号是谁提供的（用户视角的"来源"）· 空则不写
 func (o *Orchestrator) insertCredentials(
 	ctx context.Context, tx *sql.Tx,
 	pending Pending, pullRoundID string,
 	purchase *providers.PurchaseResult,
-	credIDs []housepool.CredentialID,
+	imported []ImportedCred,
 ) ([]string, error) {
-	// credIDs 长度可能 < purchase.Keys（号池部分失败）· 按短的走
-	n := len(credIDs)
+	// imported 长度可能 < purchase.Keys（号池部分失败）· 按短的走
+	n := len(imported)
 	if n > purchase.Purchased {
 		n = purchase.Purchased
 	}
+	kind := string(pending.AccountKind.Normalize())
 	out := make([]string, 0, n)
 	for i := 0; i < n; i++ {
 		id := o.newID()
@@ -345,23 +370,80 @@ func (o *Orchestrator) insertCredentials(
 		if purchase.Keys[i].WarrantyUntil != nil {
 			warrantyUntil = formatTime(*purchase.Keys[i].WarrantyUntil)
 		}
+		// 号池回报的档位串归一 · 认不出的存 NULL（宁缺勿错 —— 档位错会让 quota 判断错）
+		// 号池空 → 回落 pending.Plan（手动拉号里用户选的档 · 是"意图"档位）
+		raw := imported[i].Subscription
+		if raw == "" {
+			raw = string(pending.Plan)
+		}
+		plan := normalizePlan(raw)
+		var planVal any
+		if plan != "" {
+			planVal = string(plan)
+		}
+		// source · pending 优先（用户视角可能有别的口径）· 空则用 imported 兜底（手工池 offer.source）
+		src := pending.Source
+		if src == "" {
+			src = imported[i].Source
+		}
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO credential_ledger
 			  (id, kiro_rs_credential_id, owner_bus_id, owner_record_passenger_id,
 			   current_group, vendor_id, vendor_order_id, source_pull_round_id,
-			   status, disabled, pulled_at, warranty_until)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'alive', 0, ?, ?)`,
-			id, uint64(credIDs[i]),
+			   status, disabled, pulled_at, warranty_until,
+			   account_kind, subscription, source)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'alive', 0, ?, ?, ?, ?, ?)`,
+			id, uint64(imported[i].ID),
 			nullIfEmpty(pending.BusID),
 			nullIfEmptyIfNoBus(pending.BusID, pending.PassengerID),
 			pending.TargetGroup, pending.VendorID, purchase.VendorOrderID, pullRoundID,
-			formatTime(o.now()), warrantyUntil)
+			formatTime(o.now()), warrantyUntil,
+			kind, planVal, nullIfEmpty(src))
 		if err != nil {
 			return nil, fmt.Errorf("decider: 写 credential_ledger[%d]: %w", i, err)
+		}
+		// 手工池路径:同 tx 里 reserved → sold（Step 3f · docs/24 §3）
+		// 必须跟上面的 credential_ledger INSERT 同一 tx · 否则崩溃后 sweeper 会误释放：
+		//   若 sold 单独 commit · ledger 已落但 sold 没落 → sweeper 5min 后把号放回 available →
+		//   卖两次。同 tx 保证:要么两个都 commit · 要么两个都 rollback。
+		if imported[i].StockItemID != "" {
+			if o.marketStock == nil {
+				return nil, fmt.Errorf(
+					"decider: 号 %s 是手工池但 marketStock 未装配 · 不能同 tx 卖号", id)
+			}
+			if err := o.marketStock.SellTx(ctx, tx, imported[i].StockItemID, id); err != nil {
+				return nil, fmt.Errorf("decider: market SellTx[%d]: %w", i, err)
+			}
 		}
 		out = append(out, id)
 	}
 	return out, nil
+}
+
+// normalizePlan · 号池回报的原始档位串 → 我方枚举。
+//
+// 号池可能返 "Pro" / "KIRO PRO+" / "pro_plus" 等各种写法（`docs/11-fields.md §1.1`）·
+// 直接落库会让同一档位存成多个值 · quota 判断跟着错。认不出返 "" → 存 NULL。
+func normalizePlan(raw string) providers.SubscriptionPlan {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if s == "" {
+		return ""
+	}
+	// 去掉品牌前缀和分隔符 · "KIRO PRO+" → "pro+"
+	s = strings.TrimPrefix(s, "kiro")
+	s = strings.NewReplacer(" ", "", "-", "", "_", "").Replace(s)
+
+	switch s {
+	case "power":
+		return providers.PlanPower
+	case "pro":
+		return providers.PlanPro
+	case "pro+", "proplus":
+		return providers.PlanProPlus
+	case "promax":
+		return providers.PlanProMax
+	}
+	return ""
 }
 
 // nullIfEmptyIfNoBus 只有单独拉号（BusID 空）时才把 owner_record_passenger_id 填上。

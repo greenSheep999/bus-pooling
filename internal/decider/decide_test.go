@@ -247,10 +247,10 @@ func TestDecide_Turbo_ForcesTightBehavior(t *testing.T) {
 
 func TestDecide_EffectiveMaxPrice(t *testing.T) {
 	cases := []struct {
-		name          string
-		busMax        int64
-		passengerMax  int64
-		want          int64
+		name         string
+		busMax       int64
+		passengerMax int64
+		want         int64
 	}{
 		{"both zero", 0, 0, 0},
 		{"only bus", 100, 0, 100},

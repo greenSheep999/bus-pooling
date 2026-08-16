@@ -50,6 +50,9 @@ func (o *Orchestrator) recoverPurchasing(ctx context.Context, p Pending) error {
 	result, err := vendor.Purchase(ctx, providers.PurchaseRequest{
 		Count:         p.CountRequested,
 		ClientOrderID: p.ClientOrderID,
+		// **必须用落库的原 kind 重放** —— 两个池是不同端点/不同价 ·
+		// 用错池等于下了一笔全新的单（migration 046 存这列就为了这个）
+		Kind: p.AccountKind.Normalize(),
 	})
 	if err != nil {
 		switch {
@@ -147,6 +150,9 @@ func (o *Orchestrator) recoverImported(ctx context.Context, p Pending) error {
 	result, err := vendor.Purchase(ctx, providers.PurchaseRequest{
 		Count:         p.CountRequested,
 		ClientOrderID: p.ClientOrderID,
+		// **必须用落库的原 kind 重放** —— 两个池是不同端点/不同价 ·
+		// 用错池等于下了一笔全新的单（migration 046 存这列就为了这个）
+		Kind: p.AccountKind.Normalize(),
 	})
 	if err != nil {
 		return err
