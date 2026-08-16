@@ -25,11 +25,11 @@ type EnvelopeMeta struct {
 // 只给乘客决策要看的:多少号 / 哪家 vendor(打码 label) / 哪辆车。
 type NewKeysAvailablePayload struct {
 	EnvelopeMeta
-	BusID       string   `json:"bus_id,omitempty"`     // 空 = 单独拉号进 record group
-	VendorLabel string   `json:"vendor_label"`         // 打码 · 不给真名
-	NewKeys     int      `json:"new_keys"`             // 本轮新增号数
-	PullRoundID string   `json:"pull_round_id"`        // 前端可回溯
-	CredentialIDs []string `json:"credential_ids"`     // 新增号的 uuid(对外可见的)
+	BusID         string   `json:"bus_id,omitempty"` // 空 = 单独拉号进 record group
+	VendorLabel   string   `json:"vendor_label"`     // 打码 · 不给真名
+	NewKeys       int      `json:"new_keys"`         // 本轮新增号数
+	PullRoundID   string   `json:"pull_round_id"`    // 前端可回溯
+	CredentialIDs []string `json:"credential_ids"`   // 新增号的 uuid(对外可见的)
 }
 
 // AllKeysDeadPayload · 车里所有号都死了(**只**针对 bus · record group 号死走
@@ -39,8 +39,8 @@ type NewKeysAvailablePayload struct {
 // 单号死不发这条(那是 credential.dead) —— 阶段 1e-2 简化 · 只发 all_keys_dead。
 type AllKeysDeadPayload struct {
 	EnvelopeMeta
-	BusID      string `json:"bus_id"`
-	DiedAt     string `json:"died_at"` // ISO-8601
+	BusID       string `json:"bus_id"`
+	DiedAt      string `json:"died_at"` // ISO-8601
 	VendorLabel string `json:"vendor_label,omitempty"`
 }
 

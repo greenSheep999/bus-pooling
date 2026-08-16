@@ -33,8 +33,8 @@ func (d *Dispatcher) runRetrier(ctx context.Context) {
 // retryTick · 一次扫描 · 处理到期的 pending 行。
 //
 // 每行:
-//   1. attempt++ 后如果 <= MaxRetries · 重发一次 · 落新一行台账
-//   2. 达到 MaxRetries · 标 failed 停扫
+//  1. attempt++ 后如果 <= MaxRetries · 重发一次 · 落新一行台账
+//  2. 达到 MaxRetries · 标 failed 停扫
 //
 // **不批量**: 扫最多 50 行 · 免得单轮拉太多把整轮 tick 卡住。
 func (d *Dispatcher) retryTick(ctx context.Context) error {
