@@ -538,6 +538,43 @@
 
 **参考**: CLAUDE.md §1.3 计费术语(要扩 subscription 一维) · docs/10-pricing.md 定价大改 · sprint-1-final Stage 3+ 真阻塞
 
+### 8.46 死号三层语义 + usage 阈值 · assign 前置 verify ✅(2026-08-16 落定)
+
+**背景**: 从"简单拒死号"演进到"分层拒 · 按目的地区分"。
+
+**3 层状态**(用 kiro.rs TestCredential + GetBalance 双验):
+| 状态 | 判据 | 无条件拒 |
+|---|---|---|
+| **dead** · 真死 | TestCredential 返 401/403/Invalid/Suspended | ✅ 无论目的地拒 |
+| **quota** · 用完 | 402/quota_exceeded · 或 UsagePercentage >= 95% | 拼车拒 · 用户号池允许 |
+| **ok** · 正常 | 上面都不命中 | 无干预 |
+
+**usage 阈值 95%**:
+- kiro.rs 内部 TestCredential 只在 100%(2000/2000)才 402 拒 · 99.9% 边界允许
+- 但 99.9% 的号推给车友下一次调用就 402 · 用户体验差
+- 阈值 95% = 给 5% 缓冲 · 快用完直接拒 · 不放共享池
+- 单号 push_pool 允许 · 用户自己知道就行
+
+**2 种目的地策略**:
+| 目的地 | dead | quota | ok |
+|---|---|---|---|
+| **into_bus / 车内重推** | 拒 | 拒(共享资源严格) | 通过 |
+| **push_pool 用户自己号池** | 拒 | 允许(用户自己判) | 通过 |
+
+**错误 code(前端展示用)**:
+- `credential_dead` · 号已失效
+- `credential_quota_exceeded` · 号已用完额度
+
+**实现锚点**:
+- `internal/api/pullrecord.go` handleAssign · verify 分支
+- `internal/api/bus_credential_push.go` handleBusCredentialPush
+- `housepool.Pool.TestCredential + GetBalance` 双调
+- `web/src/components/AssignModal.tsx` errors[] 显 Alert
+
+**顺手修的 bug**:
+- kiro.rs 1.8.3 balance.nextResetAt 返 unix epoch number · 我方 wire 定义 *string · 用 json.Number 兼容
+- 生产 GetBalance 之前 100% 解析失败 · usage 检查静默跳过 · K3(99.9%)被误放行 (P1-m #205)
+
 ### 8.44 车内号手动重推 · 现状缺口 ⚠️ 待补(2026-08-16)
 
 **问题**:车里的号(`owner_bus_id` 非空)自动 push_pool 失败后 · **没有手动重试入口**。
