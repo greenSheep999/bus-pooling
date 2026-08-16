@@ -172,9 +172,19 @@
     "confirm-pending": "Fetching…",
     "confirm-submit": "Confirm · fetch {{count}}"
   },
+  "category": {
+    "enterprise": "Enterprise",
+    "enterprise-sub": "Power 10000",
+    "personal": "Personal",
+    "personal-sub": "PRO 1000 · PRO+ 2000",
+    "out-of-stock": "Out of stock",
+    "not-open": "Not available yet"
+  },
   "form": {
     "card": {
       "sub": "Pick a vendor to see supply · set count and region · pull a batch",
+      "sub-enterprise": "Pick a vendor · auto-assign · Power 10000 tier",
+      "sub-personal": "Pick a vendor · auto-assign · PRO 1000 / PRO+ 2000 tier",
       "title": "Pull new keys"
     }
   },
@@ -221,6 +231,7 @@
   "pull-form": {
     "field": {
       "vendor": "Vendor",
+      "subscription": "Tier",
       "zone": "Region",
       "count": "Count",
       "count-hint": "{{min}} – {{max}}"

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertTriangle, Bus as BusIcon, Check, ChevronRight, Download, KeyRound, Send,
@@ -16,7 +16,7 @@ const BrandGhost = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 import {
-  useAssignEvents, useDownstream, useExtractEvents, useMe, usePullRecords,
+  useAssignEvents, useDownstream, useExtractEvents, useMe, usePullRecords, useVendorOffers,
 } from "@/api/hooks";
 import { AssignModal } from "@/components/AssignModal";
 import { PullExtractForm } from "@/components/PullExtractForm";
@@ -33,7 +33,7 @@ import {
   cn, fmtCredits, fmtLifespan, fmtTime, vendorLabel,
 } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
-import { SkeletonTable } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonTable } from "@/components/ui/skeleton";
 import type { AssignEvent, Credential, ExtractEvent, PullResult } from "@/types";
 
 type TabKey = "pending" | "extract-history" | "assign-history";
@@ -48,8 +48,52 @@ export default function Extract() {
   const { t } = useTranslation("extract");
   const { data: records } = usePullRecords();
   const { data: downstream } = useDownstream();
+  const { data: offers, isLoading: offersLoading } = useVendorOffers();
   const items = records?.items ?? [];
+  /** 首次加载:offer matrix 未到手时铺骨架 · tab 不渲染
+   *  刷新时保留旧 tab · 别闪成骨架 · 见 skeleton.tsx 用法原则 §1 */
+  const firstLoad = offersLoading && !offers;
 
+  // 文件夹 tab · category 选择
+  const [category, setCategory] = useState<"enterprise" | "personal">("enterprise");
+  /** 用户是否手动切过 tab · 手动切过就不再自动纠正 · 尊重用户选择 */
+  const [manualPicked, setManualPicked] = useState(false);
+
+  /** tab 上显示每档存量 · 从 Offer matrix 直接聚合（docs/24 §3 · Step 4）
+   *
+   *  好处:supported/available 分离 · 前端能区分"不提供"vs"暂时缺货" ·
+   *  数字跟 vendor 下拉、subscription 下拉从**同一份数据**算 · 不会漂移。 */
+  const enterpriseCount = useMemo(
+    () => (offers?.vendors ?? []).reduce((n, v) => n + (v.categories.enterprise?.available ?? 0), 0),
+    [offers],
+  );
+  const personalCount = useMemo(
+    () => (offers?.vendors ?? []).reduce((n, v) => n + (v.categories.personal?.available ?? 0), 0),
+    [offers],
+  );
+  /** 是否至少一家 vendor 支持该 category（"该 vendor 不提供" vs "暂时缺货"分离） */
+  const enterpriseSupported = (offers?.vendors ?? []).some((v) => v.categories.enterprise?.supported);
+  const personalSupported = (offers?.vendors ?? []).some((v) => v.categories.personal?.supported);
+
+  /** offer matrix 到手后自动挑"有货"的 tab
+   *    - 企业有货 → 企业(用户默认想要 Power)
+   *    - 企业缺货 · 个人有货 → 个人
+   *    - 两个都缺 → 停在企业
+   *  只在首次到手 + 用户没手动切过时生效 */
+  useEffect(() => {
+    if (manualPicked || !offers) return;
+    if (enterpriseCount === 0 && personalCount > 0) {
+      setCategory("personal");
+    } else if (enterpriseCount > 0) {
+      setCategory("enterprise");
+    }
+  }, [offers, enterpriseCount, personalCount, manualPicked]);
+
+  /** 用户点 tab · 记 manualPicked · 后续 stock 变化不再自动切 */
+  const pickCategory = (c: "enterprise" | "personal") => {
+    setManualPicked(true);
+    setCategory(c);
+  };
   const [assignOpen, setAssignOpen] = useState(false);
   /** 从悬浮栏带进弹窗的去向 · 跳过弹窗里再选一遍 */
   const [assignKind, setAssignKind] = useState<"into_bus" | "push_pool" | "handoff">("into_bus");
@@ -90,27 +134,60 @@ export default function Extract() {
         </p>
       </div>
 
-      {/* 提号 · focal 大 card · 页面主操作面板 · 右上白色 K 幽灵半露出 card */}
-      <Card focal focalTone="brand" className="relative p-7">
-        {/* 品牌幽灵 · viewBox 56x75 (3:4) · 外框 w-40 h-52 · 右上角 · 装饰不可点 */}
-        <BrandGhost
-          aria-hidden
-          className="pointer-events-none absolute right-6 top-4 z-0 h-52 w-40 opacity-90"
-        />
-        {/* 内容层 · z-10 叠在幽灵上但 · 幽灵通过下方 form 卡的透明背景透出 */}
-        <div className="relative z-10">
-          <div className="mb-5 flex items-center gap-2.5">
-            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-subtle">
-              <KeyRound className="size-4 text-brand-strong" />
-            </span>
-            <div className="min-w-0 space-y-1">
-              <h2 className="text-section font-semibold">{t("form.card.title")}</h2>
-              <p className="text-label text-fg-tertiary">{t("form.card.sub")}</p>
-            </div>
+      {/* 提号区 · 首次加载(stock 未到手)铺骨架 · 到手后渲染真 tab + card
+          §8.45 · 之前 tab 会带着 0 库存先渲染再跳数字 · 骨架化后一步到位 */}
+      {firstLoad ? (
+        <ExtractPullSkeleton />
+      ) : (
+        <div className="relative">
+          {/* 文件夹 tab 效果(§8.45 · 2026-08-16) · 用户切"企业版 / 个人版"
+              结构:tabs 贴左对齐(无 pl)· 与下方 card 的 border 视觉连成一体
+              斜边用 SVG 画(clip-path 会砍掉 border · 用 SVG 才能带边框) */}
+          <div className="flex items-end gap-1">
+            <FolderTab
+              active={category === "enterprise"}
+              onClick={() => pickCategory("enterprise")}
+              label={t("category.enterprise")}
+              sub={t("category.enterprise-sub")}
+              count={enterpriseCount}
+              outOfStockLabel={enterpriseSupported ? t("category.out-of-stock") : t("category.not-open")}
+              disabled={!enterpriseSupported}
+            />
+            <FolderTab
+              active={category === "personal"}
+              onClick={() => pickCategory("personal")}
+              label={t("category.personal")}
+              sub={t("category.personal-sub")}
+              count={personalCount}
+              outOfStockLabel={personalSupported ? t("category.out-of-stock") : t("category.not-open")}
+              disabled={!personalSupported}
+            />
           </div>
-          <PullExtractForm />
+
+          {/* 主 card · 右上角圆角撤(0)· 让 tab 视觉上跟 card 连成一体
+              border 补齐:Card 组件默认已含 border · 用 rounded-tl-none 使 active tab 融合 */}
+          <Card focal focalTone="brand" className="relative p-7 rounded-tl-none">
+            <BrandGhost
+              aria-hidden
+              className="pointer-events-none absolute right-6 top-4 z-0 h-52 w-40 opacity-90"
+            />
+            <div className="relative z-10">
+              <div className="mb-5 flex items-center gap-2.5">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-subtle">
+                  <KeyRound className="size-4 text-brand-strong" />
+                </span>
+                <div className="min-w-0 space-y-1">
+                  <h2 className="text-section font-semibold">{t("form.card.title")}</h2>
+                  <p className="text-label text-fg-tertiary">
+                    {category === "enterprise" ? t("form.card.sub-enterprise") : t("form.card.sub-personal")}
+                  </p>
+                </div>
+              </div>
+              <PullExtractForm category={category} />
+            </div>
+          </Card>
         </div>
-      </Card>
+      )}
 
       {!passengerpoolOk && (
         <Alert tone="warn" icon={AlertTriangle} title={t("downstream.warn.title")}>
@@ -607,5 +684,184 @@ function AssignEventRow({ e }: { e: AssignEvent }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** ExtractPullSkeleton · 提号区骨架 · 首次加载 stock 时用
+ *  两个 tab 用同一个 SkeletonFolderTab 保形状/高度一致(只在 active 深浅上区分) */
+function ExtractPullSkeleton() {
+  return (
+    <div className="relative">
+      <div className="flex items-end gap-1">
+        <SkeletonFolderTab active />
+        <SkeletonFolderTab />
+      </div>
+      {/* Card 骨架 · 高度贴近真实(标题行 + 4 个字段 + 状态行 + 提交行) */}
+      <div className="rounded-2xl rounded-tl-none border border-hairline bg-bg p-7">
+        <div className="mb-5 flex items-center gap-2.5">
+          <Skeleton className="size-9 rounded-xl" />
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-3 w-56" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4 mb-5">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="space-y-2">
+              <Skeleton className="h-3 w-12" />
+              <Skeleton className="h-10 w-full rounded-xl" />
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 mb-5">
+          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="h-24 rounded-xl" />
+        </div>
+        <div className="flex items-end justify-between gap-3">
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-32" />
+            <Skeleton className="h-3 w-64" />
+          </div>
+          <Skeleton className="h-11 w-40 rounded-lg" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** SkeletonFolderTab · 骨架版的文件夹 tab · 用同一个 SVG path 保形状一致
+ *  active 深一档 · 非 active 浅一档 · 高度/圆角/斜边完全对齐真 FolderTab */
+function SkeletonFolderTab({ active = false }: { active?: boolean }) {
+  return (
+    <div className="relative -mb-px min-w-[220px] h-[60px]">
+      <svg
+        viewBox="0 0 220 60"
+        preserveAspectRatio="none"
+        aria-hidden
+        className="absolute inset-0 h-full w-full overflow-visible"
+      >
+        <path
+          d="M 0.5 12 Q 0.5 0.5 12 0.5 L 200 0.5 Q 208 0.5 211.5 8 L 219.5 59.5 L 0.5 59.5 Z"
+          fill={active ? "hsl(var(--brand-subtle))" : "hsl(var(--bg-elevated))"}
+          stroke="hsl(var(--hairline))"
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+          strokeLinejoin="round"
+        />
+        {active && (
+          <line
+            x1="0.5" y1="59.5" x2="210" y2="59.5"
+            stroke="hsl(var(--brand-subtle))"
+            strokeWidth={2}
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+      </svg>
+      <div className="relative flex h-full items-center gap-3 pl-5 pr-10">
+        <div className="flex flex-col gap-1.5">
+          <Skeleton className="h-4 w-16" />
+          <Skeleton className="h-2.5 w-20" />
+        </div>
+        <Skeleton className="ml-auto h-5 w-10 rounded-full" />
+      </div>
+    </div>
+  );
+}
+
+/** FolderTab · 文件夹标签样式
+ *
+ *  斜边用 **SVG 描边**(不是 clip-path)· clip-path 会把 border 也一起砍掉 ·
+ *  只有 SVG path 能沿着斜边画出线来 · 这是唯一带边框的做法。
+ *
+ *  结构:
+ *    ┌──────────────────╲   ← SVG path 描出这条闭合线(左上圆角 + 右斜边)
+ *    │ Enterprise    5  │╲     文字与数字左右分布(gap-auto)
+ *    │ Power 10000      │ ╲    数字在整个文字块右侧
+ *    └──────────────────┴──   下方 card 顶 border 与之相连
+ *
+ *  active tab:brand-subtle 填充 · brand 描边 · 无下边框(与 card 融合)
+ *  非 active:灰底 · 灰描边 · 有下边框(视觉上"没打开")
+ *  count>0 显示数字 · count=0 显示"缺货" */
+function FolderTab({
+  active, onClick, label, sub, count, outOfStockLabel, disabled = false,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  sub: string;
+  count: number;
+  outOfStockLabel: string;
+  /** 该档还不能选（缺货 / 未开放）· §4.1 要求 tab 仍显示 · 只是点不动 */
+  disabled?: boolean;
+}) {
+  const inStock = count > 0;
+  return (
+    <button
+      type="button"
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      className={
+        "group relative -mb-px min-w-[220px] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand " +
+        "focus-visible:rounded-tl-xl transition-colors " +
+        (disabled ? "cursor-not-allowed opacity-60" : "")
+      }
+    >
+      {/* SVG 描边 · 铺满按钮 · path 沿"左上圆角 → 右上大圆角 → 斜边 → 左下"闭合 ·
+          preserveAspectRatio=none 让 path 跟随实际尺寸拉伸 · stroke 恒 1(vectorEffect) ·
+          overflow-visible 关键 —— path 底部会伸出 viewBox 让 stroke 完整可见
+          颜色用 hsl(var(--x)) 因为 tailwind 里 --brand-subtle 存的是 raw HSL 三元组 */}
+      <svg
+        viewBox="0 0 220 60"
+        preserveAspectRatio="none"
+        aria-hidden
+        className="absolute inset-0 h-full w-full overflow-visible"
+      >
+        <path
+          /* 左上圆角(半径 12) + 上边 + 右上圆(半径 8) + 斜边 + 底边 · 闭合
+             坐标微调 · 让 stroke 都在 viewBox 内(左 0.5 · 上 0.5 · 右 -0.5)
+             底边故意画在 60 · 与 card 顶 border 相接 · active 时会用一条覆盖线遮住 */
+          d="M 0.5 12 Q 0.5 0.5 12 0.5 L 200 0.5 Q 208 0.5 211.5 8 L 219.5 59.5 L 0.5 59.5 Z"
+          fill={active ? "hsl(var(--brand-subtle))" : "hsl(var(--bg-elevated))"}
+          stroke="hsl(var(--hairline))"
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+          strokeLinejoin="round"
+        />
+        {/* active tab 底边遮住 · 与下方 card 融为一体(画一条与背景同色的横线覆盖 path 底边)
+            覆盖到 x2=210 —— 只到斜边起点(不覆盖斜边下沿) */}
+        {active && (
+          <line
+            x1="0.5" y1="59.5" x2="210" y2="59.5"
+            stroke="hsl(var(--brand-subtle))"
+            strokeWidth={2}
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+      </svg>
+
+      {/* 内容层 · relative 让它盖在 SVG 上 · 左内边距避圆角 · 右内边距避斜边
+          企业版 / 个人版文字用 text-body(比 text-label 大一档 · 视觉更突出) */}
+      <div className="relative flex items-center gap-3 pl-5 pr-10 py-3.5">
+        <div className="flex min-w-0 flex-col items-start leading-tight">
+          <span className={"text-body font-semibold " + (active ? "text-brand-strong" : "text-fg-secondary")}>
+            {label}
+          </span>
+          <span className="text-[11px] text-fg-tertiary mt-0.5">{sub}</span>
+        </div>
+        {/* 库存标记 · 挤到最右 · 有货绿数字 · 缺货灰"缺货" · ml-auto 让它右对齐 */}
+        <span
+          className={
+            "ml-auto inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold tnum " +
+            (inStock
+              ? active
+                ? "bg-ok-solid/15 text-ok-fg"
+                : "bg-ok-solid/10 text-ok-fg/80"
+              : "bg-bg-alt text-fg-tertiary")
+          }
+        >
+          {inStock ? count.toLocaleString("zh-CN") : outOfStockLabel}
+        </span>
+      </div>
+    </button>
   );
 }

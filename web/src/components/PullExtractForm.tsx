@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, KeyRound, Sparkles, TrendingUp } from "lucide-react";
-import { useAutoPick, useExtract, useMe, useVendorStats, useVendorStock } from "@/api/hooks";
+import {
+  useAutoPick, useExtract, useMe,
+  useVendorOffers, useVendorStock,
+  type OfferItem,
+} from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,24 +28,79 @@ export function PullExtractForm({
   onSubmitted,
   submitVariant = "brand",
   submitClassName,
+  category = "enterprise",
 }: {
   onSubmitted?: () => void;
   submitVariant?: "brand" | "primary";
   submitClassName?: string;
+  /** §8.45 · 企业版(6 家 vendor · 有档 Power)/ 个人版(Kiro Vendor Market · 档 PRO/PRO+) */
+  category?: "enterprise" | "personal";
 }) {
   const { t } = useTranslation("extract");
   const pull = useExtract();
   const { data: me } = useMe();
-  const { data: vendors } = useVendorStats();
-  const availableVendors = (vendors?.stats ?? []).filter((v) => !v.out_of_stock);
+  /** Offer matrix · **唯一数据源** · vendor + subscription 联动都从它算（docs/24 §3） */
+  const { data: offers } = useVendorOffers();
 
-  /** 档次 · 决定 vendor 显示真名还是匿名编号（只 wholesale 看真名 · docs/10-pricing §2.1） */
-  const tier = me?.tier;
-
+  // 前置 state · subscriptionOptions/availableVendors 的 useMemo 引用它们
   const [count, setCount] = useState(3);
   const [vendorId, setVendorId] = useState<string>("auto");
   const [zone, setZone] = useState<Zone | "auto">("auto");
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  /** 当前 tab 下 · 哪些 vendor **该 category 有货**(available > 0)才出现在下拉
+   *  supported=true available=0 走"暂时缺货"提示 · 不进下拉（避免用户选了没货） */
+  const availableVendors = useMemo(() => {
+    return (offers?.vendors ?? [])
+      .filter((v) => v.categories[category]?.available > 0)
+      .map((v) => ({ vendor_id: v.vendor_id, vendor_label: v.vendor_label }));
+  }, [offers, category]);
+
+  /** subscription 下拉合法档 · 来自 Offer matrix · 不是硬编码
+   *  vendor=auto 时:全网该 category 下**存在** available>0 offer 的档位集合
+   *  vendor=具体 时:只看该 vendor 该 category 的档位 */
+  const subscriptionOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const rows: OfferItem[] = [];
+    for (const v of offers?.vendors ?? []) {
+      if (vendorId !== "auto" && v.vendor_id !== vendorId) continue;
+      for (const o of v.categories[category]?.offers ?? []) {
+        if (o.available <= 0 || !o.subscription) continue;
+        if (seen.has(o.subscription)) continue;
+        seen.add(o.subscription);
+        rows.push(o);
+      }
+    }
+    if (rows.length === 0) {
+      // 兜底 · 没数据时给用户一个默认档避免下拉空白（提交时后端会拒）
+      return category === "enterprise"
+        ? [{ value: "power", label: "Power" }]
+        : [{ value: "pro", label: "PRO" }];
+    }
+    const LABEL: Record<string, string> = {
+      power: "Power 10000", pro: "PRO 1000", pro_plus: "PRO+ 2000", pro_max: "PRO Max",
+    };
+    return rows.map((r) => ({ value: r.subscription, label: LABEL[r.subscription] ?? r.subscription }));
+  }, [offers, category, vendorId]);
+
+  const [subscription, setSubscription] = useState<string>("");
+  // category 切时重置 subscription 到该 category 的第一个可选档
+  // 切个人 tab 时 zone 必须归位("auto")· 个人池多数不分区
+  useEffect(() => {
+    setSubscription(subscriptionOptions[0]?.value ?? "");
+    setVendorId("auto");
+    if (category === "personal") setZone("auto");
+  }, // eslint-disable-next-line react-hooks/exhaustive-deps
+  [category]);
+  // subscription 选项变了（切 vendor 后）· 如果当前档不在新选项里 · 回落到第一个
+  useEffect(() => {
+    if (subscription && !subscriptionOptions.find((o) => o.value === subscription)) {
+      setSubscription(subscriptionOptions[0]?.value ?? "");
+    }
+  }, [subscriptionOptions, subscription]);
+
+  /** 档次 · 决定 vendor 显示真名还是匿名编号（只 wholesale 看真名 · docs/10-pricing §2.1） */
+  const tier = me?.tier;
 
   /* 具体 vendor 的 stock（vendorId 是 auto 时不发请求） */
   const { data: stock } = useVendorStock(vendorId === "auto" ? undefined : vendorId);
@@ -49,8 +108,6 @@ export function PullExtractForm({
   const { data: pick } = useAutoPick(zone);
 
   const isAuto = vendorId === "auto";
-  const maxCount = (isAuto ? pick?.max_per_order : stock?.max_per_order) ?? 200;
-  const minCount = (isAuto ? pick?.min_per_order : stock?.min_per_order) ?? 1;
 
   /* 具体 zone 的单价（用于预估）· auto 时选最便宜一区 */
   const activeZone = useMemo(() => {
@@ -65,6 +122,21 @@ export function PullExtractForm({
   /** 服务端给的当前单价 · auto 走推荐结果 · 具体 vendor 走该区单价 */
   const unitPrice = isAuto ? pick?.unit_price ?? null : activeZone?.unit_price ?? null;
   const available = isAuto ? pick?.available ?? null : activeZone?.available ?? null;
+
+  /** 可买上限 = min(vendor.max_per_order, available) · 都从后端来
+   *  - available = 该 vendor 实际库存(auto 走 pick.available · 具体 vendor 走 zone.available)
+   *  - max_per_order = vendor 每单上限(可能不设 · 那就只受 available 约束)
+   *  - 数据未到手时(available/max 都 null)· 保底 1 让输入框可用 · 加载完就到真值
+   *  ⚠️ 不写死 200 · 用户能买超总量是核心 bug */
+  const rawMax = isAuto ? pick?.max_per_order : stock?.max_per_order;
+  const rawMin = isAuto ? pick?.min_per_order : stock?.min_per_order;
+  const capMax = rawMax != null && rawMax > 0 ? rawMax : null;
+  const capAvail = available != null && available > 0 ? available : null;
+  let maxCount = 1; // 保底 · 数据未到手时不锁死输入
+  if (capMax != null && capAvail != null) maxCount = Math.min(capMax, capAvail);
+  else if (capMax != null) maxCount = capMax;
+  else if (capAvail != null) maxCount = capAvail;
+  const minCount = rawMin && rawMin > 0 ? rawMin : 1;
   /** 实际会派到的 vendor 显示名（auto 时来自推荐结果） */
   const effectiveVendorLabel = isAuto
     ? pick?.vendor_label ?? t("pull-form.vendor.auto-fallback")
@@ -101,13 +173,16 @@ export function PullExtractForm({
     if (count > maxCount) setCount(maxCount);
   }, [maxCount, count]);
 
-  /** 确认窗里点「确认提取」才真拉 · couponCode 是本次减免码 */
+  /** 确认窗里点「确认提取」才真拉 · couponCode 是本次减免码
+   *  Step 5d · 带上 account_kind + plan · 后端硬约束（缺货不降级） */
   const onConfirm = async (couponCode?: string) => {
     await pull.mutateAsync({
       vendor_id: vendorId,
       zone: zone === "auto" ? undefined : zone,
       count,
       coupon_code: couponCode,
+      account_kind: category,
+      plan: subscription as "power" | "pro" | "pro_plus" | "pro_max" | undefined,
     });
     setConfirmOpen(false);
     setCount(3);
@@ -122,8 +197,17 @@ export function PullExtractForm({
         onSubmit={(e) => { e.preventDefault(); setConfirmOpen(true); }}
         className="space-y-5"
       >
-        {/* vendor 第一（决定单价/库存/质保）· 区域 第二 · 数量 第三 · 一行 md+ · 窄屏堆叠 */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        {/* vendor / 档位 / [区域] / 数量 · §8.45 加档位维度
+            企业版:vendor · Power 档 · 区域 · 数量(4 列)
+            个人版:vendor · PRO/PRO+ 档 · 数量(3 列 · 个人号无区域概念) */}
+        <div
+          className={
+            "grid grid-cols-1 gap-4 " +
+            (category === "personal"
+              ? "md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]"
+              : "md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]")
+          }
+        >
           <Field label={t("pull-form.field.vendor")}>
             <Select value={vendorId} onValueChange={setVendorId}>
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -132,22 +216,40 @@ export function PullExtractForm({
                 <SelectItem value="auto">{t("pull-form.vendor.auto")}</SelectItem>
                 {availableVendors.map((v) => (
                   <SelectItem key={v.vendor_id} value={v.vendor_id}>
-                    {vendorLabel(v.vendor_id, tier)}
+                    {/* 后端已按 tier 判过匿名 · 直接用 vendor_label · 不重算 */}
+                    {v.vendor_label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </Field>
-          <Field label={t("pull-form.field.zone")}>
-            <Select value={zone} onValueChange={(v) => setZone(v as Zone | "auto")}>
+          <Field label={t("pull-form.field.subscription")}>
+            <Select
+              value={subscription}
+              onValueChange={setSubscription}
+              disabled={subscriptionOptions.length === 1}
+            >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">{t("pull-form.zone.auto")}</SelectItem>
-                <SelectItem value="us">{t("pull-form.zone.us")}</SelectItem>
-                <SelectItem value="eu">{t("pull-form.zone.eu")}</SelectItem>
+                {subscriptionOptions.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </Field>
+          {/* 区域只在企业档显示 · 个人号(PRO/PRO+)不分区 · §8.45 */}
+          {category === "enterprise" && (
+            <Field label={t("pull-form.field.zone")}>
+              <Select value={zone} onValueChange={(v) => setZone(v as Zone | "auto")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">{t("pull-form.zone.auto")}</SelectItem>
+                  <SelectItem value="us">{t("pull-form.zone.us")}</SelectItem>
+                  <SelectItem value="eu">{t("pull-form.zone.eu")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
           <Field label={t("pull-form.field.count")} hint={t("pull-form.field.count-hint", { min: minCount, max: maxCount })}>
             <Input
               type="number"

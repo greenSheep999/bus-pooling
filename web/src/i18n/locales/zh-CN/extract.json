@@ -172,9 +172,19 @@
     "confirm-pending": "提取中…",
     "confirm-submit": "确认提取 {{count}} 个"
   },
+  "category": {
+    "enterprise": "企业版",
+    "enterprise-sub": "Power 10000",
+    "personal": "个人版",
+    "personal-sub": "PRO 1000 · PRO+ 2000",
+    "out-of-stock": "缺货",
+    "not-open": "暂未开放"
+  },
   "form": {
     "card": {
       "sub": "选 vendor 看上游 · 定数量和区域 · 拉一批",
+      "sub-enterprise": "选 vendor · 系统自动派号 · Power 10000 档",
+      "sub-personal": "选 vendor · 系统自动派号 · PRO 1000 / PRO+ 2000 档",
       "title": "提取新 key"
     }
   },
@@ -221,6 +231,7 @@
   "pull-form": {
     "field": {
       "vendor": "vendor",
+      "subscription": "账号档位",
       "zone": "区域",
       "count": "数量",
       "count-hint": "{{min}} - {{max}}"
