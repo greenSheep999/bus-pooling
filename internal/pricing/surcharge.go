@@ -58,11 +58,11 @@ type Predicate map[string]any
 
 // EvalContext · 谓词求值上下文·由调用方在拉号时填。
 type EvalContext struct {
-	VendorID          string
-	Zone              string
-	Count             int
-	PassengerInvited  bool
-	BusAvgLifespanH   float64 // 0 = 无数据 · 该谓词命中不了 >0 条件
+	VendorID         string
+	Zone             string
+	Count            int
+	PassengerInvited bool
+	BusAvgLifespanH  float64 // 0 = 无数据 · 该谓词命中不了 >0 条件
 }
 
 // Match · Predicate 对 ctx 求值。空 Predicate 视为"总命中"。
@@ -169,13 +169,13 @@ func (s *SurchargeStore) ListActive(ctx context.Context) ([]Rule, error) {
 	var out []Rule
 	for rows.Next() {
 		var (
-			r          Rule
-			active     int
-			userSel    int
-			applies    sql.NullString
-			waived     sql.NullString
-			createdAt  string
-			updatedAt  string
+			r         Rule
+			active    int
+			userSel   int
+			applies   sql.NullString
+			waived    sql.NullString
+			createdAt string
+			updatedAt string
 		)
 		if err := rows.Scan(&r.ID, &r.Kind, &r.Name, &r.RateBp, &r.Base,
 			&active, &applies, &waived, &userSel,

@@ -58,6 +58,7 @@ func (a *GatewayPollerAdapter) PollByGatewayPaymentID(ctx context.Context, gatew
 // CreatePayment 是**写**接口 · 语义只有 201 新建 / 200 replay / 4xx 拒绝：
 //   - 404 = 端点缺失（gateway 部署错 / 路径错） · 不代表 "payment_id 不存在"
 //   - 402/409/422 = 拒绝（余额 / 参数 / 幂等冲突）
+//
 // 一律走"网络错"分支 · janitor 累计到上限转 pending_manual · **绝不 expire**。
 //
 // **注意幂等 CreatePayment 的语义**：即使 gateway 侧真无记录·POST 会**新建**（201）·

@@ -156,9 +156,10 @@ func (s *PendingStore) AdvanceByOrderID(ctx context.Context, orderID string, fro
 // 除此外返 error（明确暴露状态机异常）。
 //
 // **状态偏序**（数值越大越"完成"）：
-//   initial(0) < gateway_ordered(1) < gateway_paid(2) < credited(3) < completed(4)
-//   expired / cancelled / refunded / pending_manual 是"支线终态"·不参与主线偏序·
-//   碰到这些 target 用 EnsureAtLeast 会退化成 AdvanceByOrderID 语义（from 必须精确）。
+//
+//	initial(0) < gateway_ordered(1) < gateway_paid(2) < credited(3) < completed(4)
+//	expired / cancelled / refunded / pending_manual 是"支线终态"·不参与主线偏序·
+//	碰到这些 target 用 EnsureAtLeast 会退化成 AdvanceByOrderID 语义（from 必须精确）。
 func (s *PendingStore) EnsureAtLeast(ctx context.Context, orderID string, target PendingStatus) error {
 	targetOrd, ok := statusOrder(target)
 	if !ok {

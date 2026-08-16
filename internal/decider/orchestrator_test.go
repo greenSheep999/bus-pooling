@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -133,14 +132,7 @@ func newOrchTest(t *testing.T) (*Orchestrator, *mockVendor, *mockPool, string) {
 	t.Helper()
 	ctx := context.Background()
 
-	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "d.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-	if _, err := d.MigrateUp(ctx, "../db/migrations"); err != nil {
-		t.Fatal(err)
-	}
+	d := db.NewTestDB(t)
 
 	const pid = "p1"
 	if _, err := d.ExecContext(ctx, `

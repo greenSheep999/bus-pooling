@@ -25,6 +25,7 @@ import (
 //   - 找不到 kiro_rs_credential_id 直接 continue+返 nil → janitor 标 completed 但号还在
 //   - `UPDATE credential_ledger` 错误被忽略 · 台账没改也算成功
 //   - 不处理 housepool 404 · 重试永远失败
+//
 // 现在都由 Complete 统一处理。
 type CompleteDeps struct {
 	DB   *sql.DB

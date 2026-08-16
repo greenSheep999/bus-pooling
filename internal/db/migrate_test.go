@@ -20,7 +20,7 @@ var wantTables = []string{
 	"passenger", "passenger_api_key", "passenger_daily_counter",
 	"passenger_downstream", "passenger_strategy_default",
 	"pending_assignment", "pending_dissolution", "pending_handoff", "pending_purchase",
-	"pending_topup", // migration 010 · pending_topup 状态机（1b P1-C）
+	"pending_topup",  // migration 010 · pending_topup 状态机（1b P1-C）
 	"pending_refill", // migration 037 · P6 自动补车队列（2026-08-14）
 	"pull_intent", "pull_round",
 	"redeem_code",
@@ -52,8 +52,8 @@ var wantTables = []string{
 	"xi8_vendor_flags",      // 034 · 聚合源 buyable/blocked/floating · 抢号 guard
 	"pipeline_health",       // 036 · 各数据管线心跳 · 新鲜度自检
 	// migration 041-043 · 优惠码 + 明文缓存（表清单先前忘补 · 一直是残留错误）
-	"coupon_code",         // 041 · 优惠码
-	"coupon_use",          // 042 · 优惠码使用记录
+	"coupon_code",          // 041 · 优惠码
+	"coupon_use",           // 042 · 优惠码使用记录
 	"credential_plaintext", // 043 · 手上号明文加密缓存（减 handoff/push_pool 明文缺口）
 	// migration 047 · 我方第 7 家 Kiro Vendor Market 手工上架
 	"market_offer",      // 货架定义（vendor × kind × plan → 分档价 · 开关）

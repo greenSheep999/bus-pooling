@@ -317,7 +317,7 @@ func TestSettlement_FallbackByClientOrderID(t *testing.T) {
 	body, _ := json.Marshal(paymentgw.SettlementEvent{
 		EventID:          "ev_fb_1",
 		GatewayPaymentID: "pay_racing", // 我方从未见过
-		ClientOrderID:    order.ID,      // 我方发出的 order.ID
+		ClientOrderID:    order.ID,     // 我方发出的 order.ID
 		Kind:             "settled", State: "settled", SettledAt: time.Now().Unix(),
 	})
 	sig, ts := signSettlement(secret, body, time.Now())

@@ -3,7 +3,6 @@ package bus
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"github.com/bus-pooling/bus-pooling/internal/db"
@@ -12,14 +11,7 @@ import (
 func setup(t *testing.T) (*Store, string, string) {
 	t.Helper()
 	ctx := context.Background()
-	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "b.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-	if _, err := d.MigrateUp(ctx, "../db/migrations"); err != nil {
-		t.Fatal(err)
-	}
+	d := db.NewTestDB(t)
 	for _, pid := range []string{"p1", "p2"} {
 		if _, err := d.ExecContext(ctx, `
 			INSERT INTO passenger (id, username, email, password_hash, created_at, updated_at)

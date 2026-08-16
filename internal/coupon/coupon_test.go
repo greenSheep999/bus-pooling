@@ -3,7 +3,6 @@ package coupon_test
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,14 +13,8 @@ import (
 func setup(t *testing.T) *coupon.Store {
 	t.Helper()
 	ctx := context.Background()
-	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "d.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-	if _, err := d.MigrateUp(ctx, "../db/migrations"); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	// 走 template db cache · 首次跑 48 migrations · 后续每个 test 只 copy 文件（<100ms）
+	d := db.NewTestDB(t)
 	// seed 一个 passenger 满足 FK
 	if _, err := d.DB.ExecContext(ctx, `
 		INSERT INTO passenger (id, username, email, password_hash, created_at, updated_at)

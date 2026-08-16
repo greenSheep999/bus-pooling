@@ -13,14 +13,15 @@ import (
 // publicStatusResp 本 vendor /api/status（需 auth · X-API-Key）真实响应。
 //
 // 观察到的字段（curl 采样 2026-08-10）：
-//   {
-//     "community_qr_urls": [...],
-//     "generating": false,
-//     "keys_active": 17,
-//     "keys_dead": 29,
-//     "keys_stock": 0,
-//     "region": "us-east-1"
-//   }
+//
+//	{
+//	  "community_qr_urls": [...],
+//	  "generating": false,
+//	  "keys_active": 17,
+//	  "keys_dead": 29,
+//	  "keys_stock": 0,
+//	  "region": "us-east-1"
+//	}
 type publicStatusResp struct {
 	Generating bool   `json:"generating"`
 	KeysActive int    `json:"keys_active"`

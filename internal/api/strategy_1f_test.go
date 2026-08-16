@@ -128,8 +128,9 @@ func TestPutStrategyGuardrailsRoundTrip(t *testing.T) {
 // PUT /api/me/buses/{id}/strategy · 车级 auto/watermark 是 bool/int(migration 040)
 //
 // 老"nullable 三态 · null=跟随全局"语义在 040 撤回 · 现在:
-//   { "auto_refill_enabled": true / false } → 车级值 · 独立于全局
-//   auto_refill_enabled 字段缺席 → 保留车级现值
+//
+//	{ "auto_refill_enabled": true / false } → 车级值 · 独立于全局
+//	auto_refill_enabled 字段缺席 → 保留车级现值
 func TestPutBusStrategy_AutoRefillIsPlainBool(t *testing.T) {
 	e, _, withKey := pullEnv(t, 0)
 

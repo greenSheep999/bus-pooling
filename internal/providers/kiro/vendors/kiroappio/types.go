@@ -26,17 +26,17 @@ type profileResp struct {
 // 用 json.RawMessage 接住 stock 字段 · toStockSnapshot 里两种都解一遍 · 兼容双形状。
 // 新形状里 stock_us / stock_eu 是分区库存 · 用 StockUS/StockEU 直接接。
 type stockResp struct {
-	Stock    json.RawMessage `json:"stock"`
-	StockUS  int             `json:"stock_us"`
-	StockEU  int             `json:"stock_eu"`
-	Price    int             `json:"price"`
-	PriceUS  int             `json:"price_us"`
-	PriceEU  int             `json:"price_eu"`
-	Zones    []zoneItem      `json:"zones"`
-	Max      int             `json:"max"`
-	Min      int             `json:"min_per_order"`
-	MaxPO    int             `json:"max_per_order"`
-	WM       int             `json:"warranty_minutes"`
+	Stock   json.RawMessage `json:"stock"`
+	StockUS int             `json:"stock_us"`
+	StockEU int             `json:"stock_eu"`
+	Price   int             `json:"price"`
+	PriceUS int             `json:"price_us"`
+	PriceEU int             `json:"price_eu"`
+	Zones   []zoneItem      `json:"zones"`
+	Max     int             `json:"max"`
+	Min     int             `json:"min_per_order"`
+	MaxPO   int             `json:"max_per_order"`
+	WM      int             `json:"warranty_minutes"`
 }
 
 // stockNested 旧形状里 stock 是嵌套对象。

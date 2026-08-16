@@ -1,8 +1,9 @@
 // Package coupon 优惠码 · 一次性减免 · decisions §8.43 v2
 //
 // 两种 type(互斥):
-//   topup_discount     · 充值弹窗输 · 减 USD 实付 · discount_bp 百分点(500 = 5%)
-//   service_fee_waiver · 拉号确认窗输 · 免 N 轮服务费 · waive_rounds 轮数
+//
+//	topup_discount     · 充值弹窗输 · 减 USD 实付 · discount_bp 百分点(500 = 5%)
+//	service_fee_waiver · 拉号确认窗输 · 免 N 轮服务费 · waive_rounds 轮数
 //
 // 跟四码分离铁律(§8.42)对齐:
 //   - 不改 tier
@@ -28,8 +29,8 @@ import (
 type Type string
 
 const (
-	TypeTopupDiscount     Type = "topup_discount"
-	TypeServiceFeeWaiver  Type = "service_fee_waiver"
+	TypeTopupDiscount    Type = "topup_discount"
+	TypeServiceFeeWaiver Type = "service_fee_waiver"
 )
 
 // Context 核销上下文 · 落 coupon_use.context
@@ -42,18 +43,18 @@ const (
 
 // Coupon 主表行
 type Coupon struct {
-	ID             string
-	Code           string
-	Type           Type
-	DiscountBP     int64 // topup_discount 用 · 百分点(500=5%)
-	WaiveRounds    int64 // service_fee_waiver 用 · 免几轮
-	RemainingUses  sql.NullInt64
-	UsedCount      int64
-	ExpiresAt      sql.NullTime
-	Status         string
-	Memo           string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID            string
+	Code          string
+	Type          Type
+	DiscountBP    int64 // topup_discount 用 · 百分点(500=5%)
+	WaiveRounds   int64 // service_fee_waiver 用 · 免几轮
+	RemainingUses sql.NullInt64
+	UsedCount     int64
+	ExpiresAt     sql.NullTime
+	Status        string
+	Memo          string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // Store 服务 · 一进程一个
@@ -64,12 +65,12 @@ func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
 // 错误集
 var (
-	ErrNotFound        = errors.New("coupon: 码不存在")
-	ErrDisabled        = errors.New("coupon: 码已停用")
-	ErrExpired         = errors.New("coupon: 码已过期")
-	ErrUsedUp          = errors.New("coupon: 码额度用尽")
-	ErrWrongContext    = errors.New("coupon: 码不适用此场景") // topup 输 pull 码 · 或反过来
-	ErrAlreadyUsed     = errors.New("coupon: 此单已核销过其他码")
+	ErrNotFound     = errors.New("coupon: 码不存在")
+	ErrDisabled     = errors.New("coupon: 码已停用")
+	ErrExpired      = errors.New("coupon: 码已过期")
+	ErrUsedUp       = errors.New("coupon: 码额度用尽")
+	ErrWrongContext = errors.New("coupon: 码不适用此场景") // topup 输 pull 码 · 或反过来
+	ErrAlreadyUsed  = errors.New("coupon: 此单已核销过其他码")
 )
 
 // Lookup · 只读校验 · 不消耗额度。用于 UI 试算/预览。
@@ -102,17 +103,18 @@ func (s *Store) Lookup(ctx context.Context, code string, wantType Type) (*Coupon
 
 // RedeemInput · Redeem 的入参 · 同一 context+ref 幂等
 type RedeemInput struct {
-	Code           string  // 用户输的码
+	Code           string // 用户输的码
 	PassengerID    string
 	Context        Context
-	ContextRef     string  // topup_order.id / pull_round.id
-	DiscountAmount int64   // 折后减了多少 microunit(topup)或轮数(pull)· 上层算好传下来
+	ContextRef     string // topup_order.id / pull_round.id
+	DiscountAmount int64  // 折后减了多少 microunit(topup)或轮数(pull)· 上层算好传下来
 }
 
 // Redeem · 原子核销 · Lookup 校验 → 减 used_count → 落 coupon_use
 //
 // 幂等: 同一 (context, context_ref) 二次调返 (nil, ErrAlreadyUsed) · 不重复减额度。
-//       调方决定是否忽略(重放场景)。
+//
+//	调方决定是否忽略(重放场景)。
 //
 // 事务: BEGIN IMMEDIATE 独占 · 并发场景不会超用(SQLite 单写 · 天然序列化)。
 func (s *Store) Redeem(ctx context.Context, in RedeemInput) (*Coupon, error) {
@@ -179,13 +181,13 @@ func (s *Store) Redeem(ctx context.Context, in RedeemInput) (*Coupon, error) {
 
 // CreateInput · 建码用(admin / seed / test)
 type CreateInput struct {
-	Code           string
-	Type           Type
-	DiscountBP     int64 // topup_discount 用
-	WaiveRounds    int64 // service_fee_waiver 用
-	RemainingUses  int64 // 0 = NULL 不限
-	ExpiresAt      time.Time // zero = NULL 不限时
-	Memo           string
+	Code          string
+	Type          Type
+	DiscountBP    int64     // topup_discount 用
+	WaiveRounds   int64     // service_fee_waiver 用
+	RemainingUses int64     // 0 = NULL 不限
+	ExpiresAt     time.Time // zero = NULL 不限时
+	Memo          string
 }
 
 // Create · 建一张码。参数校验参考 §8.43 表结构 CHECK。
@@ -254,13 +256,13 @@ func (s *Store) loadByCode(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, code string) (*Coupon, error) {
 	var (
-		c              Coupon
-		discountBP     sql.NullInt64
-		waiveRounds    sql.NullInt64
-		expiresAt      sql.NullString
-		memo           sql.NullString
-		createdAt      string
-		updatedAt      string
+		c           Coupon
+		discountBP  sql.NullInt64
+		waiveRounds sql.NullInt64
+		expiresAt   sql.NullString
+		memo        sql.NullString
+		createdAt   string
+		updatedAt   string
 	)
 	err := q.QueryRowContext(ctx, `
 		SELECT id, code, type, discount_bp, waive_rounds, remaining_uses, used_count,

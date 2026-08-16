@@ -20,9 +20,9 @@ type SurchargeResolver struct {
 	ttl   time.Duration
 	log   *slog.Logger
 
-	mu        sync.RWMutex
-	cached    []Rule
-	cachedAt  time.Time
+	mu       sync.RWMutex
+	cached   []Rule
+	cachedAt time.Time
 	// envFallback · 表空 / 出错时的兜底 Rates（1a env 值 · 保底不炸）
 	envFallback decider.Rates
 }
@@ -53,10 +53,10 @@ func NewSurchargeResolver(cfg SurchargeResolverConfig) *SurchargeResolver {
 // Resolve · 按 ctx 求 Rates · 满足 decider.RatesResolver 接口。
 //
 // 流程：
-//   1. 查（缓存 or DB）所有 active 规则
-//   2. Engine.Eval(ctx) 求命中的 rate_bp 汇总
-//   3. 转成 decider.Rates（各 kind 桶 → Rate 字段）
-//   4. 表空 / 出错时 · 用 envFallback 兜底
+//  1. 查（缓存 or DB）所有 active 规则
+//  2. Engine.Eval(ctx) 求命中的 rate_bp 汇总
+//  3. 转成 decider.Rates（各 kind 桶 → Rate 字段）
+//  4. 表空 / 出错时 · 用 envFallback 兜底
 func (r *SurchargeResolver) Resolve(ctx context.Context, rc decider.RateContext) decider.Rates {
 	rules, err := r.rules(ctx)
 	if err != nil {

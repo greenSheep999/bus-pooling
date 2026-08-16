@@ -75,12 +75,13 @@ type realPusher struct {
 // Push 主流程 · 见 Pusher 接口注释。
 //
 // 六步：
-//   ① 拉 downstream cfg + 校验必要字段
-//   ② 解密 admin_token(用完扔)
-//   ③ 拿明文(真调 / placeholder)
-//   ④ 组装 PushCredential + 附上打码元数据
-//   ⑤ 建一次性 kirors.Client · BatchImport · 消费 SSE
-//   ⑥ 归错分类 → PushResult
+//
+//	① 拉 downstream cfg + 校验必要字段
+//	② 解密 admin_token(用完扔)
+//	③ 拿明文(真调 / placeholder)
+//	④ 组装 PushCredential + 附上打码元数据
+//	⑤ 建一次性 kirors.Client · BatchImport · 消费 SSE
+//	⑥ 归错分类 → PushResult
 func (p *realPusher) Push(ctx context.Context, passengerID string, creds []PushCredential) (*PushResult, error) {
 	if len(creds) == 0 {
 		return &PushResult{}, nil

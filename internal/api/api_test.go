@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -53,15 +52,7 @@ func newEnvWithDecider(t *testing.T, vendor decider.VendorClient, pool decider.P
 
 func newEnvBase(t *testing.T, mkDecider func(*db.DB) *decider.Orchestrator) *testEnv {
 	t.Helper()
-	ctx := context.Background()
-
-	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "api.db"))
-	if err != nil {
-		t.Fatalf("开库: %v", err)
-	}
-	if _, err := d.MigrateUp(ctx, "../db/migrations"); err != nil {
-		t.Fatalf("迁移: %v", err)
-	}
+	d := db.NewTestDB(t)
 
 	wallets := wallet.NewStore(d.DB)
 	var orch *decider.Orchestrator
@@ -78,16 +69,16 @@ func newEnvBase(t *testing.T, mkDecider func(*db.DB) *decider.Orchestrator) *tes
 	topups := topup.NewStore(d.DB)
 	mux := http.NewServeMux()
 	server := NewServer(ServerDeps{
-		DB:          d.DB,
-		Passengers:  passenger.NewStore(d.DB),
-		Wallets:     wallets,
-		Strategies:  strategy.NewStore(d.DB),
-		Buses:       bus.NewStore(d.DB),
-		Decider:     orch,
-		Redeems:     redeem.NewStore(d.DB),
-		Topups:      topups,
-		PullRecords: pullrecord.NewStore(d.DB),
-		Handoffs:    handoff.NewStore(d.DB, 0),
+		DB:            d.DB,
+		Passengers:    passenger.NewStore(d.DB),
+		Wallets:       wallets,
+		Strategies:    strategy.NewStore(d.DB),
+		Buses:         bus.NewStore(d.DB),
+		Decider:       orch,
+		Redeems:       redeem.NewStore(d.DB),
+		Topups:        topups,
+		PullRecords:   pullrecord.NewStore(d.DB),
+		Handoffs:      handoff.NewStore(d.DB, 0),
 		Insights:      insight.NewStore(d.DB),
 		Downstreams:   downstream.NewStore(d.DB, cipher),
 		TopupChannels: topupchannel.New(nil), // 默认一家 hosted 启 · 其他关

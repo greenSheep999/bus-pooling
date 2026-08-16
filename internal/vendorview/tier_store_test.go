@@ -2,7 +2,6 @@ package vendorview
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,15 +11,7 @@ import (
 
 func tierDB(t *testing.T) *TierStore {
 	t.Helper()
-	ctx := context.Background()
-	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "tier.db"))
-	if err != nil {
-		t.Fatalf("开库: %v", err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-	if _, err := d.MigrateUp(ctx, "../db/migrations"); err != nil {
-		t.Fatalf("迁移: %v", err)
-	}
+	d := db.NewTestDB(t)
 	return NewTierStore(d.DB)
 }
 

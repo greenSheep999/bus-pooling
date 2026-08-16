@@ -23,9 +23,9 @@ func (m *mockCompleter) MarkPaid(_ context.Context, _ string) (Order, error) {
 
 // mockPoller · P0-3 测试用·可控 GetPayment 返回的 state
 type mockPoller struct {
-	state    string
-	err      error
-	calls    int
+	state string
+	err   error
+	calls int
 	// findResult · FindByClientOrderID 返回（nil = 走 findErr）
 	findResult *GatewayPayment
 	findErr    error

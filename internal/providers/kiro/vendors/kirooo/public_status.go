@@ -13,19 +13,20 @@ import (
 // publicStatusResp 本 vendor /api/status（需 auth · X-API-Key）真实响应。
 //
 // 观察到的字段（curl 采样 2026-08-10）：
-//   {
-//     "announce": {enabled, text, level, updated_at, updated_by},
-//     "auto_mode": false,
-//     "generating": false,
-//     "keys_active": 446,
-//     "keys_alive": 1187,
-//     "keys_dead": 515,
-//     "keys_stock": 11,
-//     "keys_suspect": 283,
-//     "keys_total": 1985,
-//     "started_at": "2026-08-10 13:38:29",
-//     "uptime_seconds": ...
-//   }
+//
+//	{
+//	  "announce": {enabled, text, level, updated_at, updated_by},
+//	  "auto_mode": false,
+//	  "generating": false,
+//	  "keys_active": 446,
+//	  "keys_alive": 1187,
+//	  "keys_dead": 515,
+//	  "keys_stock": 11,
+//	  "keys_suspect": 283,
+//	  "keys_total": 1985,
+//	  "started_at": "2026-08-10 13:38:29",
+//	  "uptime_seconds": ...
+//	}
 type publicStatusResp struct {
 	Generating    bool   `json:"generating"`
 	KeysActive    int    `json:"keys_active"`

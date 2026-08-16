@@ -14,7 +14,6 @@ package decider
 import (
 	"context"
 	"log/slog"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -31,14 +30,7 @@ func buildE2E(t *testing.T) (*Orchestrator, *stockwatch.Watcher, *DryRunVendor, 
 	t.Helper()
 	ctx := context.Background()
 
-	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "e2e.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-	if _, err := d.MigrateUp(ctx, "../db/migrations"); err != nil {
-		t.Fatal(err)
-	}
+	d := db.NewTestDB(t)
 
 	// seed passenger + wallet · 钱足够扣
 	if _, err := d.ExecContext(ctx,

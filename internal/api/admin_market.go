@@ -213,11 +213,11 @@ func (s *Server) handleAdminMarketImportStock(w http.ResponseWriter, r *http.Req
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"imported":            sum.Imported,
-		"duplicate":           sum.Duplicate,
-		"failed":              sum.Failed,
-		"offer_id":            req.OfferID,
-		"offer_subscription":  string(offer.Subscription),
+		"imported":              sum.Imported,
+		"duplicate":             sum.Duplicate,
+		"failed":                sum.Failed,
+		"offer_id":              req.OfferID,
+		"offer_subscription":    string(offer.Subscription),
 		"subscription_mismatch": sum.SubMismatch, // 空数组表示全对 · 非空运营应关注
 	})
 	return nil

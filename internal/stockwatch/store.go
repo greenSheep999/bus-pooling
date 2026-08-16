@@ -237,7 +237,7 @@ type NotifyParams struct {
 //  1. **急停 check**：kill switch engaged → 全 skip · log
 //  2. **运营态 check**：mode 决定这个 source 该不该 fire
 //     - stock_delta 源（我方探针 60s 采样对比）· 只有 ModeTight 才 fire
-//       号少时 webhook 常慢/漏 · 探针主动去问是关键补位（docs/15 §3.1）
+//     号少时 webhook 常慢/漏 · 探针主动去问是关键补位（docs/15 §3.1）
 //     - webhook 源（vendor 主动 push）· ModeTight + ModeBalance 都 fire · 最快信号别浪费
 //     - manual 源（CLI 手工调试）· 任何 mode 都 fire · 运营强制路径
 //     - ModeCool · 探针/webhook 都不 fire（库存充足 · 用户来了现打）

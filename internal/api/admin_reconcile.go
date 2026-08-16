@@ -17,9 +17,9 @@ import (
 )
 
 type adminReconcileResp struct {
-	OK           bool                            `json:"ok"`
-	SinceDays    int                             `json:"since_days"`
-	Summary      adminReconcileSummary           `json:"summary"`
+	OK            bool                           `json:"ok"`
+	SinceDays     int                            `json:"since_days"`
+	Summary       adminReconcileSummary          `json:"summary"`
 	Discrepancies []adminReconcileDiscrepancyRow `json:"discrepancies"`
 }
 

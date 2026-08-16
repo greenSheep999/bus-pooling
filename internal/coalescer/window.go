@@ -42,9 +42,9 @@ type windowKey struct {
 
 // windowEntry · 一个正在合流的窗口
 type windowEntry struct {
-	key       windowKey
-	openedAt  time.Time
-	intents   []Intent
+	key      windowKey
+	openedAt time.Time
+	intents  []Intent
 	// closed 用 channel 广播 · 关窗后所有等待者被叫醒
 	closed chan struct{}
 	// 关窗后 · Executor 把结果塞进 result / err · 广播给所有等待者
@@ -251,9 +251,10 @@ func getDefaultWindow() *Window {
 // v2 上层直接调 AnonV2·或 Add 到 Window·或降级 Single。
 //
 // 但为了让 v2 的调用更顺 · AnonV2 封装了三条路径：
-//   · 无 executor → Single 兜底（等价老行为 · 各自跑）
-//   · 有 executor · record group → Single 兜底（无合流对象）
-//   · 有 executor · 有 bus → Add 阻塞等
+//
+//	· 无 executor → Single 兜底（等价老行为 · 各自跑）
+//	· 有 executor · record group → Single 兜底（无合流对象）
+//	· 有 executor · 有 bus → Add 阻塞等
 func AnonV2(ctx context.Context, in Intent) (*BatchResult, error) {
 	w := getDefaultWindow()
 	if w == nil || in.BusID == "" {

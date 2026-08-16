@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/bus-pooling/bus-pooling/internal/bus"
@@ -30,15 +29,8 @@ type walletEnv struct {
 
 func newWalletEnv(t *testing.T) *walletEnv {
 	t.Helper()
-	ctx := context.Background()
 
-	d, err := db.Open(ctx, filepath.Join(t.TempDir(), "wallet.db"))
-	if err != nil {
-		t.Fatalf("开库: %v", err)
-	}
-	if _, err := d.MigrateUp(ctx, "../db/migrations"); err != nil {
-		t.Fatalf("迁移: %v", err)
-	}
+	d := db.NewTestDB(t)
 
 	wallets := wallet.NewStore(d.DB)
 	redeems := redeem.NewStore(d.DB)

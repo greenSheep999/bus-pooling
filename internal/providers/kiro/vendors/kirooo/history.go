@@ -29,21 +29,21 @@ type keysWrap struct {
 }
 
 type keyRow struct {
-	ID            int64  `json:"id"`
-	Key           string `json:"key"`
-	Region        string `json:"region"`
-	Status        string `json:"status"` // active / dead / suspect
-	OrderID       string `json:"order_id"`
-	MasterID      string `json:"master_id"`
-	CreatedAt     string `json:"created_at"`
-	DispatchedAt  string `json:"dispatched_at"`
-	DeadReason    string `json:"dead_reason"`
-	LastProbe     string `json:"last_probe"`
-	CurrentUsage  int    `json:"current_usage"`
-	UsageLimit    int    `json:"usage_limit"`
-	UsageRate     int    `json:"usage_rate"`
-	ListingPrice  int64  `json:"listing_price"`
-	OnSale        bool   `json:"on_sale"`
+	ID           int64  `json:"id"`
+	Key          string `json:"key"`
+	Region       string `json:"region"`
+	Status       string `json:"status"` // active / dead / suspect
+	OrderID      string `json:"order_id"`
+	MasterID     string `json:"master_id"`
+	CreatedAt    string `json:"created_at"`
+	DispatchedAt string `json:"dispatched_at"`
+	DeadReason   string `json:"dead_reason"`
+	LastProbe    string `json:"last_probe"`
+	CurrentUsage int    `json:"current_usage"`
+	UsageLimit   int    `json:"usage_limit"`
+	UsageRate    int    `json:"usage_rate"`
+	ListingPrice int64  `json:"listing_price"`
+	OnSale       bool   `json:"on_sale"`
 }
 
 const kiroooTimeLayout = "2006-01-02 15:04:05"
@@ -132,18 +132,18 @@ func (a *Adapter) ListKeys(ctx context.Context, cursor string) (*providers.Histo
 	for _, k := range wrap.Keys {
 		raw, _ := json.Marshal(k)
 		vk := providers.VendorKey{
-			VendorKeyID:   fmt.Sprintf("%d", k.ID),
-			OrderID:       k.OrderID,
-			KeyMasked:     maskKey(k.Key),
-			Region:        k.Region,
-			Status:        k.Status,
-			CreatedAt:     parseKiroooTime(k.CreatedAt),
-			DispatchedAt:  parseKiroooTime(k.DispatchedAt),
-			DeadReason:    k.DeadReason,
-			LastProbeAt:   parseKiroooTime(k.LastProbe),
-			CurrentUsage:  k.CurrentUsage,
-			UsageLimit:    k.UsageLimit,
-			Raw:           raw,
+			VendorKeyID:  fmt.Sprintf("%d", k.ID),
+			OrderID:      k.OrderID,
+			KeyMasked:    maskKey(k.Key),
+			Region:       k.Region,
+			Status:       k.Status,
+			CreatedAt:    parseKiroooTime(k.CreatedAt),
+			DispatchedAt: parseKiroooTime(k.DispatchedAt),
+			DeadReason:   k.DeadReason,
+			LastProbeAt:  parseKiroooTime(k.LastProbe),
+			CurrentUsage: k.CurrentUsage,
+			UsageLimit:   k.UsageLimit,
+			Raw:          raw,
 		}
 		// 挂的：本 vendor 用 status=dead + dead_reason 表达 · 没单独 dead_at 字段
 		// 用 last_probe 当近似 dead_at（vendor 最后一次探测发现挂了的时刻）

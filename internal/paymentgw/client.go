@@ -193,8 +193,8 @@ type SettlementEvent struct {
 	ExpectedAsset         string `json:"expected_asset"`
 	ReceivedAmount        string `json:"received_amount"`
 	ReceivedAsset         string `json:"received_asset"`
-	State                 string `json:"state"`     // settled | refunded | reversed
-	Kind                  string `json:"kind"`      // 同 state·新版用这个
+	State                 string `json:"state"` // settled | refunded | reversed
+	Kind                  string `json:"kind"`  // 同 state·新版用这个
 	SettledAt             int64  `json:"settled_at"`
 	Metadata              string `json:"metadata"`
 	SignatureVersion      string `json:"signature_version"`

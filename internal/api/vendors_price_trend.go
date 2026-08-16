@@ -19,13 +19,13 @@ import (
 )
 
 type priceTrendResp struct {
-	AnonID   string             `json:"anon_id"`
-	WindowH  int                `json:"window_hours"`
-	Zones    []priceTrendZone   `json:"zones"`
+	AnonID  string           `json:"anon_id"`
+	WindowH int              `json:"window_hours"`
+	Zones   []priceTrendZone `json:"zones"`
 }
 
 type priceTrendZone struct {
-	Zone   string             `json:"zone"`
+	Zone   string                       `json:"zone"`
 	Series map[string][]priceTrendPoint `json:"series"` // source → 点列表
 }
 
@@ -125,4 +125,3 @@ func loadPriceTrend(ctx context.Context, db *sql.DB, vendorID string, windowH in
 	}
 	return out, nil
 }
-

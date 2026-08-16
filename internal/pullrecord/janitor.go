@@ -27,17 +27,17 @@ type PoolReader interface {
 //
 // **1a 收尾 reconcile 策略**（into_bus 分支实现·push_pool 仍转 need_manual）：
 //
-//   1. 拿 credential_id → 查 credential_ledger.kiro_rs_credential_id
-//   2. pool.GetCredential(kr_id) → 查 Groups
-//   3.
-//      - groups 含目标 `bus-<busID>`：外部动作已完成 · 台账可能未落
-//        → 走 AssignToBusTx（幂等·已 owner_bus_id 命中直接返 ErrNotFound 就当已经处理）
-//        → 前推 pending_assignment=completed + 保存幂等响应
-//      - groups 仍在 `record-<pid>`：外部动作没做 · delete pending_assignment
-//        （幂等 key 也回收 · 同 key 可重放 = 新单）
-//      - 其他情形（不在预期两个 group 中任意一个）：疑难 · 转 need_manual
-//   4. pool 查询失败（网络 / auth）：不改状态 · 下轮再试
-//   5. pool 未装配（DRY_RUN / mock）：转 need_manual（人工看数据判断）
+//  1. 拿 credential_id → 查 credential_ledger.kiro_rs_credential_id
+//  2. pool.GetCredential(kr_id) → 查 Groups
+//     3.
+//     - groups 含目标 `bus-<busID>`：外部动作已完成 · 台账可能未落
+//     → 走 AssignToBusTx（幂等·已 owner_bus_id 命中直接返 ErrNotFound 就当已经处理）
+//     → 前推 pending_assignment=completed + 保存幂等响应
+//     - groups 仍在 `record-<pid>`：外部动作没做 · delete pending_assignment
+//     （幂等 key 也回收 · 同 key 可重放 = 新单）
+//     - 其他情形（不在预期两个 group 中任意一个）：疑难 · 转 need_manual
+//  4. pool 查询失败（网络 / auth）：不改状态 · 下轮再试
+//  5. pool 未装配（DRY_RUN / mock）：转 need_manual（人工看数据判断）
 //
 // **push_pool 分支**：1c 才做真推 · 现在没法查 passengerpool · 直接转 need_manual。
 type AssignJanitor struct {
@@ -102,10 +102,10 @@ func (j *AssignJanitor) Run(ctx context.Context) {
 
 // SweepReport 一轮统计。
 type SweepReport struct {
-	Forwarded   int // reconcile 前推到 completed
-	Rolledback  int // pool 未迁 · delete 允许重试
-	NeedManual  int // 转 need_manual
-	Failed      int
+	Forwarded  int // reconcile 前推到 completed
+	Rolledback int // pool 未迁 · delete 允许重试
+	NeedManual int // 转 need_manual
+	Failed     int
 }
 
 // SweepOnce 扫一轮 · 供测试直接调用。返回本轮更新的行数（Forwarded + Rolledback + NeedManual）+ err。
@@ -277,8 +277,8 @@ func (j *AssignJanitor) forward(ctx context.Context, paID string, cids []string,
 	// 状态（=pid 说明还没迁 · =NULL 说明已迁·再看 owner_bus_id 是哪辆车）。
 	for _, cid := range cids {
 		var (
-			currentBus  sql.NullString
-			currentRec  sql.NullString
+			currentBus sql.NullString
+			currentRec sql.NullString
 		)
 		err := tx.QueryRowContext(ctx,
 			`SELECT owner_bus_id, owner_record_passenger_id FROM credential_ledger WHERE id = ?`,

@@ -89,10 +89,10 @@ func (s *Store) Save(ctx context.Context, in SaveInput) error {
 	}
 
 	var (
-		rtEnc  []byte
-		atEnc  []byte
-		akEnc  []byte
-		err    error
+		rtEnc []byte
+		atEnc []byte
+		akEnc []byte
+		err   error
 	)
 	if in.RefreshToken != "" {
 		if rtEnc, err = s.cipher.Encrypt([]byte(in.RefreshToken)); err != nil {
@@ -152,13 +152,13 @@ func (s *Store) Get(ctx context.Context, credentialID string) (*Plaintext, error
 		 WHERE credential_id = ?`, credentialID)
 
 	var (
-		p               Plaintext
-		method          string
-		rtEnc, atEnc    []byte
-		akEnc           []byte
-		createdAtStr    string
-		expiresAtStr    string
-		usedAtStr       sql.NullString
+		p            Plaintext
+		method       string
+		rtEnc, atEnc []byte
+		akEnc        []byte
+		createdAtStr string
+		expiresAtStr string
+		usedAtStr    sql.NullString
 	)
 	err := row.Scan(&p.CredentialID, &method, &rtEnc, &atEnc, &akEnc,
 		&p.Email, &createdAtStr, &expiresAtStr, &usedAtStr)

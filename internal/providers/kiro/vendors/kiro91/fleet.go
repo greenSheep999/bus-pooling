@@ -42,16 +42,16 @@ type roundsResp struct {
 }
 
 type roundItem struct {
-	ID          string `json:"id"`
-	State       string `json:"state"`
-	KeysTotal   int    `json:"keys_total"`
-	LaunchedAt  string `json:"launched_at"`
-	DiedAt      string `json:"died_at"`
-	Regions     string `json:"regions"`     // "eu-central-1,us-east-1" · 逗号分隔
-	Visibility  string `json:"visibility"`  // public / private
-	Scope       string `json:"scope"`       // platform / user
-	IsMine      bool   `json:"is_mine"`
-	LaunchedBy  string `json:"launched_by"` // manual / auto
+	ID         string `json:"id"`
+	State      string `json:"state"`
+	KeysTotal  int    `json:"keys_total"`
+	LaunchedAt string `json:"launched_at"`
+	DiedAt     string `json:"died_at"`
+	Regions    string `json:"regions"`    // "eu-central-1,us-east-1" · 逗号分隔
+	Visibility string `json:"visibility"` // public / private
+	Scope      string `json:"scope"`      // platform / user
+	IsMine     bool   `json:"is_mine"`
+	LaunchedBy string `json:"launched_by"` // manual / auto
 }
 
 func (a *Adapter) ListDispatches(ctx context.Context, limit int) ([]providers.VendorDispatch, error) {

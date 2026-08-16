@@ -36,15 +36,15 @@ func vendorCurrency(vendorID string) string {
 
 // AdminOverviewRow · 单家 vendor 的运维视图
 type AdminOverviewRow struct {
-	VendorID       string `json:"vendor_id"`        // 运维要看 · 真名不脱敏
-	Alive          bool   `json:"alive"`            // 探针最后一次 vendor.Stock 是否成功
+	VendorID       string `json:"vendor_id"` // 运维要看 · 真名不脱敏
+	Alive          bool   `json:"alive"`     // 探针最后一次 vendor.Stock 是否成功
 	LastProbeAt    string `json:"last_probe_at,omitempty"`
 	LastProbeAgo   string `json:"last_probe_ago,omitempty"`
 	ProbeErrorKind string `json:"probe_error_kind,omitempty"`
 
 	// 我方在 vendor 侧的余额（vendor_ledger 最新一条 balance_after · 无则 nil）
-	Balance         *AdminMoney `json:"balance,omitempty"`
-	BalanceCheckedAt string     `json:"balance_checked_at,omitempty"`
+	Balance          *AdminMoney `json:"balance,omitempty"`
+	BalanceCheckedAt string      `json:"balance_checked_at,omitempty"`
 
 	// fleet 状态（vendor_probe.ps_*）
 	FleetGenerating *bool `json:"fleet_generating,omitempty"`
@@ -53,10 +53,10 @@ type AdminOverviewRow struct {
 	FleetKeysDead   *int  `json:"fleet_keys_dead,omitempty"`
 
 	// 最近一次开号 · 帮判断"vendor 还活着吗"
-	LastDispatchAt    string `json:"last_dispatch_at,omitempty"`
-	LastDispatchAgo   string `json:"last_dispatch_ago,omitempty"`
-	DispatchesToday   int    `json:"dispatches_today"`
-	KeysDispatchedToday int  `json:"keys_dispatched_today"`
+	LastDispatchAt      string `json:"last_dispatch_at,omitempty"`
+	LastDispatchAgo     string `json:"last_dispatch_ago,omitempty"`
+	DispatchesToday     int    `json:"dispatches_today"`
+	KeysDispatchedToday int    `json:"keys_dispatched_today"`
 
 	// 库存 · zone 明细
 	Zones []AdminZoneRow `json:"zones,omitempty"`
@@ -291,4 +291,3 @@ func agoStr(d time.Duration) string {
 	}
 	return strconv.FormatInt(int64(d.Hours())/24, 10) + "d"
 }
-

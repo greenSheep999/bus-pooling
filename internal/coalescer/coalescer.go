@@ -23,11 +23,11 @@ import (
 
 // Intent 一位乘客的拉号意图（strategy 判过·可以下单了）。
 type Intent struct {
-	PassengerID  string
-	BusID        string // 空 = 单独拉号（record group）
-	Count        int
-	Zone         providers.Zone
-	VendorID     providers.VendorID // 空 = auto
+	PassengerID string
+	BusID       string // 空 = 单独拉号（record group）
+	Count       int
+	Zone        providers.Zone
+	VendorID    providers.VendorID // 空 = auto
 	// IdempotencyRecordID · 幂等键关联（已在 api 层建 idempotency_record）
 	IdempotencyRecordID string
 }
@@ -37,11 +37,11 @@ type Intent struct {
 // Participants 是合流的乘客 id 列表（含请求发起者·顺序 = 加入意图池顺序）。
 // CountTotal = sum(Intent.Count)。
 type BatchIntent struct {
-	BusID          string
-	Participants   []string
-	CountTotal     int
-	Zone           providers.Zone
-	VendorID       providers.VendorID
+	BusID        string
+	Participants []string
+	CountTotal   int
+	Zone         providers.Zone
+	VendorID     providers.VendorID
 	// IdempotencyRecordIDs · 每个参与意图对应的幂等键 id · 便于 decider
 	// 落 pending_purchase 后回填每人的响应（不同乘客拿各自的响应）
 	IdempotencyRecordIDs []string

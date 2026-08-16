@@ -13,17 +13,18 @@ import (
 // publicStatusResp 本 vendor /api/status（**免 auth** · 公开）真实响应。
 //
 // 观察到的字段（curl 采样 2026-08-10）：
-//   {
-//     "auto_check": true,
-//     "auto_generate": false,
-//     "captcha_app_id": "199244242",
-//     "captcha_enabled": true,
-//     "generating": false,
-//     "price": 50, "price_us": 50, "price_eu": 30,
-//     "started_at": "2026-08-06T10:30:23Z",  // ISO-8601
-//     "stock": 0, "stock_us": 0, "stock_eu": 0,
-//     "uptime_seconds": 330642
-//   }
+//
+//	{
+//	  "auto_check": true,
+//	  "auto_generate": false,
+//	  "captcha_app_id": "199244242",
+//	  "captcha_enabled": true,
+//	  "generating": false,
+//	  "price": 50, "price_us": 50, "price_eu": 30,
+//	  "started_at": "2026-08-06T10:30:23Z",  // ISO-8601
+//	  "stock": 0, "stock_us": 0, "stock_eu": 0,
+//	  "uptime_seconds": 330642
+//	}
 //
 // 注意：字段是 fleet-wide 视图（跟 /api/me/stock 类似结构但去掉 balance/max）。
 // 没有 keys_active/keys_dead —— 本 vendor 平台不暴露这些。
