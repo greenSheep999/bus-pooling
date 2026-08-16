@@ -60,6 +60,9 @@ var wantTables = []string{
 	"market_stock_item", // 每一把预导入号 · available/reserved/sold 状态机
 	// migration 048 · 号用量快照 · 我方 housepool 侧粗数据（docs/06-db-schema §12.5a）
 	"credential_usage_snapshot",
+	// migration 049 · vendor 档位开关(vendor × kind × plan × enabled) · 后台可 toggle
+	// 撤 Capability.SelectablePlans 硬编码 · 上游开新档只需 UPDATE 表(§0.1)
+	"vendor_plan_config",
 }
 
 func openTestDB(t *testing.T) *DB {

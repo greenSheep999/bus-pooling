@@ -699,6 +699,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		Quality: vendorview.NewQualityStore(database.DB),
 		// 第 7 家手工池 · Offers 端点组 Offer matrix 时读它（Step 4）
 		MarketReader: newMarketReader(marketStockStore),
+		// vendor 档位开关（migration 049）· 后台可 toggle · 不写代码
+		PlanConfig: vendorview.NewPlanConfigStore(database.DB),
 	})
 	if err != nil {
 		return err

@@ -30,6 +30,11 @@ type MarketOfferReader interface {
 	AvailableCount(ctx context.Context, offerID string) (int, error)
 }
 
+// PlanConfigReader · vendorview 读档位开关表的抽象·装配层传 *PlanConfigStore
+type PlanConfigReader interface {
+	EnabledPlans(ctx context.Context, vendorID string, kind providers.AccountKind) ([]providers.SubscriptionPlan, error)
+}
+
 // MarketOffer · marketstock.Offer 的视图（不 import marketstock 包）
 type MarketOffer struct {
 	ID           string
@@ -147,10 +152,11 @@ func (s *Service) buildVendorRow(ctx context.Context, e providers.VendorEntry, v
 
 // offersForVendor · 单家 vendor + 单个 kind 的具体 offer 列表
 //
-// 手工池路径:marketReader.ListOffers 过滤 · 每 offer 一条 OfferItem（带分档价 + source）
-// 正常 vendor 路径:Stock(kind) 拿快照 · Capability.SelectablePlans[kind] 展开成多档
+// 手工池路径:marketReader.ListOffers 过滤 · 每 offer 一条 OfferItem(带分档价 + source)
+// 正常 vendor 路径:档位从 vendor_plan_config 拿(migration 049 · 后台开关) ·
+//   库存/价从 Stock(kind).Zones 拿实时快照 · 每档 × 每 zone 出一条 OfferItem
 //
-//	（多数 vendor 买前不能选档 · 那 SelectablePlans[kind] 为空 · 只出一条无 plan 的 OfferItem）
+// 后台今天开 Power · 明天关 Power 开 Pro Max · 都不改代码 —— UPDATE 表即可。
 func (s *Service) offersForVendor(
 	ctx context.Context, e providers.VendorEntry, kind providers.AccountKind,
 ) []OfferItem {
@@ -159,23 +165,45 @@ func (s *Service) offersForVendor(
 		return s.offersFromMarket(ctx, string(e.VendorID), kind)
 	}
 
-	// ── 正常 vendor · 打 Stock(kind) ─────────────────────
-	snap, err := s.stockOnce(ctx, e.Vendor)
-	if err != nil || snap == nil {
+	// ── 正常 vendor · Stock 拿实时库存/价 · 档位从 vendor_plan_config 拿开关 ─────
+	// **必须把 kind 传给 Stock**(部分 vendor 个人池走独立端点·企业池走 /stock/regions)
+	snap, snapErr := s.stockOnceKind(ctx, e.Vendor, kind)
+	// 档位从后台配置读 · 后台今天开 Power · 明天可以关 Power 开 Pro Max · 都不改代码
+	plans, _ := s.enabledPlansFor(ctx, string(e.VendorID), kind)
+
+	// 后台没开任何档 → 该 (vendor, kind) 视为下架 · 不返 offer
+	if len(plans) == 0 {
 		return nil
 	}
-	cap := e.Vendor.Capability()
-	plans := cap.SelectablePlans[kind]
-	// 无可选档 · 只出一条无 plan 的 · 前端下拉禁用 / 隐藏
-	if len(plans) == 0 {
-		return offersFromSnapshot(snap, "")
+
+	// Stock 出错但档位配置在 · 依然要返档骨架
+	// 让前端下拉能列出档位 · available=0 显示"暂时缺货" · 用户能看到"有这档但没货"
+	if snapErr != nil || snap == nil {
+		out := make([]OfferItem, 0, len(plans))
+		for _, plan := range plans {
+			out = append(out, OfferItem{Subscription: plan, Available: 0, UnitPrice: 0})
+		}
+		return out
 	}
-	// 有可选档 · 每档一条（当前 vendor 侧不支持"按 plan 查库存"· 各档共享同一 Zones 数字）
+
+	// Stock 成功 · 每档 × 每 zone 出一条(上游不按档报库存·各档共享 Zones 数字)
 	out := make([]OfferItem, 0, len(plans)*len(snap.Zones))
 	for _, plan := range plans {
 		out = append(out, offersFromSnapshot(snap, plan)...)
 	}
 	return out
+}
+
+// enabledPlansFor · 拿一家 vendor × 一种 kind 的启用档位
+//
+// 优先走后台 vendor_plan_config 表 · 未装配时用默认(企业 power · 个人 pro/pro_plus)
+func (s *Service) enabledPlansFor(
+	ctx context.Context, vendorID string, kind providers.AccountKind,
+) ([]providers.SubscriptionPlan, error) {
+	if s.planConfig == nil {
+		return defaultEnabledPlans(kind), nil
+	}
+	return s.planConfig.EnabledPlans(ctx, vendorID, kind)
 }
 
 // offersFromSnapshot · 把 StockSnapshot.Zones 展开成 OfferItem · 可选带 plan

@@ -52,6 +52,10 @@ type Service struct {
 	// 实现方 *marketstock.Store · 见 offers.go MarketOfferReader
 	marketReader MarketOfferReader
 
+	// planConfig · vendor 档位开关读取(migration 049)· nil 时用 defaultEnabledPlans 兜底
+	// 实现方 *PlanConfigStore · 见 offers.go PlanConfigReader
+	planConfig PlanConfigReader
+
 	// now / newCtx 可注入 · 测试时控时钟和取消
 	now func() time.Time
 }
@@ -73,6 +77,8 @@ type Config struct {
 	Quality *QualityStore
 	// MarketReader · 我方第 7 家 kiro_market 手工池 · 传 *marketstock.Store · nil = 不装
 	MarketReader MarketOfferReader
+	// PlanConfig · vendor 档位开关读取 · 传 *PlanConfigStore · nil = 用默认档兜底
+	PlanConfig PlanConfigReader
 }
 
 // New 建 Service。rates 为零值时零费率（真实环境从后台配置注入）。
@@ -98,6 +104,7 @@ func New(cfg Config) (*Service, error) {
 		pricing:       cfg.Pricing,
 		quality:       cfg.Quality,
 		marketReader:  cfg.MarketReader,
+		planConfig:    cfg.PlanConfig,
 		now:           func() time.Time { return time.Now().UTC() },
 	}, nil
 }
@@ -638,6 +645,14 @@ func (s *Service) stockOnce(ctx context.Context, v providers.Vendor) (*providers
 	cctx, cancel := context.WithTimeout(ctx, s.stockTimeout)
 	defer cancel()
 	return v.Stock(cctx, providers.StockOptions{})
+}
+
+// stockOnceKind 带 account kind 打 Stock · Offers() 用这个走对个人/企业池
+// 某些 vendor 个人池走独立端点(如 /stock/personal-pool)·不加 kind 会拿到企业池快照
+func (s *Service) stockOnceKind(ctx context.Context, v providers.Vendor, kind providers.AccountKind) (*providers.StockSnapshot, error) {
+	cctx, cancel := context.WithTimeout(ctx, s.stockTimeout)
+	defer cancel()
+	return v.Stock(cctx, providers.StockOptions{Kind: kind})
 }
 
 func (s *Service) lookupEnabled(id string) (providers.VendorEntry, bool) {
