@@ -657,14 +657,14 @@ export function vendorPriceTrend(
 /* ── 提取事件（每次拉号）· docs/14 §3.3 提取历史 tab ── */
 
 export const extractEvents: ExtractEvent[] = [
-  { id: "ee_01", created_at: ago(0.5),  vendor_id: "kirodrop",  zone: "us", count_requested: 5, count_purchased: 5, total_cost: -C(12), result: "success", fail_reason: null, assigned_count: 0, pending_count: 5 },
-  { id: "ee_02", created_at: ago(3.2),  vendor_id: "kiroceo",   zone: "eu", count_requested: 3, count_purchased: 3, total_cost: -C(8),  result: "success", fail_reason: null, assigned_count: 2, pending_count: 1 },
-  { id: "ee_03", created_at: ago(6.0),  vendor_id: "kiroappcc", zone: null, count_requested: 2, count_purchased: 2, total_cost: -C(10), result: "success", fail_reason: null, assigned_count: 2, pending_count: 0 },
-  { id: "ee_04", created_at: ago(9.7),  vendor_id: "kirooo",    zone: "us", count_requested: 3, count_purchased: 0, total_cost: 0,      result: "failed",  fail_reason: "缺货", assigned_count: 0, pending_count: 0 },
-  { id: "ee_05", created_at: ago(22.3), vendor_id: "kirodrop",  zone: "us", count_requested: 2, count_purchased: 2, total_cost: -C(9),  result: "success", fail_reason: null, assigned_count: 2, pending_count: 0 },
-  { id: "ee_06", created_at: ago(28.1), vendor_id: "kiro91",    zone: "us", count_requested: 5, count_purchased: 2, total_cost: -C(6),  result: "partial", fail_reason: null, assigned_count: 2, pending_count: 0 },
-  { id: "ee_07", created_at: ago(50.5), vendor_id: "kiroappio", zone: "eu", count_requested: 1, count_purchased: 1, total_cost: -C(4),  result: "success", fail_reason: null, assigned_count: 1, pending_count: 0 },
-  { id: "ee_08", created_at: ago(74.0), vendor_id: "kiroceo",   zone: "us", count_requested: 3, count_purchased: 3, total_cost: -C(15), result: "success", fail_reason: null, assigned_count: 3, pending_count: 0 },
+  { id: "ee_01", created_at: ago(0.5),  vendor_id: "kirodrop",  zone: "us", count_requested: 5, count_purchased: 5, total_cost: C(12), result: "success", fail_reason: null, assigned_count: 0, pending_count: 5 },
+  { id: "ee_02", created_at: ago(3.2),  vendor_id: "kiroceo",   zone: "eu", count_requested: 3, count_purchased: 3, total_cost: C(8),  result: "success", fail_reason: null, assigned_count: 2, pending_count: 1 },
+  { id: "ee_03", created_at: ago(6.0),  vendor_id: "kiroappcc", zone: null, count_requested: 2, count_purchased: 2, total_cost: C(10), result: "success", fail_reason: null, assigned_count: 2, pending_count: 0 },
+  { id: "ee_04", created_at: ago(9.7),  vendor_id: "kirooo",    zone: "us", count_requested: 3, count_purchased: 0, total_cost: 0,     result: "failed",  fail_reason: "缺货", assigned_count: 0, pending_count: 0 },
+  { id: "ee_05", created_at: ago(22.3), vendor_id: "kirodrop",  zone: "us", count_requested: 2, count_purchased: 2, total_cost: C(9),  result: "success", fail_reason: null, assigned_count: 2, pending_count: 0 },
+  { id: "ee_06", created_at: ago(28.1), vendor_id: "kiro91",    zone: "us", count_requested: 5, count_purchased: 2, total_cost: C(6),  result: "partial", fail_reason: null, assigned_count: 2, pending_count: 0 },
+  { id: "ee_07", created_at: ago(50.5), vendor_id: "kiroappio", zone: "eu", count_requested: 1, count_purchased: 1, total_cost: C(4),  result: "success", fail_reason: null, assigned_count: 1, pending_count: 0 },
+  { id: "ee_08", created_at: ago(74.0), vendor_id: "kiroceo",   zone: "us", count_requested: 3, count_purchased: 3, total_cost: C(15), result: "success", fail_reason: null, assigned_count: 3, pending_count: 0 },
 ];
 
 /* ── 派发事件（每次派动作） · docs/14 §3.4 派发历史 tab ── */

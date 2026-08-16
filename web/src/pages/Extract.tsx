@@ -517,10 +517,10 @@ function ExtractEventRow({ e }: { e: ExtractEvent }) {
       <span
         className={cn(
           "w-24 shrink-0 text-right font-semibold tnum",
-          e.total_cost < 0 ? "text-fg" : "text-fg-tertiary",
+          e.total_cost > 0 ? "text-fg" : "text-fg-tertiary",
         )}
       >
-        {e.total_cost === 0 ? "—" : fmtCredits(e.total_cost, { sign: true })}
+        {e.total_cost === 0 ? "—" : fmtCredits(e.total_cost)}
         {e.total_cost !== 0 && <span className="ml-0.5 font-medium text-fg-tertiary">{t("unit.credits")}</span>}
       </span>
     </BareRow>
@@ -673,7 +673,7 @@ function AssignEventRow({ e }: { e: AssignEvent }) {
                 className="flex items-center gap-4 px-1 py-1 text-label"
               >
                 <span className="min-w-0 flex-1 truncate font-mono text-fg-secondary">
-                  {k.key_masked}
+                  {k.key_masked || "—"}
                 </span>
                 <span className="w-24 shrink-0 tnum text-fg-tertiary">{k.region}</span>
                 <span className="w-24 shrink-0 text-right font-semibold tnum">
