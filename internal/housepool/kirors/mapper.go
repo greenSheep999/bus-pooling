@@ -43,6 +43,7 @@ func toCredential(w wireCredential) housepool.Credential {
 		b := toBalance(*w.Balance)
 		c.Balance = &b
 	}
+	c.MaskedKey = deref(w.MaskedAPIKey)
 	return c
 }
 

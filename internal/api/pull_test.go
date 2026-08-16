@@ -82,6 +82,10 @@ func (p *mockPool) UpdateCredential(_ context.Context, _ housepool.CredentialID,
 	return nil
 }
 
+func (p *mockPool) GetCredential(_ context.Context, id housepool.CredentialID) (*housepool.Credential, error) {
+	return &housepool.Credential{ID: id, MaskedKey: "ksk_...mock"}, nil
+}
+
 // pullEnv 起一个装了 decider 的 env，乘客已充好钱。
 func pullEnv(t *testing.T, balance int64) (*testEnv, *mockVendor, func(*http.Request)) {
 	t.Helper()

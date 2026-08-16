@@ -391,14 +391,16 @@ func (o *Orchestrator) insertCredentials(
 			  (id, kiro_rs_credential_id, owner_bus_id, owner_record_passenger_id,
 			   current_group, vendor_id, vendor_order_id, source_pull_round_id,
 			   status, disabled, pulled_at, warranty_until,
-			   account_kind, subscription, source)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'alive', 0, ?, ?, ?, ?, ?)`,
+			   account_kind, subscription, source, key_masked)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'alive', 0, ?, ?, ?, ?, ?, ?)`,
 			id, uint64(imported[i].ID),
 			nullIfEmpty(pending.BusID),
 			nullIfEmptyIfNoBus(pending.BusID, pending.PassengerID),
 			pending.TargetGroup, pending.VendorID, purchase.VendorOrderID, pullRoundID,
 			formatTime(o.now()), warrantyUntil,
-			kind, planVal, nullIfEmpty(src))
+			kind, planVal, nullIfEmpty(src),
+			// key_masked 之前**根本没写** → 全空 → 前端待派列表渲染不出行 · 号派不了
+			nullIfEmpty(imported[i].KeyMasked))
 		if err != nil {
 			return nil, fmt.Errorf("decider: 写 credential_ledger[%d]: %w", i, err)
 		}

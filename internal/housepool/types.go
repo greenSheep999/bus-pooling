@@ -39,6 +39,8 @@ type Credential struct {
 	AccruedCost       float64
 	BilledRequests    uint64
 	Balance           *Balance
+	// MaskedKey 号池给的打码 key（"ksk_...w4DV"）· 我方不留明文 · 列表展示只能用它
+	MaskedKey string
 }
 
 // DisabledReason 的取值（housepool 后端的闭合枚举）。

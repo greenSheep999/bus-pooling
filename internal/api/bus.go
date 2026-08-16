@@ -635,16 +635,24 @@ func (s *Server) busCredStats(ctx context.Context, busID string) (
 	if deadWithTime > 0 {
 		avgLifespan = lifeSum / deadWithTime
 	}
-	// 今日花费 · 按车归集当天的 pull_round 实扣（跟钱包 TodayUsage 同口径:UTC 日界）
+	// 今日花费 · **按车内号回溯它们那一轮的花费** · 不能只看 pull_round.bus_id ——
+	// 从提取页拉号再"进车"的号 · 那一轮 bus_id 是空的（拉的时候还没归属车）·
+	// 只按 bus_id 过滤会让这类花费永远算不进来（实测:今天花了 500 · 显示 0）。
+	//
+	// 每轮只算一次(DISTINCT round) · 否则一轮拉 N 个号会把这轮花费乘 N 倍。
 	today := time.Now().UTC().Format("2006-01-02")
 	if err = s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(
-		         COALESCE(key_cost_total,0) + COALESCE(vendor_fee_total,0) +
-		         COALESCE(region_fee_total,0) + COALESCE(single_pull_fee_total,0) +
-		         COALESCE(capability_fee_total,0) + COALESCE(service_fee_total,0)
+		         COALESCE(pr.key_cost_total,0) + COALESCE(pr.vendor_fee_total,0) +
+		         COALESCE(pr.region_fee_total,0) + COALESCE(pr.single_pull_fee_total,0) +
+		         COALESCE(pr.capability_fee_total,0) + COALESCE(pr.service_fee_total,0)
 		       ), 0)
-		  FROM pull_round
-		 WHERE bus_id = ? AND substr(created_at, 1, 10) = ?`, busID, today,
+		  FROM pull_round pr
+		 WHERE substr(pr.created_at, 1, 10) = ?
+		   AND pr.id IN (
+		         SELECT DISTINCT source_pull_round_id FROM credential_ledger
+		          WHERE owner_bus_id = ? AND source_pull_round_id IS NOT NULL
+		       )`, today, busID,
 	).Scan(&spendToday); err != nil {
 		return 0, 0, 0, 0, err
 	}

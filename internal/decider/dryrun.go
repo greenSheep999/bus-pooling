@@ -177,6 +177,11 @@ func (p *DryRunPool) UpdateCredential(_ context.Context, _ housepool.CredentialI
 	return nil
 }
 
+// GetCredential · DryRun 返个假打码值 · 让手工池路径在 dry run 下也有东西可展示
+func (p *DryRunPool) GetCredential(_ context.Context, id housepool.CredentialID) (*housepool.Credential, error) {
+	return &housepool.Credential{ID: id, MaskedKey: "ksk_...dry"}, nil
+}
+
 func randHex(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)

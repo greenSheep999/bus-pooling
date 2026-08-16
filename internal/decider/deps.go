@@ -26,4 +26,6 @@ type VendorClient interface {
 type PoolClient interface {
 	BatchImport(ctx context.Context, req housepool.BatchImportRequest) (*housepool.BatchImportResult, error)
 	UpdateCredential(ctx context.Context, id housepool.CredentialID, patch housepool.CredentialPatch) error
+	// GetCredential · 手工池路径拿打码 key 用（号早在池里 · 我方无明文可算）
+	GetCredential(ctx context.Context, id housepool.CredentialID) (*housepool.Credential, error)
 }

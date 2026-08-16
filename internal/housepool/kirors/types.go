@@ -43,6 +43,9 @@ type wireCredential struct {
 	// Balance · ListCredentials 每条 credential 内嵌一份 balance（上游 1.8.3+ 起就有）·
 	// 之前 mapper 没接 · deathwatch 拿不到用量 → snapshot 永远为空
 	Balance *wireBalance `json:"balance"`
+	// MaskedAPIKey · 号池给的打码 key（"ksk_...w4DV"）· 我方不留明文 · 展示只能用它
+	// 之前没接这个字段 → credential_ledger.key_masked 一直空 → 前端列表渲染不出行
+	MaskedAPIKey *string `json:"maskedApiKey"`
 }
 
 type wireBalance struct {
