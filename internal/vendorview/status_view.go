@@ -24,8 +24,8 @@ import (
 //   - uptime_24h_pct / stockout_24h_minutes → 数字可给（是产品可靠性承诺）
 type StatusOverview struct {
 	// ProbedAt 最后一次探测时间 · 让访客知道数据新鲜度
-	ProbedAt string             `json:"probed_at,omitempty"`
-	Vendors  []VendorStatusRow  `json:"vendors"`
+	ProbedAt string            `json:"probed_at,omitempty"`
+	Vendors  []VendorStatusRow `json:"vendors"`
 }
 
 // VendorStatusRow 一家 vendor 的对外脱敏状态行 · 永远匿名。
@@ -96,15 +96,15 @@ type DispatchOut struct {
 // HistoryOut 从 vendor_order + vendor_key 表汇总的真实历史（脱敏 · 无价格）。
 // 这些是 vendor 侧**已经存在**的历史 · 我方 backfill 拉过来复用 · 上线一秒就能显示。
 type HistoryOut struct {
-	TotalOrders    int    `json:"total_orders"`
-	TotalKeys      int    `json:"total_keys"`
-	ActiveKeys     int    `json:"active_keys"`
-	DeadKeys       int    `json:"dead_keys"`
+	TotalOrders int `json:"total_orders"`
+	TotalKeys   int `json:"total_keys"`
+	ActiveKeys  int `json:"active_keys"`
+	DeadKeys    int `json:"dead_keys"`
 	// AvgLifespanSec 平均寿命秒数 · 前端要不要展示具体数字自己判断（也能按档位化）
-	AvgLifespanSec int64  `json:"avg_lifespan_sec,omitempty"`
+	AvgLifespanSec int64 `json:"avg_lifespan_sec,omitempty"`
 	// FirstOrderAt / LastOrderAt · vendor 侧第一单 / 最新一单时间
-	FirstOrderAt   string `json:"first_order_at,omitempty"`
-	LastOrderAt    string `json:"last_order_at,omitempty"`
+	FirstOrderAt string `json:"first_order_at,omitempty"`
+	LastOrderAt  string `json:"last_order_at,omitempty"`
 }
 
 // PublicStatusOut vendor 自报的 fleet 累计数据 · 已脱敏（无价格）· 内嵌到 Row。
@@ -386,9 +386,9 @@ func bucketStock(total int, alive bool) string {
 // 只出 alive_pct + stock_bucket 序列 —— **不出具体库存数字**，前端画个大致轮廓即可。
 // 用 anonID 查真 vendor_id · 不再暴露内部 id。
 type StatusTrend struct {
-	AnonID    string             `json:"anon_id"`
-	AnonLabel string             `json:"anon_label"`
-	Window    string             `json:"window"` // "24h"
+	AnonID    string `json:"anon_id"`
+	AnonLabel string `json:"anon_label"`
+	Window    string `json:"window"` // "24h"
 	// Source · 数据来源 · backfill = vendor 侧真历史 · probe = 我方探针积累 · empty = 都没
 	// 前端按 source 决定画什么曲线（backfill 画 keys_born/died；probe 画 uptime）
 	Source string             `json:"source"`
@@ -449,7 +449,7 @@ type DispatchEventsSummary struct {
 	Keys           int     `json:"keys"`
 	AvgIntervalMin float64 `json:"avg_interval_min,omitempty"`
 	// AliveNow 窗口内还活着的号（vendor 自报 alive 字段的和 · observed 源没有）
-	AliveNow int `json:"alive_now,omitempty"`
+	AliveNow  int `json:"alive_now,omitempty"`
 	DeadTotal int `json:"dead_total,omitempty"`
 }
 

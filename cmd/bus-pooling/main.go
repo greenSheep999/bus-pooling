@@ -42,6 +42,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/housepool/kirors"
 	"github.com/bus-pooling/bus-pooling/internal/httpx"
 	"github.com/bus-pooling/bus-pooling/internal/insight"
+	"github.com/bus-pooling/bus-pooling/internal/marketstock"
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
 	"github.com/bus-pooling/bus-pooling/internal/paymentgw"
 	"github.com/bus-pooling/bus-pooling/internal/pricing"
@@ -353,9 +354,34 @@ func ratesFromEnv() decider.Rates {
 // housepool.HousePool 两个接口）；mock 模式下 pool 是 nil（deathwatch / handoff
 // 都会防 nil），api handler 用的 housepool.HousePool 也是 nil，vendorview
 // 只用 registry 不用 pool。
+// startMarketStockSweeper · 每 60s 扫一次 · 释放超过 ReserveTTL(5min) 的 reserved
+// 一律用 background context 起（不用 runServe 的 ctx · 那个会被信号取消 · 关服时 goroutine 自然退）
+func startMarketStockSweeper(ctx context.Context, store *marketstock.Store) {
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				n, err := store.SweepExpired(context.Background())
+				if err != nil {
+					slog.Warn("marketstock sweeper 出错", "err", err)
+					continue
+				}
+				if n > 0 {
+					slog.Info("marketstock sweeper 释放超时占用", "count", n)
+				}
+			}
+		}
+	}()
+}
+
 func buildDecider(
 	cfg config.Config, sqldb *db.DB, reg *providers.Registry,
 	enqueuer decider.StockEnqueuer,
+	marketStockStore *marketstock.Store,
 ) (*decider.Orchestrator, housepool.HousePool, decider.Rates, error) {
 	live := !cfg.DryRun && os.Getenv("BP_ALLOW_LIVE_PULL") == "1"
 
@@ -373,10 +399,15 @@ func buildDecider(
 		} {
 			vendors[id] = &decider.DryRunVendor{VendorID: id}
 		}
+		// 第 7 家 · 手工池是**真实** vendor 实现（不是 mock）· dry-run 模式也用它
+		// 库存/价格都在本地库 · 不打上游 API · 见 marketstock/vendor.go
+		if marketStockStore != nil {
+			vendors[providers.VendorKiroMarket] = marketstock.NewVendor(marketStockStore)
+		}
 		// **P1-g 修(2026-08-16)**: mock 模式下 housepool 若已配就装真 client ·
 		// vendor 走 mock 但 group 迁移 / credential 探活等 housepool 侧操作走真。
 		// 用途:手动 BatchImport 的号 + assign into_bus / push_pool 需真 housepool 同步 group。
-		// 不装 · 走 DryRunPool · assign 号 group 只改本地 DB · kiro.rs 侧不动 → 车友取号权限错。
+		// 不装 · 走 DryRunPool · assign 号 group 只改本地 DB · housepool 后端 侧不动 → 车友取号权限错。
 		if cfg.Housepool.BaseURL != "" && cfg.Secrets.HousepoolAdminKey != "" {
 			hc, herr := httpx.New(httpx.Config{
 				Timeout: cfg.HTTPX.Timeout, MaxRetries: cfg.HTTPX.MaxRetries,
@@ -411,6 +442,7 @@ func buildDecider(
 		orderedIDs := []providers.VendorID{
 			providers.Vendor91Kiro, providers.VendorKiroCEO, providers.VendorKiroOOO,
 			providers.VendorKiroAppIO, providers.VendorKiroAppCC, providers.VendorKiroDrop,
+			providers.VendorKiroMarket, // 我方第 7 家 · 手工池（Step 3f）
 		}
 		for _, id := range orderedIDs {
 			if v, err := reg.Get(id); err == nil {
@@ -516,6 +548,9 @@ func buildDecider(
 		},
 		// 抢号链 · auto 模式缺货时挂单等补货（decisions §11.15）
 		Enqueuer: enqueuer,
+		// 我方第 7 家手工池 seller · settle 里跟 credential_ledger.INSERT 同 tx 卖号
+		// nil 允许（老装配 / 未接手工池）· 但号一旦是 market 来源就必须有
+		MarketStock: marketStockStore,
 	}), pubPool, rates, nil
 }
 
@@ -563,6 +598,12 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	vendorRegistry, err := buildVendorRegistry(ctx, cfg, vaStore)
 	if err != nil {
 		return err
+	}
+	// 我方第 7 家 Kiro Vendor Market · 手工上架 · 库存来自 market_stock_item 表
+	// 装同一个 Store 实例:decider 的 settle SellTx + api 的 admin/market/* 都用它
+	marketStockStore := marketstock.NewStore(database.DB)
+	if err := vendorRegistry.Register(marketstock.NewVendor(marketStockStore), true); err != nil {
+		return fmt.Errorf("注册 Kiro Vendor Market: %w", err)
 	}
 	for _, e := range vendorRegistry.All() {
 		slog.Info("vendor 已注册", "vendor", e.VendorID, "enabled", e.Enabled)
@@ -622,12 +663,17 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	// TTL sweeper · 不扫的话过期挂单会让 demand 虚高 · mode 永远判 tight
 	stockWatcher.StartSweeper(ctx, time.Minute)
 	defer stockWatcher.StopSweeper(2 * time.Second)
+
+	// 手工池 TTL sweeper · 5min 内没 sold 的 reserved 释放回 available（migration 047）·
+	// 场景:decider 崩在 purchasing 前 / 请求上下文超时 / vendor 侧 5xx 反复重试没成
+	// 不扫就永久占位 · 用户看到"缺货"但真库存还在
+	startMarketStockSweeper(ctx, marketStockStore)
 	slog.Info("抢号链已装配",
 		"turbo_flag", turboFlag.Path(),
 		"kill_flag", killFlag.Path(),
 		"mode", modeMgr.Current().String())
 
-	orch, poolClient, rates, err := buildDecider(cfg, database, vendorRegistry, stockWatcher)
+	orch, poolClient, rates, err := buildDecider(cfg, database, vendorRegistry, stockWatcher, marketStockStore)
 	if err != nil {
 		return err
 	}
@@ -651,6 +697,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		// Task 65 · 从 vendor_key 聚合号寿命 / 30d 存活率喂 AutoPick 打分
 		// 没数据的家降级 50 常数（老行为 · 等价纯价格排序）
 		Quality: vendorview.NewQualityStore(database.DB),
+		// 第 7 家手工池 · Offers 端点组 Offer matrix 时读它（Step 4）
+		MarketReader: newMarketReader(marketStockStore),
 	})
 	if err != nil {
 		return err
@@ -891,7 +939,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	var pusher passengerpool.Pusher
 	if downstreamStore != nil && cipher != nil {
 		// **P0-c 修(2026-08-16)**: credplain 表 · 拉号成功那一刻明文加密缓存 ·
-		// pusher 走这个查真明文 · 上游 kiro.rs 1.8.3 确认无 reveal 端点 ·
+		// pusher 走这个查真明文 · 上游 housepool 后端 1.8.3 确认无 reveal 端点 ·
 		// 手动 seed 号走 seed-credplain CLI 塞明文 · 真拉号走 decider.settle 自动落。
 		// credplain Get 找不到 · pusher 走 placeholder 兜底(dev mock 环境)
 		credplainStore := credplain.New(database.DB, cipher)
@@ -971,6 +1019,10 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		},
 		// decisions §8.43 v2 · 优惠码服务 · topup / pull 两场景走 type 校验
 		Coupons: coupon.NewStore(database.DB),
+		// 我方第 7 家 Kiro Vendor Market 手工上架 · admin/market/* 路由生效
+		// 需要 BP_ADMIN_KEY · 走跟 admin/data-health 同套鉴权
+		// **必须跟 buildDecider 用同一个 Store 实例** —— 手工池 Reserve/Sell 是同一状态机
+		MarketStock: marketStockStore,
 	})
 	apiSrv.Routes(mux)
 
@@ -1272,7 +1324,7 @@ func (b *refillDecideBridge) Decide(ctx context.Context, req deathwatch.RefillRe
 		RefillWatermark:   eff.RefillWatermark,
 		RefillMinCount:    minCountVal,
 		BusMaxUnitPrice:   eff.MaxUnitPrice, // Effective 已取严 · 直接传
-		PassengerMaxPrice: 0,                 // 已进 BusMaxUnitPrice · 不重复
+		PassengerMaxPrice: 0,                // 已进 BusMaxUnitPrice · 不重复
 		PreferredVendor:   eff.PreferredVendor,
 		Mode:              mode,
 		KillPulls:         kill,
@@ -1471,7 +1523,7 @@ func (b *schedulerDecideBridge) Decide(ctx context.Context, busID string, cand b
 		RefillWatermark:   eff.RefillWatermark,
 		RefillMinCount:    minCountVal,
 		BusMaxUnitPrice:   eff.MaxUnitPrice, // 已取严 · 直接传
-		PassengerMaxPrice: 0,                 // 已进 BusMaxUnitPrice
+		PassengerMaxPrice: 0,                // 已进 BusMaxUnitPrice
 		PreferredVendor:   eff.PreferredVendor,
 		Mode:              mode,
 		KillPulls:         kill,

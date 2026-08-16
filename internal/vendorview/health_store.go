@@ -19,7 +19,7 @@ func NewHealthStore(db *sql.DB) *HealthStore {
 	return &HealthStore{db: db}
 }
 
-// PipelineHealthRow 一条管线的健康心跳（vendor_id='' = 全局管线）。
+// PipelineHealthRow 一条管线的健康心跳（vendor_id=” = 全局管线）。
 type PipelineHealthRow struct {
 	VendorID  string
 	Pipeline  string

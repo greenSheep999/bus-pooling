@@ -48,6 +48,10 @@ type Service struct {
 	// nil 时 AutoPick 打分退回 aliveRate=50 常数（老行为 · 等价纯价格排序）
 	quality *QualityStore
 
+	// marketReader · 手工池货架读取抽象（Step 4）· nil = 不装第 7 家 · Offers 只列前 6 家
+	// 实现方 *marketstock.Store · 见 offers.go MarketOfferReader
+	marketReader MarketOfferReader
+
 	// now / newCtx 可注入 · 测试时控时钟和取消
 	now func() time.Time
 }
@@ -67,6 +71,8 @@ type Config struct {
 	// Quality · vendor_key 表聚合的号寿命 / 存活率（Task 65 · 喂 AutoPick 打分）
 	// 传 nil = AutoPick 用 aliveRate=50 常数兜底（老行为）
 	Quality *QualityStore
+	// MarketReader · 我方第 7 家 kiro_market 手工池 · 传 *marketstock.Store · nil = 不装
+	MarketReader MarketOfferReader
 }
 
 // New 建 Service。rates 为零值时零费率（真实环境从后台配置注入）。
@@ -91,6 +97,7 @@ func New(cfg Config) (*Service, error) {
 		orderKeyStore: cfg.OrderKeyStore,
 		pricing:       cfg.Pricing,
 		quality:       cfg.Quality,
+		marketReader:  cfg.MarketReader,
 		now:           func() time.Time { return time.Now().UTC() },
 	}, nil
 }
@@ -451,7 +458,7 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 			cands = append(cands, cand{
 				entry: e, snap: snap,
 				pickedZone: z, hasZone: len(snap.Zones) > 1 || z.Zone != "",
-				credits:    s.baseCredits(ctx, e.VendorID, z.UnitPrice),
+				credits: s.baseCredits(ctx, e.VendorID, z.UnitPrice),
 			})
 		}
 	}
@@ -542,11 +549,11 @@ func (s *Service) AutoPick(ctx context.Context, zoneHint string, v Viewer) *Auto
 	return &AutoPickView{
 		VendorLabel: label,
 		// 走 visibleVendorID · 非 wholesale 档返 anon_id（原来这里直接返真 id · 漏名）
-		VendorID:  visibleVendorID(best.entry.VendorID, v),
-		AnonID:    anon,
-		Zone:      zonePtr,
-		Available: best.pickedZone.Available,
-		UnitPrice: s.finalUnitPrice(best.credits, v),
+		VendorID:        visibleVendorID(best.entry.VendorID, v),
+		AnonID:          anon,
+		Zone:            zonePtr,
+		Available:       best.pickedZone.Available,
+		UnitPrice:       s.finalUnitPrice(best.credits, v),
 		WarrantyMinutes: best.snap.WarrantyMinutes,
 		MaxPerOrder:     best.snap.MaxPerOrder,
 		MinPerOrder:     best.snap.MinPerOrder,
@@ -787,6 +794,27 @@ func (s *Service) AnonLabelFor(vendorID string) string {
 	return anonLabelOf(providers.VendorID(vendorID))
 }
 
+// LabelFor · 按 Viewer 档次返 vendor 显示名 · **对外展示名唯一权威源**
+//
+//	wholesale → 真名（vendor.DisplayName）
+//	其他档    → "AWS-Q Kiro Vendor NN"
+//
+// 未注册的 vendorID 返 "" —— caller 据此判断"这不是 vendor 名"（activity 的 Source
+// 也可能是 bus_id / credential_id，不能一律替换）。
+func (s *Service) LabelFor(vendorID string, v Viewer) string {
+	if s == nil || vendorID == "" {
+		return ""
+	}
+	e, ok := s.lookupAny(vendorID)
+	if !ok {
+		return ""
+	}
+	if v.canSeeVendorName() {
+		return e.DisplayName
+	}
+	return anonLabelOf(e.VendorID)
+}
+
 // anonLabelOf 匿名显示名。编号顺序按 CLAUDE.md §1.1 六家列表定义。
 func anonLabelOf(id providers.VendorID) string {
 	if n, ok := anonIndex[id]; ok {
@@ -796,12 +824,13 @@ func anonLabelOf(id providers.VendorID) string {
 }
 
 var anonIndex = map[providers.VendorID]int{
-	providers.Vendor91Kiro:    1,
-	providers.VendorKiroCEO:   2,
-	providers.VendorKiroOOO:   3,
-	providers.VendorKiroAppIO: 4,
-	providers.VendorKiroAppCC: 5,
-	providers.VendorKiroDrop:  6,
+	providers.Vendor91Kiro:     1,
+	providers.VendorKiroCEO:    2,
+	providers.VendorKiroOOO:    3,
+	providers.VendorKiroAppIO:  4,
+	providers.VendorKiroAppCC:  5,
+	providers.VendorKiroDrop:   6,
+	providers.VendorKiroMarket: 7,
 }
 
 func zoneLabel(z providers.Zone) string {

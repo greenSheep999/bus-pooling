@@ -335,8 +335,8 @@ func (s *OrderKeyStore) DispatchesSince(
 	var out []providers.VendorDispatch
 	for rows.Next() {
 		var (
-			d                      providers.VendorDispatch
-			dispatchedAt, deadAt   string
+			d                    providers.VendorDispatch
+			dispatchedAt, deadAt string
 		)
 		if err := rows.Scan(
 			&d.DispatchKey, &d.Region, &dispatchedAt, &d.Count,
@@ -359,10 +359,10 @@ func (s *OrderKeyStore) DispatchesSince(
 
 // KeyLifecycleBucket 一小时（或 windowMinutes）时间桶的聚合 · 用于 /status 页画图。
 type KeyLifecycleBucket struct {
-	BucketStart   string // RFC3339 UTC · 桶起点
-	KeysBorn      int    // 桶内新发的 key 数（按 CreatedAt 落桶）
-	KeysDied      int    // 桶内挂掉的 key 数（按 DeadAt 落桶）
-	AvgLifespanSec int64 // 桶内挂掉的 key 平均寿命秒数（DeadAt - CreatedAt · 只对 KeysDied 算）
+	BucketStart    string // RFC3339 UTC · 桶起点
+	KeysBorn       int    // 桶内新发的 key 数（按 CreatedAt 落桶）
+	KeysDied       int    // 桶内挂掉的 key 数（按 DeadAt 落桶）
+	AvgLifespanSec int64  // 桶内挂掉的 key 平均寿命秒数（DeadAt - CreatedAt · 只对 KeysDied 算）
 }
 
 // KeyLifecycleBuckets 按 bucketMinutes 分桶聚合 vendor 过去 windowHours 的 key 生命周期。
@@ -442,13 +442,13 @@ func (s *OrderKeyStore) KeyLifecycleBuckets(
 
 // VendorHistorySummary 单家 vendor 的历史汇总（累计 · 独立于 24h 窗口）。
 type VendorHistorySummary struct {
-	TotalOrders     int
-	TotalKeys       int
-	ActiveKeys      int
-	DeadKeys        int
-	AvgLifespanSec  int64 // 已挂 key 的平均寿命
-	LastOrderAt     time.Time
-	FirstOrderAt    time.Time
+	TotalOrders    int
+	TotalKeys      int
+	ActiveKeys     int
+	DeadKeys       int
+	AvgLifespanSec int64 // 已挂 key 的平均寿命
+	LastOrderAt    time.Time
+	FirstOrderAt   time.Time
 }
 
 // HistorySummary 单家 vendor 累计视图。

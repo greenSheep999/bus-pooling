@@ -22,6 +22,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/downstream"
 	"github.com/bus-pooling/bus-pooling/internal/housepool"
 	"github.com/bus-pooling/bus-pooling/internal/insight"
+	"github.com/bus-pooling/bus-pooling/internal/marketstock"
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
 	"github.com/bus-pooling/bus-pooling/internal/paymentgw"
 	"github.com/bus-pooling/bus-pooling/internal/pullrecord"
@@ -89,6 +90,8 @@ type Server struct {
 	// coupons · 优惠码 · nil = 不算减免(阶段 1 只透传落 topup_order.coupon_code)
 	// 非 nil = topup / pull 起单时按 type 校验 + 折扣应用 · decisions §8.43 v2
 	coupons *coupon.Store
+	// marketStock · 我方第 7 家 vendor 手工上架 · admin/market/* 路由用 · nil = 不挂
+	marketStock *marketstock.Store
 }
 
 // WebhookOutSender · webhookout.Dispatcher 的对外接口(避免 api → webhookout 硬依赖)。
@@ -146,6 +149,8 @@ type ServerDeps struct {
 	SysDefaults strategy.SystemDefaults
 	// Coupons · 优惠码服务 · nil 允许(阶段 1 只落码不减免 · 1f 起才注入)
 	Coupons *coupon.Store
+	// MarketStock · 我方第 7 家 Kiro Vendor Market 手工上架 store · nil = 不挂 admin/market/* 路由
+	MarketStock *marketstock.Store
 }
 
 func NewServer(d ServerDeps) *Server {
@@ -185,6 +190,7 @@ func NewServer(d ServerDeps) *Server {
 		webhookOut:          d.WebhookOut,
 		sysDefaults:         d.SysDefaults,
 		coupons:             d.Coupons,
+		marketStock:         d.MarketStock,
 	}
 }
 
@@ -295,6 +301,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/vendors/prices", handler(s.RequireAuth(s.handleVendorsPrices)))
 	mux.Handle("GET /api/vendors/stats", handler(s.RequireAuth(s.handleVendorsStats)))
 	mux.Handle("GET /api/vendors/auto-pick", handler(s.RequireAuth(s.handleVendorsAutoPick)))
+	// Offer matrix · vendor × kind × plan · 提取页单一数据源（docs/24 §3 · Step 4）
+	mux.Handle("GET /api/vendors/offers", handler(s.RequireAuth(s.handleVendorsOffers)))
 	mux.Handle("GET /api/vendors/{vendor_id}/stock", handler(s.RequireAuth(s.handleVendorStock)))
 	mux.Handle("GET /api/vendors/{vendor_id}/history", handler(s.RequireAuth(s.handleVendorHistory)))
 	mux.Handle("GET /api/vendors/{vendor_id}/prices/daily", handler(s.RequireAuth(s.handleVendorPricesDaily)))
@@ -308,11 +316,18 @@ func (s *Server) Routes(mux *http.ServeMux) {
 		// 对账 dashboard · wallet_ledger vs vendor_ledger · ?since_days=N
 		mux.Handle("GET /api/admin/reconcile", handler(s.requireAdmin(s.handleAdminReconcile)))
 	}
+	// 我方第 7 家 Kiro Vendor Market 后台上架 · admin/market/* 只在 marketStock 装了才挂
+	// 走跟其他 admin/* 一样的 X-Admin-Key 头校验 · 别给乘客前端（§0.1）
+	if s.adminKey != "" && s.marketStock != nil {
+		mux.Handle("GET  /api/admin/market/offers", handler(s.requireAdmin(s.handleAdminMarketListOffers)))
+		mux.Handle("POST /api/admin/market/offers", handler(s.requireAdmin(s.handleAdminMarketUpsertOffer)))
+		mux.Handle("POST /api/admin/market/stock", handler(s.requireAdmin(s.handleAdminMarketImportStock)))
+	}
 
 	// 首页 / 数据 tab / 活动流（05-api-contract §9b）
 	mux.Handle("GET /api/me/overview", handler(s.RequireAuth(handleOverviewWith(s.insights))))
 	mux.Handle("GET /api/me/trend", handler(s.RequireAuth(handleTrendWith(s.insights, s.buses))))
-	mux.Handle("GET /api/me/activities", handler(s.RequireAuth(handleActivitiesWith(s.insights))))
+	mux.Handle("GET /api/me/activities", handler(s.RequireAuth(s.handleActivitiesWith(s.insights))))
 
 	// 下游配置（05-api-contract §8）
 	mux.Handle("GET /api/me/downstream", handler(s.RequireAuth(s.handleGetDownstream)))

@@ -396,6 +396,9 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 		IdempotencyRecordID: hit.recordID,
 		// 生效上限 · 由 Effective 取严得到 · 0 = 不限
 		MaxUnitPrice: eff.MaxUnitPrice,
+		// Offer 维度 · 空 = enterprise（兼容未升级的前端）
+		AccountKind: providers.AccountKind(req.AccountKind),
+		Plan:        providers.SubscriptionPlan(req.Plan),
 	})
 	if err != nil {
 		if fail := translateDeciderErr(err); fail != nil {

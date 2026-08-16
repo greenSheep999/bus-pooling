@@ -9,7 +9,8 @@ import (
 // computeBreakdown · 三档计费栈锁死（docs/10-pricing §2.3）
 //
 // 号价 20 积分（20 × 1_000_000 microunit）· 率见 §2.5
-//   vendor 67% · region 20% · single_pull 20% · service 5%
+//
+//	vendor 67% · region 20% · single_pull 20% · service 5%
 //
 // **retail 批量**：20 × 1.67 × 1.20 × 1.05 = 42.084
 // **community 批量**：20 × 1.67 × 1.05 = 35.07

@@ -209,9 +209,9 @@ func (s *Server) handleVendorPricesDaily(w http.ResponseWriter, r *http.Request)
 		return err
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"vendor_id":  id, // 对外返 anon_id · 不下发真名
-		"days":       days,
-		"points":     points,
+		"vendor_id": id, // 对外返 anon_id · 不下发真名
+		"days":      days,
+		"points":    points,
 	})
 	return nil
 }
@@ -249,6 +249,28 @@ func (s *Server) handleVendorsStats(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	out := s.vendorView.Stats(r.Context(), viewerOf(p, r))
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// GET /api/vendors/offers · Offer matrix（docs/24 §3 · Step 4）
+//
+// 前端提取页拿这一份数据同时决定:
+//   - category tab 数字（每档合计 available）
+//   - vendor 下拉可选项 · supported/available 分离
+//   - subscription 下拉合法档位
+//   - 数量分档单价（前端预估）
+//
+// 老 /vendors/stats + /vendors/{id}/stock + /vendors/auto-pick 会互相漂移 · 现在统一走这个。
+func (s *Server) handleVendorsOffers(w http.ResponseWriter, r *http.Request) error {
+	if s.vendorView == nil {
+		return vendorViewUnavailable()
+	}
+	p, err := mustCaller(r)
+	if err != nil {
+		return err
+	}
+	out := s.vendorView.Offers(r.Context(), viewerOf(p, r))
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }
