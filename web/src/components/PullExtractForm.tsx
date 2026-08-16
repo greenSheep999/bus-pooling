@@ -1,12 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, KeyRound, Sparkles, TrendingUp } from "lucide-react";
-import {
-  useAutoPick, useExtract, useMe,
-  useVendorOffers, useVendorStock,
-  type OfferItem,
-} from "@/api/hooks";
+import { useExtract, useEstimate } from "@/api/hooks";
+import { useOfferSelection } from "@/hooks/useOfferSelection";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +13,6 @@ import {
 } from "@/components/ui/select";
 import { UpstreamStatusPanel } from "@/components/UpstreamStatusPanel";
 import { ExtractConfirmModal } from "@/components/ExtractConfirmModal";
-import { useEstimate } from "@/api/hooks";
 import { fmtCredits, toCredits, vendorLabel, I18N_VENDOR_IDS } from "@/lib/utils";
 import type { Zone } from "@/types";
 
@@ -40,203 +36,42 @@ export function PullExtractForm({
   /** vendor 展示名的翻译 · 只我方自营那家要翻(前 6 家品牌名 / 匿名编号都不翻) */
   const { t: tVendor } = useTranslation("vendor");
   const pull = useExtract();
-  const { data: me } = useMe();
-  /** Offer matrix · **唯一数据源** · vendor + subscription 联动都从它算（docs/24 §3） */
-  const { data: offers } = useVendorOffers();
-
-  // 前置 state · subscriptionOptions/availableVendors 的 useMemo 引用它们
-  const [count, setCount] = useState(3);
-  const [vendorId, setVendorId] = useState<string>("auto");
-  const [zone, setZone] = useState<Zone | "auto">("auto");
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  /** Offer 维度取数与派生 · 跟车内立即拉号弹窗共用（docs/24 §3） */
+  const {
+    tier,
+    count, setCount,
+    vendorId, setVendorId,
+    zone, setZone,
+    subscription, setSubscription,
+    setPlanPicked,
+    availableVendors,
+    subscriptionOptions,
+    selectedVendorOOS,
+    selectedSubOOS,
+    isAuto,
+    pick,
+    unitPrice,
+    bandUnitPrice,
+    qtyDiscount,
+    maxCount,
+    minCount,
+    warrantyMinutes,
+    outOfStock,
+    effectiveZone,
+  } = useOfferSelection({ category });
 
   /** 缺货 pill 文案 · **不写 defaultValue** —— 中文兜底会让英文用户看到中文
    *  且 key 缺失时静默不报（实测踩过）· 缺 key 就让它显示 key 名 · 一眼能发现 */
   const outOfStockLabel = t("pull-form.vendor.out-of-stock");
 
-  /** 当前 tab 下 · 列**所有 supported 的 vendor** · 不 filter available
-   *  缺货 vendor 也进下拉 · trigger label 保持干净·下拉项右边标缺货 pill
-   *  supported=false 才不进(该 vendor 根本不提供这种 kind)
-   *
-   *  label 用后端返的 vendor_label（已按 tier 判过匿名）· 我方自营那家过 i18n */
-  const availableVendors = useMemo(() => {
-    return (offers?.vendors ?? [])
-      .filter((v) => v.categories[category]?.supported)
-      .map((v) => ({
-        vendor_id: v.vendor_id,
-        vendor_label: I18N_VENDOR_IDS.has(v.vendor_id)
-          ? tVendor(v.vendor_id, { defaultValue: v.vendor_label })
-          : v.vendor_label,
-        available: v.categories[category]?.available ?? 0,
-      }));
-  }, [offers, category, tVendor]);
-
-  /** subscription 下拉合法档 · **纯从 Offer matrix 派生 · 不写死任何档**
-   *  vendor=auto 时:全网该 category 下**任何 vendor supported 的档**集合
-   *  vendor=具体 时:只看该 vendor 该 category 支持的档
-   *  offers 未到手时返 [] · 加载完立即刷 */
-  const subscriptionOptions = useMemo(() => {
-    const LABEL: Record<string, string> = {
-      power: "Power 10000", pro: "PRO 1000", pro_plus: "PRO+ 2000", pro_max: "PRO Max",
-    };
-    const availByPlan = new Map<string, number>();
-    for (const v of offers?.vendors ?? []) {
-      if (vendorId !== "auto" && v.vendor_id !== vendorId) continue;
-      if (!v.categories[category]?.supported) continue;
-      for (const o of v.categories[category]?.offers ?? []) {
-        if (!o.subscription) continue;
-        availByPlan.set(o.subscription, (availByPlan.get(o.subscription) ?? 0) + (o.available ?? 0));
-      }
-    }
-    return [...availByPlan.entries()].map(([plan, avail]) => ({
-      value: plan,
-      label: LABEL[plan] ?? plan,
-      available: avail,
-    }));
-  }, [offers, category, vendorId]);
-
-  const [subscription, setSubscription] = useState<string>("");
-  /** 用户是否手动点过档位 · 手动选过就尊重他的选择(哪怕缺货)· 不再自动纠正 */
-  const [planPicked, setPlanPicked] = useState(false);
-  /** 选默认档:优先第一个 available>0 的·全缺货就选第一个(下拉不留空) */
-  const pickDefaultPlan = (
-    opts: { value: string; available: number }[],
-  ): string => {
-    const hot = opts.find((o) => o.available > 0);
-    return (hot ?? opts[0])?.value ?? "";
-  };
-  // category 切时重置 subscription 到该 category 的默认档
-  // 切个人 tab 时 zone 必须归位("auto")· 个人池多数不分区
-  useEffect(() => {
-    setSubscription(pickDefaultPlan(subscriptionOptions));
-    setPlanPicked(false);
-    setVendorId("auto");
-    if (category === "personal") setZone("auto");
-  }, // eslint-disable-next-line react-hooks/exhaustive-deps
-  [category]);
-  /** 选项变了(切 vendor / 库存刷新)要回落的两种情况:
-   *    ① 当前档在新选项里没了 → 必须换
-   *    ② 当前档缺货 · 但**别的档有货** → 换到有货那档(用户没手动指定过时)
-   *  换 vendor 后停在缺货档、旁边明明有货 · 是漏 case(实测 v03 PRO+ 缺货 / PRO 有 5) */
-  useEffect(() => {
-    if (subscriptionOptions.length === 0) return;
-    const cur = subscriptionOptions.find((o) => o.value === subscription);
-    const anyInStock = subscriptionOptions.some((o) => o.available > 0);
-    const needFallback =
-      !subscription || !cur || (!planPicked && cur.available === 0 && anyInStock);
-    if (needFallback) setSubscription(pickDefaultPlan(subscriptionOptions));
-  }, [subscriptionOptions, subscription, planPicked]);
-
-  /** 档次 · 决定 vendor 显示真名还是匿名编号（只 wholesale 看真名 · docs/10-pricing §2.1） */
-  const tier = me?.tier;
-
-  /* 具体 vendor 的 stock（vendorId 是 auto 时不发请求） */
-  const { data: stock } = useVendorStock(vendorId === "auto" ? undefined : vendorId);
-  /* auto 模式的系统派号推荐 · 提供最终价用于预估 */
-  const { data: pick } = useAutoPick(zone);
-
-  const isAuto = vendorId === "auto";
-
-  /** trigger 上显示缺货灰字 · 当前选中的 vendor/subscription 在 offer matrix 里 available=0 */
-  const selectedVendorOOS = useMemo(() => {
-    if (isAuto) return false;
-    const v = availableVendors.find((x) => x.vendor_id === vendorId);
-    return v ? v.available === 0 : false;
-  }, [availableVendors, vendorId, isAuto]);
-  const selectedSubOOS = useMemo(() => {
-    const s = subscriptionOptions.find((x) => x.value === subscription);
-    return s ? s.available === 0 : false;
-  }, [subscriptionOptions, subscription]);
-
-  /* 具体 zone 的单价（用于预估）· auto 时选最便宜一区 */
-  const activeZone = useMemo(() => {
-    if (!stock) return null;
-    if (stock.zones.length === 1) return stock.zones[0];
-    if (zone === "auto") {
-      return stock.zones.reduce((a, b) => (a.unit_price <= b.unit_price ? a : b));
-    }
-    return stock.zones.find((z) => z.zone === zone) ?? stock.zones[0];
-  }, [stock, zone]);
-
-  /** 当前 (kind, subscription) 组合的**权威库存**·从 offers 派生
-   *  auto:全 vendor 该 (kind, plan) 总量 · 具体 vendor:那家该 (kind, plan) 总量
-   *  取代老的 pick?.available(只覆盖 6 家 kiro · 不覆盖 kiro_market)
-   *  个人 PRO+ 的 market 库存不再被漏 */
-  const currentPlanAvail = useMemo(() => {
-    let n = 0;
-    for (const v of offers?.vendors ?? []) {
-      if (vendorId !== "auto" && v.vendor_id !== vendorId) continue;
-      if (!v.categories[category]?.supported) continue;
-      for (const o of v.categories[category]?.offers ?? []) {
-        if (o.subscription !== subscription) continue;
-        n += o.available ?? 0;
-      }
-    }
-    return n;
-  }, [offers, vendorId, category, subscription]);
-
-  /** 当前 (kind, plan) 的数量分档表 · 部分 vendor 买得多单价更低
-   *  auto 时用最便宜那家的分档(跟 auto 的"比价"语义一致) */
-  const currentBands = useMemo(() => {
-    let best: NonNullable<OfferItem["price_bands"]> | null = null;
-    let bestFirst = Infinity;
-    for (const v of offers?.vendors ?? []) {
-      if (vendorId !== "auto" && v.vendor_id !== vendorId) continue;
-      if (!v.categories[category]?.supported) continue;
-      for (const o of v.categories[category]?.offers ?? []) {
-        if (o.subscription !== subscription) continue;
-        if (!o.price_bands?.length) continue;
-        const first = o.price_bands[0].unit_price_credits;
-        if (first < bestFirst) { bestFirst = first; best = o.price_bands; }
-      }
-    }
-    return best;
-  }, [offers, vendorId, category, subscription]);
-
-  /** 分档单价 · 找 count 落在哪个区间(Upper=0 = 及以上)· 无分档返 null */
-  const bandUnitPrice = useMemo(() => {
-    if (!currentBands?.length) return null;
-    const hit = currentBands.find(
-      (b) => count >= b.lower && (b.upper === 0 || count <= b.upper),
-    );
-    return hit?.unit_price_credits ?? null;
-  }, [currentBands, count]);
-
-  /** 数量折扣 · 当前档比第一档(基准价)便宜时算"省了多少"
-   *  base = 第一档单价（1 个起的价）· saved = (base - 现档价) × count
-   *  没降档 / 无分档时返 null（不显示这行） */
-  const qtyDiscount = useMemo(() => {
-    if (!currentBands?.length || bandUnitPrice == null) return null;
-    const base = currentBands[0].unit_price_credits;
-    if (base <= bandUnitPrice) return null;
-    return { base, saved: (base - bandUnitPrice) * count };
-  }, [currentBands, bandUnitPrice, count]);
-
-  /** 当前单价 · 有数量分档优先用分档价(切数量会变)· 否则走 auto 推荐 / 该区单价 */
-  const unitPrice =
-    bandUnitPrice ?? (isAuto ? pick?.unit_price ?? null : activeZone?.unit_price ?? null);
-  const available = currentPlanAvail;
-
-  /** 可买上限 = min(vendor.max_per_order, available)
-   *  - available:offers 里 (kind, plan) 总量·权威·覆盖 6+1 家
-   *  - max_per_order:vendor 每单上限(可能不设 · 那就只受 available 约束)
-   *  ⚠️ 不写死 200 · 用户能买超总量是核心 bug */
-  const rawMax = isAuto ? pick?.max_per_order : stock?.max_per_order;
-  const rawMin = isAuto ? pick?.min_per_order : stock?.min_per_order;
-  const capMax = rawMax != null && rawMax > 0 ? rawMax : null;
-  const capAvail = available > 0 ? available : null;
-  let maxCount = 1; // 保底 · 数据未到手时不锁死输入
-  if (capMax != null && capAvail != null) maxCount = Math.min(capMax, capAvail);
-  else if (capMax != null) maxCount = capMax;
-  else if (capAvail != null) maxCount = capAvail;
-  const minCount = rawMin && rawMin > 0 ? rawMin : 1;
   /** 实际会派到的 vendor 显示名（auto 时来自推荐结果）· 我方自营那家过 i18n */
   const effectiveVendorLabel = isAuto
     ? pick?.vendor_label ?? t("pull-form.vendor.auto-fallback")
     : I18N_VENDOR_IDS.has(vendorId)
       ? tVendor(vendorId, { defaultValue: vendorLabel(vendorId, tier) })
       : vendorLabel(vendorId, tier);
-  const effectiveZone = isAuto ? pick?.zone ?? null : activeZone ? (stock!.zones.length === 1 ? null : activeZone.zone) : null;
 
   /* 预估费用 · 走后端 /me/pull/estimate（对外只三项：unit_price / service_fee / total） */
   const estimateMut = useEstimate();
@@ -263,12 +98,6 @@ export function PullExtractForm({
   }, [vendorId, effectiveZone, count, unitPrice, isAuto, bandUnitPrice]);
 
   const bargain = count === 1;
-  const outOfStock = available === 0;
-
-  /* 切换 vendor 时如果 count 超过新 max · 收紧 */
-  useEffect(() => {
-    if (count > maxCount) setCount(maxCount);
-  }, [maxCount, count]);
 
   /** 确认窗里点「确认提取」才真拉 · couponCode 是本次减免码
    *  Step 5d · 带上 account_kind + plan · 后端硬约束（缺货不降级） */
@@ -484,7 +313,7 @@ export function PullExtractForm({
           zone: effectiveZone,
           count,
           unitPrice,
-          warrantyMinutes: (isAuto ? pick?.warranty_minutes : stock?.warranty_minutes) ?? 0,
+          warrantyMinutes,
           estimate,
         }}
       />
