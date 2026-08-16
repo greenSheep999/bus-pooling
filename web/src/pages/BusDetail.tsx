@@ -640,8 +640,10 @@ function CredentialRow({ c }: { c: Credential }) {
         {fmtLifespan(c.lifespan_seconds)}
       </span>
 
+      {/* 用量 · 活号看实时采样(usage_current) · 死号 credits_used 才是终值
+          原来只显示 credits_used —— 活号那列恒 0（"0credits"）· 跟提取页对同一个号说两套数 */}
       <span className="w-24 shrink-0 text-center text-label font-semibold tnum">
-        {fmtCredits(c.credits_used)}
+        {fmtCredits(c.usage_current || c.credits_used)}
         <span className="ml-0.5 font-medium text-fg-tertiary">{t("credentials.unit.credits")}</span>
       </span>
 

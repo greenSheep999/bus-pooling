@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/bus"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
@@ -580,6 +582,11 @@ func (s *Server) buildBusResponse(r *http.Request, b *bus.Bus) (busResponse, err
 		c := b.InviteCode
 		invite = &c
 	}
+	// 号汇总 · 查不到不该让整个车详情 500（前端拿 0 也能渲染）· 只降级
+	alive, dead, spendToday, avgLifespan, statsErr := s.busCredStats(r.Context(), b.ID)
+	if statsErr != nil {
+		slogWarn("busResponse · 号汇总查询失败(降级返 0)", "bus", b.ID, "err", statsErr)
+	}
 	return busResponse{
 		ID: b.ID, Name: b.Name, Kind: string(b.Kind), Status: string(b.Status),
 		MemberCount: len(members), InviteCode: invite,
@@ -595,7 +602,53 @@ func (s *Server) buildBusResponse(r *http.Request, b *bus.Bus) (busResponse, err
 			DailySpendLimit:   b.Strategy.DailySpendLimit,
 			PreferredVendor:   b.Strategy.PreferredVendor,
 		},
+		AliveCount:         alive,
+		DeadCount:          dead,
+		SpendToday:         spendToday,
+		AvgLifespanSeconds: avgLifespan,
 	}, nil
+}
+
+// busCredStats 车内号汇总 · 车详情头部那几个数字
+//
+// 之前这四个字段**恒返 0**（"1a 先给 0"的占位一直没接）· 于是车里明明有号 ·
+// 头部显示 0 个 key（生产实测）。这里一次查齐 · 别让前端再猜。
+//
+// avg_lifespan 只算**已死**的号（活着的还在计时 · 混进去会把均值拉低成"当前已存活"）。
+func (s *Server) busCredStats(ctx context.Context, busID string) (
+	alive, dead int, spendToday, avgLifespan int64, err error,
+) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT
+		  COALESCE(SUM(CASE WHEN status = 'alive' THEN 1 ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN status = 'dead'  THEN 1 ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN dead_at IS NOT NULL AND pulled_at IS NOT NULL
+		                    THEN CAST((julianday(dead_at) - julianday(pulled_at)) * 86400 AS INTEGER)
+		               END), 0),
+		  COALESCE(SUM(CASE WHEN dead_at IS NOT NULL AND pulled_at IS NOT NULL THEN 1 ELSE 0 END), 0)
+		  FROM credential_ledger
+		 WHERE owner_bus_id = ?`, busID)
+	var lifeSum, deadWithTime int64
+	if err = row.Scan(&alive, &dead, &lifeSum, &deadWithTime); err != nil {
+		return 0, 0, 0, 0, err
+	}
+	if deadWithTime > 0 {
+		avgLifespan = lifeSum / deadWithTime
+	}
+	// 今日花费 · 按车归集当天的 pull_round 实扣（跟钱包 TodayUsage 同口径:UTC 日界）
+	today := time.Now().UTC().Format("2006-01-02")
+	if err = s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(
+		         COALESCE(key_cost_total,0) + COALESCE(vendor_fee_total,0) +
+		         COALESCE(region_fee_total,0) + COALESCE(single_pull_fee_total,0) +
+		         COALESCE(capability_fee_total,0) + COALESCE(service_fee_total,0)
+		       ), 0)
+		  FROM pull_round
+		 WHERE bus_id = ? AND substr(created_at, 1, 10) = ?`, busID, today,
+	).Scan(&spendToday); err != nil {
+		return 0, 0, 0, 0, err
+	}
+	return alive, dead, spendToday, avgLifespan, nil
 }
 
 // passengerBriefFor 拿一个乘客的 username + 钱包余额（拼进 BusMember）。

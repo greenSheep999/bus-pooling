@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/bus"
 )
@@ -29,6 +30,11 @@ type credDTO struct {
 	PushedAt        *string `json:"pushed_at"`
 	PushFailed      bool    `json:"push_failed"`
 	PushError       any     `json:"push_error"`
+	// Offer 维度 + 用量真值（跟 /me/pull-records 同源 · 别让两个页面对同一个号说不同的话）
+	AccountKind  string `json:"account_kind,omitempty"`
+	Subscription string `json:"subscription,omitempty"`
+	UsageLimit   int64  `json:"usage_limit"`
+	UsageCurrent int64  `json:"usage_current"`
 }
 
 func (s *Server) handleBusCredentials(w http.ResponseWriter, r *http.Request) error {
@@ -44,12 +50,32 @@ func (s *Server) handleBusCredentials(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 
+	// 推送态 / 用量 / masked 都查真值 —— 之前只查 6 列 · masked 拿行 id 拼假的 ·
+	// 推送态根本不查 → 车详情"Push log"永远空 · Push 列永远 "Not pushed"（实测生产:
+	// DB 里 pushed_to_passengerpool_at 有值 · 接口返 null）。
+	// 用量 LEFT JOIN 最近一条快照 · 跟 /me/pull-records 同一套口径。
 	rows, err := s.db.QueryContext(r.Context(), `
-		SELECT id, vendor_id, status,
-		       COALESCE(pulled_at, ''), warranty_until, dead_at
-		  FROM credential_ledger
-		 WHERE owner_bus_id = ?
-		 ORDER BY pulled_at DESC`, busID)
+		SELECT cl.id, COALESCE(cl.vendor_id, ''), cl.status,
+		       COALESCE(cl.key_masked, ''),
+		       COALESCE(cl.region, ''),
+		       COALESCE(cl.credits_used, 0),
+		       COALESCE(cl.pulled_at, ''), cl.warranty_until, cl.dead_at,
+		       cl.pushed_to_passengerpool_at,
+		       COALESCE(cl.push_error_code, ''),
+		       COALESCE(cl.push_error_message, ''),
+		       COALESCE(cl.account_kind, ''),
+		       COALESCE(cl.subscription, ''),
+		       COALESCE(cus.usage_limit_micro, 0),
+		       COALESCE(cus.current_usage_micro, 0)
+		  FROM credential_ledger cl
+		  LEFT JOIN credential_usage_snapshot cus
+		    ON cus.kiro_rs_credential_id = cl.kiro_rs_credential_id
+		   AND cus.observed_at = (
+		         SELECT MAX(observed_at) FROM credential_usage_snapshot
+		          WHERE kiro_rs_credential_id = cl.kiro_rs_credential_id
+		       )
+		 WHERE cl.owner_bus_id = ?
+		 ORDER BY cl.pulled_at DESC`, busID)
 	if err != nil {
 		return err
 	}
@@ -57,8 +83,14 @@ func (s *Server) handleBusCredentials(w http.ResponseWriter, r *http.Request) er
 	items := make([]credDTO, 0)
 	for rows.Next() {
 		var c credDTO
-		var warranty, deadAt sql.NullString
-		if err := rows.Scan(&c.ID, &c.VendorID, &c.Status, &c.PulledAt, &warranty, &deadAt); err != nil {
+		var warranty, deadAt, pushedAt sql.NullString
+		var pushErrCode, pushErrMsg string
+		if err := rows.Scan(
+			&c.ID, &c.VendorID, &c.Status, &c.KeyMasked, &c.Region, &c.CreditsUsed,
+			&c.PulledAt, &warranty, &deadAt,
+			&pushedAt, &pushErrCode, &pushErrMsg,
+			&c.AccountKind, &c.Subscription, &c.UsageLimit, &c.UsageCurrent,
+		); err != nil {
 			return err
 		}
 		if warranty.Valid {
@@ -69,11 +101,39 @@ func (s *Server) handleBusCredentials(w http.ResponseWriter, r *http.Request) er
 			s := deadAt.String
 			c.DeadAt = &s
 		}
+		if pushedAt.Valid && pushedAt.String != "" {
+			s := pushedAt.String
+			c.PushedAt = &s
+		}
+		// 推送失败 = 有错误码且还没推成功（推成功后错误码留着当历史 · 不该再报红）
+		if pushErrCode != "" && c.PushedAt == nil {
+			c.PushFailed = true
+			if pushErrMsg != "" {
+				c.PushError = pushErrMsg
+			} else {
+				c.PushError = pushErrCode
+			}
+		}
+		// 寿命:死了算到 dead_at · 活着算到现在（前端"存活 Nh"要真值）
+		if c.PulledAt != "" {
+			if t0, err := time.Parse(time.RFC3339, c.PulledAt); err == nil {
+				end := time.Now().UTC()
+				if deadAt.Valid && deadAt.String != "" {
+					if t1, err := time.Parse(time.RFC3339, deadAt.String); err == nil {
+						end = t1
+					}
+				}
+				if d := end.Sub(t0); d > 0 {
+					c.LifespanSeconds = int64(d.Seconds())
+				}
+			}
+		}
 		bid := busID
 		c.OwnerBusID = &bid
-		// 明文 / 派发瞬时快照 1a 不接 · 空字段前端已能处理
-		c.KeyMasked = "ksk_" + shortID(c.ID) + "…" + tailID(c.ID)
 		items = append(items, c)
+	}
+	if err := rows.Err(); err != nil {
+		return err
 	}
 	writeJSON(w, http.StatusOK, items)
 	return nil
