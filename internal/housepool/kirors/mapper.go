@@ -37,6 +37,12 @@ func toCredential(w wireCredential) housepool.Credential {
 	if t := parseTimePtr(w.CreatedAt); t != nil {
 		c.CreatedAt = *t
 	}
+	// Balance 是每条 credential 的内嵌用量（上游 1.8.3+ 每条都带）·
+	// deathwatch/usage.go 靠它落 credential_usage_snapshot（docs/06-db-schema §12.5a）
+	if w.Balance != nil {
+		b := toBalance(*w.Balance)
+		c.Balance = &b
+	}
 	return c
 }
 

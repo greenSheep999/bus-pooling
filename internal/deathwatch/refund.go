@@ -267,10 +267,10 @@ func NewSQLRefundStore(db *sql.DB) *SQLRefundStore { return &SQLRefundStore{db: 
 // FindRefundable 找该退款的死号。
 //
 // 条件（全部满足才退）：
-//   1. 号已判死（status='dead'）
-//   2. **上游已退款**（pull_round.status='refunded' —— vendor webhook / 轮询确认过）
-//   3. 我方还没退过（warranty_refunded_at IS NULL · 幂等）
-//   4. 在质保窗口内（warranty_until 为空视为"上游说退就退"）
+//  1. 号已判死（status='dead'）
+//  2. **上游已退款**（pull_round.status='refunded' —— vendor webhook / 轮询确认过）
+//  3. 我方还没退过（warranty_refunded_at IS NULL · 幂等）
+//  4. 在质保窗口内（warranty_until 为空视为"上游说退就退"）
 func (s *SQLRefundStore) FindRefundable(ctx context.Context, limit int) ([]RefundCandidate, error) {
 	if limit <= 0 {
 		limit = 100
