@@ -183,6 +183,15 @@ export interface Credential {
    *  注意：这是**推 passengerpool** 的失败（用户自己号池返回的错），
    *  跟拉号时 vendor 侧的 insufficient_balance 是两个域，不会混 */
   push_error: PushError | null;
+  /** Offer 维度（docs/24 §5）· subscription 决定 quota 上限
+   *   power=10k / pro=1k / pro+=2k / pro_max=5k · 空字符串 = 老数据兜底走 QUOTA_MAX */
+  account_kind?: "enterprise" | "personal";
+  subscription?: "power" | "pro" | "pro_plus" | "pro_max";
+  /** 用量真值 · microunit · 号池 balance 5min 采样（docs/06-db-schema §12.5a）
+   *   usage_limit = 0 → 快照未落 · 前端降级用 QUOTA_MAX
+   *   usage_current 是"最近一次采样"实时值 · 跟 credits_used(死那一刻快照) 语义不同 */
+  usage_limit: Money;
+  usage_current: Money;
 }
 
 /** 推送到 passengerpool 失败的详情 · decisions §8.24

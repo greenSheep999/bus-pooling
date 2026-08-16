@@ -183,6 +183,10 @@ const mkCred = (
   pushed_at: pushed ? ago(lifeH - 0.05) : null,
   push_failed: pushFailIdx != null,
   push_error: pushFailIdx != null ? PUSH_ERRORS[pushFailIdx % PUSH_ERRORS.length] : null,
+  // mock 走 power 档 · usage_limit 10k · 真数据由后端下发
+  subscription: "power",
+  usage_limit: C(10000),
+  usage_current: C(used),
 });
 
 export const credentials: Credential[] = [

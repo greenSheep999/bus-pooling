@@ -52,6 +52,14 @@ type pullRecordResp struct {
 	PushFailed  bool           `json:"push_failed"`
 	PushError   *pushErrorResp `json:"push_error"`
 	SourceRound string         `json:"source_pull_round_id"`
+	// Offer 维度 · 前端按 subscription 决定 quota 上限 · 决定进度条颜色
+	// 空字符串 = 老数据 · 前端兜底走 QUOTA_MAX（power 10k）
+	AccountKind  string `json:"account_kind,omitempty"`
+	Subscription string `json:"subscription,omitempty"`
+	// 用量真值 · 号池 balance 5min 采样 · 前端进度条 max = usage_limit(microunit)
+	// 0 = 快照未落 · 前端降级用 QUOTA_MAX 兜底
+	UsageLimit   int64 `json:"usage_limit"`
+	UsageCurrent int64 `json:"usage_current"`
 }
 
 type pushErrorResp struct {
@@ -65,15 +73,19 @@ type pushErrorResp struct {
 
 func pullRecordOf(r pullrecord.Record) pullRecordResp {
 	out := pullRecordResp{
-		ID:          r.ID,
-		VendorID:    r.VendorID,
-		Status:      string(r.Status),
-		KeyMasked:   r.KeyMasked,
-		Region:      r.Region,
-		CreditsUsed: r.CreditsUsed,
-		PulledAt:    r.PulledAt.Format(time.RFC3339),
-		PushFailed:  r.PushFailed,
-		SourceRound: r.SourceRound,
+		ID:           r.ID,
+		VendorID:     r.VendorID,
+		Status:       string(r.Status),
+		KeyMasked:    r.KeyMasked,
+		Region:       r.Region,
+		CreditsUsed:  r.CreditsUsed,
+		PulledAt:     r.PulledAt.Format(time.RFC3339),
+		PushFailed:   r.PushFailed,
+		SourceRound:  r.SourceRound,
+		AccountKind:  r.AccountKind,
+		Subscription: r.Subscription,
+		UsageLimit:   r.UsageLimit,
+		UsageCurrent: r.UsageCurrent,
 	}
 	if r.WarrantyUnt != nil {
 		s := r.WarrantyUnt.Format(time.RFC3339)
