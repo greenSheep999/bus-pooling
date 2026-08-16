@@ -259,8 +259,11 @@ export interface AutoPickResult {
   min_per_order: number;
   avg_lifespan_seconds: number;
   alive_rate_30d: number;
-  /** 为什么推荐它 · 一句人话（"库存足 · 成活率最高"） */
+  /** 为什么推荐它 · 一句人话 · **后端中文原文** · 只当 i18n 兜底 */
   reason: string;
+  /** 稳定机器码 · 前端出本地化文案用（extract:upstream-panel.reason.*）
+   *  后端 vendorview.Reason* 常量 · out_of_stock / cheapest / most_stock / balanced */
+  reason_code?: string;
 }
 
 // ── 上游即时快照（PullExtractModal 展示 · docs/14 §4.3）

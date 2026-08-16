@@ -156,7 +156,16 @@ export const VENDOR_NAME: Record<string, string> = {
   kiroappio: "Kiro App IO",
   kiroappcc: "Kiro App CC",
   kirodrop: "Kiro Drop",
+  // 第 7 家 · 我方自营手工池(migration 047)· 跟后端
+  // marketstock.Vendor.DisplayName() 同值 · 别让两边漂
+  //
+  // **只有这一家要翻译** —— 前 6 家是上游品牌名(不翻)· 匿名编号也不翻。
+  // 这里的值是 en 兜底 · 实际展示走 i18n `vendor:kiro_market`（见 marketVendorLabel）
+  kiro_market: "Kiro Vendor Market - various sources",
 };
+
+/** kiro_market 是否该走 i18n · 前 6 家品牌名不翻译 */
+export const I18N_VENDOR_IDS = new Set(["kiro_market"]);
 
 /** vendor 身份色（同色系紫深浅，不用杂色） */
 export const VENDOR_COLOR: Record<string, string> = {
@@ -195,6 +204,8 @@ const VENDOR_ANON_INDEX: Record<string, string> = Object.fromEntries(
  *  ⚠️ 别传 `me.invited` —— 那个字段 `community` 也是 true · 会把真名漏给社群档。
  *  一律传 `me?.tier`。 */
 export function vendorLabel(id: string, tier: PassengerTier | undefined): string {
+  // 我方自营手工池 · 所有档都看真名（无上游可绕 · 跟后端 vendorview.labelAndAnon 一致）
+  if (I18N_VENDOR_IDS.has(id)) return vendorName(id);
   if (tier === "wholesale") return vendorName(id);
   return VENDOR_ANON_INDEX[id] ?? "AWS-Q Kiro Vendor";
 }

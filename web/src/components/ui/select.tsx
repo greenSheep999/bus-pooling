@@ -8,10 +8,16 @@ const Select = SelectPrimitive.Root;
 const SelectGroup = SelectPrimitive.Group;
 const SelectValue = SelectPrimitive.Value;
 
+/** SelectTrigger 支持 hint prop:在右侧(chevron 前)放一段灰字(如"暂时缺货")
+ *  文本左对齐 · SelectValue 主内容跟以前一样在最左边 · hint 灰字紧贴 chevron 之前 */
+type SelectTriggerProps = React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & {
+  hint?: React.ReactNode;
+};
+
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
->(({ className, children, ...props }, ref) => (
+  SelectTriggerProps
+>(({ className, children, hint, ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
@@ -25,7 +31,16 @@ const SelectTrigger = React.forwardRef<
     )}
     {...props}
   >
-    {children}
+    {/* §9.1 选中态明确:值靠左 + 缺货状态 pill 紧跟 · chevron 靠右 */}
+    <span className="flex min-w-0 items-center gap-2">
+      {children}
+      {hint ? (
+        /* §4.3 状态小 pill · 跟下拉项里同一个视觉 */
+        <span className="inline-flex shrink-0 items-center rounded-md bg-warn-bg px-1.5 py-[1px] text-[10px] font-semibold leading-[1.4] text-warn-fg">
+          {hint}
+        </span>
+      ) : null}
+    </span>
     <SelectPrimitive.Icon asChild>
       <ChevronDown className="size-4 shrink-0 text-fg-tertiary transition-transform data-[state=open]:rotate-180" />
     </SelectPrimitive.Icon>
@@ -107,22 +122,37 @@ const SelectLabel = React.forwardRef<
 ));
 SelectLabel.displayName = SelectPrimitive.Label.displayName;
 
+/** SelectItem · hint 是属性标记(如"暂时缺货")· 走 13-frontend-design §4.3 状态小 pill
+ *  文字左对齐 · 勾选右对齐(§9.3)· disabled 项 opacity-45(§9.3) */
+type SelectItemProps = React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & {
+  hint?: React.ReactNode;
+};
+
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
->(({ className, children, ...props }, ref) => (
+  SelectItemProps
+>(({ className, children, hint, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
       "relative flex w-full cursor-pointer select-none items-center gap-2 rounded-lg py-2 pl-3 pr-8 font-medium outline-none transition-colors",
       "focus:bg-bg-elevated data-[highlighted]:bg-bg-elevated",
       "data-[state=checked]:bg-brand-subtle data-[state=checked]:text-brand-strong",
-      "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "data-[disabled]:pointer-events-none data-[disabled]:opacity-45",
       className,
     )}
     {...props}
   >
-    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    {/* §9.3 文字左对齐 · flex-1 truncate · 勾选右对齐 */}
+    <SelectPrimitive.ItemText asChild>
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+    </SelectPrimitive.ItemText>
+    {hint ? (
+      /* §4.3 状态小 pill · 10px · 语义色底 · 尺寸最小 */
+      <span className="inline-flex shrink-0 items-center rounded-md bg-warn-bg px-1.5 py-[1px] text-[10px] font-semibold leading-[1.4] text-warn-fg">
+        {hint}
+      </span>
+    ) : null}
     <span className="absolute right-2 flex size-4 items-center justify-center">
       <SelectPrimitive.ItemIndicator>
         <Check className="size-4 text-brand-strong" />

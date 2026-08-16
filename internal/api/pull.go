@@ -88,6 +88,14 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 	if req.Zone == "auto" {
 		req.Zone = ""
 	}
+	// 前端拿到的可能是 anon_id —— /vendors/offers 对 retail/community 档返的是
+	// 匿名哈希（visibleVendorID）· 直接拿它匹配真 id 会把"选了具体 vendor"的
+	// 散客一律打成 400。先反查真 id（查不到留原值 · 下面的校验兜底报错）。
+	if req.VendorID != "" && s.vendorView != nil {
+		if real := s.vendorView.VendorIDForAnon(req.VendorID); real != "" {
+			req.VendorID = real
+		}
+	}
 	// 请求指定 vendor 时·校验已装配·否则 400（防让请求走到 decider 才发现）
 	if req.VendorID != "" && s.decider != nil {
 		known := false

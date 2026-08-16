@@ -195,6 +195,12 @@
     "auto-arrow": "→",
     "vendor-title": "Live upstream status",
     "default-zone-prefix": "Default region · ",
+    "reason": {
+      "out_of_stock": "Out of stock everywhere",
+      "cheapest": "Lowest price right now · stock available",
+      "most_stock": "Most stock right now · fair price",
+      "balanced": "Best balance of stock and price"
+    },
     "stat": {
       "stock": "Stock",
       "unit-price": "Unit price",
@@ -249,6 +255,8 @@
       "title": "Estimated cost",
       "unit-line": "Unit price · {{count}} key(s)",
       "unit-value": "{{unit}} × {{count}} credits",
+      "qty-discount": "Bulk discount",
+      "qty-discount-value": "was {{base}} · you save {{saved}}",
       "service-fee": "Service fee",
       "service-fee-value": "{{value}} credits",
       "total-label": "Total",

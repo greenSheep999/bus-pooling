@@ -88,7 +88,15 @@ export function ExtractConfirmModal({
                   </>
                 }
               />
-              <InfoRow label={t("confirm-modal.info-zone")} value={info.zone ?? t("confirm-modal.info-zone-all")} />
+              {/* zone 是 code(us/eu)· 出本地化区名 · 别把原始 code 显给用户 */}
+              <InfoRow
+                label={t("confirm-modal.info-zone")}
+                value={
+                  info.zone
+                    ? t(`pull-form.zone.${info.zone}`, { defaultValue: info.zone })
+                    : t("confirm-modal.info-zone-all")
+                }
+              />
               <InfoRow
                 label={t("confirm-modal.info-count")}
                 value={<><strong className="tnum">{info.count}</strong> {t("confirm-modal.info-count-unit")}</>}
