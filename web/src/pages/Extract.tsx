@@ -747,7 +747,10 @@ function SkeletonFolderTab({ active = false }: { active?: boolean }) {
       >
         <path
           d="M 0.5 12 Q 0.5 0.5 12 0.5 L 200 0.5 Q 208 0.5 211.5 8 L 219.5 59.5 L 0.5 59.5 Z"
-          fill={active ? "hsl(var(--brand-subtle))" : "hsl(var(--bg-elevated))"}
+          /* 骨架**不用品牌紫** —— 数据还没到 · 不该先把"选中"的强调色亮出来
+             （骨架只占位形状 · 一律中性灰 · 见 skeleton.tsx 用法原则）
+             active 只用底色深浅区分 · 保持两个 tab 的层次感 */
+          fill={active ? "hsl(var(--bg))" : "hsl(var(--bg-elevated))"}
           stroke="hsl(var(--hairline))"
           strokeWidth={1}
           vectorEffect="non-scaling-stroke"
@@ -756,13 +759,15 @@ function SkeletonFolderTab({ active = false }: { active?: boolean }) {
         {active && (
           <line
             x1="0.5" y1="59.5" x2="210" y2="59.5"
-            stroke="hsl(var(--brand-subtle))"
+            stroke="hsl(var(--bg))"
             strokeWidth={2}
             vectorEffect="non-scaling-stroke"
           />
         )}
       </svg>
       <div className="relative flex h-full items-center gap-3 pl-5 pr-10">
+        {/* 图标占位 · 跟真 tab 的 size-8 对齐 · 否则加载完文字会横向跳一下 */}
+        <Skeleton className="size-8 shrink-0 rounded-lg" />
         <div className="flex flex-col gap-1.5">
           <Skeleton className="h-4 w-16" />
           <Skeleton className="h-2.5 w-20" />
@@ -829,7 +834,9 @@ function FolderTab({
              底边故意画在 60 · 与 card 顶 border 相接 · active 时会用一条覆盖线遮住 */
           d="M 0.5 12 Q 0.5 0.5 12 0.5 L 200 0.5 Q 208 0.5 211.5 8 L 219.5 59.5 L 0.5 59.5 Z"
           fill={active ? "hsl(var(--brand-subtle))" : "hsl(var(--bg-elevated))"}
-          stroke="hsl(var(--hairline))"
+          /* 选中 tab 的描边跟下方 focal card 的 border 同色(index.css .card-focal ·
+             brand 紫 12% 透明)· 否则紫底配灰边 · tab 跟 card 看着不是一体 */
+          stroke={active ? "rgb(145 71 255 / 0.12)" : "hsl(var(--hairline))"}
           strokeWidth={1}
           vectorEffect="non-scaling-stroke"
           strokeLinejoin="round"
