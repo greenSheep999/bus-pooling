@@ -92,6 +92,7 @@
     "title-push-pool": "Confirm push to my pool",
     "title-handoff": "Confirm download & take",
     "title-default": "Dispatch destination",
+    "errors-title": "{{count}} key(s) rejected",
     "sub-preset-prefix": "",
     "sub-preset-suffix": " keys · double-check and confirm",
     "sub-select-prefix": "Selected ",

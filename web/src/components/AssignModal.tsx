@@ -116,6 +116,8 @@ export function AssignModal({
     token: string;
     keys: HandoffKeys["keys"];
   } | null>(null);
+  // P1-l/m · assign 后端拒推(credential_dead / credential_quota_exceeded)· 弹窗保开显 error
+  const [assignErrors, setAssignErrors] = useState<{ credential_id: string; code: string; message: string }[]>([]);
   const handoffInit = useHandoffInit();
   const handoffFulfill = useHandoffFulfill();
   const handoffConfirm = useHandoffConfirm();
@@ -125,6 +127,7 @@ export function AssignModal({
       setKind(presetKind ?? "into_bus");
       setBusId("");
       setHandoff(null);
+      setAssignErrors([]);
     }
   }, [open, presetKind]);
 
@@ -157,11 +160,18 @@ export function AssignModal({
       return;
     }
 
-    await assign.mutateAsync({
+    const result = await assign.mutateAsync({
       credential_ids: records.map((r) => r.id),
       destination: kind,
       ...(kind === "into_bus" ? { bus_id: busId } : {}),
     });
+    // **P1-l/m 拒推场景**: 后端 errors[] 里带 credential_dead / credential_quota_exceeded
+    // 全被拒(assigned=0) · 弹窗保开 · 显 error 列表让用户知道
+    // 部分成功(assigned>0 · 部分 errors) · 也保弹窗显 · 但成功那部分 UI 已刷
+    if (result.errors && result.errors.length > 0) {
+      setAssignErrors(result.errors);
+      return;
+    }
     onClose();
   };
 
@@ -334,6 +344,27 @@ export function AssignModal({
                     warn
                   />
                 </div>
+              )}
+
+              {/* P1-l/m · 拒推错误列表 · 号已失效 / 号已用完额度 */}
+              {assignErrors.length > 0 && (
+                <Alert
+                  tone="danger"
+                  icon={AlertTriangle}
+                  title={t("assign-modal.errors-title", { count: assignErrors.length })}
+                  className="mt-3"
+                >
+                  <ul className="space-y-1 text-label">
+                    {assignErrors.map((e) => (
+                      <li key={e.credential_id} className="flex items-start gap-2">
+                        <span className="font-mono text-fg-tertiary">
+                          {e.credential_id.slice(-8)}
+                        </span>
+                        <span>{e.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Alert>
               )}
             </DialogBody>
 

@@ -92,6 +92,7 @@
     "title-push-pool": "确认推我的号池",
     "title-handoff": "确认下载拿走",
     "title-default": "派去向",
+    "errors-title": "{{count}} 个 key 派失败",
     "sub-preset-prefix": "共 ",
     "sub-preset-suffix": " 个 key · 核对后确认",
     "sub-select-prefix": "选中 ",
