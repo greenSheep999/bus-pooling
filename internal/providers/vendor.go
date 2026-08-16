@@ -32,6 +32,10 @@ const (
 	VendorKiroAppIO VendorID = "kiroappio"
 	VendorKiroAppCC VendorID = "kiroappcc"
 	VendorKiroDrop  VendorID = "kirodrop"
+	// VendorKiroMarket · 我方第 7 家 · 手工上架货源
+	// 号是运营买好后走 admin API 导入 housepool（跟前 6 家的 BatchImport 同一条链）·
+	// 仅"库存不是 API 查来的 · 号不是 API 买来的"跟其他家不同 · 见 docs/24 §1 + migration 047
+	VendorKiroMarket VendorID = "kiro_market"
 )
 
 type Zone string
@@ -42,6 +46,65 @@ const (
 	// ZoneGeneral 用于不分区的 vendor
 	ZoneGeneral Zone = "general"
 )
+
+// AccountKind · 账号类型 · 上游是**两套独立货架**（不同端点 / 不同价 / 不同库存）。
+//
+// 跟 vendor / subscription / zone **平级**（`Offer = vendor × kind × subscription × zone`）·
+// 不是 "vendor 属于某个 kind"：同一家可能两种都供、也可能只供一种（docs/24 §1）。
+//
+// 空值按 AccountEnterprise 处理 —— 老调用方（未传 Kind）保持原行为。
+type AccountKind string
+
+const (
+	AccountEnterprise AccountKind = "enterprise"
+	AccountPersonal   AccountKind = "personal"
+)
+
+// Normalize 空值归一到 enterprise（向后兼容 · 见 AccountKind 注释）
+func (k AccountKind) Normalize() AccountKind {
+	if k == "" {
+		return AccountEnterprise
+	}
+	return k
+}
+
+// SubscriptionPlan · 订阅档位 · 决定该号的 quota 上限。
+//
+// **购买前可选**（部分 vendor personal 池按档定价）· 不是买完才观察到的属性。
+//
+// ⚠️ **plan 跟 AccountKind 正交** —— 企业号和个人号**都可能有全部档位**。
+// 别写 `kind==enterprise ? power : [pro, pro_plus]` 这种映射（docs/24 §2 作废清单）。
+// 「哪些 (kind, plan) 组合当前可买」是**运行时数据**：
+//   - 真 vendor → Capability.SelectablePlans（adapter 按上游实况填）
+//   - 我方手工上架 → market_inventory 表里有哪些行
+//
+// 当前实况只是"企业开了 power · 个人开了 pro/pro_plus"，不是模型约束。
+//
+// ⚠️ 跟 passenger.tier（retail/community/wholesale · 买号人的折扣档）是两回事。
+//
+// 档位集合**可能增长**（上游加档就多一个）· 加档时要同步 DB CHECK 约束。
+type SubscriptionPlan string
+
+const (
+	PlanPower   SubscriptionPlan = "power"
+	PlanPro     SubscriptionPlan = "pro"
+	PlanProPlus SubscriptionPlan = "pro_plus"
+	PlanProMax  SubscriptionPlan = "pro_max"
+)
+
+// AllSubscriptionPlans · 已知档位全集 · 用于校验入参 / 生成 DB CHECK。
+// **不代表当前可买** —— 可买组合看 Capability.SelectablePlans / market_inventory。
+var AllSubscriptionPlans = []SubscriptionPlan{PlanPower, PlanPro, PlanProPlus, PlanProMax}
+
+// Valid 档位是否已知（拒未知值进库 · 防 housepool 返回的 raw 串直接落库）
+func (p SubscriptionPlan) Valid() bool {
+	for _, v := range AllSubscriptionPlans {
+		if v == p {
+			return true
+		}
+	}
+	return false
+}
 
 // Money 金额。**整数 microunit**，不用浮点（钱不能有舍入漂移 · CLAUDE.md §7.2）。
 type Money struct {
@@ -85,6 +148,33 @@ type Capability struct {
 	KeyPayloadShape       KeyPayloadShape
 	MinPerOrder           int
 	MaxPerOrder           int
+
+	// AccountKinds 这家支持哪些账号类型 · 空 = 只 enterprise（老 adapter 默认）。
+	//
+	// **"不支持"与"支持但缺货"必须分开** —— 前端两种展示不同（docs/24 §3）：
+	//   不在这个列表   → "该 vendor 不提供"
+	//   在列表但 stock=0 → "暂时缺货"
+	AccountKinds []AccountKind
+	// SelectablePlans 购买前可选的订阅档 · 按 kind 分组 · 空 = 该 kind 不分档。
+	//
+	// **由 adapter 按上游实况填** —— 任何 kind 都可能有任何档（plan 与 kind 正交）。
+	// 当前实况：多数家企业池只开 power · 个别家个人池开 pro/pro_plus ·
+	// 但这是 vendor 侧配置，不是代码假设。上游开新档 → adapter 这里多一项即可。
+	SelectablePlans map[AccountKind][]SubscriptionPlan
+}
+
+// SupportsKind 该 vendor 是否供这种账号类型（空 AccountKinds 视为只供 enterprise）
+func (c Capability) SupportsKind(k AccountKind) bool {
+	k = k.Normalize()
+	if len(c.AccountKinds) == 0 {
+		return k == AccountEnterprise
+	}
+	for _, v := range c.AccountKinds {
+		if v == k {
+			return true
+		}
+	}
+	return false
 }
 
 // Vendor 是各家 adapter 都要实现的最小接口。
@@ -117,6 +207,11 @@ type StockOptions struct {
 	// Zone nil = 用 vendor 默认。**某些 vendor 的默认可能是"只取一个区"**·
 	// 需要跨区必须显式传（契约 §4.1 / vendor 档案 §7）
 	Zone *Zone
+	// Kind 要查哪种账号类型的货架 · 空 = AccountEnterprise（老行为 · 向后兼容）。
+	//
+	// 上游是**两套独立货架**（不同端点 / 不同价 / 不同库存）· 见 docs/24 §1。
+	// vendor 不支持该 kind 时返 ErrNotSupported —— 上层据此判 supported=false。
+	Kind AccountKind
 }
 
 type StockSnapshot struct {
@@ -170,12 +265,12 @@ type TierSchedule struct {
 // QtyPriceBand · 一个数量档（价按落在哪个数量区间定）
 type QtyPriceBand struct {
 	// Lower / Upper 数量区间 · Upper=0 表示"及以上"（最高档无上限）
-	Lower int
-	Upper int
+	Lower int `json:"lower"`
+	Upper int `json:"upper"`
 	// UnitPriceCredits microunit · 这档单价（我方积分 · adapter 换算好）
-	UnitPriceCredits int64
+	UnitPriceCredits int64 `json:"unit_price_credits"`
 	// Region us / eu / "" 全区
-	Region string
+	Region string `json:"region,omitempty"`
 }
 
 // KeyTierLister 可选接口 · vendor 有"数量分档"端点就实现（如 key-price-tiers）。
@@ -221,6 +316,11 @@ type PurchaseRequest struct {
 	OrderID *string
 	// MaxTotal 价格保护（部分 vendor 支持）
 	MaxTotal *Money
+	// Kind 买哪种账号类型 · 空 = AccountEnterprise（老行为 · 向后兼容）。
+	//
+	// **必须跟估价时用的 kind 一致** —— 两套货架价不同（docs/24 §1）·
+	// 用企业价估、按个人池下单会导致实扣与预估不符。
+	Kind AccountKind
 }
 
 type PurchaseResult struct {
