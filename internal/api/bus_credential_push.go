@@ -71,7 +71,12 @@ func (s *Server) handleBusCredentialPush(w http.ResponseWriter, r *http.Request)
 		return err
 	}
 	if status != "alive" {
-		return ErrBadRequest("号已 " + status + " · 不能重推")
+		// 内部枚举不拼进用户文案（CLAUDE §12.5）· dead/handed_off 都收敛成人话
+		reason := "已失效"
+		if status == "handed_off" {
+			reason = "已拿走"
+		}
+		return ErrBadRequest("号" + reason + " · 不能重推")
 	}
 
 	// 幂等:已推过 且 无失败标记 → no-op 200

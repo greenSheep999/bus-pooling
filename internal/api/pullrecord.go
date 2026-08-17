@@ -492,7 +492,7 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 		if len(rejected) > 0 {
 			for cid, ce := range rejected {
 				code := "credential_dead"
-				userMsg := "号已失效 · 不能派(housepool 后端 探活返错)"
+				userMsg := "号已失效 · 不能派"
 				if ce.kind == "quota" {
 					code = "credential_quota_exceeded"
 					userMsg = "号已用完额度 · 拼车共享号需活号 · 请换号或等 quota 重置"
@@ -769,9 +769,9 @@ func (s *Server) selectPushMeta(ctx context.Context, credIDs []string, passenger
 		}
 		out[id] = pushMeta{
 			region: region,
-			// vendor label 走脱敏 · 不给对家看 vendor 真名
-			// 阶段 1e-1 简化：直接给一个通用 tag · 未来接 vendorview.anon 映射
-			vendorLabel: "provider",
+			// vendor label 走脱敏 · 不给对家看 vendor 真名 ·
+			// 用匿名编号（"AWS-Q Kiro Vendor 0N"）· 不用 "provider"（内部术语 · §12.6）
+			vendorLabel: s.vendorView.AnonLabelFor(vendorID),
 		}
 	}
 	return out, rows.Err()

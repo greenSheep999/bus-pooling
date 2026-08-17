@@ -137,8 +137,9 @@ func (s *Server) handleHandoffFulfill(w http.ResponseWriter, r *http.Request) er
 	//    阶段 1a-1c 这个开关不放·1c 后接明文端点才放。
 	if os.Getenv("BP_HANDOFF_TRUE_PLAINTEXT") != "1" {
 		if os.Getenv("BP_ALLOW_HANDOFF_PLACEHOLDER") != "1" {
+			// 不提 housepool / 端点（CLAUDE §0.1 · 内部术语不进对外 message）
 			return newFail(http.StatusNotImplemented, "handoff_not_ready",
-				"取号功能未开放（housepool 明文导出端点未接）· 号仍在你的池里，可以派进车或推自己号池")
+				"取号功能暂未开放 · 号仍在你的池里，可以派进车或推自己号池")
 		}
 		// 联调路径：返占位 · 状态推进到 placeholder_delivered（非 fulfilled）
 		keys := s.readHandoffPlaceholder(pending.CredentialIDs)
