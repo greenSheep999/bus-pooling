@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 
 /** 小号 badge 基础（10px · 高密度 · 表格 / 卡片内嵌） · 不给外部直接用，走下面语义组件 */
@@ -57,11 +58,15 @@ export function VendorTag({
   return <TokenTag size={size}>{name}</TokenTag>;
 }
 
-/** "我发起" · 车 badge · 紫底强调 */
-export function OwnerBadge({ children = "我发起" }: { children?: ReactNode }) {
+/** "我发起" · 车 badge · 紫底强调
+ *
+ *  文案**走 i18n**（原来默认值写死中文 · 4 个调用点全没传 children ·
+ *  于是英文用户到处看到"我发起"）· children 仍可覆盖（个别场景要换词） */
+export function OwnerBadge({ children }: { children?: ReactNode }) {
+  const { t } = useTranslation("buses");
   return (
     <MicroTag className="bg-brand-subtle font-semibold text-brand-strong">
-      {children}
+      {children ?? t("card.owner-badge")}
     </MicroTag>
   );
 }

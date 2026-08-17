@@ -149,7 +149,8 @@
       "max-price": "unit ≤ <1>{{value}}</1>",
       "daily-limit": "daily <1>{{value}}</1>",
       "preferred": "prefer <1>{{vendor}}</1>"
-    }
+    },
+    "owner-badge": "I started it"
   },
   "join-anon-modal": {
     "title": "Hop on",

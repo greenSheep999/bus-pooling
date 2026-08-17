@@ -144,7 +144,14 @@
       "credits-zero": "0",
       "credits-suffix": "积分",
       "amount-suffix": "积分"
-    }
+    },
+    "target": {
+      "pending": "待派",
+      "push_pool": "我的号池",
+      "handoff": "已拿走",
+      "into_bus": "车里"
+    },
+    "dead-suffix": "失效"
   },
   "rank": {
     "la": "拉",
@@ -154,5 +161,20 @@
     "hang": "夯",
     "armored": "装甲车",
     "alive-hint": "还在跑"
+  },
+  "ui": {
+    "clear-selection": "取消选择",
+    "close": "关闭",
+    "toggle-menu": "切换菜单",
+    "load-failed": "加载失败",
+    "load-failed-desc": "网络或服务异常 · 点下面重试",
+    "collapse": "收起",
+    "items-unit": "条",
+    "days-unit": "天",
+    "not-open-yet": "暂未开放",
+    "cred-alive": "正常",
+    "cred-dead": "已失效",
+    "load-more": "加载更多",
+    "remain-prefix": "还剩"
   }
 }

@@ -128,9 +128,8 @@ func (s *Store) Activities(
 			ID:        "r_" + id,
 			Kind:      ActivityExtract,
 			Source:    vendorID,
-			Count:     count,
-			CountUnit: "个 key",
-			Summary:   fmt.Sprintf("%s · 拉 %d 个", vendorID, count),
+			Count: count,
+			// Summary 不填 —— extract/into_bus 走 flow 分支 · 前端按 kind 组句(i18n)
 			Amount:    &spend,
 			CreatedAt: createdAt,
 		}
@@ -144,8 +143,9 @@ func (s *Store) Activities(
 				a.Target = busID.String
 			}
 		} else {
+			// **Target 留空** —— 固定去向的文案由前端按 target_kind 出（i18n）·
+			// 后端塞中文会让英文用户看到中文（§0.1:对外文案不许后端硬编码语言）
 			a.TargetKind = "pending"
-			a.Target = "待派"
 		}
 		all = append(all, a)
 	}
@@ -176,9 +176,8 @@ func (s *Store) Activities(
 			Source:     vendorID,
 			Target:     masked,
 			TargetKind: "cred_dead",
-			Count:      1,
-			CountUnit:  "个号",
-			Summary:    fmt.Sprintf("%s · %s · 失效", masked, vendorID),
+			Count: 1,
+			// Summary 不填 —— 前端按 kind=dead 组句(masked/vendor 是数据 · "失效"是文案)
 			CreatedAt:  deadAt,
 		}
 		all = append(all, a)
@@ -216,7 +215,6 @@ func (s *Store) Activities(
 			ID:        "a_" + id,
 			Source:    vendorID.String, // api 层按档匿名化
 			Count:     1,
-			CountUnit: "个号",
 			CreatedAt: createdAt,
 		}
 		switch target {
@@ -229,12 +227,13 @@ func (s *Store) Activities(
 			} else {
 				a.Target = busID.String
 			}
+			// Summary 只当前端兜底（前端优先按 kind + source/target 自己组句）·
+			// 车名是数据不是文案 · 可以出
 			a.Summary = fmt.Sprintf("%s → %s", vendorID.String, a.Target)
 		case "to-passengerpool":
 			a.Kind = ActivityPush
-			a.Target = "我的号池"
+			// **Target 留空** · "我的号池"这种固定文案交前端 i18n（别后端硬编码中文）
 			a.TargetKind = "push_pool"
-			a.Summary = fmt.Sprintf("%s → 我的号池", vendorID.String)
 		}
 		all = append(all, a)
 	}
@@ -265,12 +264,10 @@ func (s *Store) Activities(
 		count := len(credIDs)
 		a := Activity{
 			ID:         "h_" + id,
-			Kind:       ActivityHandoff,
-			Target:     "已拿走",
+			Kind: ActivityHandoff,
+			// Target / CountUnit 留空 —— 固定文案和量词都交前端 i18n（§0.1）
 			TargetKind: "handoff",
 			Count:      count,
-			CountUnit:  "个号",
-			Summary:    fmt.Sprintf("拿走 %d 个号", count),
 			CreatedAt:  createdAt,
 		}
 		all = append(all, a)
@@ -304,11 +301,8 @@ func (s *Store) Activities(
 			ID:         "p_" + id,
 			Kind:       ActivityPush,
 			Source:     vendorID,
-			Target:     "我的号池",
 			TargetKind: "push_pool",
 			Count:      1,
-			CountUnit:  "个号",
-			Summary:    fmt.Sprintf("%s → 我的号池", vendorID),
 			CreatedAt:  pushedAt,
 		}
 		all = append(all, a)

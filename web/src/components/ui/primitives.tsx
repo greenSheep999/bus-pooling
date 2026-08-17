@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
@@ -214,9 +215,10 @@ export function Chip({
 
 /** 号状态：正常 / 已失效（只有两态） · CLAUDE.md §12.5 */
 export function StatusChip({ alive }: { alive: boolean }) {
+  const { t } = useTranslation();
   return (
     <Chip tone={alive ? "ok" : "danger"} dot>
-      {alive ? "正常" : "已失效"}
+      {alive ? t("ui.cred-alive") : t("ui.cred-dead")}
     </Chip>
   );
 }

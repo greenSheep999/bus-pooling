@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ export function BulkActionBar({
   /** 动作按钮 */
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       className={cn(
@@ -48,7 +50,7 @@ export function BulkActionBar({
         <span className="flex flex-wrap items-center gap-2">{children}</span>
 
         {/* 取消选择 */}
-        <Button variant="ghost" size="icon" onClick={onClear} aria-label="取消选择">
+        <Button variant="ghost" size="icon" onClick={onClear} aria-label={t("ui.clear-selection")}>
           <X />
         </Button>
       </div>

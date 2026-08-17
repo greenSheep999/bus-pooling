@@ -331,7 +331,7 @@ function AvatarMenu() {
                             )}
                           />
                           <span className="flex-1 font-medium">{o.label}</span>
-                          {o.soon && <Muted>暂未开放</Muted>}
+                          {o.soon && <Muted>{t("ui.not-open-yet")}</Muted>}
                         </button>
                       ))}
                     </div>
@@ -368,7 +368,7 @@ function MobileNav() {
       <button
         onClick={() => setOpen((v) => !v)}
         className="grid size-7 shrink-0 place-items-center rounded-md transition-colors hover:bg-bg-elevated lg:hidden"
-        aria-label="切换菜单"
+        aria-label={t("ui.toggle-menu")}
       >
         <ChevronDown
           className={cn(

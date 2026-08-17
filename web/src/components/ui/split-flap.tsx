@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 
 /** Split-flap（翻牌 / 机械翻页）显示器
@@ -110,6 +111,7 @@ export function SplitFlapCountdown({
   onExpire?: () => void;
   className?: string;
 }) {
+  const { t } = useTranslation();
   // 客户端与服务端的时钟偏移（毫秒）· 只在 serverNow 变化时重算
   const skew = useRef(0);
   useEffect(() => {
@@ -149,7 +151,7 @@ export function SplitFlapCountdown({
       {d > 0 && (
         <>
           <SplitFlap value={p2(d)} />
-          <span className="opacity-70">天</span>
+          <span className="opacity-70">{t("ui.days-unit")}</span>
         </>
       )}
       <SplitFlap value={p2(h)} />

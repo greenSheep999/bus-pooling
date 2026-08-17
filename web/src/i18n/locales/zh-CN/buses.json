@@ -149,7 +149,8 @@
       "max-price": "单价 ≤ <1>{{value}}</1>",
       "daily-limit": "日限 <1>{{value}}</1>",
       "preferred": "首选 <1>{{vendor}}</1>"
-    }
+    },
+    "owner-badge": "我发起"
   },
   "join-anon-modal": {
     "title": "搭车",

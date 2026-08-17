@@ -106,6 +106,51 @@ for (const f of files) {
   }
 }
 
+/* ── 4. 面向用户的字符串里不许硬编码中文 ──
+ *
+ * 前三条只查"已经走了 t() 的 key" —— 压根没调 t() 的硬编码中文它看不见。
+ * 实测漏网（2026-08-17 车主抓出来的）：
+ *   - tags.tsx  `function OwnerBadge({ children = "我发起" })` ← 默认值写死中文
+ *   - 活动流后端 `Target = "待派"` / `CountUnit = "个号"`   ← 后端塞中文进响应体
+ *
+ * 只查**会渲染成 UI 的位置**（JSX 文本 / 默认参数值 / 字符串字面量赋给 label 之类）·
+ * 注释和 i18n 文件本身不算。误报就往 ALLOW 里加，别把检查关掉。
+ */
+const CJK = /[㐀-䶿一-鿿぀-ヿ가-힯]/;
+const ALLOW_CJK_FILE = [
+  /\/i18n\//,          // locales 本身就是中文
+  /\/mocks\//,         // mock 数据（假数据里的中文是"数据"不是文案）
+  /\/lib\/rank\.ts$/,  // 档名映射表(注释里列了中文档名 · 值走 i18n)
+  // Docs 页是**对接文档**：字段说明本身只提供中文（阶段 1 定的 · 不是漏翻译）
+  /\/pages\/Docs\.tsx$/,
+];
+
+for (const f of files) {
+  if (ALLOW_CJK_FILE.some((re) => re.test(f))) continue;
+  const src = readFileSync(f, "utf8");
+  // 先整文件剥注释（块注释跨行 · 逐行剥会漏掉中间那些以 * 开头的行 —— 实测全是误报）
+  const stripped = src
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")) // 块注释留换行保行号
+    .replace(/^\s*\/\/.*$/gm, "")
+    .replace(/([^:])\/\/.*$/gm, "$1");
+  stripped.split("\n").forEach((code, i) => {
+    if (!CJK.test(code)) return;
+    // console.* 是开发日志 · 不是 UI
+    if (/console\.(log|info|warn|error|debug)/.test(code)) return;
+    // 已经按语言分支了（`zh ? "天" : "d"`）—— 那是本地化过的 · 不算硬编码
+    if (/\b(zh|isZh|lang|locale)\b[^?]{0,20}\?/.test(code)) return;
+    // 只揪"字符串字面量里的中文"（JSX 文本节点里的中文同样算）
+    const inString = /["'`][^"'`]*[㐀-䶿一-鿿぀-ヿ가-힯][^"'`]*["'`]/.test(code);
+    const jsxText = />[^<>{]*[㐀-䶿一-鿿぀-ヿ가-힯][^<>{]*</.test(code);
+    if (inString || jsxText) {
+      errors.push(
+        `${f}:${i + 1}: 硬编码中文 —— 面向用户的文案要走 t() · 英文用户会看到中文\n` +
+          `      ${code.trim().slice(0, 100)}`,
+      );
+    }
+  });
+}
+
 if (errors.length) {
   console.error("✗ i18n 检查失败：\n");
   for (const e of errors) console.error("  " + e);

@@ -144,7 +144,14 @@
       "credits-zero": "0",
       "credits-suffix": "credits",
       "amount-suffix": "credits"
-    }
+    },
+    "target": {
+      "pending": "Pending",
+      "push_pool": "My pool",
+      "handoff": "Taken away",
+      "into_bus": "In bus"
+    },
+    "dead-suffix": "went dead"
   },
   "rank": {
     "la": "Mid",
@@ -154,5 +161,20 @@
     "hang": "Built Different",
     "armored": "Tank",
     "alive-hint": "still running"
+  },
+  "ui": {
+    "clear-selection": "Clear selection",
+    "close": "Close",
+    "toggle-menu": "Toggle menu",
+    "load-failed": "Failed to load",
+    "load-failed-desc": "Network or service issue · tap below to retry",
+    "collapse": "Collapse",
+    "items-unit": "",
+    "days-unit": "d",
+    "not-open-yet": "Coming soon",
+    "cred-alive": "Live",
+    "cred-dead": "Dead",
+    "load-more": "Load more",
+    "remain-prefix": "remaining"
   }
 }

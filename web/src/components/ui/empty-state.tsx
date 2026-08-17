@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 
 /** 空态 · 全站统一
@@ -80,8 +81,8 @@ export function EmptyState({
  * 为什么单独一个：空态是"确实没有"，错误态是"没拿到" —— 用户该做的事不一样
  * （前者去创建，后者点重试）。混成一个会让人以为数据被清空了。 */
 export function ErrorState({
-  title = "加载失败",
-  desc = "网络或服务异常 · 点下面重试",
+  title,
+  desc,
   onRetry,
   className,
 }: {
@@ -90,6 +91,10 @@ export function ErrorState({
   onRetry?: () => void;
   className?: string;
 }) {
+  /* 默认文案走 i18n（原来默认值写死中文 · 调用方不传就露给英文用户） */
+  const { t } = useTranslation();
+  const titleText = title ?? t("ui.load-failed");
+  const descText = desc ?? t("ui.load-failed-desc");
   return (
     <div className={cn("grid place-items-center gap-3 py-10 text-center", className)}>
       <span className="grid size-10 place-items-center rounded-full bg-danger-bg">
@@ -104,8 +109,8 @@ export function ErrorState({
         </svg>
       </span>
       <div>
-        <div className="font-semibold">{title}</div>
-        <p className="mt-0.5 text-label text-fg-tertiary">{desc}</p>
+        <div className="font-semibold">{titleText}</div>
+        <p className="mt-0.5 text-label text-fg-tertiary">{descText}</p>
       </div>
       {onRetry && (
         <button

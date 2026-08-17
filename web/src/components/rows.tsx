@@ -160,17 +160,32 @@ function ActivityContent({ a }: { a: Activity }) {
             {a.count}
           </span>
         )}
+        {/* 量词走 i18n · **不用后端的 count_unit**（那是后端硬编码的中文 ·
+            英文用户会看到"个号"）· 后端只该给数字 · 量词是文案 */}
         <span className="shrink-0 text-fg-secondary">
-          {a.count_unit ?? t("activity.flow.count-unit-fallback")}{t("activity.flow.from")}
+          {t("activity.flow.count-unit-fallback")}{t("activity.flow.from")}
         </span>
         <FlowBadge>{a.source}</FlowBadge>
         <ArrowRight className="size-3 shrink-0 text-fg-tertiary" />
-        <FlowBadge>{a.target}</FlowBadge>
+        {/* 去向:车名是数据(后端给)· 固定去向(待派/我的号池/已拿走)是文案(走 i18n) */}
+        <FlowBadge>{a.target || t(`activity.target.${a.target_kind}`)}</FlowBadge>
       </span>
     );
   }
 
-  // 补车 / 失效 / 充值 / 兑换：完整叙述（用 summary 兜底最保险）
+  // 号失效 · 前端组句（后端别塞中文 summary —— 英文用户会看到中文）
+  // masked key 和 vendor 是数据 · "失效"是文案
+  if (a.kind === "dead" && a.target) {
+    return (
+      <span className="flex min-w-0 items-center gap-1.5">
+        <FlowBadge>{a.target}</FlowBadge>
+        {a.source && <FlowBadge>{a.source}</FlowBadge>}
+        <span className="shrink-0 text-fg-secondary">{t("activity.dead-suffix")}</span>
+      </span>
+    );
+  }
+
+  // 补车 / 充值 / 兑换：后端 summary 是账本 memo 之类的**数据**（不是模板文案）· 直接显示
   return (
     <span className="min-w-0 truncate font-medium text-fg-secondary">
       {a.summary}

@@ -756,11 +756,11 @@ export const assignEvents: AssignEvent[] = [
 
 export const activities: Activity[] = [
   // 号流转（走 vendor → 车/号池 双 badge）· target 简洁一点，箭头承担"去向"语义
-  { id: "a1", kind: "extract",  source: vl("kirodrop"),   target: "我的号池",     target_kind: "push_pool",  count: 2,  count_unit: "个 key", summary: `${vl("kirodrop")} → 我的号池`,             amount: -C(6),   created_at: ago(0.5), link: "/extract" },
-  { id: "a2", kind: "push",     source: "号池",         target: "我的号池",     target_kind: "push_pool",  count: 2,  count_unit: "个号",   summary: "号池 → 我的号池",                   amount: null,    created_at: ago(0.6), link: "/settings/downstream" },
-  { id: "a3", kind: "into_bus", source: vl("kiro91"), target: "Kiro 常驻车",   target_kind: "into_bus",   count: 3,  count_unit: "个号",   summary: `${vl("kiro91")} → Kiro 常驻车`,         amount: -C(8),   created_at: ago(1),   link: "/buses/bus_kiro" },
-  { id: "a5", kind: "into_bus", source: vl("kiroceo"),    target: "周末拼车局",    target_kind: "into_bus",   count: 5,  count_unit: "个号",   summary: `${vl("kiroceo")} → 周末拼车局`,             amount: -C(12),  created_at: ago(2.7), link: "/buses/bus_weekend" },
-  { id: "a7", kind: "extract",  source: vl("kirooo"),    target: "待派",          target_kind: "pending",    count: 10, count_unit: "个 key", summary: `${vl("kirooo")} → 待派`,                   amount: -C(25),  created_at: ago(4.3), link: "/extract" },
+  { id: "a1", kind: "extract",  source: vl("kirodrop"),   target: "",     target_kind: "push_pool",  count: 2, summary: "",             amount: -C(6),   created_at: ago(0.5), link: "/extract" },
+  { id: "a2", kind: "push",     source: "号池",         target: "",     target_kind: "push_pool",  count: 2,   summary: "",                   amount: null,    created_at: ago(0.6), link: "/settings/downstream" },
+  { id: "a3", kind: "into_bus", source: vl("kiro91"), target: "Kiro 常驻车",   target_kind: "into_bus",   count: 3,   summary: `${vl("kiro91")} → Kiro 常驻车`,         amount: -C(8),   created_at: ago(1),   link: "/buses/bus_kiro" },
+  { id: "a5", kind: "into_bus", source: vl("kiroceo"),    target: "周末拼车局",    target_kind: "into_bus",   count: 5,   summary: `${vl("kiroceo")} → 周末拼车局`,             amount: -C(12),  created_at: ago(2.7), link: "/buses/bus_weekend" },
+  { id: "a7", kind: "extract",  source: vl("kirooo"),    target: "",target_kind: "pending",    count: 10, summary: "",                   amount: -C(25),  created_at: ago(4.3), link: "/extract" },
 
   // 非流转（走完整叙述文字，不套 badge）
   { id: "a4", kind: "refill",                                                                              summary: "周末拼车局 · 号少于 3 个 · 自动补车触发",                                                            amount: null,    created_at: ago(1.4), link: "/buses/bus_weekend" },
