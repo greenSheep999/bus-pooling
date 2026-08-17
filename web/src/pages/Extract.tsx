@@ -278,7 +278,9 @@ function PendingTab({
     else setSelected(new Set(usable.map((c) => c.id)));
   };
 
-  const totalCredits = items.reduce((s, c) => s + c.credits_used, 0);
+  /* 用量合计 · 活号看实时采样(usage_current) · 死号 credits_used 才是终值
+     只读 credits_used 会让活号全算 0（那字段只在号死那一刻写一次） */
+  const totalCredits = items.reduce((s, c) => s + (c.usage_current || c.credits_used), 0);
   const vendors = new Set(items.map((c) => c.vendor_id)).size;
 
   return (
@@ -403,8 +405,9 @@ function RecordRow({
       <span className="w-16 shrink-0 text-center text-label font-medium tnum text-fg-secondary">
         {fmtLifespan(c.lifespan_seconds)}
       </span>
+      {/* 用量 · 活号读实时采样 · 死号才用 credits_used 终值（同 BusDetail 口径） */}
       <span className="w-20 shrink-0 text-center text-label font-semibold tnum">
-        {fmtCredits(c.credits_used)}
+        {fmtCredits(c.usage_current || c.credits_used)}
         <span className="ml-1 font-medium text-fg-tertiary">{t("unit.credits")}</span>
       </span>
       <span className="w-24 shrink-0 text-right text-label font-medium tnum text-fg-tertiary">
