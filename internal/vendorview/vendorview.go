@@ -697,6 +697,9 @@ func (s *Service) Stats(ctx context.Context, v Viewer) *StatsView {
 		// qIn 攒 computeQuality 的入参 —— **复用 Status 页那套打分**（decisions §11.8）·
 		// 别为 Overview 另写一套判据 · 否则同一家在两个页面标签会打架
 		qIn := qualityInput{now: s.now()}
+		// 质保跟 rowFor 同判据：capability 静态声明打底 · 探测到运行时值再覆盖 ——
+		// 只看探测的话（warranty_minutes 常空）保质标签在两页会不一致
+		qIn.hasWarranty = e.Vendor.Capability().HasWarranty
 
 		// ① 最近一条探测 · 决定 alive + 是否有库存
 		if s.probeStore != nil {
@@ -705,7 +708,15 @@ func (s *Service) Stats(ctx context.Context, v Viewer) *StatsView {
 				qIn.alive = latest.Alive
 				// 复用 Status 页的档位函数 —— 阈值一处定（<20 = low）· 别另写
 				qIn.stockBucket = bucketStock(availableFromProbe(latest), latest.Alive)
-				qIn.hasWarranty = latest.WarrantyMinutes > 0
+				if latest.WarrantyMinutes > 0 {
+					qIn.hasWarranty = true
+				}
+			}
+			// 24h uptime · 判据跟 rowFor 一致（样本 <10 不给 → stable 标签不误挂）。
+			// 漏了它 stable 永远不出现 · 且只有探针数据的家会被误判成 watching。
+			if pct, samples, err := s.probeStore.Uptime24h(ctx, string(vid)); err == nil && samples >= 10 {
+				p := int(pct*100 + 0.5)
+				qIn.uptime24hPct = &p
 			}
 		}
 
@@ -730,11 +741,30 @@ func (s *Service) Stats(ctx context.Context, v Viewer) *StatsView {
 			if ds, err := s.orderKeyStore.DispatchSummary(ctx, string(vid), 1); err == nil && ds != nil {
 				pullsByVendor[vid] = ds.TotalBatches
 				totalPulls += ds.TotalBatches
-				qIn.dispatchBatches = ds.TotalBatches
-				qIn.lastDispatch = ds.LastDispatchAt
 			}
 			if recent, err := s.orderKeyStore.DispatchesSince(ctx, string(vid), 24, 500); err == nil {
 				stat.PullsToday = len(recent)
+			}
+			// 质量标签的批次口径 · **168h 窗口**跟 Status 页默认窗口一致 —— 原来喂的是
+			// 累计 TotalBatches · 高产/活跃在两页判出来不一样（同一家标签打架）
+			if win, err := s.orderKeyStore.DispatchesSince(ctx, string(vid), 168, 500); err == nil {
+				qIn.dispatchBatches = len(win)
+				for _, d := range win {
+					if d.DispatchedAt.After(qIn.lastDispatch) {
+						qIn.lastDispatch = d.DispatchedAt
+					}
+				}
+			}
+		}
+		// 无自报批次 · 回落探针推算 —— rowFor 同款兜底 · 没这步两页又打架
+		if qIn.dispatchBatches == 0 && s.probeStore != nil {
+			if derived, err := s.probeStore.DeriveDispatchEvents(ctx, string(vid), 168, 500); err == nil {
+				qIn.dispatchBatches = len(derived)
+				for _, d := range derived {
+					if d.At.After(qIn.lastDispatch) {
+						qIn.lastDispatch = d.At
+					}
+				}
 			}
 		}
 
