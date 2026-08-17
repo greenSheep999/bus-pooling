@@ -24,6 +24,7 @@ import {
   BareHead, BareList, BareRow, Card, Chip, Em, Label, Meter, Muted, SectionHead, Segmented, Stat,
 } from "@/components/ui/primitives";
 import { MicroStat, OwnerBadge } from "@/components/ui/tags";
+import { QualityTags } from "@/components/VendorQualityTags";
 import { LoadMoreButton } from "@/components/ui/load-more-button";
 import {
   Popover, PopoverContent, PopoverItem, PopoverSectionLabel, PopoverSeparator, PopoverTrigger,
@@ -674,6 +675,9 @@ export default function Overview() {
                     </span>
                     {v.rank === 1 && <MicroStat tone="ok">{t("vendor_table.tag_best")}</MicroStat>}
                     {v.out_of_stock && <MicroStat tone="danger">{t("vendor_table.tag_oos")}</MicroStat>}
+                    {/* 质量标签 · 跟 Status 页同源同组件（后端 computeQuality）——
+                        原来这里只有 Best / 缺货两个 · 跟 Status 页标签不统一 */}
+                    <QualityTags tags={v.quality?.tags} />
                   </span>
 
                   <span

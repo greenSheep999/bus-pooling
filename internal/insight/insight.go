@@ -129,6 +129,9 @@ type Activity struct {
 	Count      int     `json:"count,omitempty"`
 	CountUnit  string  `json:"count_unit,omitempty"`
 	Summary    string  `json:"summary"`
+	// SummaryCode 兜底文案的**机器码**（memo 为空时才有）· 前端按码出 i18n ·
+	// Summary 非空时优先用 Summary（那是运营写的 memo 原文 · 是数据）
+	SummaryCode string `json:"summary_code,omitempty"`
 	Amount     *Money  `json:"amount"`
 	CreatedAt  string  `json:"created_at"`
 	Link       *string `json:"link"`

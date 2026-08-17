@@ -427,12 +427,25 @@ export interface Activity {
   count?: number;               // 量（个号/个 key/次数）
   count_unit?: string;          // 量词（"个号" · "个 key" · "元"）
   summary: string;              // 兜底叙述，也用于结构化字段不足时
+  /** 兜底文案的机器码（summary 为空时才有）· 前端按码出 i18n(common:activity.ledger.*)
+   *  summary 非空 = 运营写的 memo 原文（**数据** · 直接显示不翻译） */
+  summary_code?: string;
   amount: Money | null;
   created_at: ISOTime;
   link: string | null;
 }
 
 // ── Vendor 监测
+/** Vendor 质量标签 kind · 后端 computeQuality 决定挂哪些（decisions §11.8）
+ *  前端按 kind 映射色调 + i18n（components/VendorQualityTags.tsx）·
+ *  Score 是内部排序用 · **不下发** */
+export type VendorQualityTagKind =
+  | "stable" | "high-volume" | "active" | "in-stock" | "out-of-stock" | "warranty" | "watching";
+
+export interface VendorQualityOut {
+  tags: { kind: VendorQualityTagKind }[];
+}
+
 export interface VendorStat {
   vendor_id: string;
   rank: number;
@@ -447,6 +460,9 @@ export interface VendorStat {
   pulls_today: number;
   fallback_count: number; // 拉这家失败、我方 fallback 到别家的次数
   out_of_stock: boolean;
+  /** 质量标签 · 跟 Status 页同源（后端 computeQuality · decisions §11.8）
+   *  Score 不下发（内部排序用）· 只给 tags · 前端 QualityTags 渲染 */
+  quality?: VendorQualityOut;
   /** 这家 vendor 当前有货的 account kind · 提取页按 tab 过滤 vendor 下拉
    *  缺省时前端按 ["enterprise"] 处理（当前 6 家供的就是企业号）
    *  ⚠️ 只表示"有货"· 分不清"不支持"vs"支持但缺货" —— 正式形状要 supported/available

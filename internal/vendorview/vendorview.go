@@ -254,6 +254,9 @@ type VendorStat struct {
 	PullsToday        int   `json:"pulls_today"`
 	FallbackCount     int   `json:"fallback_count"`
 	OutOfStock        bool  `json:"out_of_stock"`
+	// Quality 质量标签 · 跟 Status 页同一套 computeQuality(decisions §11.8)·
+	// Score 内部排序用不下发 · Tags 对外显示(前端 QualityTags 组件)
+	Quality VendorQuality `json:"quality"`
 }
 
 type VendorShare struct {
@@ -691,10 +694,18 @@ func (s *Service) Stats(ctx context.Context, v Viewer) *StatsView {
 		}
 		stat.VendorLabel, stat.AnonID = labelAndAnon(e, v)
 
+		// qIn 攒 computeQuality 的入参 —— **复用 Status 页那套打分**（decisions §11.8）·
+		// 别为 Overview 另写一套判据 · 否则同一家在两个页面标签会打架
+		qIn := qualityInput{now: s.now()}
+
 		// ① 最近一条探测 · 决定 alive + 是否有库存
 		if s.probeStore != nil {
 			if latest, err := s.probeStore.LatestProbe(ctx, string(vid)); err == nil && latest != nil {
 				stat.OutOfStock = !latest.Alive || availableFromProbe(latest) <= 0
+				qIn.alive = latest.Alive
+				// 复用 Status 页的档位函数 —— 阈值一处定（<20 = low）· 别另写
+				qIn.stockBucket = bucketStock(availableFromProbe(latest), latest.Alive)
+				qIn.hasWarranty = latest.WarrantyMinutes > 0
 			}
 		}
 
@@ -719,11 +730,18 @@ func (s *Service) Stats(ctx context.Context, v Viewer) *StatsView {
 			if ds, err := s.orderKeyStore.DispatchSummary(ctx, string(vid), 1); err == nil && ds != nil {
 				pullsByVendor[vid] = ds.TotalBatches
 				totalPulls += ds.TotalBatches
+				qIn.dispatchBatches = ds.TotalBatches
+				qIn.lastDispatch = ds.LastDispatchAt
 			}
 			if recent, err := s.orderKeyStore.DispatchesSince(ctx, string(vid), 24, 500); err == nil {
 				stat.PullsToday = len(recent)
 			}
 		}
+
+		// ⑤ 质量标签 · 跟 Status 页同一套 computeQuality（decisions §11.8）
+		//   数据够不够的判据也照搬:uptime 有样本 或 有过批次
+		qIn.dataSufficient = qIn.dispatchBatches > 0 || qIn.uptime24hPct != nil
+		stat.Quality = computeQuality(qIn)
 
 		// FallbackCount 暂无数据源（需 pull_round 归错分类 · 不在本表可读范围）· 保持 0
 		stats = append(stats, stat)

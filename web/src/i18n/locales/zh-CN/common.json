@@ -151,7 +151,14 @@
       "handoff": "已拿走",
       "into_bus": "车里"
     },
-    "dead-suffix": "失效"
+    "dead-suffix": "失效",
+    "ledger": {
+      "recharge": "充值到账",
+      "redeem": "兑换码到账",
+      "warranty_refund": "质保退款",
+      "credit_in": "入账",
+      "credit_out": "出账"
+    }
   },
   "rank": {
     "la": "拉",

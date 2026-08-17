@@ -151,7 +151,14 @@
       "handoff": "Taken away",
       "into_bus": "In bus"
     },
-    "dead-suffix": "went dead"
+    "dead-suffix": "went dead",
+    "ledger": {
+      "recharge": "Top-up received",
+      "redeem": "Redeem code credited",
+      "warranty_refund": "Warranty refund",
+      "credit_in": "Credited",
+      "credit_out": "Debited"
+    }
   },
   "rank": {
     "la": "Mid",

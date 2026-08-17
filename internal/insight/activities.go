@@ -93,7 +93,8 @@ func (s *Store) Activities(
 			a.Kind = ActivityTopup
 		}
 		if memo == "" {
-			a.Summary = defaultLedgerSummary(reason, amount)
+			// 只给码 · 文案前端出（后端塞中文 = 英文用户看到中文）
+			a.SummaryCode = defaultLedgerSummaryCode(reason, amount)
 		}
 		all = append(all, a)
 	}
@@ -334,18 +335,23 @@ func maskCredID(id string) string {
 	return "cred_..." + id[len(id)-3:]
 }
 
-// defaultLedgerSummary 备用文案 —— 走 ledger.memo 为空时兜底。
-func defaultLedgerSummary(reason string, amount int64) string {
+// defaultLedgerSummaryCode · memo 为空时的兜底**机器码**（不是文案）
+//
+// 返码不返中文 —— 后端不知道调用者的语言 · 塞中文会让英文用户看到中文（§0.1）。
+// 前端按码出 i18n（common:activity.ledger.*）· 认不出的码回落通用"入账/出账"。
+//
+// 注意:memo 非空时用 memo 原文（那是**运营写的具体说明** · 是数据不是模板文案）。
+func defaultLedgerSummaryCode(reason string, amount int64) string {
 	switch reason {
 	case "recharge":
-		return "充值到账"
+		return "recharge"
 	case "redeem":
-		return "兑换码到账"
+		return "redeem"
 	case "warranty_refund":
-		return "质保退款"
+		return "warranty_refund"
 	}
 	if amount > 0 {
-		return "入账"
+		return "credit_in"
 	}
-	return "出账"
+	return "credit_out"
 }

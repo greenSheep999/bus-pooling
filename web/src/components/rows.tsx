@@ -139,7 +139,9 @@ function ActivityContent({ a }: { a: Activity }) {
   const { t } = useTranslation("common");
   const isFlow = a.target_kind && FLOW_TARGETS[a.target_kind];
 
-  if (isFlow && a.source && a.target) {
+  /* 固定去向（待派 / 我的号池 / 已拿走）**没有 target** —— 文案由 target_kind 出 i18n ·
+     所以这里不能要求 a.target 非空（要求了那几行会整行空白） */
+  if (isFlow && a.source) {
     /* 号流转行 · 完整中文描述句：
        「共 <动词> N 个号 / 个 key，从 [vendor] → [目的地]」
        动词按 kind 派生：提取 / 入车 / 推池 · 数量加粗嵌在句子里 · 流转 badge 在后 */
@@ -185,10 +187,11 @@ function ActivityContent({ a }: { a: Activity }) {
     );
   }
 
-  // 补车 / 充值 / 兑换：后端 summary 是账本 memo 之类的**数据**（不是模板文案）· 直接显示
+  // 补车 / 充值 / 兑换：summary 非空 = 运营写的 memo 原文（**数据**·直接显示）·
+  // 空则按 summary_code 出 i18n 兜底文案（后端只给码·不给中文）
   return (
     <span className="min-w-0 truncate font-medium text-fg-secondary">
-      {a.summary}
+      {a.summary || (a.summary_code ? t(`activity.ledger.${a.summary_code}`) : "")}
     </span>
   );
 }
@@ -205,9 +208,11 @@ export function ActivityRow({ a, onClick }: { a: Activity; onClick?: () => void 
         {fmtTime(a.created_at)}
       </span>
 
-      {/* 类型 badge · 定宽不换行 */}
-      <span className="w-14 shrink-0">
-        <Chip tone={tone} className="w-full justify-center whitespace-nowrap">
+      {/* 类型 badge · **按内容自适应**（原来 w-14 写死 + Chip w-full 撑满 ——
+          中文"补车"两字刚好 · 英文 "Key expired" 直接撑出格子）·
+          给 min-w 保证短词（Push / 推池）也对齐 · 不写死上限 */}
+      <span className="flex min-w-[56px] shrink-0 justify-start">
+        <Chip tone={tone} className="whitespace-nowrap">
           {kindLabel}
         </Chip>
       </span>
