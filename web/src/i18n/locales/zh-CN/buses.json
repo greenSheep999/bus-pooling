@@ -84,7 +84,8 @@
       "pulled": "拉入",
       "push": "推池",
       "status": "状态",
-      "usage": "消耗"
+      "usage": "消耗",
+      "rank": "评价"
     },
     "push": {
       "failed": "推失败",

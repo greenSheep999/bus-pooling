@@ -290,7 +290,8 @@
       "lifespan": "寿命",
       "pulled-at": "拉入",
       "region": "区域",
-      "used": "已消耗"
+      "used": "已消耗",
+      "rank": "评价"
     },
     "empty": {
       "desc": "点右上「提取 key」拉一批 · 拉到的号在这里选去向",

@@ -321,7 +321,8 @@ function PendingTab({
         />
       ) : (
         <div className="overflow-x-auto">
-          <div className="min-w-[720px]">
+          {/* 加了评价列 · min-w 跟上(否则窄屏列会挤) */}
+          <div className="min-w-[820px]">
             <BareHead>
               <span className="w-8 shrink-0 pl-2">
                 <Checkbox
@@ -331,8 +332,9 @@ function PendingTab({
               </span>
               <span className="min-w-0 flex-1">{t("pending.col.key")}</span>
               <span className="w-14 shrink-0 text-center">{t("pending.col.region")}</span>
-              {/* w-24 · 跟数据行一致（多了评价档 Chip · w-16 装不下） */}
-              <span className="w-24 shrink-0 text-center">{t("pending.col.lifespan")}</span>
+              <span className="w-16 shrink-0 text-center">{t("pending.col.lifespan")}</span>
+              {/* 评价档单独一列 · 不跟寿命叠在一格里 */}
+              <span className="w-24 shrink-0 text-center">{t("pending.col.rank")}</span>
               <span className="w-20 shrink-0 text-center">{t("pending.col.used")}</span>
               <span className="w-24 shrink-0 text-right">{t("pending.col.pulled-at")}</span>
             </BareHead>
@@ -411,12 +413,12 @@ function RecordRow({
           <span className="text-fg-tertiary">—</span>
         )}
       </span>
-      {/* 寿命 + 评价档 · 活号按"当前已存活"给档 · 会随时间升级（lib/rank.ts）
-          live 秒数本地 tick · 两次 refetch 之间数字也在走（useNowTick） */}
-      <span className="flex w-24 shrink-0 flex-col items-center gap-0.5">
-        <span className="text-label font-medium tnum text-fg-secondary">
-          {fmtLifespan(liveSecs)}
-        </span>
+      {/* 寿命 · live 秒数本地 tick · 两次 refetch 之间数字也在走（useNowTick） */}
+      <span className="w-16 shrink-0 text-center text-label font-medium tnum text-fg-secondary">
+        {fmtLifespan(liveSecs)}
+      </span>
+      {/* 评价档 · 独立一列 · 活号按"当前已存活"给档 · 会随时间升级（lib/rank.ts） */}
+      <span className="flex w-24 shrink-0 items-center justify-center">
         <KeyRankBadge lifespanSeconds={liveSecs} />
       </span>
       {/* 用量 · 活号读实时采样 · 死号才用 credits_used 终值（同 BusDetail 口径）·

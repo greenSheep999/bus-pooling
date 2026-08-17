@@ -84,7 +84,8 @@
       "pulled": "Pulled",
       "push": "Push",
       "status": "Status",
-      "usage": "Used"
+      "usage": "Used",
+      "rank": "Rank"
     },
     "push": {
       "failed": "Push failed",

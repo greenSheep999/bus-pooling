@@ -593,12 +593,14 @@ function TabCredentials({ busId }: { busId: string }) {
         />
       ) : (
       <div className="overflow-x-auto">
-        <div className="min-w-[680px]">
+        {/* min-w 跟着列宽走:状态16+key flex+区14+寿命16+评价24+用量24+推送36+时间20 */}
+        <div className="min-w-[860px]">
           <BareHead>
             <span className="w-16 shrink-0">{t("credentials.header.status")}</span>
             <span className="min-w-0 flex-1">{t("credentials.header.key-vendor")}</span>
-            {/* w-24 · 跟数据行一致（多了评价档 Chip） */}
-            <span className="w-24 shrink-0 text-center">{t("credentials.header.lifespan")}</span>
+            <span className="w-16 shrink-0 text-center">{t("credentials.header.lifespan")}</span>
+            {/* 评价档单独一列 · 不跟寿命叠在一格 */}
+            <span className="w-24 shrink-0 text-center">{t("credentials.header.rank")}</span>
             <span className="w-24 shrink-0 text-center">{t("credentials.header.usage")}</span>
             {/* w-36 跟数据行一致（原 w-20 塞不下 Chip + 重推按钮） */}
             <span className="w-36 shrink-0 text-right">{t("credentials.header.push")}</span>
@@ -691,11 +693,12 @@ function CredentialRow({ c }: { c: Credential }) {
         <AccountKindTag kind={c.account_kind} />
       </span>
 
-      {/* 寿命 + 评价档 · 跟提取页同一套阈值(lib/rank.ts) · 本地 tick 让数字自己走 */}
-      <span className="flex w-24 shrink-0 flex-col items-center gap-0.5">
-        <span className="text-label font-medium tnum text-fg-secondary">
-          {fmtLifespan(liveSecs)}
-        </span>
+      {/* 寿命 · 本地 tick 让数字自己走 */}
+      <span className="w-16 shrink-0 text-center text-label font-medium tnum text-fg-secondary">
+        {fmtLifespan(liveSecs)}
+      </span>
+      {/* 评价档 · 独立一列 · 跟提取页同一套阈值(lib/rank.ts) */}
+      <span className="flex w-24 shrink-0 items-center justify-center">
         <KeyRankBadge lifespanSeconds={liveSecs} />
       </span>
 
