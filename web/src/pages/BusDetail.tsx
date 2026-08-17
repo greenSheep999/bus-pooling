@@ -13,6 +13,9 @@ import {
 import {
   BareHead, BareList, BareRow, Card, Chip, Em, SectionHead,
 } from "@/components/ui/primitives";
+import { UsageMeter } from "@/components/UsageMeter";
+import { AccountKindTag, BusRankBadge, KeyRankBadge } from "@/components/RankBadge";
+import { liveLifespanSeconds, useNowTick } from "@/lib/useNowTick";
 import { lazy, Suspense } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -113,6 +116,12 @@ export default function BusDetail() {
               <Chip tone={bus.status === "active" ? "ok" : "neutral"}>
                 {bus.status === "active" ? t("status.active") : t("status.dissolved")}
               </Chip>
+              {/* 车的评价 · 还有活号就是装甲车 · 全死了按整车最长存活给档
+                  avg_lifespan 可能为 null（车里没死号）· 那时用 0 让它落回按 alive 判 */}
+              <BusRankBadge
+                aliveCount={bus.alive_count}
+                maxLifespanSeconds={bus.avg_lifespan_seconds ?? 0}
+              />
             </div>
             <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-fg-tertiary">
               <span>
@@ -356,7 +365,7 @@ function TabMembers({ bus }: { bus: Bus }) {
             <span className="w-20 shrink-0 text-right">{t("members.header.share")}</span>
             <span className="w-24 shrink-0 text-right">{t("members.header.balance")}</span>
             <span className="min-w-0 flex-1">{t("members.header.status")}</span>
-            <span className="w-[132px] shrink-0 text-right">{t("members.header.actions")}</span>
+            <span className="w-[168px] shrink-0 text-right">{t("members.header.actions")}</span>
           </BareHead>
           {members.map((m) => (
             <MemberRow
@@ -480,21 +489,34 @@ function MemberRow({
         )}
       </span>
 
-      {/* 车主自己不能挂起 / 移除自己 —— 要退出走「车设置 → 解散」 */}
-      <span className="flex w-[132px] shrink-0 items-center justify-end gap-1">
+      {/* 车主自己不能挂起 / 移除自己 —— 要退出走「车设置 → 解散」
+          w-[168px]:132px 只够「挂起」+删除 · 「取消挂起」(4 字)就会把删除按钮压窄 */}
+      <span className="flex w-[168px] shrink-0 items-center justify-end gap-1">
         {m.role === "owner" ? (
           <span className="text-label text-fg-tertiary">—</span>
         ) : (
           <>
-            <Button variant="ghost" size="sm" onClick={onToggleSuspend} disabled={busy}>
+            {/* 文字按钮可压缩(truncate)· 但**删除图标按钮必须 shrink-0** ——
+                原来没护住 · 挂起文案变长(挂起→取消挂起)时删除按钮被压窄(40→34px)·
+                点击目标缩水(实测) */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onToggleSuspend}
+              disabled={busy}
+              className="min-w-0 shrink"
+            >
               {suspended ? <UserCheck /> : <UserMinus />}
-              {suspended ? t("members.action.unsuspend") : t("members.action.suspend")}
+              <span className="truncate">
+                {suspended ? t("members.action.unsuspend") : t("members.action.suspend")}
+              </span>
             </Button>
             <Button
               variant="ghost"
               size="icon"
               onClick={onRemove}
               disabled={busy}
+              className="shrink-0"
               aria-label={t("members.action.remove-aria", { name: m.username })}
               title={t("members.action.remove-title")}
             >
@@ -575,9 +597,11 @@ function TabCredentials({ busId }: { busId: string }) {
           <BareHead>
             <span className="w-16 shrink-0">{t("credentials.header.status")}</span>
             <span className="min-w-0 flex-1">{t("credentials.header.key-vendor")}</span>
-            <span className="w-20 shrink-0 text-center">{t("credentials.header.lifespan")}</span>
+            {/* w-24 · 跟数据行一致（多了评价档 Chip） */}
+            <span className="w-24 shrink-0 text-center">{t("credentials.header.lifespan")}</span>
             <span className="w-24 shrink-0 text-center">{t("credentials.header.usage")}</span>
-            <span className="w-20 shrink-0 text-center">{t("credentials.header.push")}</span>
+            {/* w-36 跟数据行一致（原 w-20 塞不下 Chip + 重推按钮） */}
+            <span className="w-36 shrink-0 text-right">{t("credentials.header.push")}</span>
             <span className="w-20 shrink-0 text-right">{t("credentials.header.pulled")}</span>
           </BareHead>
           <BareList>
@@ -591,29 +615,55 @@ function TabCredentials({ busId }: { busId: string }) {
 }
 
 /* 车内号手动重推按钮 · decisions §8.44 · Task #194
-   自动 push_pool 失败或从未推过时显示 · 点一次触发后端 push · 反馈 4 态 */
+   自动 push_pool 失败或从未推过时显示 · 点一次触发后端 push
+   反馈:后端 4 态(pushed/already_pushed/failed/dead)均返 200 走 onClick 里 branch ·
+   成功绿 pill · 失败/死号红 pill 带后端 message 全文 · 真网络错走 catch 通用文案
+   inline 2s 反馈(项目无 toast 库 · 沿用 EditStrategyPanel 约定) */
 function PushRetryButton({ busId, credId }: { busId: string; credId: string }) {
   const { t } = useTranslation("buses");
   const push = useBusCredentialPush();
-  const [lastResult, setLastResult] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
   const onClick = async () => {
-    setLastResult(null);
+    setFeedback(null);
     try {
       const r = await push.mutateAsync({ busId, credId });
-      setLastResult(r.state);
-    } catch (e) {
-      setLastResult("error: " + ((e as { message?: string })?.message || "unknown"));
+      // failed/dead 也返 200 · 必须按 r.state 分支 · 别当成功
+      const ok = r.state === "pushed" || r.state === "already_pushed";
+      setFeedback({ ok, text: r.message || t(ok ? "credentials.push.pushed" : "credentials.push.failed") });
+    } catch {
+      // 真网络错(非 200) · 走通用文案
+      setFeedback({ ok: false, text: t("credentials.push.neterr") });
     }
+    setTimeout(() => setFeedback(null), 2000);
   };
   return (
-    <button
-      onClick={onClick}
-      disabled={push.isPending}
-      className="text-[11px] font-medium text-brand-strong underline underline-offset-2 disabled:opacity-50"
-      title={lastResult || t("credentials.push.retry-tip")}
-    >
-      {push.isPending ? t("credentials.push.retrying") : t("credentials.push.retry")}
-    </button>
+    <span className="relative inline-flex shrink-0 items-center gap-1.5">
+      {/* outline 按钮 + 浅阴影（车主要求）· 不用下划线文字链 —— 那个在表格里点击目标太小 */}
+      <button
+        onClick={onClick}
+        disabled={push.isPending}
+        className="shrink-0 rounded-md border border-hairline bg-bg px-1.5 py-[1px] text-[10px]
+                   font-semibold text-brand-strong shadow-card transition-colors
+                   hover:bg-bg-elevated disabled:opacity-50"
+        title={t("credentials.push.retry-tip")}
+      >
+        {push.isPending ? t("credentials.push.retrying") : t("credentials.push.retry")}
+      </button>
+      {/* 反馈只显图标 + 极短词 · **完整原因走 title 悬浮**（后端 message 可能很长 ·
+          直接铺在行里会顶穿列宽撞到时间列）· absolute 脱离行内流不占宽 */}
+      {feedback && (
+        <span
+          className={`absolute right-0 top-full z-10 mt-0.5 inline-flex max-w-[240px] items-center gap-1
+                      rounded-md px-1.5 py-0.5 text-[10px] font-semibold leading-[1.4] shadow-pop ${
+            feedback.ok ? "bg-ok-bg text-ok-fg" : "bg-danger-bg text-danger-fg"
+          }`}
+          title={feedback.text}
+        >
+          {feedback.ok ? <Check className="size-3 shrink-0" /> : <X className="size-3 shrink-0" />}
+          <span className="truncate">{feedback.text}</span>
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -621,6 +671,9 @@ function CredentialRow({ c }: { c: Credential }) {
   const { t } = useTranslation("buses");
   const { data: me } = useMe();
   const alive = c.status === "alive";
+  /* 寿命本地 tick · 活号数字自己走（死号定值不动） */
+  const now = useNowTick();
+  const liveSecs = liveLifespanSeconds(c, now);
   return (
     <BareRow>
       <span className="w-16 shrink-0">
@@ -634,20 +687,32 @@ function CredentialRow({ c }: { c: Credential }) {
           {c.key_masked}
         </span>
         <VendorTag name={vendorLabel(c.vendor_id, me?.tier)} />
+        {/* 企业 / 个人 · 跟提取页同一个组件 */}
+        <AccountKindTag kind={c.account_kind} />
       </span>
 
-      <span className="w-20 shrink-0 text-center text-label font-medium tnum text-fg-secondary">
-        {fmtLifespan(c.lifespan_seconds)}
+      {/* 寿命 + 评价档 · 跟提取页同一套阈值(lib/rank.ts) · 本地 tick 让数字自己走 */}
+      <span className="flex w-24 shrink-0 flex-col items-center gap-0.5">
+        <span className="text-label font-medium tnum text-fg-secondary">
+          {fmtLifespan(liveSecs)}
+        </span>
+        <KeyRankBadge lifespanSeconds={liveSecs} />
       </span>
 
       {/* 用量 · 活号看实时采样(usage_current) · 死号 credits_used 才是终值
-          原来只显示 credits_used —— 活号那列恒 0（"0credits"）· 跟提取页对同一个号说两套数 */}
-      <span className="w-24 shrink-0 text-center text-label font-semibold tnum">
-        {fmtCredits(c.usage_current || c.credits_used)}
-        <span className="ml-0.5 font-medium text-fg-tertiary">{t("credentials.unit.credits")}</span>
+          原来只显示 credits_used —— 活号那列恒 0（"0credits"）· 跟提取页对同一个号说两套数
+          数字下方带进度条 · max 走 usage_limit 真值 · 跟待派列表同一套口径(UsageMeter) */}
+      <span className="flex w-24 shrink-0 flex-col items-center gap-1">
+        <span className="text-label font-semibold tnum">
+          {fmtCredits(c.usage_current || c.credits_used)}
+          <span className="ml-0.5 font-medium text-fg-tertiary">{t("credentials.unit.credits")}</span>
+        </span>
+        <UsageMeter c={c} className="w-full" />
       </span>
 
-      <span className="flex w-20 shrink-0 items-center justify-center gap-1">
+      {/* 推送态 + 重推 · w-36:原来 w-20(80px) 塞不下"Chip + 按钮"· 会顶到右边时间列
+          （实测 Playwright 点重推被时间列 intercept）· justify-end 让它贴右不挤中间 */}
+      <span className="flex w-36 shrink-0 items-center justify-end gap-1.5">
         {c.pushed_at ? (
           <Chip tone="ok" icon={<Check className="size-3" />}>{t("credentials.push.pushed")}</Chip>
         ) : c.push_failed ? (

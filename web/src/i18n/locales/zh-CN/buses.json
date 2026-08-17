@@ -92,7 +92,8 @@
       "pushed": "已推",
       "retry": "重推",
       "retrying": "推送中…",
-      "retry-tip": "点重试自动 push · 号已失效会拒推"
+      "retry-tip": "点重试自动 push · 号已失效会拒推",
+      "neterr": "网络出错 · 请稍后再试"
     },
     "status": {
       "alive": "正常",

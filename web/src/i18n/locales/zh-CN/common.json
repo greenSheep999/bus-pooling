@@ -124,7 +124,8 @@
       "dead": "key 失效",
       "topup": "充值",
       "redeem": "兑换",
-      "push": "推池"
+      "push": "推池",
+      "handoff": "拿走"
     },
     "verb": {
       "into_bus": "入车",
@@ -144,5 +145,14 @@
       "credits-suffix": "积分",
       "amount-suffix": "积分"
     }
+  },
+  "rank": {
+    "la": "拉",
+    "npc": "NPC",
+    "renshangren": "人上人",
+    "topji": "顶级",
+    "hang": "夯",
+    "armored": "装甲车",
+    "alive-hint": "还在跑"
   }
 }

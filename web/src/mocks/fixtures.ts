@@ -139,7 +139,7 @@ export const buses: Bus[] = [
     /* 周末拼车局 · 演示"全覆盖"态 —— 所有覆盖字段都有值,不跟随全局 */
     id: "bus_weekend", name: "周末拼车局", kind: "single", status: "active",
     member_count: 1, invite_code: null, created_at: ago(24 * 8),
-    alive_count: 12, dead_count: 1, spend_today: C(28),
+    alive_count: 12, dead_count: 1, spend_today: C(28), spend_total: C(340),
     avg_lifespan_seconds: 42 * 3600,
     strategy: {
       auto_refill_enabled: true, refill_watermark: 3, refill_min_count: 5,
@@ -152,7 +152,7 @@ export const buses: Bus[] = [
     /* 日常一号 · 演示"混合"态 —— auto/watermark 覆盖 · min_count/perRound 跟随全局 */
     id: "bus_daily", name: "日常一号", kind: "single", status: "active",
     member_count: 1, invite_code: null, created_at: ago(24 * 15),
-    alive_count: 4, dead_count: 0, spend_today: C(12),
+    alive_count: 4, dead_count: 0, spend_today: C(12), spend_total: C(156),
     avg_lifespan_seconds: 36 * 3600,
     strategy: {
       auto_refill_enabled: true, refill_watermark: 2, refill_min_count: null,
@@ -165,7 +165,7 @@ export const buses: Bus[] = [
     /* Kiro 常驻车 · 演示"全跟随全局"态 —— auto/watermark/min_count/perRound 全 null · 只覆盖 preferred_vendor */
     id: "bus_kiro", name: "Kiro 常驻车", kind: "team", status: "active",
     member_count: 4, invite_code: "K7X-2M4", created_at: ago(24 * 30),
-    alive_count: 6, dead_count: 1, spend_today: C(5),
+    alive_count: 6, dead_count: 1, spend_today: C(5), spend_total: C(890),
     avg_lifespan_seconds: 28 * 3600,
     strategy: {
       // 1f-refactor · auto/watermark 是纯车级 bool/int · 团车这里关自动补
@@ -684,6 +684,10 @@ const mkKey = (
   region,
   credits_used: C(creditsK * 1000),
   lifespan_seconds: Math.round(lifeH * 3600),
+  // 用量真值 + 上限 · 派发历史展开行画进度条用（PRO+ 2000 档）
+  usage_current: C(creditsK * 1000),
+  usage_limit: C(2000),
+  subscription: "pro_plus",
 });
 
 export const assignEvents: AssignEvent[] = [

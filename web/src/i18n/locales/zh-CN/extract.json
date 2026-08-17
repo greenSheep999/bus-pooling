@@ -325,5 +325,9 @@
   "unit": {
     "count": "个",
     "credits": "积分"
+  },
+  "account-kind": {
+    "enterprise": "企业",
+    "personal": "个人"
   }
 }

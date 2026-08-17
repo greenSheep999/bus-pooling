@@ -110,7 +110,8 @@ func (s *Store) overviewKPI(ctx context.Context, passengerID string) (KPI, error
 		return k, fmt.Errorf("insight: 平均寿命: %w", err)
 	}
 	if avgSec.Valid {
-		k.AvgLifespanSeconds = int64(avgSec.Float64)
+		v := int64(avgSec.Float64)
+		k.AvgLifespanSeconds = &v
 	}
 
 	return k, nil
@@ -241,25 +242,31 @@ func (s *Store) overviewExtract(ctx context.Context, passengerID string) (Extrac
 		return out, fmt.Errorf("insight: 今日拉号: %w", err)
 	}
 
-	// 号池分布(4 桶)· 用户视角:拉出来的号最终去哪儿了?
-	// 待派(pending)  = 我的 record group 里 alive 且未推
-	// 进车(into_bus) = 我参与的 bus 里 alive 且未推
-	// 推池(push_pool)= 已推(pushed_to_passengerpool_at 非空)
-	// 拿走(handoff)  = 已 handoff · status='handed_off'(号已 DELETE 但台账留着做售后追溯)
-	// **handoff 也算一种去向** —— 用户视角"这号我下载拿走了"是 3 种去向之一(见 fixtures 里对齐)
+	// 号池分布(4 桶 · **互斥** · 见 TestOverview_ExtractDestinationsMutuallyExclusive)
+	//
+	// 待派(pending)  = 还在我的 record group(owner_bus_id 空)· 未 handoff
+	//   **口径必须跟提取页待派列表一致**(api/pullrecord.go listPending:排 handoff + 排进车 ·
+	//   **不排已推池**)—— 否则卡片数字跟点进去的列表条数对不上(实测 1 vs 2 · 车主报的 bug)。
+	//   为什么已推池仍算待派:push_pool 是双写(docs/15 §14.3)· housepool 副本还在 ·
+	//   号还属于这个乘客 · 还能再派去别处。
+	// 进车(into_bus) = owner_bus_id 有值 且 未推池（推了归 push_pool 桶 · 保互斥）
+	// 推池(push_pool)= 已推 且 在车里（车外已推的号归 pending · 它还能再派）
+	// 拿走(handoff)  = status='handed_off'(号已 DELETE 但台账留着做售后追溯)
 	var pending, intoBus, pushPool, handoff int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT
 		  COALESCE(SUM(CASE
-		    WHEN status = 'alive' AND pushed_to_passengerpool_at IS NULL
+		    WHEN status != 'handed_off'
 		         AND owner_record_passenger_id IS NOT NULL
+		         AND owner_bus_id IS NULL
 		    THEN 1 ELSE 0 END), 0),
 		  COALESCE(SUM(CASE
-		    WHEN status = 'alive' AND pushed_to_passengerpool_at IS NULL
-		         AND owner_bus_id IS NOT NULL
+		    WHEN status = 'alive' AND owner_bus_id IS NOT NULL
+		         AND pushed_to_passengerpool_at IS NULL
 		    THEN 1 ELSE 0 END), 0),
 		  COALESCE(SUM(CASE
 		    WHEN status = 'alive' AND pushed_to_passengerpool_at IS NOT NULL
+		         AND owner_bus_id IS NOT NULL
 		    THEN 1 ELSE 0 END), 0),
 		  COALESCE(SUM(CASE
 		    WHEN status = 'handed_off'

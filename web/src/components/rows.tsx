@@ -114,6 +114,7 @@ const KIND_TONE: Record<Activity["kind"], BadgeTone> = {
   topup: "ok",
   redeem: "ok",
   push: "neutral",
+  handoff: "neutral",
 };
 
 /* 去向流可视化：vendor [badge] → 车/号池 [badge]

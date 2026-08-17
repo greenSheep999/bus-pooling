@@ -124,7 +124,8 @@
       "dead": "Key expired",
       "topup": "Top-up",
       "redeem": "Redeem",
-      "push": "Push"
+      "push": "Push",
+      "handoff": "Handoff"
     },
     "verb": {
       "into_bus": "boarded",
@@ -144,5 +145,14 @@
       "credits-suffix": "credits",
       "amount-suffix": "credits"
     }
+  },
+  "rank": {
+    "la": "Mid",
+    "npc": "NPC",
+    "renshangren": "Chad",
+    "topji": "Elite",
+    "hang": "Built Different",
+    "armored": "Tank",
+    "alive-hint": "still running"
   }
 }

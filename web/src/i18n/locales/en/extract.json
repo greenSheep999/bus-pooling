@@ -325,5 +325,9 @@
   "unit": {
     "count": "",
     "credits": "credits"
+  },
+  "account-kind": {
+    "enterprise": "Enterprise",
+    "personal": "Personal"
   }
 }

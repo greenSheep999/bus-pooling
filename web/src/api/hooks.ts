@@ -391,6 +391,9 @@ export const useBusCredentials = (id: string | undefined) =>
     queryKey: ["busCredentials", id],
     queryFn: () => api<Credential[]>(`/me/buses/${id}/credentials`),
     enabled: !!id,
+    /* 用量进度条要自己动 —— 号池 5min 采样一次 · 这里 60s 拉一次够跟上 ·
+       挂着页面不用手动刷新就能看到进度条走 · 也能看到号从活变死 */
+    refetchInterval: 60_000,
   });
 
 /** 车内号手动重推 · decisions §8.44 · 自动 push 失败后手动重试
@@ -656,6 +659,9 @@ export const usePullRecords = () =>
   useQuery({
     queryKey: ["pullRecords"],
     queryFn: () => api<Paged<Credential>>("/me/pull-records"),
+    /* 同 useBusCredentials · 60s 自动刷 · 进度条 / 寿命 / 评价档都会自己更新
+       （评价档按当前已存活算 · 号活久了会从"拉"升到"人上人"· 不刷新看不到） */
+    refetchInterval: 60_000,
   });
 
 /* 派去向 · 两种走 assign：进车（into_bus + bus_id）· 推池（push_pool）

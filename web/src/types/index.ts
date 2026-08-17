@@ -105,7 +105,10 @@ export interface Bus {
   alive_count: number;
   dead_count: number;
   spend_today: Money;
-  avg_lifespan_seconds: number;
+  /** 累计消费 · 健康车今日常为 0（轮次不在今天）· 累计才有意义 */
+  spend_total: Money;
+  /** null = 车里还没有号死过（全是活号）· 前端显"暂无"而非误导性的 0 秒 */
+  avg_lifespan_seconds: number | null;
   strategy: BusStrategy;
   /** 车内成员 + 分摊比例 · single 车只有自己一条
    *  派号进车时按 share_pct 清算（decisions §8.23） */
@@ -367,6 +370,11 @@ export interface AssignedKey {
   credits_used: Money;
   /** 派发那一刻的存活时长（秒）· 0 = 刚拉的 */
   lifespan_seconds: number;
+  /** 用量真值 + 上限 · 画进度条用（活号读实时采样 · 死号 credits_used 才是终值）
+   *  跟 Credential 同名同义 —— UsageMeter 两处共用一套口径 */
+  usage_current: Money;
+  usage_limit: Money;
+  subscription?: "power" | "pro" | "pro_plus" | "pro_max";
 }
 
 // ── 派发事件 · 每次派动作一条 · docs/14 §6.5
@@ -396,7 +404,8 @@ export type ActivityKind =
   | "dead"
   | "topup"
   | "redeem"
-  | "push";
+  | "push"
+  | "handoff";
 
 /** 去向枚举（跟 Destination 语义对齐，另加 refill/dead 场景的非去向 target） */
 export type ActivityTarget =
@@ -477,7 +486,9 @@ export interface OverviewKpi {
   alive_count: number;
   dead_count: number;
   pending_refill: number;
-  avg_lifespan_seconds: number;
+  /** null = 还没有号死过（全是活号）· 前端显"暂无"而非误导性的 0 秒
+   *  （口径同 Bus.avg_lifespan_seconds · Overview 与车详情空态一致） */
+  avg_lifespan_seconds: number | null;
 }
 
 export interface OverviewBuses {
@@ -515,7 +526,8 @@ export interface TrendPoint {
   value: number;
 }
 
-export type TrendMetric = "credits" | "pulls" | "lifespan";
+/** usage = 号在上游被用掉的额度（号池 5min 采样）· 跟 credits（买号花的钱）不是一回事 */
+export type TrendMetric = "credits" | "pulls" | "lifespan" | "usage";
 
 // ── 配置
 export interface DownstreamConfig {

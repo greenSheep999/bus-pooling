@@ -238,7 +238,8 @@ type StatsView struct {
 }
 
 // VendorStat 一家 vendor 的监测行（对齐 VendorStat）。
-// 1a 阶段真实数据未接入，全部占位 0 —— 前端已适配 pulls=0 显示 "-"。
+// 数据源见 Stats()：probe（存活/库存）+ PricedFor（单价）+ quality（寿命/存活率/耐用/保修）
+// + vendor_dispatch（今日拉/占比）。无数据的字段返 0，前端显示 "-"。
 type VendorStat struct {
 	VendorID           string `json:"vendor_id"`
 	VendorLabel        string `json:"vendor_label"`
@@ -658,23 +659,128 @@ func (s *Service) History(_ context.Context, vendorID string) (*HistoryView, err
 	return &HistoryView{VendorID: vendorID, Notice: "历史统计数据还在采集中"}, nil
 }
 
-// Stats 1a 阶段占位：返回 6 家启用 vendor 的空行 + 空占比。
-func (s *Service) Stats(_ context.Context, v Viewer) *StatsView {
+// Stats 每家 vendor 的监测行 + 拉号占比。
+//
+// 数据全部读已有表（复用 StatusOverview 那套 store · 不新写查询）：
+//   - out_of_stock / alive · 最近一条 vendor_probe（alive 且有库存才算在架）
+//   - unit_price           · 唯一定价入口 PricedFor（vendor_probe.our_unit_credits + 计费栈）
+//   - alive_rate / 寿命 / 耐用 / 保修 · quality.Get（vendor_key 30d 聚合 · 死号 <3 返空）
+//   - pulls_today          · vendor_dispatch 最近 24h 批次数（1 批 = 1 次开号）
+//   - share.pulls / ratio  · vendor_dispatch 累计批次数（DispatchSummary.TotalBatches）
+//
+// **占比（ratio）口径**：分母 = 所有启用 vendor 的累计批次数之和。
+// 前端 filter(pulls>0) 才画进环形图 · 只有 vendor_self 源有数据的家才有 pulls
+// （xi8 是内部源 · 不出前端 · 见 order_key_store.DispatchSummary）。
+//
+// **对外脱敏**：VendorID 走 visibleVendorID · label/anon 走 labelAndAnon —— 非
+// wholesale 档不透真名（CLAUDE.md §0.1）· 不下发 sample_price/median_price 等原始报价。
+func (s *Service) Stats(ctx context.Context, v Viewer) *StatsView {
 	entries := s.registry.Enabled()
 	stats := make([]VendorStat, 0, len(entries))
 	share := make([]VendorShare, 0, len(entries))
-	for i, e := range entries {
-		label, anon := labelAndAnon(e, v)
-		stats = append(stats, VendorStat{
-			VendorID:    string(e.VendorID),
-			VendorLabel: label,
-			AnonID:      anon,
-			Rank:        i + 1,
-			OutOfStock:  true,
-		})
-		share = append(share, VendorShare{VendorID: string(e.VendorID)})
+
+	// 先算各家累计批次 · 求和作占比分母
+	totalPulls := 0
+	pullsByVendor := make(map[providers.VendorID]int, len(entries))
+
+	for _, e := range entries {
+		vid := e.VendorID
+		stat := VendorStat{
+			VendorID:   visibleVendorID(vid, v),
+			OutOfStock: true, // 探不到 / 未在架 · 默认缺货 · 下面有货再翻回来
+		}
+		stat.VendorLabel, stat.AnonID = labelAndAnon(e, v)
+
+		// ① 最近一条探测 · 决定 alive + 是否有库存
+		if s.probeStore != nil {
+			if latest, err := s.probeStore.LatestProbe(ctx, string(vid)); err == nil && latest != nil {
+				stat.OutOfStock = !latest.Alive || availableFromProbe(latest) <= 0
+			}
+		}
+
+		// ② 单价 · 走唯一定价门面（无价 → 0 · 前端显 "-"）
+		if pv, err := s.PricedFor(ctx, PricedForInput{VendorID: string(vid), Count: 1, Viewer: v}); err == nil && pv != nil {
+			stat.UnitPrice = pv.PriceCredits
+		}
+
+		// ③ 号质量 · 30d 聚合（死号 <3 时 quality 返 ok=false · 字段保持 0）
+		if s.quality != nil {
+			if q, ok, _ := s.quality.Get(ctx, string(vid)); ok && q != nil {
+				stat.AvgLifespanSeconds = q.AvgLifespanSeconds
+				stat.AliveRate = q.AliveRate30d
+				stat.WarrantyCount = q.WarrantyDeaths
+				// current_usage 是 0-10k 原始档 · 前端 Meter 读 microunit · 换算过去
+				stat.AvgCreditsPerCred = q.AvgCreditsUsed * 1_000_000
+			}
+		}
+
+		// ④ 拉号批次 · 累计（占比）+ 最近 24h（今日拉）
+		if s.orderKeyStore != nil {
+			if ds, err := s.orderKeyStore.DispatchSummary(ctx, string(vid), 1); err == nil && ds != nil {
+				pullsByVendor[vid] = ds.TotalBatches
+				totalPulls += ds.TotalBatches
+			}
+			if recent, err := s.orderKeyStore.DispatchesSince(ctx, string(vid), 24, 500); err == nil {
+				stat.PullsToday = len(recent)
+			}
+		}
+
+		// FallbackCount 暂无数据源（需 pull_round 归错分类 · 不在本表可读范围）· 保持 0
+		stats = append(stats, stat)
 	}
+
+	// ⑤ 排序 + 排名 · 在架优先 · 存活率高优先 · 同分单价低优先 · 再 anon 稳定序
+	sort.SliceStable(stats, func(i, j int) bool {
+		if stats[i].OutOfStock != stats[j].OutOfStock {
+			return !stats[i].OutOfStock
+		}
+		if stats[i].AliveRate != stats[j].AliveRate {
+			return stats[i].AliveRate > stats[j].AliveRate
+		}
+		if stats[i].UnitPrice != stats[j].UnitPrice {
+			return stats[i].UnitPrice < stats[j].UnitPrice
+		}
+		return stats[i].AnonID < stats[j].AnonID
+	})
+	for i := range stats {
+		stats[i].Rank = i + 1
+	}
+
+	// ⑥ 占比 · 分母 = 累计批次之和（前端 filter(pulls>0) 才画）
+	for _, e := range entries {
+		pulls := pullsByVendor[e.VendorID]
+		var ratio float64
+		if totalPulls > 0 {
+			ratio = float64(pulls) / float64(totalPulls)
+		}
+		share = append(share, VendorShare{
+			VendorID: visibleVendorID(e.VendorID, v),
+			Pulls:    pulls,
+			Ratio:    ratio,
+		})
+	}
+	// 占比按 pulls 降序 · 图例好看（跟 fixtures 一致）
+	sort.SliceStable(share, func(i, j int) bool { return share[i].Pulls > share[j].Pulls })
+
 	return &StatsView{Stats: stats, Share: share}
+}
+
+// availableFromProbe 从最近探测算这家的可用库存。
+// stock_total 优先（vendor 直报总量）· 缺失时退回 stock_by_region 各区求和。
+func availableFromProbe(p *ProbeSample) int {
+	if p == nil {
+		return 0
+	}
+	if p.StockTotal > 0 {
+		return p.StockTotal
+	}
+	sum := 0
+	for _, r := range p.StockByRegion {
+		if r.Available > 0 {
+			sum += r.Available
+		}
+	}
+	return sum
 }
 
 // ── 内部工具 ──

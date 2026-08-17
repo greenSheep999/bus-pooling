@@ -3,6 +3,7 @@ package insight
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sort"
 )
@@ -16,10 +17,13 @@ const activityFetchCap = 500
 // Activities 混流活动记录，按时间倒序 · 分页。
 //
 // 数据源（对外映射 · CLAUDE.md §12.5）：
-//   - topup      = wallet_ledger.reason IN (recharge, redeem, warranty_refund) 的入账行
-//   - extract    = pull_round 完成/部分（每轮一条）
-//   - dead       = credential_ledger.status='dead' 的号（每号一条）
-//   - refill/push/into_bus 阶段 1a 还没有真实数据源（补车 / 派去向 handler 之后接）
+//   - topup             = wallet_ledger.reason IN (recharge, redeem, warranty_refund) 的入账行
+//   - extract/into_bus  = pull_round 完成/部分（每轮一条 · 挂车则为 into_bus）
+//   - into_bus/push     = pending_assignment status='completed'（派车真实落库表 · 每号一条）
+//   - handoff           = pending_handoff status='completed'（拿走 · 每次一条）
+//   - dead              = credential_ledger.status='dead' 的号（每号一条）
+//   - push（兜底）        = credential_ledger.pushed_to_passengerpool_at（非 assign 路径 / 老数据）
+//   - refill 补车事件当前无关联行 · 待有需求再接
 //
 // 分页：从各源取 max(page*size + buffer) 条，合并后取窗口。
 // 数据量小 · UUID v7 主键天然带时间序，SUBSTR 取前 10 分组本身就是索引友好。
@@ -76,6 +80,8 @@ func (s *Store) Activities(
 		a := Activity{
 			ID: "l_" + id, CreatedAt: createdAt, Summary: memo,
 			Amount: &amt,
+			// 入账来源（通道商充值 / 兑换码）· 前端 chip 用它区分入账类目
+			TargetKind: "topup_source",
 		}
 		switch reason {
 		case "recharge":
@@ -95,11 +101,12 @@ func (s *Store) Activities(
 
 	// 2) 拉号轮次
 	rows, err = s.db.QueryContext(ctx, `
-		SELECT pr.id, pr.vendor_id, pr.bus_id, pr.count_purchased,
+		SELECT pr.id, pr.vendor_id, pr.bus_id, COALESCE(b.name, ''), pr.count_purchased,
 		       pr.key_cost_total + pr.vendor_fee_total + pr.region_fee_total +
 		       pr.single_pull_fee_total + pr.capability_fee_total + pr.service_fee_total AS total_cost,
 		       pr.status, pr.created_at
 		  FROM pull_round pr
+		  LEFT JOIN bus b ON b.id = pr.bus_id
 		 WHERE `+ownedRoundsWhere+`
 		   AND pr.status IN ('completed','partial')
 		 ORDER BY pr.created_at DESC
@@ -108,11 +115,11 @@ func (s *Store) Activities(
 		return nil, 0, fmt.Errorf("insight: 活动流 pull_round: %w", err)
 	}
 	for rows.Next() {
-		var id, vendorID, status, createdAt string
+		var id, vendorID, status, createdAt, busName string
 		var busID sql.NullString
 		var count int
 		var totalCost int64
-		if err := rows.Scan(&id, &vendorID, &busID, &count, &totalCost, &status, &createdAt); err != nil {
+		if err := rows.Scan(&id, &vendorID, &busID, &busName, &count, &totalCost, &status, &createdAt); err != nil {
 			rows.Close()
 			return nil, 0, err
 		}
@@ -130,7 +137,12 @@ func (s *Store) Activities(
 		if busID.Valid && busID.String != "" {
 			a.Kind = ActivityIntoBus
 			a.TargetKind = "into_bus"
-			a.Target = busID.String
+			// 车名优先 · 建车没命名时兜底裸 id（对外 UI 别显 UUID）
+			if busName != "" {
+				a.Target = busName
+			} else {
+				a.Target = busID.String
+			}
 		} else {
 			a.TargetKind = "pending"
 			a.Target = "待派"
@@ -158,16 +170,117 @@ func (s *Store) Activities(
 		}
 		masked := maskCredID(id)
 		a := Activity{
-			ID:        "d_" + id,
-			Kind:      ActivityDead,
-			Summary:   fmt.Sprintf("%s · %s · 失效", masked, vendorID),
-			CreatedAt: deadAt,
+			ID:   "d_" + id,
+			Kind: ActivityDead,
+			// Source=vendor · api 层按档匿名化（Summary 里的真名一并替换）
+			Source:     vendorID,
+			Target:     masked,
+			TargetKind: "cred_dead",
+			Count:      1,
+			CountUnit:  "个号",
+			Summary:    fmt.Sprintf("%s · %s · 失效", masked, vendorID),
+			CreatedAt:  deadAt,
 		}
 		all = append(all, a)
 	}
 	rows.Close()
 
-	// 4) 号推送成功事件（pushed_to_passengerpool_at 非空 = 推成功）
+	// 4) 派车事件（pending_assignment · 派车动作真实落库表）
+	//
+	// target 库值是 to-bus / to-passengerpool（历史命名）· 对外映射成
+	// into_bus / push_pool（01_init.sql pending_assignment 注释 · §12.5）。
+	// 只取 completed —— 派车链跑完才算数。JOIN bus 取车名（不显裸 UUID）。
+	// assignedCreds 记下这里已覆盖的号 · 下面 push 段按号去重（本段优先）。
+	assignedCreds := map[string]bool{}
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT pa.id, pa.credential_id, pa.target, pa.target_bus_id,
+		       COALESCE(b.name, ''), cl.vendor_id, pa.created_at
+		  FROM pending_assignment pa
+		  LEFT JOIN credential_ledger cl ON cl.id = pa.credential_id
+		  LEFT JOIN bus b ON b.id = pa.target_bus_id
+		 WHERE pa.passenger_id = ? AND pa.status = 'completed'
+		 ORDER BY pa.created_at DESC
+		 LIMIT ?`, passengerID, fetch)
+	if err != nil {
+		return nil, 0, fmt.Errorf("insight: 活动流 assign: %w", err)
+	}
+	for rows.Next() {
+		var id, credID, target, createdAt string
+		var busID, busName, vendorID sql.NullString
+		if err := rows.Scan(&id, &credID, &target, &busID, &busName, &vendorID, &createdAt); err != nil {
+			rows.Close()
+			return nil, 0, err
+		}
+		assignedCreds[credID] = true
+		a := Activity{
+			ID:        "a_" + id,
+			Source:    vendorID.String, // api 层按档匿名化
+			Count:     1,
+			CountUnit: "个号",
+			CreatedAt: createdAt,
+		}
+		switch target {
+		case "to-bus":
+			a.Kind = ActivityIntoBus
+			a.TargetKind = "into_bus"
+			// 车名优先 · 没命名兜底裸 id（对外别显 UUID）
+			if busName.String != "" {
+				a.Target = busName.String
+			} else {
+				a.Target = busID.String
+			}
+			a.Summary = fmt.Sprintf("%s → %s", vendorID.String, a.Target)
+		case "to-passengerpool":
+			a.Kind = ActivityPush
+			a.Target = "我的号池"
+			a.TargetKind = "push_pool"
+			a.Summary = fmt.Sprintf("%s → 我的号池", vendorID.String)
+		}
+		all = append(all, a)
+	}
+	rows.Close()
+
+	// 5) handoff 事件（pending_handoff · 拿走 = 号交给乘客后不再监控）
+	//
+	// 一次 handoff 可含多个号（credential_ids_json 数组）· Count 取数组长度。
+	// 明文永不入本表（只存 id 列表）· 这里只做"拿走了 N 个号"的活动记录。
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT ph.id, ph.credential_ids_json,
+		       COALESCE(ph.completed_at, ph.created_at)
+		  FROM pending_handoff ph
+		 WHERE ph.passenger_id = ? AND ph.status = 'completed'
+		 ORDER BY ph.created_at DESC
+		 LIMIT ?`, passengerID, fetch)
+	if err != nil {
+		return nil, 0, fmt.Errorf("insight: 活动流 handoff: %w", err)
+	}
+	for rows.Next() {
+		var id, credIDsJSON, createdAt string
+		if err := rows.Scan(&id, &credIDsJSON, &createdAt); err != nil {
+			rows.Close()
+			return nil, 0, err
+		}
+		var credIDs []string
+		_ = json.Unmarshal([]byte(credIDsJSON), &credIDs)
+		count := len(credIDs)
+		a := Activity{
+			ID:         "h_" + id,
+			Kind:       ActivityHandoff,
+			Target:     "已拿走",
+			TargetKind: "handoff",
+			Count:      count,
+			CountUnit:  "个号",
+			Summary:    fmt.Sprintf("拿走 %d 个号", count),
+			CreatedAt:  createdAt,
+		}
+		all = append(all, a)
+	}
+	rows.Close()
+
+	// 6) 号推送成功事件（pushed_to_passengerpool_at 非空 = 推成功）
+	//
+	// 派车链走的推池已在段 4 记录 · 这里按号去重（assignedCreds），避免同一次
+	// 推池出现两条。留这段是兜底 —— 老数据 / 非 assign 路径推的号还得靠它。
 	rows, err = s.db.QueryContext(ctx, `
 		SELECT cl.id, cl.vendor_id, cl.pushed_to_passengerpool_at
 		  FROM credential_ledger cl
@@ -183,6 +296,9 @@ func (s *Store) Activities(
 		if err := rows.Scan(&id, &vendorID, &pushedAt); err != nil {
 			rows.Close()
 			return nil, 0, err
+		}
+		if assignedCreds[id] {
+			continue // 段 4 已记过这次推池
 		}
 		a := Activity{
 			ID:         "p_" + id,

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,19 +40,22 @@ func isUniqueConstraintErr(err error) bool {
 //
 // 对齐 web `Credential` 类型 —— 前端已经在用这个类型渲染，字段名不能改。
 type pullRecordResp struct {
-	ID          string         `json:"id"`
-	VendorID    string         `json:"vendor_id"`
-	Status      string         `json:"status"`
-	KeyMasked   string         `json:"key_masked"`
-	Region      string         `json:"region"`
-	CreditsUsed int64          `json:"credits_used"` // microunit
-	PulledAt    string         `json:"pulled_at"`
-	WarrantyUnt *string        `json:"warranty_until"`
-	DeadAt      *string        `json:"dead_at"`
-	PushedAt    *string        `json:"pushed_at"`
-	PushFailed  bool           `json:"push_failed"`
-	PushError   *pushErrorResp `json:"push_error"`
-	SourceRound string         `json:"source_pull_round_id"`
+	ID          string  `json:"id"`
+	VendorID    string  `json:"vendor_id"`
+	Status      string  `json:"status"`
+	KeyMasked   string  `json:"key_masked"`
+	Region      string  `json:"region"`
+	CreditsUsed int64   `json:"credits_used"` // microunit
+	PulledAt    string  `json:"pulled_at"`
+	WarrantyUnt *string `json:"warranty_until"`
+	DeadAt      *string `json:"dead_at"`
+	// 号活了多久（秒）· 死号算到 dead_at · 活号算到现在（复用 lifespanOf）·
+	// 前端 Credential 类型声明了这个 key · 不返会让待派列表寿命列恒显 "—"
+	LifespanSeconds int64          `json:"lifespan_seconds"`
+	PushedAt        *string        `json:"pushed_at"`
+	PushFailed      bool           `json:"push_failed"`
+	PushError       *pushErrorResp `json:"push_error"`
+	SourceRound     string         `json:"source_pull_round_id"`
 	// Offer 维度 · 前端按 subscription 决定 quota 上限 · 决定进度条颜色
 	// 空字符串 = 老数据 · 前端兜底走 QUOTA_MAX（power 10k）
 	AccountKind  string `json:"account_kind,omitempty"`
@@ -95,6 +99,13 @@ func pullRecordOf(r pullrecord.Record) pullRecordResp {
 		s := r.DeadAt.Format(time.RFC3339)
 		out.DeadAt = &s
 	}
+	// 寿命复用 api 层 lifespanOf（死号算到 dead_at · 活号算到现在）·
+	// 时间都按 RFC3339 传 · 跟 out.PulledAt / out.DeadAt 同一格式
+	var deadNS sql.NullString
+	if out.DeadAt != nil {
+		deadNS = sql.NullString{String: *out.DeadAt, Valid: true}
+	}
+	out.LifespanSeconds = lifespanOf(out.PulledAt, deadNS)
 	if r.PushedAt != nil {
 		s := r.PushedAt.Format(time.RFC3339)
 		out.PushedAt = &s

@@ -92,7 +92,8 @@
       "pushed": "Pushed",
       "retry": "Retry",
       "retrying": "Pushing…",
-      "retry-tip": "Manually re-push · dead keys are rejected"
+      "retry-tip": "Manually re-push · dead keys are rejected",
+      "neterr": "Network error · try again later"
     },
     "status": {
       "alive": "Alive",

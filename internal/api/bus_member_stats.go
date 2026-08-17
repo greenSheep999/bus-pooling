@@ -87,13 +87,23 @@ func (s *Server) handleBusMemberStats(w http.ResponseWriter, r *http.Request) er
 	}
 
 	// 逐轮读 participants_split_json · 按号数占比摊消费
+	//
+	// **不能只按 pr.bus_id 过滤** —— 从提取页拉号再"进车"的号 · 那一轮 bus_id 是空的
+	// （拉的时候还没归属车）· 只按 bus_id 过滤会查到 0 轮 · 多人车摊分统计全 0。
+	// 走 owner_bus_id → source_pull_round_id 回溯（口径同 busCredStats）。
 	rows, err := s.db.QueryContext(r.Context(), `
 		SELECT pr.participants_split_json,
-		       pr.key_cost_total + pr.vendor_fee_total + pr.region_fee_total +
-		       pr.single_pull_fee_total + pr.capability_fee_total + pr.service_fee_total AS total_cost,
+		       COALESCE(pr.key_cost_total,0) + COALESCE(pr.vendor_fee_total,0) +
+		       COALESCE(pr.region_fee_total,0) + COALESCE(pr.single_pull_fee_total,0) +
+		       COALESCE(pr.capability_fee_total,0) + COALESCE(pr.service_fee_total,0) AS total_cost,
 		       pr.count_purchased
 		  FROM pull_round pr
-		 WHERE pr.bus_id = ? AND pr.status IN ('completed', 'partial')`, busID)
+		 WHERE (pr.bus_id = ?
+		        OR pr.id IN (
+		             SELECT DISTINCT source_pull_round_id FROM credential_ledger
+		              WHERE owner_bus_id = ? AND source_pull_round_id IS NOT NULL
+		           ))
+		   AND pr.status IN ('completed', 'partial')`, busID, busID)
 	if err != nil {
 		return err
 	}

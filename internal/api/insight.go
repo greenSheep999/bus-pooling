@@ -54,7 +54,7 @@ func handleOverviewWith(rdr insightReader) handler {
 
 // handleTrendWith 构造 GET /api/me/trend 的 handler。
 //
-//	range ∈ {today, 7d, 30d(默认), 90d}  ·  metric ∈ {credits(默认), pulls, lifespan}
+//	range ∈ {today, 7d, 30d(默认), 90d}  ·  metric ∈ {credits(默认), pulls, lifespan, usage}
 //	scope 可选 bus_id 或 vendor（二选一 · 同时传 400）
 func handleTrendWith(rdr insightReader, buses busChecker) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
@@ -68,9 +68,9 @@ func handleTrendWith(rdr insightReader, buses busChecker) handler {
 			metric = insight.TrendCredits
 		}
 		switch metric {
-		case insight.TrendCredits, insight.TrendPulls, insight.TrendLifespan:
+		case insight.TrendCredits, insight.TrendPulls, insight.TrendLifespan, insight.TrendUsage:
 		default:
-			return ErrBadRequest("metric 只能是 credits / pulls / lifespan")
+			return ErrBadRequest("metric 只能是 credits / pulls / lifespan / usage")
 		}
 
 		days := daysFromRange(q.Get("range"))

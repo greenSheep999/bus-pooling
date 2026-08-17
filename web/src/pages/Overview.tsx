@@ -83,6 +83,9 @@ const RANGE_KEYS: { value: TimeRange; labelKey: string }[] = [
 ];
 
 const METRIC_KEYS: { value: TrendMetric; labelKey: string }[] = [
+  // usage 放第一个 —— 这个图标题就叫「用量趋势」· 原来三条线全是花费/拉号/补车
+  // 压根没有用量（车主报的 bug:车内号已用掉几千积分 · 图上显示 0）
+  { value: "usage", labelKey: "metric.usage" },
   { value: "credits", labelKey: "metric.credits" },
   { value: "pulls", labelKey: "metric.pulls" },
   { value: "lifespan", labelKey: "metric.lifespan" },
@@ -262,7 +265,8 @@ export default function Overview() {
   const { t, i18n } = useTranslation("overview");
   const { data: me } = useMe();
   const [range, setRange] = useState<TimeRange>("30d");
-  const [metric, setMetric] = useState<TrendMetric>("credits");
+  /* 默认 usage —— 图标题是「用量趋势」· 默认就该给用量（原来默认 credits 名不副实） */
+  const [metric, setMetric] = useState<TrendMetric>("usage");
   const [scope, setScope] = useState<Scope>({ kind: "all" });
   const now = useNowSecond();
 

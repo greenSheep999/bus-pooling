@@ -82,9 +82,12 @@ func TestOverview_BusScopedCredentials(t *testing.T) {
 	if out.KPI.AliveCount != 2 || out.KPI.DeadCount != 1 {
 		t.Errorf("alive=%d dead=%d，应=(2,1)", out.KPI.AliveCount, out.KPI.DeadCount)
 	}
-	// 平均寿命 = 1 小时 = 3600s
-	if out.KPI.AvgLifespanSeconds < 3500 || out.KPI.AvgLifespanSeconds > 3700 {
-		t.Errorf("avg_lifespan=%d，应≈3600", out.KPI.AvgLifespanSeconds)
+	// 平均寿命 = 1 小时 = 3600s（有死号 · 必须非 nil）
+	if out.KPI.AvgLifespanSeconds == nil {
+		t.Fatalf("avg_lifespan 不该为 nil（有死号）")
+	}
+	if *out.KPI.AvgLifespanSeconds < 3500 || *out.KPI.AvgLifespanSeconds > 3700 {
+		t.Errorf("avg_lifespan=%d，应≈3600", *out.KPI.AvgLifespanSeconds)
 	}
 	if len(out.Buses.Items) != 1 {
 		t.Fatalf("车列表长度=%d", len(out.Buses.Items))
