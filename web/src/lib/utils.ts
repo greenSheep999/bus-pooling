@@ -230,9 +230,11 @@ export function fmtTime(iso: string): string {
   return `${mm}/${dd} ${hh}:${mn}`;
 }
 
-/** 寿命:秒 → "42h" / "3.2d" · 空/NaN 返 "—"(避免 NaNd) */
+/** 寿命:秒 → "38m" / "42h" / "3.2d" · 空/NaN 返 "—"(避免 NaNd)
+ *  <1h 显示分钟 —— 原来 Math.round 小时会把 1-29min 显示成 "0h"(像空值 · 车主报过) */
 export function fmtLifespan(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "—";
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
   const h = seconds / 3600;
   if (h < 48) return `${Math.round(h)}h`;
   return `${(h / 24).toFixed(1)}d`;

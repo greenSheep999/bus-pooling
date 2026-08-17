@@ -5,7 +5,7 @@ import {
   TrendingDown, Users, Wallet,
 } from "lucide-react";
 import {
-  useActivities, useMe, useOverview, useStock, useTrend, useVendorStats,
+  useActivities, useMe, useOverview, useTrend, useVendorOffers, useVendorStats,
 } from "@/api/hooks";
 import { KpiCard } from "@/components/KpiCard";
 import { TrendLegend } from "@/components/TrendLegend";
@@ -48,11 +48,19 @@ function Num({
 }
 
 /* 号池状态 pill · 呼吸绿点 = 心跳（system live）· 告急/停运 用静态实心点
-   阈值：0 = 停运 · <20 = 告急 · 其他 = 正常。跟 header 库存徽标共用 useStock */
+   阈值：0 = 停运 · <20 = 告急 · 其他 = 正常。
+   数据源跟 header 库存徽标同一个（Offer matrix 聚合）—— 原来这里走旧 /vendors/stock
+   实时端点 · header 走 offers · 探针/分档口径不同时顶栏和这里会自相矛盾 */
 function PoolStatus() {
   const { t } = useTranslation("overview");
-  const { data } = useStock();
-  const n = data?.total_available;
+  const { data } = useVendorOffers();
+  const n = data === undefined
+    ? undefined
+    : (data.vendors ?? []).reduce(
+        (s, v) =>
+          s + (v.categories.enterprise?.available ?? 0) + (v.categories.personal?.available ?? 0),
+        0,
+      );
 
   const state =
     n === undefined ? "loading"
@@ -594,7 +602,7 @@ export default function Overview() {
                 buses={(ov?.buses.items ?? []).map((b) => ({ id: b.id, name: b.name }))}
                 vendors={(vendors?.stats ?? [])
                   .filter((v) => !v.out_of_stock)
-                  .map((v) => ({ id: v.vendor_id, name: vendorLabel(v.vendor_id, me?.tier) }))}
+                  .map((v) => ({ id: v.vendor_id, name: v.vendor_label || vendorLabel(v.vendor_id, me?.tier) }))}
               />
               <Segmented
                 options={METRIC_KEYS.map((m) => ({ value: m.value, label: t(m.labelKey) }))}
@@ -628,15 +636,17 @@ export default function Overview() {
             title={t("vendor_table.title")}
             sub={t("vendor_table.sub")}
           />
-          {/* 表容器：窄屏横滚 · 自然列宽（不压缩），避免 vendor 名 + badge 挤成一坨 */}
+          {/* 表容器：窄屏横滚 · 自然列宽（不压缩），避免 vendor 名 + badge 挤成一坨
+              min-w 860：固定列 500px + 8 个 gap-4 = 628px · vendor 名格才分得到 ~230px
+              （原 640 连固定列都装不下 · vendor 名整列被挤成 0 宽 · 实测截图名字消失） */}
           <div className="-mx-7 mt-5 overflow-x-auto px-7">
-            <div className="min-w-[640px]">
+            <div className="min-w-[860px]">
             <BareHead>
               <span className="w-7 shrink-0">#</span>
               <span className="min-w-0 flex-1">{t("vendor_table.col_vendor")}</span>
               <span className="w-14 shrink-0 text-center">{t("vendor_table.col_price")}</span>
               <span className="w-14 shrink-0 text-center">{t("vendor_table.col_lifespan")}</span>
-              <span className="w-28 shrink-0 text-center">{t("vendor_table.col_durability")}</span>
+              <span className="w-24 shrink-0 text-center">{t("vendor_table.col_durability")}</span>
               <span className="w-24 shrink-0 text-center">{t("vendor_table.col_alive_rate")}</span>
               <span className="w-14 shrink-0 text-center">{t("vendor_table.col_pulls_today")}</span>
               <span className="w-14 shrink-0 text-center">{t("vendor_table.col_warranty")}</span>
@@ -664,20 +674,32 @@ export default function Overview() {
                     {v.rank}
                   </span>
 
-                  <span className="flex min-w-0 flex-1 items-center gap-2">
-                    <span
-                      className={cn(
-                        "min-w-0 truncate font-semibold",
-                        v.out_of_stock && "text-fg-tertiary",
-                      )}
-                    >
-                      {vendorLabel(v.vendor_id, me?.tier)}
+                  {/* vendor 格两行：名字 + Best/缺货 pill 一行 · 质量标签一行 ——
+                      全塞一行时标签(shrink-0)会把名字挤成 0 宽（实测名字整列消失）。
+                      名字不 truncate（匿名名的尾号是身份 · 截掉就分不清哪家）· 挤不下让 pill 换行 */}
+                  <span className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      <span
+                        className={cn(
+                          "font-semibold",
+                          v.out_of_stock && "text-fg-tertiary",
+                        )}
+                      >
+                        {v.vendor_label || vendorLabel(v.vendor_id, me?.tier)}
+                      </span>
+                      {v.rank === 1 && <MicroStat tone="ok">{t("vendor_table.tag_best")}</MicroStat>}
+                      {v.out_of_stock && <MicroStat tone="danger">{t("vendor_table.tag_oos")}</MicroStat>}
                     </span>
-                    {v.rank === 1 && <MicroStat tone="ok">{t("vendor_table.tag_best")}</MicroStat>}
-                    {v.out_of_stock && <MicroStat tone="danger">{t("vendor_table.tag_oos")}</MicroStat>}
-                    {/* 质量标签 · 跟 Status 页同源同组件（后端 computeQuality）——
-                        原来这里只有 Best / 缺货两个 · 跟 Status 页标签不统一 */}
-                    <QualityTags tags={v.quality?.tags} />
+                    {/* 质量标签 · 跟 Status 页同源同组件（后端 computeQuality）
+                        - micro 尺寸 · 跟上面 Best/缺货 pill 同大小（一行两种尺寸会乱）
+                        - 库存态（in-stock/out-of-stock）不重复挂：缺货已有红 pill ·
+                          "有货"在表格里是常态不用标 —— 只留质量维度（稳/高产/活跃/保质/观察） */}
+                    <QualityTags
+                      size="micro"
+                      tags={v.quality?.tags?.filter(
+                        (tg) => tg.kind !== "in-stock" && tg.kind !== "out-of-stock",
+                      )}
+                    />
                   </span>
 
                   <span
@@ -700,7 +722,7 @@ export default function Overview() {
 
                   {/* 耐用度：每号平均积分 · Meter 满格 = 10k（QUOTA_MAX）·
                       ≥8k 绿 · 5~8k 紫 · <5k 红 */}
-                  <span className="flex w-28 shrink-0 items-center justify-center gap-2">
+                  <span className="flex w-24 shrink-0 items-center justify-center gap-2">
                     {v.out_of_stock ? (
                       <span className="text-fg-tertiary">-</span>
                     ) : (
@@ -801,6 +823,11 @@ export default function Overview() {
           <div className="mt-5 space-y-3">
             {(vendors?.share ?? []).map((s) => {
               const noData = s.pulls === 0;
+              /* share 载荷不带 label · 从同一响应的 stats 里借（vendor_id 同为脱敏 id 可对上）——
+                 本地 vendorLabel() 对匿名 id 只能给无尾号通用名 · 三行同名分不清哪家 */
+              const label =
+                vendors?.stats.find((st) => st.vendor_id === s.vendor_id)?.vendor_label
+                  || vendorLabel(s.vendor_id, me?.tier);
               return (
                 <div key={s.vendor_id} className="flex items-center gap-2.5">
                   <span
@@ -816,7 +843,7 @@ export default function Overview() {
                       noData ? "text-fg-tertiary" : "text-fg-secondary",
                     )}
                   >
-                    {vendorLabel(s.vendor_id, me?.tier)}
+                    {label}
                   </span>
                   <span
                     className={cn(

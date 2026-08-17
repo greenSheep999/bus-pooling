@@ -582,61 +582,58 @@ export function signedToneClass(sign: "+" | "-" | ""): string {
 
 ## 4. Badge 三层
 
-**三种 badge 三种语义 · 视觉必须分开**：
+**三种 badge 三种语义 · 视觉必须分开**。
 
-### 4.1 类型 badge · 语义色底
+**尺寸铁律（车主 2026-08-17 定稿）**：**一行只允许一个 12px Chip —— 行首主状态列**。
+行内其余 badge（vendor / 车名 / 去向 / 推送态 / 评价档 / 企业·个人 / 质量标签 / 角色）
+**一律 10px 小号**。同一行混两种大小、同一种 tag 在不同列表大小不一 → code review 打回。
 
-标"这是什么" —— 活动类型、状态、结果。
+### 4.1 主状态 badge · 12px Chip · 每行最多一个
 
-```tsx
-<Chip tone="warn">提取</Chip>       // 语义色底 · 深色字
-<Chip tone="brand">入车</Chip>
-<Chip tone="danger">号失效</Chip>
-<Chip tone="ok">充值</Chip>
-```
-
-规格：`text-label(12px)` · `py-0.5` · `rounded-md` · `whitespace-nowrap`
-
-### 4.2 流转 badge · 中性灰 + 边框 + 微阴影
-
-标"号从哪去哪" —— vendor → 车/号池，不带语义色。
+标"这一行的主状态 / 类型" —— 只出现在**行首状态列**（时间列后的第一个 badge 列）。
 
 ```tsx
-function FlowBadge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex max-w-[160px] items-center gap-1 rounded-md
-                     border border-hairline bg-bg-elevated px-2 py-[2px]
-                     text-label font-medium text-fg-secondary shadow-card">
-      <span className="truncate">{children}</span>
-    </span>
-  );
-}
+<Chip tone="ok" dot>成功</Chip>      // 拉号结果列
+<Chip tone="danger" dot>已失效</Chip> // 号存活态列
+<Chip tone="warn">提取</Chip>        // 活动类型列
 ```
 
-**为什么跟类型 badge 分开**：类型 = 分类信息（快速色彩扫描）· 流转 = 路径信息（准确读文字）。都上语义色会抢视觉。
+规格：`text-label(12px)` · `py-0.5` · `whitespace-nowrap`。
+用途穷举：拉号结果 · 推送日志状态列 · 号存活态 · 活动类型 · 成员状态。**行中间不用 Chip**。
 
-### 4.3 状态小 pill · 10px 字号
+### 4.2 流转 badge · 10px 中性灰 + 边框 + 微阴影 · `TokenTag`
 
-标"这个东西的属性" —— 我发起、最优、缺货、阶段 3。
+标"号从哪去哪" —— vendor → 车/号池，不带语义色。**组件只有 `TokenTag` 一种尺寸（10px）**，
+老 `size="sm"`（12px）已废 —— 它是"同一种 tag 两个列表两种大小"的源头。
 
 ```tsx
-<span className="inline-flex items-center rounded-md
-                 bg-brand-subtle px-1.5 py-[1px]
-                 text-[10px] font-semibold leading-[1.4] text-brand-strong">
-  我发起
-</span>
+<VendorTag name={label} />   // vendor 名 · TokenTag 的语义包装
+<TokenTag>{busName}</TokenTag>
 ```
 
-规格：**10px** 字号（比类型 badge 小一档）· `py-[1px]` · `rounded-md` · 语义色底但**尺寸最小**。
+**为什么跟主状态 badge 分开**：状态 = 分类信息（快速色彩扫描）· 流转 = 路径信息（准确读文字）。都上语义色会抢视觉。
+
+### 4.3 状态小 pill · 10px 语义色 · `MicroStat`
+
+标"这个东西的属性 / 次级状态" —— 我发起、最优、缺货、阶段 3、评价档、企业/个人、
+质量标签（稳定/高产/活跃）、行内推送态（已推/部分/失败）。
+
+```tsx
+<MicroStat tone="brand">我发起</MicroStat>
+<MicroStat tone="ok"><Check className="mr-1 size-2.5" />已推</MicroStat>
+```
+
+规格：**10px** 字号 · `py-[1px]` · 语义色底但**尺寸最小** · 图标用 `size-2.5`。
 
 ### 4.4 判定规则
 
-- **有语义分类** → 类型 badge（tone: ok/warn/danger/brand/neutral）
-- **是路径 / 引用** → 流转 badge（无 tone）
-- **是属性标记** → 状态小 pill（tone 有但尺寸小）
+- **行首主状态**（每行一个）→ 12px Chip
+- **是路径 / 引用** → `TokenTag`（10px · 无 tone）
+- **是属性 / 次级状态** → `MicroStat`（10px · 有 tone）
 - **不该套 badge**：内容是描述句、金额、事件叙述 → 直接文字
 
-**违反例**：把「我发起」做成类型 badge → 会跟车名平级抢视觉。把 vendor 名做成类型 badge → 用户以为不同 vendor 有语义差异。
+**违反例**：把「我发起」做成 12px Chip → 会跟车名平级抢视觉。把 vendor 名做成语义色 badge →
+用户以为不同 vendor 有语义差异。行中间的推送态用 12px Chip → 一行两个大 badge 抢焦点。
 
 ---
 

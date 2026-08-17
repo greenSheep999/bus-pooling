@@ -169,7 +169,7 @@ export function Stat({
 
 /* ─────────────── Chip / Badge ─────────────── */
 
-type ChipTone = "ok" | "warn" | "danger" | "brand" | "neutral";
+type ChipTone = "ok" | "warn" | "danger" | "brand" | "info" | "neutral";
 
 /** Chip 底色 · 用 solid 色的低透明覆盖（不用固定 bg-*-bg）
  *   浅色下 solid/10 ≈ 极浅底 · 深色下 solid/15 ≈ 深底微透彩色
@@ -180,6 +180,7 @@ const CHIP: Record<ChipTone, string> = {
   warn: "bg-warn-solid/10 text-warn-fg dark:bg-warn-solid/[.15]",
   danger: "bg-danger-solid/10 text-danger-fg dark:bg-danger-solid/[.15]",
   brand: "bg-brand/10 text-brand-strong dark:bg-brand/[.15]",
+  info: "bg-info-solid/10 text-info-fg dark:bg-info-solid/[.15]",
   neutral: "bg-fg/[.06] text-fg-tertiary dark:bg-fg/[.10]",
 };
 

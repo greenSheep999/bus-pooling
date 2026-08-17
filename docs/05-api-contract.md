@@ -531,20 +531,29 @@ curl https://<base-url>/api/me \
 
 ### `GET /api/me/buses/{bus_id}/pulls` 返回（拉号历史）
 
+对齐 `web/src/types/index.ts` 的 `PullRound`（可执行契约 · 冲突以 TS 为准）。
+**计费只出汇总 `total_cost`** —— `key_cost_total / single_pull_fee_total` 等分项在后端 SQL
+里求和后丢弃 · 不下发（CLAUDE.md §0.1 · 分项链不对外）。
+
 ```json
 {
   "items": [
     {
-      "pull_round_id": "01H...",
+      "id": "01H...",
       "vendor_id": "kiro91",
+      "bus_id": "01H...",
+      "bus_name": "周末拼车局",
+      "result": "success",           // success | partial | failed | refunded（§12.5 收敛后）
+      "count_requested": 5,
       "count_purchased": 5,
-      "participants_split": { "01H_alice": 2, "01H_bob": 3 },  // 谁分几个
-      "key_cost_total": 100000000,
-      "service_fee_total": 5000000,   // 按 share_pct 在 alice/bob 之间分摊
-      "single_pull_fee_total": 0,
+      "alive_count": 4,
+      "dead_count": 1,
+      "push_state": "pushed",        // pushed | partial | failed | none
+      "push_ratio": null,            // partial 时 "2/3"
+      "total_cost": 105000000,       // microunit · 全部计费层求和后的单一数字
+      "fail_reason": null,
       "created_at": "..."
-    },
-    ...
+    }
   ],
   "total": 42, "page": 1, "page_size": 50
 }

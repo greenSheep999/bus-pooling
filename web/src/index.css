@@ -39,6 +39,8 @@
     --warn-fg: 42 90% 38%;            /* #B8860B */
     --danger-bg: 355 82% 96%;         /* #FDECEE */
     --danger-fg: 0 74% 42%;           /* #B91C1C */
+    --info-bg: 213 95% 95%;           /* #E7F1FE */
+    --info-fg: 217 75% 42%;           /* #1D5FBF */
   }
 
   /* 深色 · 标准中性 · 参考 GitHub / Linear · 完全灰阶不带色调
@@ -77,6 +79,8 @@
     --warn-fg: 42 55% 65%;
     --danger-bg: 0 28% 18%;
     --danger-fg: 0 55% 68%;
+    --info-bg: 217 30% 16%;
+    --info-fg: 217 45% 66%;
   }
 
   * {

@@ -175,6 +175,8 @@
     "toggle-menu": "Toggle menu",
     "load-failed": "Failed to load",
     "load-failed-desc": "Network or service issue · tap below to retry",
+    "retry": "Retry",
+    "selected-count": "{{count}} selected",
     "collapse": "Collapse",
     "items-unit": "",
     "days-unit": "d",

@@ -27,6 +27,7 @@ export default {
         ok:     { bg: "hsl(var(--ok-bg))",     fg: "hsl(var(--ok-fg))",     solid: "#22C55E" },
         warn:   { bg: "hsl(var(--warn-bg))",   fg: "hsl(var(--warn-fg))",   solid: "#F59E0B" },
         danger: { bg: "hsl(var(--danger-bg))", fg: "hsl(var(--danger-fg))", solid: "#EF4444" },
+        info:   { bg: "hsl(var(--info-bg))",   fg: "hsl(var(--info-fg))",   solid: "#3B82F6" },
         // 号去向 tag
         dest: {
           bus: "#9147FF",

@@ -7,7 +7,7 @@ import {
   X, Zap, ZapOff,
 } from "lucide-react";
 import {
-  useBus, useBusCredentialPush, useBusCredentials, useBusPulls, useDownstream, useGlobalStrategy, useMe,
+  useBus, useBusCredentialPush, useBusCredentials, useBusPulls, useDownstream, useMe,
   useRegenInviteCode, useRemoveMember, useSetMemberSuspended,
 } from "@/api/hooks";
 import {
@@ -25,7 +25,7 @@ import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TokenTag, VendorTag } from "@/components/ui/tags";
+import { MicroStat, TokenTag, VendorTag } from "@/components/ui/tags";
 import { KpiCard } from "@/components/KpiCard";
 import { PullNowModal } from "@/components/PullNowModal";
 import { BusSettingsModal } from "@/components/BusSettingsModal";
@@ -54,7 +54,6 @@ export default function BusDetail() {
   const { id } = useParams();
   const nav = useNavigate();
   const { data: bus } = useBus(id);
-  const { data: gs } = useGlobalStrategy();
   const [tab, setTab] = useState<TabKey>("credentials");
   const [headerCopied, setHeaderCopied] = useState(false);
   const [pullOpen, setPullOpen] = useState(false);
@@ -202,10 +201,11 @@ export default function BusDetail() {
           value={fmtLifespan(bus.avg_lifespan_seconds)}
           sub={t("kpi.lifespan.sub")}
         />
-        {/* 1f-B · auto/watermark 可为 null · null = 跟随全局 · 显示实际生效值 */}
+        {/* 1f-refactor(migration 040) · auto/watermark 纯车级非 null · 无全局 fallback
+            (全局 default_* 只做建车 seed · 显示时直接读车级) */}
         {(() => {
-          const effAuto = bus.strategy.auto_refill_enabled ?? gs?.default_auto_refill_enabled ?? false;
-          const effWatermark = bus.strategy.refill_watermark ?? gs?.default_refill_watermark ?? 0;
+          const effAuto = bus.strategy.auto_refill_enabled;
+          const effWatermark = bus.strategy.refill_watermark;
           return (
             <KpiCard
               icon={effAuto ? Zap : ZapOff}
@@ -339,7 +339,7 @@ function TabMembers({ bus }: { bus: Bus }) {
               <div className="font-semibold">{me?.username ?? t("members.solo.me-fallback")}</div>
               <div className="text-label text-fg-tertiary">{t("members.solo.role-line")}</div>
             </div>
-            <Chip tone="brand">{t("members.solo.me-chip")}</Chip>
+            <MicroStat tone="brand">{t("members.solo.me-chip")}</MicroStat>
           </div>
         </Card>
         {inviteCard}
@@ -442,7 +442,8 @@ function MemberRow({
             <span className={cn("truncate font-semibold", suspended && "text-fg-tertiary")}>
               {m.username}
             </span>
-            {m.role === "owner" && <Chip tone="brand">{t("members.role.owner")}</Chip>}
+            {/* 角色是属性标记 · 10px 小 pill（跟 bus 卡的「我发起」同级）· 别跟状态 Chip 平级 */}
+            {m.role === "owner" && <MicroStat tone="brand">{t("members.role.owner")}</MicroStat>}
           </span>
           <span className="block text-label text-fg-tertiary">
             {t("members.row.joined-at", { time: fmtTime(m.joined_at) })}
@@ -713,23 +714,23 @@ function CredentialRow({ c }: { c: Credential }) {
         <UsageMeter c={c} className="w-full" />
       </span>
 
-      {/* 推送态 + 重推 · w-36:原来 w-20(80px) 塞不下"Chip + 按钮"· 会顶到右边时间列
-          （实测 Playwright 点重推被时间列 intercept）· justify-end 让它贴右不挤中间 */}
+      {/* 推送态 + 重推 · w-36:塞"pill + 按钮"两件（justify-end 让它贴右不挤中间）·
+          推送态是行内次级状态 · 走 10px 小 pill（12px Chip 只留给行首存活态列） */}
       <span className="flex w-36 shrink-0 items-center justify-end gap-1.5">
         {c.pushed_at ? (
-          <Chip tone="ok" icon={<Check className="size-3" />}>{t("credentials.push.pushed")}</Chip>
+          <MicroStat tone="ok"><Check className="mr-1 size-2.5" />{t("credentials.push.pushed")}</MicroStat>
         ) : c.push_failed ? (
           <>
-            <Chip tone="danger" icon={<X className="size-3" />}>{t("credentials.push.failed")}</Chip>
+            <MicroStat tone="danger"><X className="mr-1 size-2.5" />{t("credentials.push.failed")}</MicroStat>
             <PushRetryButton busId={c.owner_bus_id!} credId={c.id} />
           </>
         ) : alive ? (
           <>
-            <Chip tone="neutral">{t("credentials.push.none")}</Chip>
+            <MicroStat tone="neutral">{t("credentials.push.none")}</MicroStat>
             <PushRetryButton busId={c.owner_bus_id!} credId={c.id} />
           </>
         ) : (
-          <Chip tone="neutral">{t("credentials.push.none")}</Chip>
+          <MicroStat tone="neutral">{t("credentials.push.none")}</MicroStat>
         )}
       </span>
 
@@ -751,12 +752,13 @@ function useResultMap(): Record<PullResult, { label: string; tone: "ok" | "warn"
   };
 }
 
+/** 推送态 · 行内次级状态 · 10px 小 pill —— 12px Chip 只留给行首主状态列（docs/13 §4） */
 function PushCell({ state, ratio }: { state: PushState; ratio: string | null }) {
   const { t } = useTranslation("buses");
-  if (state === "pushed") return <Chip tone="ok" icon={<Check className="size-3" />}>{t("pulls.push.pushed")}</Chip>;
-  if (state === "partial") return <Chip tone="warn" icon={<Check className="size-3" />}>{t("pulls.push.partial", { ratio })}</Chip>;
-  if (state === "failed") return <Chip tone="danger" icon={<X className="size-3" />}>{t("pulls.push.failed")}</Chip>;
-  return <Chip tone="neutral">{t("pulls.push.none")}</Chip>;
+  if (state === "pushed") return <MicroStat tone="ok"><Check className="mr-1 size-2.5" />{t("pulls.push.pushed")}</MicroStat>;
+  if (state === "partial") return <MicroStat tone="warn"><Check className="mr-1 size-2.5" />{t("pulls.push.partial", { ratio })}</MicroStat>;
+  if (state === "failed") return <MicroStat tone="danger"><X className="mr-1 size-2.5" />{t("pulls.push.failed")}</MicroStat>;
+  return <MicroStat tone="neutral">{t("pulls.push.none")}</MicroStat>;
 }
 
 function TabPulls({ busId }: { busId: string }) {
@@ -783,13 +785,15 @@ function TabPulls({ busId }: { busId: string }) {
         />
       ) : (
       <div className="overflow-x-auto">
-        <div className="min-w-[720px]">
+        {/* result w-24 / push w-28：按英文最长词（Success / Push failed）定宽 ·
+            原 w-14 + Chip w-full 会让英文撑出格子（中文两字侥幸没炸） */}
+        <div className="min-w-[780px]">
           <BareHead>
             <span className="w-[86px] shrink-0">{t("pulls.header.time")}</span>
-            <span className="w-14 shrink-0">{t("pulls.header.result")}</span>
+            <span className="w-24 shrink-0">{t("pulls.header.result")}</span>
             <span className="min-w-0 flex-1">{t("pulls.header.flow")}</span>
             <span className="w-20 shrink-0 text-center">{t("pulls.header.key-status")}</span>
-            <span className="w-24 shrink-0 text-center">{t("pulls.header.push")}</span>
+            <span className="w-28 shrink-0 text-center">{t("pulls.header.push")}</span>
             <span className="w-24 shrink-0 text-right">{t("pulls.header.cost")}</span>
           </BareHead>
           <BareList>
@@ -813,8 +817,8 @@ function PullRow({ r }: { r: PullRound }) {
       <span className="w-[86px] shrink-0 text-label font-medium tnum text-fg-tertiary">
         {fmtTime(r.created_at)}
       </span>
-      <span className="w-14 shrink-0">
-        <Chip tone={res.tone} dot className="w-full justify-center">{res.label}</Chip>
+      <span className="w-24 shrink-0">
+        <Chip tone={res.tone} dot>{res.label}</Chip>
       </span>
 
       <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
@@ -827,7 +831,7 @@ function PullRow({ r }: { r: PullRound }) {
             <span className="shrink-0 text-fg-secondary">{t("pulls.row.flow-prefix")}</span>
             <span className="shrink-0 font-semibold tnum text-fg">{r.count_purchased}</span>
             <span className="shrink-0 text-fg-secondary">{t("pulls.row.flow-suffix")}</span>
-            <VendorTag name={vendorLabel(r.vendor_id, me?.tier)} size="sm" />
+            <VendorTag name={vendorLabel(r.vendor_id, me?.tier)} />
           </>
         )}
       </span>
@@ -850,7 +854,7 @@ function PullRow({ r }: { r: PullRound }) {
         )}
       </span>
 
-      <span className="flex w-24 shrink-0 justify-center">
+      <span className="flex w-28 shrink-0 justify-center">
         <PushCell state={r.push_state} ratio={r.push_ratio} />
       </span>
 
@@ -996,8 +1000,8 @@ function PushRow({
           <>
             <span className="text-fg-tertiary">→</span>
             {targetHost ? (
-              <TokenTag size="sm">
-                <Send className="size-3" />
+              <TokenTag>
+                <Send className="size-2.5" />
                 <span className="ml-1 truncate">{targetHost}</span>
               </TokenTag>
             ) : (

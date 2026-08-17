@@ -175,6 +175,8 @@
     "toggle-menu": "切换菜单",
     "load-failed": "加载失败",
     "load-failed-desc": "网络或服务异常 · 点下面重试",
+    "retry": "重试",
+    "selected-count": "已选 {{count}} 个",
     "collapse": "收起",
     "items-unit": "条",
     "days-unit": "天",

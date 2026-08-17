@@ -1,10 +1,11 @@
 import { useTranslation } from "react-i18next";
-import { Chip } from "@/components/ui/primitives";
+import { MicroStat } from "@/components/ui/tags";
 import { RANK_TONE, rankOfBus, rankOfLifespan } from "@/lib/rank";
 
 /** 号的评价 · 按存活时长给档（活号按"当前已存活"· 会随时间升级）
  *
- *  文案走 common:rank.* · 阈值走 lib/rank.ts（车和 key 共用一套 · 别在这儿另写） */
+ *  文案走 common:rank.* · 阈值走 lib/rank.ts（车和 key 共用一套 · 别在这儿另写）。
+ *  尺寸走 10px 小 pill —— 评价是属性标记不是状态 · 12px Chip 只留给行首主状态列（docs/13 §4） */
 export function KeyRankBadge({
   lifespanSeconds,
   className,
@@ -15,9 +16,9 @@ export function KeyRankBadge({
   const { t } = useTranslation();
   const rank = rankOfLifespan(lifespanSeconds);
   return (
-    <Chip tone={RANK_TONE[rank]} className={className}>
+    <MicroStat tone={RANK_TONE[rank]} className={className}>
       {t(`rank.${rank}`)}
-    </Chip>
+    </MicroStat>
   );
 }
 
@@ -36,9 +37,9 @@ export function BusRankBadge({
   const { t } = useTranslation();
   const rank = rankOfBus(aliveCount, maxLifespanSeconds);
   return (
-    <Chip tone={RANK_TONE[rank]} className={className}>
+    <MicroStat tone={RANK_TONE[rank]} className={className}>
       {t(`rank.${rank}`)}
-    </Chip>
+    </MicroStat>
   );
 }
 
@@ -57,8 +58,8 @@ export function AccountKindTag({
   const { t } = useTranslation("extract");
   if (!kind) return null;
   return (
-    <Chip tone={kind === "enterprise" ? "brand" : "neutral"} className={className}>
+    <MicroStat tone={kind === "enterprise" ? "brand" : "neutral"} className={className}>
       {t(`account-kind.${kind}`)}
-    </Chip>
+    </MicroStat>
   );
 }

@@ -31,7 +31,7 @@ import { Button } from "@/components/ui/button";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TokenTag, VendorTag } from "@/components/ui/tags";
+import { MicroStat, TokenTag, VendorTag } from "@/components/ui/tags";
 import {
   cn, fmtCredits, fmtLifespan, fmtTime, vendorLabel,
 } from "@/lib/utils";
@@ -503,7 +503,7 @@ function ExtractEventRow({ e }: { e: ExtractEvent }) {
         <Chip tone={res.tone} dot>{t(res.labelKey)}</Chip>
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-2">
-        <VendorTag name={vendorLabel(e.vendor_id, me?.tier)} size="sm" />
+        <VendorTag name={vendorLabel(e.vendor_id, me?.tier)} />
         {e.zone && (
           <TokenTag>
             {e.zone}
@@ -646,16 +646,17 @@ function AssignEventRow({ e }: { e: AssignEvent }) {
         {/* 目标 · 进车给车名 · 推池给 host · 拿走给"已下载" chip */}
         <span className="flex min-w-0 flex-1 items-center gap-2">
           {e.bus_name ? (
-            <TokenTag size="sm">{e.bus_name}</TokenTag>
+            <TokenTag>{e.bus_name}</TokenTag>
           ) : e.target_host ? (
-            <TokenTag size="sm">
-              <Send className="size-3" />
+            <TokenTag>
+              <Send className="size-2.5" />
               <span className="ml-1">{e.target_host}</span>
             </TokenTag>
           ) : (
             /* 已下载 = 成功完成的动作 · 用 ok 绿不用 danger 红
-               红色留给失败 / 危险操作 · 下载成功不是危险 */
-            <Chip tone="ok" icon={<Check className="size-3" />}>{t("assign-history.chip.downloaded")}</Chip>
+               红色留给失败 / 危险操作 · 下载成功不是危险 ·
+               尺寸跟同列的车名/host tag 一致（10px · 行内不混两种大小） */
+            <MicroStat tone="ok"><Check className="mr-1 size-2.5" />{t("assign-history.chip.downloaded")}</MicroStat>
           )}
         </span>
 

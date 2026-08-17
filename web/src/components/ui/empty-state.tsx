@@ -118,7 +118,7 @@ export function ErrorState({
           onClick={onRetry}
           className="text-label font-medium text-brand-strong underline-offset-2 hover:underline"
         >
-          重试
+          {t("ui.retry")}
         </button>
       )}
     </div>

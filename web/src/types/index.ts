@@ -63,12 +63,15 @@ export interface LedgerEntry {
 export type BusKind = "single" | "anon" | "team";
 export type BusStatus = "active" | "dissolved"; // UI: 活跃 / 已解散
 
-/** 车级策略 · docs/15-scheduling §4.3.5.3 前端契约(1f-B 落地)
+/** 车级策略 · docs/15-scheduling §4.3.5.3 前端契约(1f-refactor · migration 040 后)
  *
- *  **两类字段** —— 语义完全不同,别混:
+ *  **三类字段** —— 语义完全不同,别混:
  *
- *  **类② 覆盖字段** —— `null` = 跟随全局默认 · 非 null(含 `0` / `false`) = 覆盖本车:
- *    `auto_refill_enabled` / `refill_watermark` / `refill_min_count` / `per_round_count` / `preferred_vendor`
+ *  **纯车级字段** —— 非 null · 无全局 fallback(全局 default_* 只做建车 seed):
+ *    `auto_refill_enabled` / `refill_watermark`(`refill_min_count` 保留 null = 按 gap)
+ *
+ *  **类② 覆盖字段** —— `null` = 跟随全局默认 · 非 null = 覆盖本车:
+ *    `per_round_count` / `preferred_vendor`
  *
  *  **类① 硬上限字段** —— `null` = 车级不加严(取全局) · 非 null = 车级追加更严的约束(实际生效 = min(车级, 全局)):
  *    `max_unit_price`
@@ -448,6 +451,9 @@ export interface VendorQualityOut {
 
 export interface VendorStat {
   vendor_id: string;
+  /** 后端已按 tier 判完的展示名（匿名档带编号 · wholesale 真名）·
+   *  优先用它 —— 本地 vendorLabel() 对 anon_id 查不到编号只能给通用名（尾号丢失分不清哪家）*/
+  vendor_label?: string;
   rank: number;
   unit_price: Money;
   avg_lifespan_seconds: number;

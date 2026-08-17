@@ -41,7 +41,7 @@ export function BulkActionBar({
           <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand text-label font-semibold tnum text-white">
             {count}
           </span>
-          <span className="text-label font-semibold">已选 {count} 个</span>
+          <span className="text-label font-semibold">{t("ui.selected-count", { count })}</span>
         </span>
 
         <span className="h-5 w-px bg-hairline" />

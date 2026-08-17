@@ -52,7 +52,7 @@
   "push": {
     "failed": "Push failed",
     "none": "Not pushed",
-    "partial": "Partial push {{ratio}}",
+    "partial": "Partial {{ratio}}",
     "pushed": "Pushed"
   },
   "result": {
@@ -119,7 +119,7 @@
     "anon": "Ride pool",
     "anon-with-count": "Ride pool · {{count}} riders",
     "multi": "{{count}}-person bus",
-    "multi-card": "Pool · {{count}} riders",
+    "multi-card": "Bus · {{count}} riders",
     "solo": "Solo"
   },
   "pool-distribution": {
@@ -241,23 +241,23 @@
     "submit": "Fetch {{count}} keys"
   },
   "settings-modal": {
-    "title": "Pool settings",
+    "title": "Bus settings",
     "rename": {
-      "label": "Pool name",
-      "placeholder": "Give this pool a name",
+      "label": "Bus name",
+      "placeholder": "Give this bus a name",
       "save": "Save",
       "saving": "Saving…",
       "saved": "Saved ✓"
     },
     "danger": {
       "title": "Danger zone",
-      "dissolve-title": "Dissolve this pool",
+      "dissolve-title": "Dissolve this bus",
       "dissolve-desc": "Live keys move to your extract log · dead keys archived · spent credits not refunded",
-      "dissolve-button": "Dissolve pool",
-      "confirm-title": "Dissolve pool",
+      "dissolve-button": "Dissolve bus",
+      "confirm-title": "Dissolve bus",
       "confirm-alert-title": "This action cannot be undone",
       "confirm-alert-body": "After dissolving, live keys move to your extract log · dead keys archived · spent credits not refunded",
-      "confirm-label-prefix": "Type the pool name",
+      "confirm-label-prefix": "Type the bus name",
       "confirm-label-suffix": "to confirm",
       "cancel": "Cancel",
       "confirm-button": "Confirm dissolve",

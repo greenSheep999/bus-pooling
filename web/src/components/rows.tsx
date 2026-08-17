@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { ArrowRight, Check, X } from "lucide-react";
 import { useMe } from "@/api/hooks";
 import { BareRow, Chip } from "./ui/primitives";
-import { TokenTag } from "./ui/tags";
+import { MicroStat, TokenTag } from "./ui/tags";
 import {
   cn, fmtCredits, fmtLifespan, fmtTime, vendorLabel,
 } from "@/lib/utils";
@@ -17,12 +17,13 @@ const RESULT_TONE: Record<PullResult, "ok" | "warn" | "danger" | "brand"> = {
   refunded: "brand",
 };
 
+/** 推送态 · 行内次级状态 · 10px 小 pill —— 12px Chip 只留给行首主状态列（docs/13 §4） */
 function PushCell({ state, ratio }: { state: PushState; ratio: string | null }) {
   const { t } = useTranslation("common");
-  if (state === "pushed") return <Chip tone="ok" icon={<Check className="size-3" />}>{t("status.push.pushed")}</Chip>;
-  if (state === "partial") return <Chip tone="warn" icon={<Check className="size-3" />}>{t("status.push.partial", { ratio })}</Chip>;
-  if (state === "failed") return <Chip tone="danger" icon={<X className="size-3" />}>{t("status.push.failed")}</Chip>;
-  return <Chip tone="neutral">{t("status.push.none")}</Chip>;
+  if (state === "pushed") return <MicroStat tone="ok"><Check className="mr-1 size-2.5" />{t("status.push.pushed")}</MicroStat>;
+  if (state === "partial") return <MicroStat tone="warn"><Check className="mr-1 size-2.5" />{t("status.push.partial", { ratio })}</MicroStat>;
+  if (state === "failed") return <MicroStat tone="danger"><X className="mr-1 size-2.5" />{t("status.push.failed")}</MicroStat>;
+  return <MicroStat tone="neutral">{t("status.push.none")}</MicroStat>;
 }
 
 export function PullRow({ r }: { r: PullRound }) {
@@ -38,8 +39,9 @@ export function PullRow({ r }: { r: PullRound }) {
         {fmtTime(r.created_at)}
       </span>
 
-      <span className="w-14 shrink-0">
-        <Chip tone={resTone} dot className="w-full justify-center">
+      {/* w-24 按英文最长词（Refunded）定宽 · 原 w-14 + Chip w-full 英文会撑出格子 */}
+      <span className="w-24 shrink-0">
+        <Chip tone={resTone} dot>
           {resLabel}
         </Chip>
       </span>
@@ -86,7 +88,7 @@ export function PullRow({ r }: { r: PullRound }) {
         )}
       </div>
 
-      <div className="flex w-20 shrink-0 justify-center">
+      <div className="flex w-28 shrink-0 justify-center">
         <PushCell state={r.push_state} ratio={r.push_ratio} />
       </div>
 
@@ -127,9 +129,9 @@ const FLOW_TARGETS: Record<string, boolean> = {
   pending: true,
 };
 
-/** 流转 badge · 走 TokenTag sm · 保持全站 vendor/bus 标签样式一致（避免第三处样式漂移） */
+/** 流转 badge · 走 TokenTag（10px 统一小号）· 保持全站 vendor/bus 标签样式一致（避免第三处样式漂移） */
 function FlowBadge({ children }: { children: React.ReactNode }) {
-  return <TokenTag size="sm">{children}</TokenTag>;
+  return <TokenTag>{children}</TokenTag>;
 }
 
 /** 内容单元：把活动描述完整渲染在这一列，不做多列拆分
