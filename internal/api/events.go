@@ -55,9 +55,12 @@ func listPullEvents(ctx context.Context, db *sql.DB, passengerID string, limit, 
 	if err := db.QueryRowContext(ctx, `
 		SELECT count(1) FROM pull_round pr
 		 WHERE pr.id IN (SELECT pull_round_id FROM pending_purchase WHERE passenger_id = ? AND pull_round_id IS NOT NULL)
+		   AND pr.status != 'initiated'
 		`, passengerID).Scan(&total); err != nil {
 		return 0, nil, err
 	}
+	// status != 'initiated'：进行中的轮次不进历史列表 —— mapPullRoundResult 对
+	// initiated 只能落 default 'failed' · 会把正在拉的轮次显示成"失败"（几秒后又变成功）
 	rows, err := db.QueryContext(ctx, `
 		SELECT pr.id, pr.created_at, pr.vendor_id,
 		       pr.count_requested, pr.count_purchased,
@@ -81,6 +84,7 @@ func listPullEvents(ctx context.Context, db *sql.DB, passengerID string, limit, 
 		            AND cl.status != 'handed_off') AS pending_count
 		  FROM pull_round pr
 		 WHERE pr.id IN (SELECT pull_round_id FROM pending_purchase WHERE passenger_id = ? AND pull_round_id IS NOT NULL)
+		   AND pr.status != 'initiated'
 		 ORDER BY pr.created_at DESC
 		 LIMIT ? OFFSET ?`, passengerID, limit, offset)
 	if err != nil {
@@ -233,12 +237,14 @@ func listAssignEvents(ctx context.Context, db *sql.DB, passengerID string, limit
 		// key_masked / region / 用量 / 寿命 全读真值 —— 原来 region/credits_used/lifespan
 		// 是写死的 0 和空串（"1a 阶段先给 0"的占位）· 于是派发历史展开后每个号都显示 0
 		e.Keys = []assignedKeyDTO{{
-			CredentialID:    credID,
-			KeyMasked:       keyMasked,
-			VendorID:        vendorID,
-			Region:          region,
-			CreditsUsed:     usedMicro,
-			LifespanSeconds: lifespanOf(pulledAt, deadAt),
+			CredentialID: credID,
+			KeyMasked:    keyMasked,
+			VendorID:     vendorID,
+			Region:       region,
+			CreditsUsed:  usedMicro,
+			// "Alive at dispatch" = 截到**派发时刻**的存活时长（快照语义）·
+			// 原来用 lifespanOf(→now) · 数字会自己长 · 跟列名说的不是一回事
+			LifespanSeconds: lifespanAt(pulledAt, deadAt, e.CreatedAt),
 			UsageCurrent:    usedMicro,
 			UsageLimit:      limitMicro,
 			Subscription:    subscription,
