@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/bus"
 )
@@ -116,19 +115,7 @@ func (s *Server) handleBusCredentials(w http.ResponseWriter, r *http.Request) er
 			}
 		}
 		// 寿命:死了算到 dead_at · 活着算到现在（前端"存活 Nh"要真值）
-		if c.PulledAt != "" {
-			if t0, err := time.Parse(time.RFC3339, c.PulledAt); err == nil {
-				end := time.Now().UTC()
-				if deadAt.Valid && deadAt.String != "" {
-					if t1, err := time.Parse(time.RFC3339, deadAt.String); err == nil {
-						end = t1
-					}
-				}
-				if d := end.Sub(t0); d > 0 {
-					c.LifespanSeconds = int64(d.Seconds())
-				}
-			}
-		}
+		c.LifespanSeconds = lifespanOf(c.PulledAt, deadAt)
 		bid := busID
 		c.OwnerBusID = &bid
 		items = append(items, c)

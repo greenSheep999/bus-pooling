@@ -179,9 +179,19 @@ func listAssignEvents(ctx context.Context, db *sql.DB, passengerID string, limit
 	rows, err := db.QueryContext(ctx, `
 		SELECT pa.id, pa.created_at, pa.target, pa.target_bus_id, pa.credential_id,
 		       cl.vendor_id, COALESCE(cl.key_masked, ''), COALESCE(cl.pulled_at, ''),
-		       COALESCE(b.name, '')
+		       COALESCE(b.name, ''),
+		       COALESCE(cl.region, ''),
+		       -- 用量 · 活号取最近一次采样 · 号死了 credits_used 才是终值
+		       COALESCE(cus.current_usage_micro, cl.credits_used, 0),
+		       cl.dead_at
 		  FROM pending_assignment pa
 		  LEFT JOIN credential_ledger cl ON cl.id = pa.credential_id
+		  LEFT JOIN credential_usage_snapshot cus
+		    ON cus.kiro_rs_credential_id = cl.kiro_rs_credential_id
+		   AND cus.observed_at = (
+		         SELECT MAX(observed_at) FROM credential_usage_snapshot
+		          WHERE kiro_rs_credential_id = cl.kiro_rs_credential_id
+		       )
 		  LEFT JOIN bus b ON b.id = pa.target_bus_id
 		 WHERE pa.passenger_id = ? AND pa.status = 'completed'
 		 ORDER BY pa.created_at DESC
@@ -195,9 +205,12 @@ func listAssignEvents(ctx context.Context, db *sql.DB, passengerID string, limit
 		var e assignEventDTO
 		var target string
 		var targetBusID sql.NullString
-		var credID, vendorID, keyMasked, pulledAt, busName string
+		var credID, vendorID, keyMasked, pulledAt, busName, region string
+		var usedMicro int64
+		var deadAt sql.NullString
 		if err := rows.Scan(&e.ID, &e.CreatedAt, &target, &targetBusID, &credID,
-			&vendorID, &keyMasked, &pulledAt, &busName); err != nil {
+			&vendorID, &keyMasked, &pulledAt, &busName,
+			&region, &usedMicro, &deadAt); err != nil {
 			return 0, nil, err
 		}
 		e.Destination = mapAssignDestination(target)
@@ -209,15 +222,15 @@ func listAssignEvents(ctx context.Context, db *sql.DB, passengerID string, limit
 			e.BusName = &busName
 		}
 		e.Count = 1
-		// key_masked 读 credential_ledger 真列 · 老数据该列为空时返空串（前端补占位）
+		// key_masked / region / 用量 / 寿命 全读真值 —— 原来 region/credits_used/lifespan
+		// 是写死的 0 和空串（"1a 阶段先给 0"的占位）· 于是派发历史展开后每个号都显示 0
 		e.Keys = []assignedKeyDTO{{
-			CredentialID: credID,
-			KeyMasked:    keyMasked,
-			VendorID:     vendorID,
-			// region / credits_used / lifespan 1a 阶段查号池 stats 才有，先给 0/空
-			Region:          "",
-			CreditsUsed:     0,
-			LifespanSeconds: 0,
+			CredentialID:    credID,
+			KeyMasked:       keyMasked,
+			VendorID:        vendorID,
+			Region:          region,
+			CreditsUsed:     usedMicro,
+			LifespanSeconds: lifespanOf(pulledAt, deadAt),
 		}}
 		if vendorID != "" {
 			e.Vendors = []string{vendorID}
