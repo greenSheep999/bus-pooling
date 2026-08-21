@@ -1,0 +1,211 @@
+# Issues Log · 已知问题清单与解决状态
+
+> 每条问题一行记录 · **状态明确** · **可回溯** · 别散在 memory 或 decisions 里。
+>
+> **为什么单独一份**：`decisions.md` 记的是"选了什么方案"（含已否决方向）· `phase-1-acceptance*.md`
+> 是**某个时间点**的验收快照 · 都不适合追踪"这个 bug 修了没"。这里只做**状态机**：
+> `open → in-progress → fixed(unverified) → verified` · 修好且验过就 archive 到底部。
+>
+> **写入规矩**：
+> - 一条 issue = 一行摘要 + 一小段详情 · 别写长论文
+> - 状态改变时更新 · 不改文件名 · 不删条目
+> - **实测过 → 才能标 `verified`** · 只跑了 `go test` 不算
+> - `fixed(unverified)` 是编译过了但没手工/e2e 验过 · 允许推给下一个 agent 或用户复验
+>
+> **别写进这里的**：
+> - 已经从设计层否决的方向 → 走 `decisions.md`
+> - 阶段规划 / 未来 roadmap → 走 `00-values-and-phases.md`
+> - 某个时间点的全量审计快照 → 走 `phase-1-acceptance-v2.md` 那种验收文档
+
+## 索引
+
+| # | 状态 | 优先级 | 摘要 | 首发时间 |
+|---|---|---|---|---|
+| [I-01](#i-01) | 🟢 fixed(unverified) | P0 | 手工池号 sold 后 credplain 没写 · 推池只能推 placeholder | 2026-08-17 |
+| [I-02](#i-02) | 🟡 open | P1 | 进车后自动推下游 · push_on_pull 字段留着但无消费路径 | 2026-08-15 |
+| [I-03](#i-03) | 🟡 open | P1 | kirodrop 新增 personal 号未接入（vendor.AccountKinds 未声明） | 2026-08-22 |
+| [I-04](#i-04) | 🟡 open | P1 | 5 家 vendor 都只声明 enterprise（只 kirooo 双档接完） | 2026-08-22 |
+| [I-05](#i-05) | 🟡 open | P1 | 主文档 3 份滞后 migration 040（15-scheduling / 06-db / 05-api） | 2026-08-15 |
+| [I-06](#i-06) | 🟡 open | P2 | 建车 Advanced 仍含已废弃的 daily_round_limit / daily_spend_limit | 2026-08-15 |
+| [I-07](#i-07) | 🟡 open | P2 | handoff init 幂等契约不一致（前端送 idempotency key · 后端忽略） | 2026-08-15 |
+| [I-08](#i-08) | 🟡 open | P2 | 05-api-contract 列了未实现端点（/me/buses/{id}/stats 等 3 个） | 2026-08-15 |
+| [I-09](#i-09) | 🟡 open | P2 | housepool / vendoraccount / kiroappio / kiroceo 无单元测试 | 2026-08-15 |
+| [I-10](#i-10) | 🟡 open | P2 | migration 040 缺集成测试 | 2026-08-15 |
+| [I-11](#i-11) | 🟡 open | P2 | 缺 stage-1..6 分级 smoke 脚本 | 2026-08-15 |
+| [I-12](#i-12) | 🟡 open | P3 | 主文档 P2 drift（26 条 · 06-db 漏收 9 张新表 / 依赖图漏连线 etc） | 2026-08-15 |
+
+---
+
+## 详情
+
+### I-01 · 手工池号 sold 后 credplain 没写 · 推池只能推 placeholder
+
+**状态**：🟢 `fixed(unverified)` · 待用户实测
+**发现**：2026-08-17 · **实测复现**：2026-08-22（这次会话）
+**症状**：
+- 后台通过 `POST /api/admin/market/stock` 或 SQL 塞号进 vendor 07（KiroMarket 手工池）
+- 用户拉下来后推池 → 走 `pusher.fetchPlaintext` 拿不到明文
+- pusher 走全 placeholder 兜底 → k2a 收到假 refreshToken
+- **表象**："下游没有推到" / "手动重推也没有"
+
+**根因**：`admin_market.collectImportEvents` verified 分支只落 `market_stock_item` · **不调 `credplain.Save`** —— 全项目只有 `seed-credplain` CLI 手动补的时候会写这张表。
+
+**修法**：`collectImportEvents` 接 `credplain.Store` · verified 时同步落 credplain。装配层给它注入 store。保留 `seed-credplain` 作历史残留补丁工具。
+
+**验证**：用真号 `ksk_Mw...` 走 admin_market 塞进 vendor 07 → 拉号 → 推池 → k2a 侧应收到真号（现有则返 duplicate · 无则新增）。
+
+**关联**：memory `project-market-stock-manual-sql-gap.md`（已过时 · 该 memory 应删）· `decisions §8.44`
+
+---
+
+### I-02 · 进车后自动推下游 · push_on_pull 字段留着但无消费路径
+
+**状态**：🟡 `open` · 待用户拍板做不做
+**发现**：2026-08-15（phase-1-acceptance §P0-4）
+**症状**：`passenger_downstream.push_on_pull` 布尔字段有默认 true · 但 delivery / pullrecord / decider / deathwatch 里**零消费**。用户勾了没反应。
+
+**上下文**：P0-4 修的时候选的是 **B 方案（从 UI 撤 3 条 rules · 只留 bus_only）** —— 但字段还在 DB / API / TS 类型里。
+
+**产品意图冲突**：
+- `decisions §8.44` 提到"若 push_on_pull 自动推挂了..." → **暗示产品意图是"进车即自动推"**
+- 但 §12（建车首次拉）明说"号进车" · 没说自动推下游
+
+**用户澄清的三场景**（2026-08-22）：
+- 场景 1 · 建车首次拉 · **应该**自动推（一次性建车动作 · 不该让人挨个再手推）
+- 场景 2 · 自动补车 · 开关控制（用户配置）
+- 场景 3 · 提取 key 派进车 · 开关控制（车级 or passenger 级）
+
+**当前状态**：**三个场景都不自动推**。用户想要都能自动推 · 有对应开关。
+
+**下一步**：拍板做不做 · 做的话是**接活 push_on_pull** 还是**开新字段**。
+
+**关联**：I-01（如果推池链路修好了 · 这条才能验）
+
+---
+
+### I-03 · kirodrop 新增 personal 号未接入
+
+**状态**：🟡 `open`
+**发现**：2026-08-22（用户提及 · pro_max 5000 单位 134.98 CNY）
+**症状**：kirodrop vendor 上游新增了 personal 号池 · `internal/providers/kiro/vendors/kirodrop/adapter.go` 的 `Capability()` 未声明 `AccountKinds` → 默认只认 enterprise → **系统看不到 personal 号**。
+
+**修法**（照 kirooo 那套抄）：
+1. `adapter.go · Capability()` 加 `AccountKinds: [enterprise, personal]`
+2. 建 `personal.go` · 存 personal 池的 stock / purchase 端点
+3. `Stock() / Purchase()` 判 `opts.Kind == Personal` → 转发 personal.go
+4. `docs/vendors/drop-kiro-ss.md` §2.3b 补 personal 池文档
+5. `vendor_pricing` 表看是否要新 row（personal 单价独立）
+6. `personal_test.go`
+
+**前置**：需要 kirodrop personal 池的 API 端点契约（Playwright 探或从 vendor 拿文档）· 现有 vendor 档案里 0 处提 personal。
+
+---
+
+### I-04 · 5 家 vendor 只声明 enterprise · 只 kirooo 双档接完
+
+**状态**：🟡 `open`
+**发现**：2026-08-22
+**症状**：现在 6 家 vendor 里 **只有 kirooo** 走完双档接入。**91kiro / kiroceo / kiroappio / kiroappcc / kirodrop** 都还只有 enterprise。
+
+**影响**：如果上游那 5 家其中任何一家开了 personal 号池 · 我方系统都看不到 · 需要按 I-03 每家单独接。
+
+**修法**：每家 vendor 单独接（不是共通改造 · vendor API 各家不同）· 见 I-03 步骤。
+
+---
+
+### I-05 · 主文档 3 份滞后 migration 040
+
+**状态**：🟡 `open`
+**发现**：2026-08-15
+**症状**：`docs/15-scheduling.md §4.3.2/§4.3.2b/§4.3.2c` 整节仍描述已撤的 nullable 继承（方案 A）· `docs/06-db-schema.md §8 bus 表 + §16 passenger_strategy_default` 描述与实际 schema 相反 · `docs/05-api-contract.md §7` auto_refill 三字段 null 语义已作废。
+
+**影响**：下一个 agent 按老 nullable 语义写代码会造错。**不影响运行时** · 但会耗未来时间。
+
+**修法**：三份文档重写对齐 migration 040 后的现实（车级 NOT NULL · 全局 default_* 只做建车 seed · 无运行时 fallback）+ 补 3 个新护栏字段的引入原因。
+
+---
+
+### I-06 · 建车 Advanced 仍含已废弃的 daily_round_limit / daily_spend_limit
+
+**状态**：🟡 `open`
+**发现**：2026-08-15（phase-1-acceptance §P1）
+**症状**：`docs/15-scheduling §4.1` 明标车级已废弃 · 但 DB / API / TS / 前端建车表单 Advanced 段都还保留。
+
+**修法**：前端建车表单拿掉两字段（`StartCarpoolModal.tsx L84-85`）· 后端 DTO 加 deprecated 注释。
+
+---
+
+### I-07 · handoff init 幂等契约不一致
+
+**状态**：🟡 `open`
+**发现**：2026-08-15
+**症状**：`internal/api/handoff.go:34 handleHandoffInit` 未验 `X-Idempotency-Key` · 但 `web/src/api/hooks.ts:655 useHandoffInit(postIdempotent)` 前端在送。双击 / 网络重发时后端会为同一批 credential 起两个不同 download_token · 各自 TTL 5min 内都能取明文。
+
+**修法**：后端补 `ensureIdempotencyRecord` · 或前端 `useHandoffInit` 改回普通 `post`。
+
+---
+
+### I-08 · docs 列了未实现端点
+
+**状态**：🟡 `open`
+**发现**：2026-08-15
+**症状**：`docs/05-api-contract.md:298, :475-477` 列了 3 个端点但 `server.go` 未注册：
+- `GET /me/buses/{id}/stats`
+- `GET /me/credentials`
+- `GET /me/credentials/{id}`
+
+**修法**：doc 里标 `阶段 1d/未实现` 或删条目。
+
+---
+
+### I-09 · 4 个包无单元测试
+
+**状态**：🟡 `open`
+**发现**：2026-08-15
+**症状**：
+- `internal/housepool` 只有 kirors 子包有测试 · 主包无
+- `internal/vendoraccount` 无测试（vendor api_key/webhook_secret 明文密态存储关键路径）
+- `internal/providers/kiro/vendors/kiroappio` 无测试
+- `internal/providers/kiro/vendors/kiroceo` 无测试
+
+**修法**：`vendoraccount` 补 encrypt/decrypt round-trip · `kiroappio/kiroceo` 补 stock/purchase/webhook 归一化三条测试 · `housepool` 补包级 unit test。
+
+---
+
+### I-10 · migration 040 缺集成测试
+
+**状态**：🟡 `open`
+**发现**：2026-08-15
+**症状**：migration 039 有 `TestMigration039_PreservesBusAutoRefillValues` · migration 040 无对应测试。
+
+**修法**：新建 `internal/db/migrations_040_test.go` · 复用 039 骨架 · 验"从 nullable 撤回 NOT NULL 时车级值不丢"。
+
+---
+
+### I-11 · 缺 stage-1..6 分级 smoke 脚本
+
+**状态**：🟡 `open`
+**发现**：2026-08-15
+**症状**：只有 `smoke-1f.sh` 一份 · 每档切换后靠人肉验。
+
+**修法**：派生 `scripts/smoke-stage1-payment.sh` / `smoke-stage2-housepool.sh` / `smoke-stage3-vendor.sh` 三份。
+
+---
+
+### I-12 · 主文档 P2 drift（26 条）
+
+**状态**：🟡 `open`
+**发现**：2026-08-15
+**摘要**：
+- `06-db-schema` 漏收 9 张 1b~1e 新表（stock_watcher / vendor_ledger 等）+ 若干字段
+- `03-modules` 依赖图漏 stockwatch / vendorbalance / pricing / xi8 / vendorview 连线
+- `01-architecture §5` 目录树缺 5 个已存在的业务包
+- 详见 `docs/phase-1-acceptance.md §P2 Cleanup` 全表
+
+**影响**：不阻运行时 · 只误导下一个 agent 建代码时按老 schema 造字段。
+
+---
+
+## Archive · 已 verified 关闭
+
+（none）
