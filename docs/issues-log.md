@@ -27,9 +27,9 @@
 | [I-03](#i-03) | 🟡 open | P1 | kirodrop 新增 personal 号未接入（vendor.AccountKinds 未声明） | 2026-08-22 |
 | [I-04](#i-04) | 🟡 open | P1 | 5 家 vendor 都只声明 enterprise（只 kirooo 双档接完） | 2026-08-22 |
 | [I-05](#i-05) | 🟢 fixed(unverified) | P1 | 主文档 3 份滞后 migration 040（15-scheduling / 06-db / 05-api / 03-modules） | 2026-08-15 |
-| [I-06](#i-06) | 🟡 open | P2 | 建车 Advanced 仍含已废弃的 daily_round_limit / daily_spend_limit | 2026-08-15 |
-| [I-07](#i-07) | 🟡 open | P2 | handoff init 幂等契约不一致（前端送 idempotency key · 后端忽略） | 2026-08-15 |
-| [I-08](#i-08) | 🟡 open | P2 | 05-api-contract 列了未实现端点（/me/buses/{id}/stats 等 3 个） | 2026-08-15 |
+| [I-06](#i-06) | 🟢 fixed(unverified) | P2 | 建车 Advanced 仍含已废弃的 daily_round_limit / daily_spend_limit | 2026-08-15 |
+| [I-07](#i-07) | 🟢 fixed(unverified) | P2 | handoff init 幂等契约不一致（前端送 idempotency key · 后端忽略） | 2026-08-15 |
+| [I-08](#i-08) | ✅ verified | P2 | 05-api-contract 列了未实现端点（/me/buses/{id}/stats 等 3 个） | 2026-08-15 |
 | [I-09](#i-09) | 🟡 open | P2 | housepool / vendoraccount / kiroappio / kiroceo 无单元测试 | 2026-08-15 |
 | [I-10](#i-10) | 🟡 open | P2 | migration 040 缺集成测试 | 2026-08-15 |
 | [I-11](#i-11) | 🟡 open | P2 | 缺 stage-1..6 分级 smoke 脚本 | 2026-08-15 |

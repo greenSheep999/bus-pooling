@@ -295,7 +295,7 @@ curl https://<base-url>/api/me \
 | PUT | `/api/me/buses/{bus_id}/strategy` | 该车的补车策略（`decisions §8.6` 跟车绑） | 1a |
 | GET | `/api/me/buses/{bus_id}/credentials` | 该 bus 的号列表（含存活状态 + 用量） | 1a |
 | GET | `/api/me/buses/{bus_id}/pulls` | 该 bus 的拉号历史（分页） | 1a |
-| GET | `/api/me/buses/{bus_id}/stats` | 该 bus 号池的聚合统计（跨窗口） | 1d |
+| ~~GET~~ | ~~`/api/me/buses/{bus_id}/stats`~~ | ~~该 bus 号池的聚合统计（跨窗口）~~ · **未实现** · 现有统计走 `GET /api/me/buses/{bus_id}` 返回体的 `alive_count / dead_count / spend_today / avg_lifespan_seconds` 字段 · 阶段 3+ 需要窗口对比时再单开 | ⏸ 阶段 3+ |
 | PUT | `/api/me/buses/{bus_id}/members/{pid}` | 挂起 / 解挂成员（`§8.26`） | 2a |
 | DELETE | `/api/me/buses/{bus_id}/members/{pid}` | 移除成员（车主有权 · `§8.36`）· 剩余成员 share_pct 均分重算 | 1c |
 | POST | `/api/me/buses/{bus_id}/invite-code` | 重新生成**拼车码**（旧码和旧链接立即失效） | 1c |
@@ -472,11 +472,11 @@ curl https://<base-url>/api/me \
 
 | Method | Path | 说明 |
 |---|---|---|
-| GET | `/api/me/credentials` | 我名下所有活的号（跨 bus / 拉号记录 / 已推 passengerpool 的） |
-| GET | `/api/me/credentials?history=1` | 含死号 |
-| GET | `/api/me/credentials/{id}` | 单号详情：进池时间 / 死亡时间 / 用了多少 / 平均积分消耗 / 并发（若有） |
+| ~~GET~~ | ~~`/api/me/credentials`~~ | ~~我名下所有活的号（跨 bus / 拉号记录 / 已推 passengerpool 的）~~ · **未实现** · 现有查询走 `GET /api/me/buses/{id}/credentials`（车里的号）+ `GET /api/me/pull-records`（待派号）· 阶段 3+ 需要跨源统一列表再合 |
+| ~~GET~~ | ~~`/api/me/credentials?history=1`~~ | ~~含死号~~ · 同上 · **未实现** |
+| ~~GET~~ | ~~`/api/me/credentials/{id}`~~ | ~~单号详情~~ · **未实现** · 号详情走车详情 / 提取详情按上下文查 |
 
-**这是"我名下号"的入口**。`handoff` 出去的号不在这里（已离开 housepool）。
+**这些端点在 1a 规划表里 · 但一直没实现** · 现有查询路径按上下文分：车里的号走车详情 · 待派号走提取页 · 已 handoff 号不再存在。阶段 3+ 数据看板做起来时统一 endpoint 再补。
 
 ### 单号详情返回字段（`GET /api/me/credentials/{id}`）
 

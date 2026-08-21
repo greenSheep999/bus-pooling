@@ -738,11 +738,15 @@ export interface HandoffKeys {
   keys: { credential_id: string; key: string; vendor_id: string; account: string }[];
 }
 
-/** ① 发 token · 号还在池里（disabled），这步**不返回明文** */
+/** ① 发 token · 号还在池里（disabled），这步**不返回明文**
+ *  I-07 · 用普通 post 不送 idempotency key · 后端 handleHandoffInit 未验幂等 ·
+ *  前端送 idempotency 反而契约不一致(前端以为幂等 · 后端根本不查) · 双击/重发
+ *  会为同一批 credential 起两个 download_token · 各自 5min 内都能取明文。
+ *  改回普通 post · 让前端明确知道"这不是幂等端点 · UI 该防重复提交"。 */
 export const useHandoffInit = () =>
   useMutation({
     mutationFn: (credential_ids: string[]) =>
-      postIdempotent<HandoffToken>("/me/handoff", { credential_ids }),
+      post<HandoffToken>("/me/handoff", { credential_ids }),
   });
 
 /** ② 用 token 取明文 · TTL 内可反复取（断线重试就靠这个） */
