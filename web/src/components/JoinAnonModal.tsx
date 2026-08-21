@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { Info, Sparkles, Users } from "lucide-react";
+import { Sparkles, Users } from "lucide-react";
 import { useCreateBus, useMatchAnonBus } from "@/api/hooks";
 import {
   Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter,
@@ -14,6 +14,7 @@ import { Field } from "@/components/ui/field";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { notify } from "@/lib/toast";
 
 /**
  * 搭车（anon）模态：
@@ -32,19 +33,16 @@ export function JoinAnonModal({
   const createBus = useCreateBus();
   const [zone, setZone] = useState<string>("cn");
   const [maxPriceCredits, setMaxPriceCredits] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setZone("cn");
       setMaxPriceCredits("");
-      setError(null);
     }
   }, [open]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
     const maxPriceMicro = maxPriceCredits ? Number(maxPriceCredits) * 1_000_000 : undefined;
     try {
       const result = await match.mutateAsync({
@@ -53,6 +51,7 @@ export function JoinAnonModal({
         auto_join: true,
       });
       if (result.matched && result.bus) {
+        notify.ok({ title: t("common:toast.joined") });
         onClose();
         nav(`/buses/${result.bus.id}`);
         return;
@@ -65,10 +64,12 @@ export function JoinAnonModal({
         anon_zone: zone,
         anon_max_unit_price: maxPriceMicro,
       });
+      notify.info({ title: t("common:toast.anon_created") });
       onClose();
       nav(`/buses/${bus.id}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t("join-anon-modal.error-generic"));
+      // 提交错误走全局 toast · 通道统一（不在模态里另挂红条 · docs/13 §7.4）
+      notify.fail(err, t("join-anon-modal.error-generic"));
     }
   };
 
@@ -111,10 +112,7 @@ export function JoinAnonModal({
             <Alert tone="brand" icon={Sparkles} title={t("join-anon-modal.how-title")}>
               {t("join-anon-modal.how-body")}
             </Alert>
-
-            {error && (
-              <Alert tone="danger" icon={Info}>{error}</Alert>
-            )}
+            {/* 错误走 notify.fail · 这里不再挂 inline 红条 */}
           </form>
         </DialogBody>
 

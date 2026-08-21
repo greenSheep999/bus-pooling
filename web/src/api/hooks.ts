@@ -527,6 +527,17 @@ export const useRegenInviteCode = (busId: string) => {
   });
 };
 
+export interface PullResponse {
+  pull_round_id: string;
+  vendor_id: string;
+  purchased: number;
+  credential_ids: string[];
+  unit_price: number;
+  service_fee: number;
+  total_debit: number;
+  balance_remaining: number;
+}
+
 export const usePullForBus = (busId: string) => {
   const qc = useQueryClient();
   return useMutation({
@@ -536,11 +547,13 @@ export const usePullForBus = (busId: string) => {
       account_kind?: "enterprise" | "personal";
       plan?: "power" | "pro" | "pro_plus" | "pro_max";
     }) =>
-      postIdempotent(`/me/buses/${busId}/pull`, body),
+      postIdempotent<PullResponse>(`/me/buses/${busId}/pull`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["bus", busId] });
       qc.invalidateQueries({ queryKey: ["busCredentials", busId] });
       qc.invalidateQueries({ queryKey: ["busPulls", busId] });
+      qc.invalidateQueries({ queryKey: ["activities"] });
+      qc.invalidateQueries({ queryKey: ["wallet"] });
     },
   });
 };
@@ -585,7 +598,7 @@ export const useExtract = () => {
         ...rest,
         ...(vendor_id && vendor_id !== "auto" ? { vendor_id } : {}),
       };
-      return postIdempotent("/me/pull", payload);
+      return postIdempotent<PullResponse>("/me/pull", payload);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["extractRecords"] });
@@ -594,6 +607,7 @@ export const useExtract = () => {
       qc.invalidateQueries({ queryKey: ["wallet"] });
       qc.invalidateQueries({ queryKey: ["vendorOffers"] });
       qc.invalidateQueries({ queryKey: ["stock"] });
+      qc.invalidateQueries({ queryKey: ["activities"] });
     },
   });
 };
@@ -702,6 +716,7 @@ export const useAssign = () => {
       // 清算动了钱包（share_income / share_expense）· 余额和流水都要刷
       qc.invalidateQueries({ queryKey: ["wallet"] });
       qc.invalidateQueries({ queryKey: ["ledger"] });
+      qc.invalidateQueries({ queryKey: ["activities"] });
     },
   });
 };
@@ -744,6 +759,7 @@ export const useHandoffConfirm = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pullRecords"] });
       qc.invalidateQueries({ queryKey: ["assignEvents"] });
+      qc.invalidateQueries({ queryKey: ["activities"] });
     },
   });
 };
@@ -816,6 +832,7 @@ export const useCreateTopup = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["wallet"] });
       qc.invalidateQueries({ queryKey: ["ledger"] });
+      qc.invalidateQueries({ queryKey: ["activities"] });
     },
   });
 };
@@ -827,6 +844,7 @@ export const useRedeem = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["wallet"] });
       qc.invalidateQueries({ queryKey: ["ledger"] });
+      qc.invalidateQueries({ queryKey: ["activities"] });
     },
   });
 };

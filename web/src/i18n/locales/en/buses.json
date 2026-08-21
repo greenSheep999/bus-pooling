@@ -179,7 +179,8 @@
     "submit": "Join",
     "error-too-short": "Invite codes are at least 4 characters",
     "error-not-found": "Invalid code, or the bus was dissolved",
-    "error-full": "Bus is full · check with the owner or try another"
+    "error-full": "Bus is full · check with the owner or try another",
+    "error-generic": "Couldn't join · try again shortly"
   },
   "start-modal": {
     "title": "Start a bus",

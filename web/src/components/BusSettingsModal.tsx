@@ -8,6 +8,7 @@ import {
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { notify } from "@/lib/toast";
 import type { Bus } from "@/types";
 
 /** 拼车设置 dialog · 2 段：编辑名字 / 危险区
@@ -63,9 +64,14 @@ function RenameSection({ bus }: { bus: Bus }) {
   const onSave = async () => {
     if (!dirty) return;
     setSaved(false);
-    await rename.mutateAsync(name.trim());
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      await rename.mutateAsync(name.trim());
+      setSaved(true);
+      notify.ok({ title: t("common:toast.saved") });
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      notify.fail(err, t("common:toast.generic_fail"));
+    }
   };
 
   return (
@@ -139,8 +145,13 @@ function DangerDialog({
 
   const onDissolve = async () => {
     if (!canDissolve) return;
-    await dissolve.mutateAsync(bus.id);
-    onDone();
+    try {
+      await dissolve.mutateAsync(bus.id);
+      notify.ok({ title: t("common:toast.dissolved") });
+      onDone();
+    } catch (err) {
+      notify.fail(err, t("common:toast.generic_fail"));
+    }
   };
 
   return (

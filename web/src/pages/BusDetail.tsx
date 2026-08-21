@@ -32,6 +32,7 @@ import { BusSettingsModal } from "@/components/BusSettingsModal";
 // 图表放 stats tab · 用户点开这个 tab 才拉 recharts
 const BusStats = lazy(() => import("@/components/BusStats"));
 import { EditStrategyPanel } from "@/components/EditStrategyPanel";
+import { notify } from "@/lib/toast";
 import {
   cn, fmtCredits, fmtLifespan, fmtTime, SUSPEND_AFTER, vendorLabel,
 } from "@/lib/utils";
@@ -633,9 +634,11 @@ function PushRetryButton({ busId, credId }: { busId: string; credId: string }) {
       // failed/dead 也返 200 · 必须按 r.state 分支 · 别当成功
       const ok = r.state === "pushed" || r.state === "already_pushed";
       setFeedback({ ok, text: r.message || t(ok ? "credentials.push.pushed" : "credentials.push.failed") });
-    } catch {
-      // 真网络错(非 200) · 走通用文案
+      if (ok) notify.ok({ title: t("common:toast.push_ok") });
+      else notify.danger({ title: t("common:toast.push_fail"), desc: r.message });
+    } catch (err) {
       setFeedback({ ok: false, text: t("credentials.push.neterr") });
+      notify.fail(err, t("common:toast.push_fail"));
     }
     setTimeout(() => setFeedback(null), 2000);
   };

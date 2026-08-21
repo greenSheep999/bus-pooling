@@ -179,7 +179,8 @@
     "submit": "加入",
     "error-too-short": "拼车码至少 4 位",
     "error-not-found": "拼车码无效或车已解散",
-    "error-full": "车已满 · 找车主确认或另找一辆"
+    "error-full": "车已满 · 找车主确认或另找一辆",
+    "error-generic": "加入失败 · 稍后重试"
   },
   "start-modal": {
     "title": "发起拼车",

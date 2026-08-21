@@ -19,6 +19,7 @@ import { SecretField } from "@/components/ui/secret-field";
 import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { notify } from "@/lib/toast";
 import { cn, fmtTime } from "@/lib/utils";
 import type { ApiKey } from "@/types";
 
@@ -170,8 +171,13 @@ function CreateKeyModal({ open, onClose }: { open: boolean; onClose: () => void 
   const submit = async () => {
     const trimmed = name.trim();
     if (!trimmed || create.isPending) return;
-    const r = await create.mutateAsync(trimmed);
-    setPlaintext(r.key);
+    try {
+      const r = await create.mutateAsync(trimmed);
+      setPlaintext(r.key);
+      notify.ok({ title: t("common:toast.key_created") });
+    } catch (err) {
+      notify.fail(err, t("common:toast.generic_fail"));
+    }
   };
 
   return (
@@ -260,8 +266,13 @@ function RevokeKeyModal({ k, onClose }: { k: ApiKey | null; onClose: () => void 
             disabled={revoke.isPending}
             onClick={async () => {
               if (!k) return;
-              await revoke.mutateAsync(k.id);
-              onClose();
+              try {
+                await revoke.mutateAsync(k.id);
+                notify.ok({ title: t("common:toast.key_revoked") });
+                onClose();
+              } catch (err) {
+                notify.fail(err, t("common:toast.generic_fail"));
+              }
             }}
           >
             {revoke.isPending ? t("api-keys.revoke-modal.submitting") : t("api-keys.revoke-modal.submit")}

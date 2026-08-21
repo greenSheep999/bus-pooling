@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { notify } from "@/lib/toast";
 import {
   vendorLabel,
 } from "@/lib/utils";
@@ -87,9 +88,17 @@ export function StartCarpoolModal({
     // 建车不传 kind —— 用户建的车都一样（后端默认 single·跟 team 行为一致·都带邀请码）。
     // 1 个人时是独享·把邀请码给朋友进来就是拼车·不需要建车时选类型。
     // max_members 走后端 config.bus.max_members·前端不传。
-    const bus = await createBus.mutateAsync({ name, strategy });
-    onClose();
-    nav(`/buses/${bus.id}`);
+    try {
+      const bus = await createBus.mutateAsync({ name, strategy });
+      notify.ok({
+        title: t("common:toast.bus_created"),
+        action: { label: t("common:toast.bus_created_action"), href: `/buses/${bus.id}` },
+      });
+      onClose();
+      nav(`/buses/${bus.id}`);
+    } catch (err) {
+      notify.fail(err, t("common:toast.generic_fail"));
+    }
   };
 
   return (

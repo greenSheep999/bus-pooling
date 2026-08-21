@@ -13,6 +13,7 @@ import { Card, Em, Meter, SectionHead } from "@/components/ui/primitives";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { notify } from "@/lib/toast";
 import { fmtCredits, MICRO, toCredits, vendorLabel, VENDOR_NAME } from "@/lib/utils";
 
 /** 空字符串 = 不限 · 输入框拿字符串存，保存时转 number|null */
@@ -80,6 +81,9 @@ export default function Preferences() {
       auto_refill_daily_budget: numOrNull(dailyBudget) == null ? null : numOrNull(dailyBudget)! * MICRO,
       auto_refill_min_wallet_reserve: numOrNull(minReserve) == null ? null : numOrNull(minReserve)! * MICRO,
       auto_refill_vendor_allowlist: allowlist.length === 0 ? null : allowlist,
+    }, {
+      onSuccess: () => notify.ok({ title: t("common:toast.saved") }),
+      onError: (err) => notify.fail(err, t("common:toast.generic_fail")),
     });
 
   return (

@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/primitives";
 import { SecretField } from "@/components/ui/secret-field";
 import { Switch } from "@/components/ui/switch";
+import { notify } from "@/lib/toast";
 import { fmtTime } from "@/lib/utils";
 import type { WebhookDelivery, WebhookEvent } from "@/types";
 
@@ -146,7 +147,12 @@ export default function Webhook() {
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="brand"
-              onClick={() => save.mutate({ url: url.trim() })}
+              onClick={() => {
+                save.mutate({ url: url.trim() }, {
+                  onSuccess: () => notify.ok({ title: t("common:toast.webhook_ok") }),
+                  onError: (err) => notify.fail(err, t("common:toast.generic_fail")),
+                });
+              }}
               disabled={!dirty || save.isPending}
             >
               {save.isPending ? <Loader2 className="animate-spin" /> : <Save />}

@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
-  Activity, BookOpen, Bell, Check, ChevronDown, ChevronRight, Gift, Globe,
+  Activity, BookOpen, Check, ChevronDown, ChevronRight, Gift, Globe,
   KeyRound, LayoutDashboard, LogOut, Moon, Send, Settings,
   User, Users, Wallet,
 } from "lucide-react";
 import { useLogout, useMe, useVendorOffers, useWallet } from "@/api/hooks";
 import { AppFooter } from "@/components/AppFooter";
+import { NotificationsBell } from "@/components/NotificationsBell";
 import { PromoBar } from "@/components/PromoBar";
 import { Muted } from "@/components/ui/primitives";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -114,60 +115,6 @@ function CreditPill() {
       {/* 「积分」二字移动端隐藏 · sm+ 才显示 */}
       <span className="hidden font-semibold text-ok-solid sm:inline">{t("header.credits")}</span>
     </Link>
-  );
-}
-
-/** 顶栏铃铛 · 通知中心占位
- *  阶段 1 后端还没做 /api/me/notifications · 铃铛点开先给个 popover 解释
- *  · 引导到"活动流（Overview）" / "推送日志（Webhook）" · 别做假数据糊用户
- *  真做通知中心时替换 popover 内容 · 拉 GET /api/me/notifications · 加未读小红点 */
-function NotificationsBell() {
-  const [open, setOpen] = useState(false);
-  const { t } = useTranslation();
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="hidden size-9 place-items-center rounded-full transition-colors hover:bg-bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 sm:grid"
-          aria-label={t("header.notifications")}
-        >
-          <Bell className="size-4 text-fg-secondary" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 p-4">
-        <div className="space-y-1">
-          <div className="font-semibold">{t("header.notifications_title")}</div>
-          <p className="text-label text-fg-tertiary">{t("header.notifications_desc")}</p>
-        </div>
-        <div className="mt-3 space-y-2">
-          <Link
-            to="/overview"
-            onClick={() => setOpen(false)}
-            className="flex items-center justify-between gap-2 rounded-lg p-2 text-label hover:bg-bg-elevated"
-          >
-            <span>{t("header.notifications_link_events")}</span>
-            <ChevronRight className="size-3.5 text-fg-tertiary" />
-          </Link>
-          <Link
-            to="/settings/webhook"
-            onClick={() => setOpen(false)}
-            className="flex items-center justify-between gap-2 rounded-lg p-2 text-label hover:bg-bg-elevated"
-          >
-            <span>{t("header.notifications_link_webhook")}</span>
-            <ChevronRight className="size-3.5 text-fg-tertiary" />
-          </Link>
-          <Link
-            to="/wallet"
-            onClick={() => setOpen(false)}
-            className="flex items-center justify-between gap-2 rounded-lg p-2 text-label hover:bg-bg-elevated"
-          >
-            <span>{t("header.notifications_link_wallet")}</span>
-            <ChevronRight className="size-3.5 text-fg-tertiary" />
-          </Link>
-        </div>
-      </PopoverContent>
-    </Popover>
   );
 }
 

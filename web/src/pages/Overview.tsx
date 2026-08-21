@@ -225,7 +225,7 @@ function ActivityFeed({
   const remain = Math.max(0, items.length - shown);
 
   return (
-    <div className="space-y-5">
+    <div id="activity" className="space-y-5 scroll-mt-24">
       <SectionHead
         title={t("activity.title")}
         sub={t("activity.sub", { total })}
