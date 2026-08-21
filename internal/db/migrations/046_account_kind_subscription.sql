@@ -37,5 +37,13 @@ CREATE INDEX idx_cred_ledger_plan ON credential_ledger(subscription);
 -- +migrate down
 DROP INDEX IF EXISTS idx_cred_ledger_kind;
 DROP INDEX IF EXISTS idx_cred_ledger_plan;
--- SQLite 3.35+ 支持 DROP COLUMN · 但生产库上删列有重建表风险 ·
--- 这几列全 NULL 时不影响任何读写 · down 保留列（跟 044 同策略）。
+-- I-14 · SQLite 3.35+ DROP COLUMN · 保 down/up 幂等
+-- 老口径("生产库删列有重建表风险 · 保留列")的问题:down 后重 up 会 duplicate column ·
+-- 破坏测试隔离(集成测试要 down-then-up 才能测迁移前后行为)。改成 DROP COLUMN 保幂等。
+-- 生产库真要 down 时 · 列全 NULL 也允许 · 数据不丢。
+ALTER TABLE credential_ledger DROP COLUMN account_kind;
+ALTER TABLE credential_ledger DROP COLUMN subscription;
+ALTER TABLE credential_ledger DROP COLUMN source;
+ALTER TABLE pending_purchase DROP COLUMN account_kind;
+ALTER TABLE pending_purchase DROP COLUMN plan;
+ALTER TABLE pending_purchase DROP COLUMN source;

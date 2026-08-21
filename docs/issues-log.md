@@ -24,7 +24,7 @@
 | [I-01](#i-01) | ✅ verified | P0 | 手工池号 sold 后 credplain 没写 · 推池只能推 placeholder | 2026-08-17 |
 | [I-02](#i-02) | 🟢 fixed(unverified) | P1 | 进车后自动推下游 · push_on_pull 字段留着但无消费路径 | 2026-08-15 |
 | [I-13](#i-13) | ✅ verified | P2 | pullSuccessBridge VendorLabel 硬编 "provider" 泄漏内部术语 | 2026-08-22 |
-| [I-14](#i-14) | 🟡 open | P2 | migration 046 down 后重 up 报 duplicate column · 破坏 down/up 幂等 | 2026-08-22 |
+| [I-14](#i-14) | ✅ verified | P2 | migration 046 down 后重 up 报 duplicate column · 破坏 down/up 幂等 | 2026-08-22 |
 | [I-03](#i-03) | 🟡 open | P1 | kirodrop 新增 personal 号未接入（vendor.AccountKinds 未声明） | 2026-08-22 |
 | [I-04](#i-04) | 🟡 open | P1 | 5 家 vendor 都只声明 enterprise（只 kirooo 双档接完） | 2026-08-22 |
 | [I-05](#i-05) | 🟢 fixed(unverified) | P1 | 主文档 3 份滞后 migration 040（15-scheduling / 06-db / 05-api / 03-modules） | 2026-08-15 |
@@ -269,19 +269,25 @@ hook 入口 · 装配层注入 pusher + downstreams + vendorView。
 
 ### I-14 · migration 046 down 后重 up 报 duplicate column
 
-**状态**：🟡 `open`
+**状态**：✅ `verified` · 2026-08-22 修完
 **发现**：2026-08-22 · I-10 集成测试期间
 
 **症状**：migration 046(account_kind_subscription)的 down 未干净删列 · 重新 up 时
 `duplicate column name: account_kind`。破坏 down/up 幂等。
 
-**影响**：不影响单向 up 生产 · 但**测试隔离** / **回滚重演** 场景踩坑。
-我的 I-10 集成测试原本想 up → down 到 39 塞 nullable 数据 → up 040 验迁移 ·
-被这个 bug 挡住 · 改成"只测最终 schema"绕过。
+**修法**：046 down 段补 `DROP COLUMN` 六条（SQLite 3.35+ 支持）:
+```sql
+ALTER TABLE credential_ledger DROP COLUMN account_kind;
+ALTER TABLE credential_ledger DROP COLUMN subscription;
+ALTER TABLE credential_ledger DROP COLUMN source;
+ALTER TABLE pending_purchase DROP COLUMN account_kind;
+ALTER TABLE pending_purchase DROP COLUMN plan;
+ALTER TABLE pending_purchase DROP COLUMN source;
+```
 
-**修法**：把 046 down 段的 DROP COLUMN 补全 · 或走"新表 + 复制"式回退。
+**验证**(2026-08-22)：`migrate up → migrate down 5 → migrate up` 全绿。
 
-**关联**：I-10(集成测试选了绕道方案) · migration 044/045 消失(跳号) 有可能相关。
+**顺手记**：migration 044/045 缺号 —— 应该是历史 rebase 造成 · 编号跳过但功能没缺。
 
 ---
 
