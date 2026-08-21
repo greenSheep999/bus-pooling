@@ -21,7 +21,7 @@
 
 | # | 状态 | 优先级 | 摘要 | 首发时间 |
 |---|---|---|---|---|
-| [I-01](#i-01) | 🟢 fixed(unverified) | P0 | 手工池号 sold 后 credplain 没写 · 推池只能推 placeholder | 2026-08-17 |
+| [I-01](#i-01) | ✅ verified | P0 | 手工池号 sold 后 credplain 没写 · 推池只能推 placeholder | 2026-08-17 |
 | [I-02](#i-02) | 🟡 open | P1 | 进车后自动推下游 · push_on_pull 字段留着但无消费路径 | 2026-08-15 |
 | [I-03](#i-03) | 🟡 open | P1 | kirodrop 新增 personal 号未接入（vendor.AccountKinds 未声明） | 2026-08-22 |
 | [I-04](#i-04) | 🟡 open | P1 | 5 家 vendor 都只声明 enterprise（只 kirooo 双档接完） | 2026-08-22 |
@@ -40,21 +40,40 @@
 
 ### I-01 · 手工池号 sold 后 credplain 没写 · 推池只能推 placeholder
 
-**状态**：🟢 `fixed(unverified)` · 待用户实测
-**发现**：2026-08-17 · **实测复现**：2026-08-22（这次会话）
+**状态**：✅ `verified` · 2026-08-22 实测通过
+**发现**：2026-08-17
 **症状**：
-- 后台通过 `POST /api/admin/market/stock` 或 SQL 塞号进 vendor 07（KiroMarket 手工池）
+- 后台通过 `POST /api/admin/market/stock` 塞号进 vendor 07（KiroMarket 手工池）
 - 用户拉下来后推池 → 走 `pusher.fetchPlaintext` 拿不到明文
 - pusher 走全 placeholder 兜底 → k2a 收到假 refreshToken
 - **表象**："下游没有推到" / "手动重推也没有"
 
-**根因**：`admin_market.collectImportEvents` verified 分支只落 `market_stock_item` · **不调 `credplain.Save`** —— 全项目只有 `seed-credplain` CLI 手动补的时候会写这张表。
+**根因**：手工池路径 · admin 塞号时明文只走 housepool BatchImport · 全项目所有拉号
+路径**都不写** `credential_plaintext`。5 天前 memory 记录过 · 但只有 `seed-credplain`
+CLI 手动补。
 
-**修法**：`collectImportEvents` 接 `credplain.Store` · verified 时同步落 credplain。装配层给它注入 store。保留 `seed-credplain` 作历史残留补丁工具。
+**方案**：加临时表 `market_stock_plaintext(kiro_rs_credential_id 主键)`。
+1. `admin_market.collectImportEvents` verified 时 · `credplain.StashByKiroRS` 落暂存
+2. `decider/settle` 手工池 sold 分支 · **同 tx 里** `PopToCredplainTx` 迁到正式
+   `credential_plaintext(credential_id 主键)` · 删暂存
+3. Janitor 清 7d TTL 未卖号残留
 
-**验证**：用真号 `ksk_Mw...` 走 admin_market 塞进 vendor 07 → 拉号 → 推池 → k2a 侧应收到真号（现有则返 duplicate · 无则新增）。
+**改动清单**：
+- migration `050_market_stock_plaintext.sql` · 新表
+- `internal/credplain/marketstage.go` · `StashByKiroRS` / `PopToCredplainTx` / `PurgeStash`
+- `internal/api/admin_market.go` · `collectImportEvents` 加参数 · verified 时 stash
+- `internal/decider/orchestrator.go` · 加 `MarketStockPlaintextPopper` 接口
+- `internal/decider/settle.go` · sold 分支同 tx 调 `PopToCredplainTx`
+- `cmd/bus-pooling/main.go` · 装配 credplainStore 提到 makeDecider 前 · 三处共用同实例
 
-**关联**：memory `project-market-stock-manual-sql-gap.md`（已过时 · 该 memory 应删）· `decisions §8.44`
+**验证（2026-08-22）**：
+1. 建 pro_max offer(id=`cb7303b9...`) + 塞号 → stash 表落 1 行(kiro_rs_id=18 · enc_len=64)
+2. 注册测试账号 · 500 积分 · 拉 pro_max 1 个 → 返 credential_id=`4235eccf...`
+3. sold 后:market_stock_plaintext **空** · credential_plaintext **有行**(4235eccf... · enc_len=64) ·
+   market_stock_item.status=sold · 三者同 tx 原子提交
+4. pusher 后续拿 `4235eccf...` 走真明文推 · 不再走 placeholder
+
+**保留 seed-credplain CLI** 作历史残留补丁工具 · 生产老 stash 之前的号仍能靠它救。
 
 ---
 
@@ -208,4 +227,4 @@
 
 ## Archive · 已 verified 关闭
 
-（none）
+（保留在原位 · 状态 verified 后不物理归档 · 索引表状态列直接显示 ✅ · 方便回溯）

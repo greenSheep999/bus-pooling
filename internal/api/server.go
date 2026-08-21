@@ -16,6 +16,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/bus"
 	"github.com/bus-pooling/bus-pooling/internal/config"
 	"github.com/bus-pooling/bus-pooling/internal/coupon"
+	"github.com/bus-pooling/bus-pooling/internal/credplain"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
 	"github.com/bus-pooling/bus-pooling/internal/delivery/handoff"
 	"github.com/bus-pooling/bus-pooling/internal/delivery/passengerpool"
@@ -92,6 +93,9 @@ type Server struct {
 	coupons *coupon.Store
 	// marketStock · 我方第 7 家 vendor 手工上架 · admin/market/* 路由用 · nil = 不挂
 	marketStock *marketstock.Store
+	// credplain · 号明文加密缓存 · admin_market 塞号时走 StashByKiroRS 落暂存表 ·
+	// nil = 手工池 push_pool 只能推 placeholder(跟 I-01 修复前一致)
+	credplain *credplain.Store
 }
 
 // WebhookOutSender · webhookout.Dispatcher 的对外接口(避免 api → webhookout 硬依赖)。
@@ -151,6 +155,9 @@ type ServerDeps struct {
 	Coupons *coupon.Store
 	// MarketStock · 我方第 7 家 Kiro Vendor Market 手工上架 store · nil = 不挂 admin/market/* 路由
 	MarketStock *marketstock.Store
+	// Credplain · 明文加密缓存 · admin_market POST /admin/market/stock 时用它落暂存表 ·
+	// nil = 装配层没接入 · 手工池 push_pool 走 placeholder(issues-log I-01)
+	Credplain *credplain.Store
 }
 
 func NewServer(d ServerDeps) *Server {
@@ -191,6 +198,7 @@ func NewServer(d ServerDeps) *Server {
 		sysDefaults:         d.SysDefaults,
 		coupons:             d.Coupons,
 		marketStock:         d.MarketStock,
+		credplain:           d.Credplain,
 	}
 }
 

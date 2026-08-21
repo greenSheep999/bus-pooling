@@ -55,6 +55,9 @@ type Orchestrator struct {
 	// marketStock · 手工池 SellTx 入口 · nil = 不接第 7 家 vendor（老装配兼容）·
 	// 有则 settle 里号进 ledger 的同 tx 会把对应 stock_item 从 reserved 转 sold。
 	marketStock MarketStockSeller
+	// marketPopper · 手工池号 sold 时 · 把明文从暂存表迁到 credential_plaintext(I-01)·
+	// nil = 不迁 · push_pool 会走 placeholder(跟修复前行为一致)。
+	marketPopper MarketStockPlaintextPopper
 	// now / newID 可注入，测试里用来控时钟和 id 生成
 	now   func() time.Time
 	newID func() string
@@ -64,6 +67,16 @@ type Orchestrator struct {
 // 实现方 *marketstock.Store · settle 里跟 credential_ledger.INSERT 同 tx 调。
 type MarketStockSeller interface {
 	SellTx(ctx context.Context, tx *sql.Tx, stockItemID, ledgerID string) error
+}
+
+// MarketStockPlaintextPopper · 手工池号 sold 时把明文从暂存表迁到 credential_plaintext。
+//
+// **为什么单独一个接口** · 避免 decider → credplain 硬依赖 · 装配层实现方是
+// *credplain.Store · settle 里跟 credential_ledger.INSERT 同 tx 调。
+// 找不到 stash(admin 老导入的号 · TTL 过期)返 ErrNotFound · settle 不 fatal ·
+// 号仍能卖 · 只是推池会走 placeholder(跟 I-01 修复前行为一致)。
+type MarketStockPlaintextPopper interface {
+	PopToCredplainTx(ctx context.Context, tx *sql.Tx, kiroRSCredentialID uint64, credentialID string) error
 }
 
 // PullSuccessNotifier · 拉号成功事件通知(避免 decider → webhookout 硬依赖)。
@@ -177,6 +190,9 @@ type Config struct {
 	// MarketStock · 我方第 7 家手工池 seller · nil = 未接入手工池
 	// 装配层传 *marketstock.Store（它满足 MarketStockSeller 接口）
 	MarketStock MarketStockSeller
+	// MarketPopper · 手工池号 sold 时 · 迁明文 stash → credential_plaintext(I-01)
+	// 装配层传 *credplain.Store（它满足 MarketStockPlaintextPopper 接口）· nil = 不迁
+	MarketPopper MarketStockPlaintextPopper
 }
 
 func New(cfg Config) *Orchestrator {
@@ -204,6 +220,7 @@ func New(cfg Config) *Orchestrator {
 		picker:         cfg.Picker,
 		balanceChecker: cfg.BalanceChecker,
 		marketStock:    cfg.MarketStock,
+		marketPopper:   cfg.MarketPopper,
 		now:            func() time.Time { return time.Now().UTC() },
 		newID:          uuid.NewString,
 	}

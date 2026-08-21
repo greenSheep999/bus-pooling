@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/bus-pooling/bus-pooling/internal/credplain"
 	"github.com/bus-pooling/bus-pooling/internal/housepool"
 	"github.com/bus-pooling/bus-pooling/internal/marketstock"
 	"github.com/bus-pooling/bus-pooling/internal/providers"
@@ -169,7 +170,13 @@ func (s *Server) handleAdminMarketImportStock(w http.ResponseWriter, r *http.Req
 	}
 
 	// 走跟 vendor 拉号**同一条** BatchImport · 号进 prebuy-pool group
+	//
+	// **plaintextInputs** · 收 admin 提交的明文 · BatchImport verified 后按 evt.Index
+	// 回读 · 落 market_stock_plaintext 暂存(issues-log I-01)。
+	// 明文只在这个 handler 生命周期里存在 · 塞完 stash + BatchImport 后立即丢弃 ·
+	// 后续 sold 时 decider/settle 从暂存 rekey 到 credential_plaintext。
 	creds := make([]housepool.ImportCredential, 0, len(req.Credentials))
+	plaintextInputs := make([]adminImportCred, 0, len(req.Credentials))
 	for _, c := range req.Credentials {
 		if c.KiroAPIKey == "" && c.RefreshToken == "" {
 			return ErrBadRequest("每把号 kiro_api_key 或 refresh_token 至少一个")
@@ -187,6 +194,7 @@ func (s *Server) handleAdminMarketImportStock(w http.ResponseWriter, r *http.Req
 			Groups:        []string{prebuyPoolGroup},
 			SourceChannel: "market_admin",
 		})
+		plaintextInputs = append(plaintextInputs, c)
 	}
 
 	// 先查 offer 拿到上架档位 · 后面校验号真实档跟它一致（告警不阻塞）
@@ -204,7 +212,9 @@ func (s *Server) handleAdminMarketImportStock(w http.ResponseWriter, r *http.Req
 	}
 
 	// 收 SSE 流 · verified/duplicate 落 market_stock_item · failed 计数报错 · 顺手做档位一致性告警
-	sum := collectImportEvents(r.Context(), s.marketStock, req.OfferID, req.ImportedBy, offer.Subscription, result)
+	// verified 时按 evt.Index 回读 plaintextInputs · 走 s.credplain.StashByKiroRS 落暂存(I-01)
+	sum := collectImportEvents(r.Context(), s.marketStock, s.credplain,
+		req.OfferID, req.ImportedBy, offer.Subscription, plaintextInputs, result)
 	// 排空 summary 让流关闭
 	for range result.Summary {
 	}
@@ -254,8 +264,10 @@ type subMismatchWarn struct {
 func collectImportEvents(
 	ctx context.Context,
 	store *marketstock.Store,
+	credplainStore *credplain.Store,
 	offerID, importedBy string,
 	offerPlan providers.SubscriptionPlan,
+	plaintextInputs []adminImportCred,
 	result *housepool.BatchImportResult,
 ) importSummary {
 	var sum importSummary
@@ -294,6 +306,30 @@ func collectImportEvents(
 					sum.Failed++
 				}
 				continue
+			}
+			// **I-01 修**：号池 verified/duplicate 后 · 按 evt.Index 回读本次 admin 提交的
+			// 明文 · 落 market_stock_plaintext 暂存表(kiro_rs_credential_id 主键)。sold 时
+			// decider/settle 从暂存 rekey 到 credential_plaintext(credential_id 主键)。
+			// credplain 未装配 or evt.Index 越界 · 跳过 stash · 号仍能卖 · 推池走 placeholder。
+			if credplainStore != nil && evt.Index != nil &&
+				*evt.Index >= 0 && *evt.Index < len(plaintextInputs) {
+				pt := plaintextInputs[*evt.Index]
+				method := credplain.AuthAPIKey
+				if pt.KiroAPIKey == "" && pt.RefreshToken != "" {
+					method = credplain.AuthRefreshToken
+				}
+				if err := credplainStore.StashByKiroRS(ctx, credplain.StashInput{
+					KiroRSCredentialID: uint64(*evt.CredentialID),
+					AuthMethod:         method,
+					RefreshToken:       pt.RefreshToken,
+					AccessToken:        pt.AccessToken,
+					KiroAPIKey:         pt.KiroAPIKey,
+					Email:              pt.Email,
+				}); err != nil {
+					// stash 失败不 fatal · 号已进池已挂 stock_item · 只是推池会走 placeholder
+					slogWarn("admin_market · stash 明文失败(号已入池 · push_pool 将走 placeholder)",
+						"cred_kirors", *evt.CredentialID, "err", err)
+				}
 			}
 			if evt.Status == housepool.ImportStatusDuplicate {
 				sum.Duplicate++

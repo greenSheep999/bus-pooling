@@ -382,6 +382,7 @@ func buildDecider(
 	cfg config.Config, sqldb *db.DB, reg *providers.Registry,
 	enqueuer decider.StockEnqueuer,
 	marketStockStore *marketstock.Store,
+	credplainStore *credplain.Store,
 ) (*decider.Orchestrator, housepool.HousePool, decider.Rates, error) {
 	live := !cfg.DryRun && os.Getenv("BP_ALLOW_LIVE_PULL") == "1"
 
@@ -551,6 +552,9 @@ func buildDecider(
 		// 我方第 7 家手工池 seller · settle 里跟 credential_ledger.INSERT 同 tx 卖号
 		// nil 允许（老装配 / 未接手工池）· 但号一旦是 market 来源就必须有
 		MarketStock: marketStockStore,
+		// I-01 · 手工池号 sold 时 · 迁明文 stash → credential_plaintext(同 tx)
+		// nil 允许(cipher 未配)· 号仍能卖 · push_pool 会走 placeholder
+		MarketPopper: credplainStore,
 	}), pubPool, rates, nil
 }
 
@@ -604,6 +608,14 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	marketStockStore := marketstock.NewStore(database.DB)
 	if err := vendorRegistry.Register(marketstock.NewVendor(marketStockStore), true); err != nil {
 		return fmt.Errorf("注册 Kiro Vendor Market: %w", err)
+	}
+
+	// credplain 提到这里(cipher 已在 562 行建)· 让 buildDecider / api.NewServer / pusher
+	// 三处装配都拿同一实例(避免多份 Store 走同一把 cipher 但语义分裂)
+	// nil 允许 · cipher 未配时(dev 环境无 BP_MASTER_KEY)手工池 stash 落不了 · push_pool 走 placeholder
+	var credplainStore *credplain.Store
+	if cipher != nil {
+		credplainStore = credplain.New(database.DB, cipher)
 	}
 	for _, e := range vendorRegistry.All() {
 		slog.Info("vendor 已注册", "vendor", e.VendorID, "enabled", e.Enabled)
@@ -673,7 +685,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		"kill_flag", killFlag.Path(),
 		"mode", modeMgr.Current().String())
 
-	orch, poolClient, rates, err := buildDecider(cfg, database, vendorRegistry, stockWatcher, marketStockStore)
+	orch, poolClient, rates, err := buildDecider(cfg, database, vendorRegistry, stockWatcher, marketStockStore, credplainStore)
 	if err != nil {
 		return err
 	}
@@ -939,12 +951,11 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		return fmt.Errorf("httpx(passengerpool): %w", err)
 	}
 	var pusher passengerpool.Pusher
-	if downstreamStore != nil && cipher != nil {
+	if downstreamStore != nil && credplainStore != nil {
 		// **P0-c 修(2026-08-16)**: credplain 表 · 拉号成功那一刻明文加密缓存 ·
 		// pusher 走这个查真明文 · 上游 housepool 后端 1.8.3 确认无 reveal 端点 ·
-		// 手动 seed 号走 seed-credplain CLI 塞明文 · 真拉号走 decider.settle 自动落。
+		// 手工池号 sold 时由 decider settle 从 stash 迁进来(I-01)· 老拉号靠 seed-credplain CLI。
 		// credplain Get 找不到 · pusher 走 placeholder 兜底(dev mock 环境)
-		credplainStore := credplain.New(database.DB, cipher)
 		pusher = passengerpool.NewPusher(passengerpool.PusherDeps{
 			Downstreams:    downstreamStore,
 			Plaintext:      credplain.NewLookup(credplainStore),
@@ -1025,6 +1036,9 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		// 需要 BP_ADMIN_KEY · 走跟 admin/data-health 同套鉴权
 		// **必须跟 buildDecider 用同一个 Store 实例** —— 手工池 Reserve/Sell 是同一状态机
 		MarketStock: marketStockStore,
+		// I-01 · admin_market POST /admin/market/stock 时 · 明文加密写 market_stock_plaintext
+		// 暂存表 · settle 时同 tx 迁到 credential_plaintext。跟 buildDecider / pusher 同实例
+		Credplain: credplainStore,
 	})
 	apiSrv.Routes(mux)
 
