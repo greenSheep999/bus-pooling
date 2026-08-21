@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/bus-pooling/bus-pooling/internal/delivery/passengerpool"
 	"github.com/bus-pooling/bus-pooling/internal/downstream"
 	"github.com/bus-pooling/bus-pooling/internal/httpx"
+	"github.com/bus-pooling/bus-pooling/internal/vendorview"
 	"github.com/bus-pooling/bus-pooling/internal/webhookout"
 )
 
@@ -149,29 +151,188 @@ func buildWebhookout(database *sql.DB, dstore *downstream.Store) *webhookout.Dis
 //
 // 拉号成功后主链走 · 装配层查是否多人车 · fanout 到 participants。
 // 目前先只通知发起人(1e-2 简化) · 阶段 3+ 补 fanout(需要读 pull_round.participants_split_json)。
+//
+// **I-02 · 进车后自动推下游**(2026-08-22):
+// 号进车 · 若乘客配了 downstream URL + token + push_on_pull=true(默认) ·
+// 异步 fire-and-forget 走 pusher.Push。三个场景全走这里:
+//   - 建车首次拉(handleCreateBus → decider.Pull)
+//   - 自动补车(deathwatch.RefillTick → decider.Pull)
+//   - 拼车拉号(handleBusPull → decider.Pull)
+// 推池失败落 push_error_code · 用户走 BusDetail 手动重推(§8.44)。
 type pullSuccessBridge struct {
-	disp   *webhookout.Dispatcher
-	db     *sql.DB
-	logger *slog.Logger
+	disp        *webhookout.Dispatcher
+	pusher      passengerpool.Pusher
+	downstreams *downstream.Store
+	vendorView  *vendorview.Service // I-13 · vendor label 走匿名映射 · 不透传真名
+	db          *sql.DB
+	logger      *slog.Logger
 }
 
 func (b *pullSuccessBridge) OnPullSucceeded(ctx context.Context,
 	passengerID, busID, vendorID, pullRoundID string,
 	credentialIDs []string, newKeys int,
 ) {
-	if b.disp == nil {
+	// vendor label · 走 vendorview 匿名(I-13 修 · 之前硬编 "provider" 是内部术语)·
+	// 拿不到 vendorView 就退回 vendorID 打码前 3 位 · 保证不出内部术语
+	vendorLabel := "vendor"
+	if b.vendorView != nil {
+		if l := b.vendorView.AnonLabelFor(vendorID); l != "" {
+			vendorLabel = l
+		}
+	}
+
+	// (a) 对外 webhook 通知 · nil 兼容(1a 装配路径)
+	if b.disp != nil {
+		b.disp.Dispatch(ctx, passengerID, webhookout.EventNewKeysAvailable,
+			webhookout.NewKeysAvailablePayload{
+				EnvelopeMeta:  buildBoardedEnv(b.disp, passengerID, webhookout.EventNewKeysAvailable),
+				BusID:         busID,
+				VendorLabel:   vendorLabel,
+				NewKeys:       newKeys,
+				PullRoundID:   pullRoundID,
+				CredentialIDs: credentialIDs,
+			})
+	}
+
+	// (b) I-02 · 进车 = 自动推下游 · 只对 into_bus 场景(busID 非空) ·
+	// 单独拉号(record 待派)不自动推 —— 用户会去 /extract 页选去向
+	if busID == "" || len(credentialIDs) == 0 {
 		return
 	}
-	// vendor label · 打码 · 阶段 1e-2 简化用固定 "provider"(未来接 vendorview.anon)
-	b.disp.Dispatch(ctx, passengerID, webhookout.EventNewKeysAvailable,
-		webhookout.NewKeysAvailablePayload{
-			EnvelopeMeta:  buildBoardedEnv(b.disp, passengerID, webhookout.EventNewKeysAvailable),
-			BusID:         busID,
-			VendorLabel:   "provider",
-			NewKeys:       newKeys,
-			PullRoundID:   pullRoundID,
-			CredentialIDs: credentialIDs,
+	if b.pusher == nil || b.downstreams == nil {
+		return // 装配未接下游 · 沉默(测试 / dev 环境)
+	}
+	// 查乘客 downstream 配置 · 无配 or push_on_pull=false → 跳过
+	cfg, err := b.downstreams.Get(ctx, passengerID)
+	if err != nil {
+		// 乘客没配 downstream · Get 返 err · 正常路径 · 不发警告
+		return
+	}
+	if !cfg.PushOnPull {
+		return // 用户显式关了(reasonable · 尊重设置)
+	}
+	// 异步推 · 别阻塞主链 · 单个号失败不回滚进车(号已在车里 · 推池独立生命周期)
+	go b.autoPush(passengerID, credentialIDs, vendorLabel)
+}
+
+// AutoPushOnAssign · api handleAssign into_bus 分支调 · 场景 3
+// 跟 OnPullSucceeded 里的 autoPush 走同一路径 · 抽公开方法让 api 层能直接注入 hook
+func (b *pullSuccessBridge) AutoPushOnAssign(ctx context.Context, passengerID string, credIDs []string) {
+	if b.pusher == nil || b.downstreams == nil || len(credIDs) == 0 {
+		return
+	}
+	cfg, err := b.downstreams.Get(ctx, passengerID)
+	if err != nil || !cfg.PushOnPull {
+		return
+	}
+	// vendor label 从第一号推断 · 派进车通常同 vendor(mixed 也接受 · label 只是展示)
+	vendorLabel := "vendor"
+	if b.vendorView != nil {
+		var vid string
+		if err := b.db.QueryRowContext(ctx,
+			`SELECT vendor_id FROM credential_ledger WHERE id = ?`, credIDs[0],
+		).Scan(&vid); err == nil {
+			if l := b.vendorView.AnonLabelFor(vid); l != "" {
+				vendorLabel = l
+			}
+		}
+	}
+	go b.autoPush(passengerID, credIDs, vendorLabel)
+}
+
+// autoPush · 后台 goroutine · 推池 + 落 push_error_code(失败时) · 让用户手动重推
+func (b *pullSuccessBridge) autoPush(passengerID string, credIDs []string, vendorLabel string) {
+	// 新 ctx · 主链 ctx 可能已随请求结束 cancel · 用 5min 独立 ctx
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// 查各号的 region · pusher 要
+	metas := make(map[string]struct{ region string }, len(credIDs))
+	for _, cid := range credIDs {
+		var region sql.NullString
+		if err := b.db.QueryRowContext(ctx,
+			`SELECT COALESCE(region, '') FROM credential_ledger WHERE id = ?`, cid,
+		).Scan(&region); err == nil {
+			metas[cid] = struct{ region string }{region.String}
+		}
+	}
+
+	creds := make([]passengerpool.PushCredential, 0, len(credIDs))
+	for _, cid := range credIDs {
+		creds = append(creds, passengerpool.PushCredential{
+			CredentialID: cid,
+			Region:       metas[cid].region,
+			VendorLabel:  vendorLabel,
 		})
+	}
+
+	result, err := b.pusher.Push(ctx, passengerID, creds)
+	if err != nil {
+		// 顶层错(拿明文失败 / 拉配置失败 / ErrNoTarget)· 全批标 push_error_code=stream_broken
+		b.logger.Warn("I-02 · auto push 顶层失败", "passenger", passengerID, "err", err)
+		for _, cid := range credIDs {
+			b.markPushError(ctx, cid, "stream_broken", "自动推池失败 · 稍后可手动重推")
+		}
+		return
+	}
+	// 成功号 · 标 pushed_to_passengerpool_at
+	ok := map[string]bool{}
+	for _, id := range result.Success {
+		ok[id] = true
+	}
+	for _, id := range result.Duplicate {
+		ok[id] = true // duplicate 视为成功
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, cid := range credIDs {
+		if ok[cid] {
+			if _, uerr := b.db.ExecContext(ctx, `
+				UPDATE credential_ledger
+				   SET pushed_to_passengerpool_at = ?,
+				       push_error_code = NULL, push_error_status = NULL,
+				       push_error_message = NULL, push_error_retriable = NULL,
+				       push_attempts = COALESCE(push_attempts, 0) + 1,
+				       push_last_attempt_at = ?
+				 WHERE id = ?`, now, now, cid); uerr != nil {
+				b.logger.Warn("I-02 · 落 pushed_at 失败", "cred", cid, "err", uerr)
+			}
+		}
+	}
+	// 失败号 · 落 push_error_* · 让用户去 BusDetail 手动重推
+	for _, f := range result.Failed {
+		msg := "对家未接受此号"
+		if f.Err != nil {
+			msg = f.Err.Message
+		}
+		code := "bad_request"
+		if f.Err != nil {
+			code = string(f.Err.Kind)
+		}
+		b.markPushError(ctx, f.CredentialID, code, msg)
+	}
+	b.logger.Info("I-02 · auto push 完成",
+		"passenger", passengerID,
+		"success", len(result.Success),
+		"duplicate", len(result.Duplicate),
+		"failed", len(result.Failed))
+}
+
+// markPushError · 落 credential_ledger.push_error_* 六字段(跟手动重推同一路径)
+func (b *pullSuccessBridge) markPushError(ctx context.Context, credID, code, msg string) {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	// truncate msg 200 字符 · 防 DoS
+	if len(msg) > 200 {
+		msg = msg[:200] + "..."
+	}
+	if _, err := b.db.ExecContext(ctx, `
+		UPDATE credential_ledger
+		   SET push_error_code = ?, push_error_status = NULL,
+		       push_error_message = ?, push_error_retriable = 1,
+		       push_attempts = COALESCE(push_attempts, 0) + 1,
+		       push_last_attempt_at = ?
+		 WHERE id = ?`, code, msg, now, credID); err != nil {
+		b.logger.Warn("I-02 · 落 push_error 失败", "cred", credID, "err", err)
+	}
 }
 
 // deathBridge · deathwatch.DeathNotifier 的实现。

@@ -723,6 +723,12 @@ func (s *Server) handleAssign(w http.ResponseWriter, r *http.Request) error {
 	if dest == "push_pool" && len(successIDs) > 0 && s.webhookOut != nil {
 		s.webhookOut.NotifyBoarded(r.Context(), p.ID, successIDs, "push_pool")
 	}
+	// I-02 · 提取 key 派进车场景 · 走 pullSuccessBridge 同一入口做自动推
+	// 用户手动 assign into_bus · 若配了 downstream + push_on_pull=true · 后台推池
+	// 场景 3 (拉号记录派进车) 走这条 · 场景 1&2 (decider.Pull) 走 OnPullSucceeded
+	if dest == "into_bus" && len(successIDs) > 0 && s.autoPushOnAssign != nil {
+		s.autoPushOnAssign(r.Context(), p.ID, successIDs)
+	}
 	return nil
 }
 

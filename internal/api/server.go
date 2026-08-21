@@ -96,6 +96,9 @@ type Server struct {
 	// credplain · 号明文加密缓存 · admin_market 塞号时走 StashByKiroRS 落暂存表 ·
 	// nil = 手工池 push_pool 只能推 placeholder(跟 I-01 修复前一致)
 	credplain *credplain.Store
+	// autoPushOnAssign · I-02 · 提取 key 派进车场景 · 装配层实现 · 后台推池
+	// nil = 不自动推(测试 / dev / 用户没配下游)· 用户仍可手动走 push_pool 分支
+	autoPushOnAssign func(ctx context.Context, passengerID string, credentialIDs []string)
 }
 
 // WebhookOutSender · webhookout.Dispatcher 的对外接口(避免 api → webhookout 硬依赖)。
@@ -158,6 +161,9 @@ type ServerDeps struct {
 	// Credplain · 明文加密缓存 · admin_market POST /admin/market/stock 时用它落暂存表 ·
 	// nil = 装配层没接入 · 手工池 push_pool 走 placeholder(issues-log I-01)
 	Credplain *credplain.Store
+	// AutoPushOnAssign · I-02 · 提取 key 派 into_bus 后自动推下游
+	// 装配层传 · 内部走 pullSuccessBridge.autoPush · nil = 不自动(测试)
+	AutoPushOnAssign func(ctx context.Context, passengerID string, credentialIDs []string)
 }
 
 func NewServer(d ServerDeps) *Server {
@@ -199,6 +205,7 @@ func NewServer(d ServerDeps) *Server {
 		coupons:             d.Coupons,
 		marketStock:         d.MarketStock,
 		credplain:           d.Credplain,
+		autoPushOnAssign:    d.AutoPushOnAssign,
 	}
 }
 

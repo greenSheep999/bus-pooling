@@ -982,11 +982,23 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	//
 	// **静默失败不阻塞主链** - Dispatch 是非阻塞入队 · 内部消费失败只 log · 不回滚主 tx。
 	webhookOutDisp := buildWebhookout(database.DB, downstreamStore)
+	// I-02 · bridge 建早 · 场景 1&2(decider.Pull) 挂 pullNotifier · 场景 3(assign into_bus)
+	// 由 api 层的 AutoPushOnAssign hook 调 bridge.AutoPushOnAssign
+	// pusher / downstreams nil 时静默跳过(测试 / dev 环境)
+	pullBridge := &pullSuccessBridge{
+		disp:        webhookOutDisp,
+		pusher:      pusher,
+		downstreams: downstreamStore,
+		vendorView:  vendorSvc,
+		db:          database.DB,
+		logger:      slog.Default(),
+	}
+
 	if webhookOutDisp != nil {
 		webhookOutDisp.Start(ctx)
 		defer webhookOutDisp.Stop(3 * time.Second)
 		// 桥接到 decider / deathwatch(handoff 桥在 handoff janitor 装配点)
-		orch.SetPullNotifier(&pullSuccessBridge{disp: webhookOutDisp, db: database.DB, logger: slog.Default()})
+		orch.SetPullNotifier(pullBridge)
 		if deathwatchWatcher != nil {
 			deathwatchWatcher.SetDeathNotifier(&deathBridge{disp: webhookOutDisp, db: database.DB, logger: slog.Default()})
 			deathwatchWatcher.SetRefundNotifier(&refundBridge{disp: webhookOutDisp, db: database.DB})
@@ -994,6 +1006,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		slog.Info("webhookout.Dispatcher 已装配 · retrier 已启动 · 3 触发源已桥")
 	} else {
 		slog.Warn("webhookout.Dispatcher 未装配 · handleTestWebhook 走 1a 兼容分支")
+		// I-02 · 即使 webhookout 未装配 · 只要 pusher + downstreams 就绪 · 自动推仍可跑
+		orch.SetPullNotifier(pullBridge)
 	}
 
 	apiSrv := api.NewServer(api.ServerDeps{
@@ -1039,6 +1053,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		// I-01 · admin_market POST /admin/market/stock 时 · 明文加密写 market_stock_plaintext
 		// 暂存表 · settle 时同 tx 迁到 credential_plaintext。跟 buildDecider / pusher 同实例
 		Credplain: credplainStore,
+		// I-02 · assign into_bus 场景 · handler 后台调 bridge 自动推
+		AutoPushOnAssign: pullBridge.AutoPushOnAssign,
 	})
 	apiSrv.Routes(mux)
 

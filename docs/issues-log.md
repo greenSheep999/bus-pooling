@@ -22,7 +22,8 @@
 | # | 状态 | 优先级 | 摘要 | 首发时间 |
 |---|---|---|---|---|
 | [I-01](#i-01) | ✅ verified | P0 | 手工池号 sold 后 credplain 没写 · 推池只能推 placeholder | 2026-08-17 |
-| [I-02](#i-02) | 🟡 open | P1 | 进车后自动推下游 · push_on_pull 字段留着但无消费路径 | 2026-08-15 |
+| [I-02](#i-02) | 🟢 fixed(unverified) | P1 | 进车后自动推下游 · push_on_pull 字段留着但无消费路径 | 2026-08-15 |
+| [I-13](#i-13) | ✅ verified | P2 | pullSuccessBridge VendorLabel 硬编 "provider" 泄漏内部术语 | 2026-08-22 |
 | [I-03](#i-03) | 🟡 open | P1 | kirodrop 新增 personal 号未接入（vendor.AccountKinds 未声明） | 2026-08-22 |
 | [I-04](#i-04) | 🟡 open | P1 | 5 家 vendor 都只声明 enterprise（只 kirooo 双档接完） | 2026-08-22 |
 | [I-05](#i-05) | 🟡 open | P1 | 主文档 3 份滞后 migration 040（15-scheduling / 06-db / 05-api） | 2026-08-15 |
@@ -79,26 +80,46 @@ CLI 手动补。
 
 ### I-02 · 进车后自动推下游 · push_on_pull 字段留着但无消费路径
 
-**状态**：🟡 `open` · 待用户拍板做不做
+**状态**：🟢 `fixed(unverified)` · 待用户端到端实测
 **发现**：2026-08-15（phase-1-acceptance §P0-4）
-**症状**：`passenger_downstream.push_on_pull` 布尔字段有默认 true · 但 delivery / pullrecord / decider / deathwatch 里**零消费**。用户勾了没反应。
+**修复**：2026-08-22
 
-**上下文**：P0-4 修的时候选的是 **B 方案（从 UI 撤 3 条 rules · 只留 bus_only）** —— 但字段还在 DB / API / TS 类型里。
+**症状**：`passenger_downstream.push_on_pull` 字段有默认 true · 但代码 0 处消费。
+用户勾了没反应。
 
-**产品意图冲突**：
-- `decisions §8.44` 提到"若 push_on_pull 自动推挂了..." → **暗示产品意图是"进车即自动推"**
-- 但 §12（建车首次拉）明说"号进车" · 没说自动推下游
+**用户澄清的三场景**：
+- 场景 1 · 建车首次拉 · 应该自动推
+- 场景 2 · 自动补车 · 开关控制
+- 场景 3 · 提取 key 派进车 · 开关控制
 
-**用户澄清的三场景**（2026-08-22）：
-- 场景 1 · 建车首次拉 · **应该**自动推（一次性建车动作 · 不该让人挨个再手推）
-- 场景 2 · 自动补车 · 开关控制（用户配置）
-- 场景 3 · 提取 key 派进车 · 开关控制（车级 or passenger 级）
+**方案**：`pullSuccessBridge` 兼干两件事 · webhook 通知 + 自动推池 · 共用同一
+hook 入口 · 装配层注入 pusher + downstreams + vendorView。
 
-**当前状态**：**三个场景都不自动推**。用户想要都能自动推 · 有对应开关。
+- 场景 1&2 · `decider.OnPullSucceeded` (settle tx 提交后) · 后台 goroutine 推池
+- 场景 3 · `api handleAssign into_bus` 分支返回前 · 调 `AutoPushOnAssign` hook
+- `push_on_pull=false` → 跳过 · 尊重用户设置
+- 无 downstream 配置(Get 返 err) → 跳过
+- 失败落 `credential_ledger.push_error_*` · 用户走 BusDetail "重推"按钮救(§8.44 已在)
 
-**下一步**：拍板做不做 · 做的话是**接活 push_on_pull** 还是**开新字段**。
+**改动**：
+- `cmd/bus-pooling/webhookout_bridge.go` · pullSuccessBridge 加 pusher/downstreams/
+  vendorView 依赖 · 加 `autoPush(passengerID, credIDs, vendorLabel)` +
+  公开 `AutoPushOnAssign(ctx, passengerID, credIDs)`
+- `internal/api/server.go` · Server 加 `autoPushOnAssign` hook 字段 + Deps
+- `internal/api/pullrecord.go` handleAssign · into_bus 尾部调 hook
+- `cmd/bus-pooling/main.go` · bridge 建早 · webhookout 未装配也接 pullNotifier ·
+  ServerDeps.AutoPushOnAssign 传 `pullBridge.AutoPushOnAssign`
 
-**关联**：I-01（如果推池链路修好了 · 这条才能验）
+**顺手修**（I-13 · 见下）：pullSuccessBridge VendorLabel 硬编 "provider" 泄漏内部术语。
+
+**待端到端验证**：
+1. 用户配 downstream(URL + token) · push_on_pull=true(默认)
+2. 建车 · 首次拉 1 号 → 后台应见 "I-02 · auto push 完成" log · k2a 收到号
+3. 派 key 进车(assign into_bus) → 同上
+4. 关 push_on_pull → 不推
+5. 无 downstream 配置 → 不推 · 不 warn
+
+**关联**：I-01（推池链路真明文的前置修复）· I-13（顺手 VendorLabel 泄漏）
 
 ---
 
@@ -222,6 +243,20 @@ CLI 手动补。
 - 详见 `docs/phase-1-acceptance.md §P2 Cleanup` 全表
 
 **影响**：不阻运行时 · 只误导下一个 agent 建代码时按老 schema 造字段。
+
+---
+
+### I-13 · pullSuccessBridge VendorLabel 硬编 "provider" 泄漏内部术语
+
+**状态**：✅ `verified` · 2026-08-22 修完（跟 I-02 一起）
+**症状**：`cmd/bus-pooling/webhookout_bridge.go` pullSuccessBridge.OnPullSucceeded
+里 `VendorLabel: "provider"` 硬编 —— 拉号后发对外 webhook 的载荷带 "provider"
+字面词，违反 CLAUDE §0.1 / §12.6 内部术语铁律。
+
+**修复**：走 `vendorView.AnonLabelFor(vendorID)` 拿匿名 label(AWS-Q Kiro Vendor NN)·
+vendorView 装配 nil 时退回 "vendor" 通用词。
+
+**跟同类修复对齐**：commit 6860b1c 修过 assignErrItem 同样的泄漏 · 这次一并清了。
 
 ---
 
