@@ -34,7 +34,7 @@
 | [I-09](#i-09) | 🟡 partial | P2 | housepool / vendoraccount / kiroappio / kiroceo 无单元测试 | 2026-08-15 |
 | [I-10](#i-10) | ✅ verified | P2 | migration 040 缺集成测试 | 2026-08-15 |
 | [I-11](#i-11) | 🟢 fixed(unverified) | P2 | 缺 stage-1..6 分级 smoke 脚本 | 2026-08-15 |
-| [I-12](#i-12) | 🟡 open | P3 | 主文档 P2 drift（26 条 · 06-db 漏收 9 张新表 / 依赖图漏连线 etc） | 2026-08-15 |
+| [I-12](#i-12) | 🟡 partial | P3 | 主文档 P2 drift（26 条 · 已修 CLAUDE §4.2 核心/支撑分类） | 2026-08-15 |
 
 ---
 
@@ -274,13 +274,24 @@ hook 入口 · 装配层注入 pusher + downstreams + vendorView。
 
 ### I-12 · 主文档 P2 drift（26 条）
 
-**状态**：🟡 `open`
+**状态**：🟡 `partial` · 已修最影响下一个 agent 判断的 1 条 · 其余 25 条留阶段 2 收尾批量处理
 **发现**：2026-08-15
+
 **摘要**：
 - `06-db-schema` 漏收 9 张 1b~1e 新表（stock_watcher / vendor_ledger 等）+ 若干字段
 - `03-modules` 依赖图漏 stockwatch / vendorbalance / pricing / xi8 / vendorview 连线
 - `01-architecture §5` 目录树缺 5 个已存在的业务包
 - 详见 `docs/phase-1-acceptance.md §P2 Cleanup` 全表
+
+**已修**(2026-08-22):
+- ✅ CLAUDE.md §4.1/4.2 · 分清"核心业务包 15" vs "支撑层"vs"基础设施"·
+  说明当前 34 包为什么不是"破 15 上限" · 撤"pricing 不许新加"（已存在）
+
+**留阶段 2**（25 条 · 全是文档 drift · 不影响运行时）：
+- 06-db-schema 补 9 张新表 CREATE + 若干字段
+- 03-modules 依赖图补 decider 支撑包群子图
+- 01-architecture §5 目录树补 5 个业务包
+- 其他见 phase-1-acceptance §P2 Cleanup
 
 **影响**：不阻运行时 · 只误导下一个 agent 建代码时按老 schema 造字段。
 

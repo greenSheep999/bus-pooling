@@ -224,31 +224,37 @@
 
 ## 4. 目录规范
 
-### 4.1 业务包上限：15 个
+### 4.1 业务包上限：15 个核心业务包
 
 **旧项目痛点**：`internal/` 长到 90+ 个包，任何业务概念都开新包。
 
 **本项目硬约束**：
 
-- `internal/` 顶层业务包**不超过 15 个**
-- **加新包必须写清"为什么不能放进已有包"**（在 `03-modules.md §5 目录规划` 里说明）
+- `internal/` 顶层**核心业务包**不超过 15 个（下面 §4.2 列出）
+- **加新核心业务包必须写清"为什么不能放进已有包"**（在 `03-modules.md §5 目录规划` 里说明）
 - **基础设施包**（`api / config / db / httpx / secrets / authpassenger / authadmin / web`）不算业务包
+- **decider 支撑包**（`pricing / stockwatch / vendorbalance / insight / vendorview / xi8 / marketstock / topupchannel / vendoraccount / paymentgw / credplain / downstream`）**跟核心业务包分开算** —— 它们是 decider / payment / 数据视图的支撑层
 - **调度收口不得新开顶层业务包**·系统主动拉号的决策入口(见 `docs/15-scheduling.md §5`)统一归入 `internal/decider/` —— 不要造 `internal/scheduling/` 之类新包
 
-### 4.2 当前 15 业务包（见 `03-modules.md`）
+### 4.2 当前 15 核心业务包（见 `03-modules.md`）
 
 ```
-providers · webhookin · passenger · wallet · redeem · payment ·
+providers · webhookin · passenger · wallet · redeem · topup ·
 strategy · coalescer · decider · deathwatch · webhookout ·
 pullrecord · bus · housepool · delivery
 ```
 
-**破 15 上限的诱惑**（旧项目栽在这里）：
+**当前 internal/ 目录 34 个包**（2026-08 实际）：
+- 15 核心业务（上面列表）
+- 8 基础设施：`api / config / db / httpx / secrets / xi8 / web`（加 `authpassenger/authadmin` 若未来拆）
+- 12 支撑层：`pricing / stockwatch / vendorbalance / insight / vendorview / xi8 / marketstock / topupchannel / vendoraccount / paymentgw / credplain / downstream`
+
+**破 15 上限的诱惑**（旧项目栽在这里 · 核心业务不许扩）：
 - ❌ 新加 `carpool_room`（用 `bus`）
 - ❌ 新加 `allocation`（不做混合上车，`pullrecord` 一并处理去向派发）
 - ❌ 新加 `matching`（撮合逻辑归 `coalescer/anon.go`）
 - ❌ 新加 `refund`（走 `wallet` + `deathwatch`）
-- ❌ 新加 `pricing`（走 `decider`）
+- ~~❌ 新加 `pricing`~~ · **已存在** · 归 decider 支撑包（`vendor_pricing` 表读写 · 换算规则）
 - ❌ 新加 `newapi` / `tokensheep` / `apilane` / `meter`（都不做，不是拼车产品线）
 
 ### 4.3 一份文档一件事
