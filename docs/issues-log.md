@@ -25,8 +25,8 @@
 | [I-02](#i-02) | 🟢 fixed(unverified) | P1 | 进车后自动推下游 · push_on_pull 字段留着但无消费路径 | 2026-08-15 |
 | [I-13](#i-13) | ✅ verified | P2 | pullSuccessBridge VendorLabel 硬编 "provider" 泄漏内部术语 | 2026-08-22 |
 | [I-14](#i-14) | ✅ verified | P2 | migration 046 down 后重 up 报 duplicate column · 破坏 down/up 幂等 | 2026-08-22 |
-| [I-03](#i-03) | 🟡 open | P1 | kirodrop 新增 personal 号未接入（vendor.AccountKinds 未声明） | 2026-08-22 |
-| [I-04](#i-04) | 🟡 open | P1 | 5 家 vendor 都只声明 enterprise（只 kirooo 双档接完） | 2026-08-22 |
+| [I-03](#i-03) | 🔴 blocked | P1 | kirodrop 新增 personal 号未接入 · 缺 vendor API 文档 | 2026-08-22 |
+| [I-04](#i-04) | 🔴 blocked | P1 | 5 家 vendor 都只声明 enterprise · 缺各家 personal API 文档 | 2026-08-22 |
 | [I-05](#i-05) | 🟢 fixed(unverified) | P1 | 主文档 3 份滞后 migration 040（15-scheduling / 06-db / 05-api / 03-modules） | 2026-08-15 |
 | [I-06](#i-06) | 🟢 fixed(unverified) | P2 | 建车 Advanced 仍含已废弃的 daily_round_limit / daily_spend_limit | 2026-08-15 |
 | [I-07](#i-07) | 🟢 fixed(unverified) | P2 | handoff init 幂等契约不一致（前端送 idempotency key · 后端忽略） | 2026-08-15 |
@@ -126,31 +126,46 @@ hook 入口 · 装配层注入 pusher + downstreams + vendorView。
 
 ### I-03 · kirodrop 新增 personal 号未接入
 
-**状态**：🟡 `open`
+**状态**：🔴 `blocked` · 缺 vendor API 文档 · 无法推进
 **发现**：2026-08-22（用户提及 · pro_max 5000 单位 134.98 CNY）
-**症状**：kirodrop vendor 上游新增了 personal 号池 · `internal/providers/kiro/vendors/kirodrop/adapter.go` 的 `Capability()` 未声明 `AccountKinds` → 默认只认 enterprise → **系统看不到 personal 号**。
 
-**修法**（照 kirooo 那套抄）：
+**症状**：kirodrop vendor 上游新增了 personal 号池 · adapter 未声明 AccountKinds ·
+系统看不到 personal 号。**手工池(kiro_market · vendor 07)有替代方案** — 用户
+可以走 admin_market 手工塞号（I-01 已修 credplain 链）· 不必等 kirodrop 直连。
+
+**推进路径**（3 选 1）：
+- **A · 补 kirodrop personal API 文档**（Playwright 探端点 or 从 vendor 拿）→ 照 kirooo 那套接
+- **B · 完全走手工池路线**（vendor 07 · KiroMarket）→ 不接直连 · 运营手工上架
+- **C · 等 vendor 官方开外部拉号协议**（sprint-1-final Stage 3 blocking · 全项目共通问题）
+
+**修法**（一旦有 API 文档 · 照 kirooo 抄）：
 1. `adapter.go · Capability()` 加 `AccountKinds: [enterprise, personal]`
-2. 建 `personal.go` · 存 personal 池的 stock / purchase 端点
-3. `Stock() / Purchase()` 判 `opts.Kind == Personal` → 转发 personal.go
+2. 建 `personal.go` · Stock / Purchase 独立端点
+3. Stock/Purchase 判 `opts.Kind == Personal` → 转发 personal.go
 4. `docs/vendors/drop-kiro-ss.md` §2.3b 补 personal 池文档
-5. `vendor_pricing` 表看是否要新 row（personal 单价独立）
-6. `personal_test.go`
+5. vendor_pricing 表补 personal row
+6. personal_test.go 三条:stock/purchase/webhook 归一化
 
-**前置**：需要 kirodrop personal 池的 API 端点契约（Playwright 探或从 vendor 拿文档）· 现有 vendor 档案里 0 处提 personal。
+**当前建议**：走 **B**（手工池）· 上游协议 blocking 时的正确替代路径。
 
 ---
 
 ### I-04 · 5 家 vendor 只声明 enterprise · 只 kirooo 双档接完
 
-**状态**：🟡 `open`
+**状态**：🔴 `blocked` · 缺各家 personal API 文档 · 无法批量推进
 **发现**：2026-08-22
-**症状**：现在 6 家 vendor 里 **只有 kirooo** 走完双档接入。**91kiro / kiroceo / kiroappio / kiroappcc / kirodrop** 都还只有 enterprise。
 
-**影响**：如果上游那 5 家其中任何一家开了 personal 号池 · 我方系统都看不到 · 需要按 I-03 每家单独接。
+**症状**：现在 6 家 vendor 里 **只有 kirooo** 走完双档接入。**91kiro / kiroceo /
+kiroappio / kiroappcc / kirodrop** 都还只有 enterprise。
 
-**修法**：每家 vendor 单独接（不是共通改造 · vendor API 各家不同）· 见 I-03 步骤。
+**影响**：如果上游任何一家开了 personal 号池 · 我方系统都看不到。
+
+**推进路径**：跟 I-03 同 · **手工池是 blocking 时的替代路径**。真要接直连
+每家 vendor 单独探端点 + 抄 kirooo 骨架(不是共通改造)。
+
+**跟 sprint-1-final Stage 3 的关系**：Stage 3 blocking 说的是**外部拉号协议**
+(vendor 侧还没开)· 覆盖 vendor 直连所有场景 · 不只 personal。所以 I-03/I-04
+本质是同一个上游 blocking 的子问题。
 
 ---
 
