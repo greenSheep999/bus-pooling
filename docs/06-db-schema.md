@@ -270,14 +270,15 @@ CREATE TABLE bus (
   created_at             TEXT NOT NULL,
   dissolved_at           TEXT,
 
-  -- 补车策略（每车一策略 · decisions §8.6 · 三字段 nullable 表继承 · `docs/15-scheduling.md §4.3.2b` 方案 A）
-  auto_refill_enabled    INTEGER,                          -- 0/1 · NULL = 跟随全局默认；非 NULL(含 0) = 覆盖本车 · 见 §4.3.2b 迁移保行为
-  refill_watermark       INTEGER,                          -- 水位线：活号低于这个数才考虑自动补 · NULL = 跟随全局；非 NULL = 覆盖本车 · 见 §4.3.2b
-  refill_min_count       INTEGER,                          -- 本轮最少拉几个 · NULL 三态见 §4.3.2c(方案 A：全局 fallback 优先 · 若全局也 NULL 走 watermark-alive gap) · 非 NULL = 覆盖本车
-  per_round_count        INTEGER,                          -- 每轮拉几号
-  max_unit_price         INTEGER,                          -- microunit · 单号最高价
-  daily_round_limit      INTEGER,                          -- DEPRECATED 车级不生效；当前只读 passenger_strategy_default
-  daily_spend_limit      INTEGER,                          -- DEPRECATED 车级不生效；当前只读 passenger_strategy_default
+  -- 补车策略(每车一策略 · decisions §8.6 · migration 040 后 · 见 15-scheduling.md §4.3.2)
+  -- auto_refill_* 三字段 **纯车级 NOT NULL DEFAULT 0** · 无"跟随全局"语义
+  auto_refill_enabled    INTEGER NOT NULL DEFAULT 0,       -- 0/1 · 建车时抄 default_auto_refill_enabled seed · 之后独立
+  refill_watermark       INTEGER NOT NULL DEFAULT 0,       -- 水位线 · 活号低于才补 · 同 seed
+  refill_min_count       INTEGER,                           -- nullable · nil = 按 (watermark - alive) gap 补 · 建车抄 default_refill_min_count seed
+  per_round_count        INTEGER,                           -- 每轮拉几号 · nullable · NULL = 跟随全局(其他覆盖字段仍走继承)
+  max_unit_price         INTEGER,                           -- microunit · 单号最高价
+  daily_round_limit      INTEGER,                           -- DEPRECATED 车级不生效 · 当前只读 passenger_strategy_default
+  daily_spend_limit      INTEGER,                           -- DEPRECATED 同上
   preferred_vendor       TEXT,                              -- NULL = 有效成本比价自动选
 
   -- 1c-1 · 匿名撮合（migration 011）
@@ -642,31 +643,36 @@ CREATE TABLE passenger_strategy_default (
   max_unit_price           INTEGER,                      -- microunit · 单价超这个数就不拉 · NULL = 不限
   daily_round_limit        INTEGER,                      -- 全局 · 跨所有 bus 累加 · NULL = 不限
   daily_spend_limit        INTEGER,                      -- microunit · 全局 · NULL = 不限
-  -- ↓ 建新车时的默认值（改它不影响已有的车）
+  -- ↓ 建新车时的默认值 + 覆盖字段运行时 fallback（per_round_count/preferred_vendor/zone）
   per_round_count          INTEGER,
   preferred_vendor         TEXT,                         -- NULL = 让系统比价
   default_zone             TEXT NOT NULL DEFAULT 'auto', -- us | eu | auto
-  -- ↓ 补车策略全局默认（1f-B · `docs/15-scheduling.md §4.3.2b` 方案 A · 车级三字段 NULL 时的 fallback + 新车 seed）
-  default_auto_refill_enabled INTEGER NOT NULL DEFAULT 0, -- 0/1 · 车级 auto_refill_enabled IS NULL 时用这个
-  default_refill_watermark    INTEGER NOT NULL DEFAULT 0, -- 车级 refill_watermark IS NULL 时用这个
-  default_refill_min_count    INTEGER,                    -- NULL = 让系统按 watermark-alive gap 算；车级 refill_min_count IS NULL 时先查这个再降级
+  -- ↓ 补车策略新车 seed（migration 040 · 只做建车预填 · **不做运行时 fallback**）
+  default_auto_refill_enabled INTEGER NOT NULL DEFAULT 0, -- 建车时抄到 bus.auto_refill_enabled
+  default_refill_watermark    INTEGER NOT NULL DEFAULT 0, -- 建车时抄到 bus.refill_watermark
+  default_refill_min_count    INTEGER,                    -- 建车时抄到 bus.refill_min_count · NULL = 建车不 seed
+  -- ↓ 跨车调度护栏（migration 040 · 只对自动补车链路生效 · 手动拉号不受此约束）
+  auto_refill_daily_budget       INTEGER,                 -- microunit · 所有 auto 车每日合计预算 · NULL = 不限
+  auto_refill_min_wallet_reserve INTEGER,                 -- microunit · 钱包低于此值 auto 车暂停 · NULL = 不限
+  auto_refill_vendor_allowlist   TEXT,                    -- JSON 数组 · 允许的 vendor id · NULL = 不限
   updated_at               TEXT NOT NULL,
   FOREIGN KEY (passenger_id) REFERENCES passenger(id)
 );
 ```
 
-**三类字段语义不同，别混**（§8.27 + 1f-B `docs/15-scheduling.md §4.3.2b`）：
+**四类字段语义不同，别混**（§8.27 + migration 040 · `docs/15-scheduling.md §4.3.2`）：
 
 | 字段 | 性质 | 行为 |
 |---|---|---|
-| `max_unit_price` / `daily_round_limit` / `daily_spend_limit` | **硬上限** | 每次拉号 / 提取前校验，超了拒绝。跟车级同名字段取**更严**的（AND） |
-| `per_round_count` / `preferred_vendor` / `default_zone` | **新车默认值** | 只在建车时填初值，改它不动已有的车 |
-| `default_auto_refill_enabled` / `default_refill_watermark` / `default_refill_min_count` | **运行时 fallback + 新车 seed** | 车级 `bus.auto_refill_enabled / refill_watermark / refill_min_count` **IS NULL** 时运行时读这份；用户改这里会**同步影响所有"跟随全局"的车**（覆盖本车字段不受影响） |
+| `max_unit_price` / `daily_round_limit` / `daily_spend_limit` | **硬上限** | 每次拉号 / 提取前校验 · 超了拒绝。跟车级同名字段取**更严**的（AND） |
+| `per_round_count` / `preferred_vendor` / `default_zone` | **新车默认值 + 运行时 fallback**（其他覆盖字段） | 建车填初值 · 车级 NULL 时运行时读它 |
+| `default_auto_refill_enabled` / `default_refill_watermark` / `default_refill_min_count` | **只做新车 seed** | 建车时抄到 bus 表 · **不做运行时 fallback** · 改这里不影响老车 |
+| `auto_refill_daily_budget` / `auto_refill_min_wallet_reserve` / `auto_refill_vendor_allowlist` | **跨车调度护栏** | 只对自动补车(refill/scheduler/webhook 三桥) enforce · 手动拉号不受此约束 |
 
 - **提取 key（record group）只受全局限额管** —— 车级限额管不到 record group
-- `max_unit_price` **手动拉号也拦**：提取确认窗超限时禁用确认按钮（判优惠码折后价）· 不给"就这次放行"的口子
-- 1b 就要**真的生效**（拉号 / 提取前校验），不是存着等 1d
-- 三个 `default_*` 补车字段的继承语义 + 迁移保行为见 `docs/15-scheduling.md §4.3.2b`（方案 A · nullable 表继承）·「只有 UI 显式改为"跟随全局"后 · 老车行为才随全局变化」是硬约束
+- `max_unit_price` **手动拉号也拦**：提取确认窗超限时禁用确认按钮（判优惠码折后价）
+- 1b 起就**真的生效**（拉号 / 提取前校验）
+- **migration 040 撤回镜像**：车级 auto_refill_* 不再随全局 default_* 变化 · 见 `decisions.md §13.5`
 
 ## 17. Vendor 账户凭证（我方在 vendor 那的账号）· `vendor_account`
 

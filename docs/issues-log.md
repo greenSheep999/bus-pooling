@@ -26,7 +26,7 @@
 | [I-13](#i-13) | ✅ verified | P2 | pullSuccessBridge VendorLabel 硬编 "provider" 泄漏内部术语 | 2026-08-22 |
 | [I-03](#i-03) | 🟡 open | P1 | kirodrop 新增 personal 号未接入（vendor.AccountKinds 未声明） | 2026-08-22 |
 | [I-04](#i-04) | 🟡 open | P1 | 5 家 vendor 都只声明 enterprise（只 kirooo 双档接完） | 2026-08-22 |
-| [I-05](#i-05) | 🟡 open | P1 | 主文档 3 份滞后 migration 040（15-scheduling / 06-db / 05-api） | 2026-08-15 |
+| [I-05](#i-05) | 🟢 fixed(unverified) | P1 | 主文档 3 份滞后 migration 040（15-scheduling / 06-db / 05-api / 03-modules） | 2026-08-15 |
 | [I-06](#i-06) | 🟡 open | P2 | 建车 Advanced 仍含已废弃的 daily_round_limit / daily_spend_limit | 2026-08-15 |
 | [I-07](#i-07) | 🟡 open | P2 | handoff init 幂等契约不一致（前端送 idempotency key · 后端忽略） | 2026-08-15 |
 | [I-08](#i-08) | 🟡 open | P2 | 05-api-contract 列了未实现端点（/me/buses/{id}/stats 等 3 个） | 2026-08-15 |
@@ -155,13 +155,24 @@ hook 入口 · 装配层注入 pusher + downstreams + vendorView。
 
 ### I-05 · 主文档 3 份滞后 migration 040
 
-**状态**：🟡 `open`
+**状态**：🟢 `fixed(unverified)` · 2026-08-22
 **发现**：2026-08-15
-**症状**：`docs/15-scheduling.md §4.3.2/§4.3.2b/§4.3.2c` 整节仍描述已撤的 nullable 继承（方案 A）· `docs/06-db-schema.md §8 bus 表 + §16 passenger_strategy_default` 描述与实际 schema 相反 · `docs/05-api-contract.md §7` auto_refill 三字段 null 语义已作废。
 
-**影响**：下一个 agent 按老 nullable 语义写代码会造错。**不影响运行时** · 但会耗未来时间。
+**症状**：15-scheduling / 06-db / 05-api / 03-modules 四份文档描述已撤的 nullable
+继承语义。下一个 agent 按老口径写代码会造错。
 
-**修法**：三份文档重写对齐 migration 040 后的现实（车级 NOT NULL · 全局 default_* 只做建车 seed · 无运行时 fallback）+ 补 3 个新护栏字段的引入原因。
+**修法**：四份文档核心节重写对齐 migration 040 现实。
+
+- `docs/15-scheduling.md §4.3.2` 车级字段两状态语义（auto_refill_* 纯车级 vs 其他覆盖字段）· §4.3.2 表格改按字段类分行 · §4.3.5.3 TS 契约撤 auto_refill_* nullable · §4.3.5.5 落地状态改 migration 040 后的现实
+- `docs/06-db-schema.md §8 bus 表` auto_refill_enabled/refill_watermark 改 `NOT NULL DEFAULT 0` · §16 passenger_strategy_default 加 3 个跨车调度护栏字段 + 语义表从三类改四类
+- `docs/05-api-contract.md §7` GET /me/strategy 响应加三护栏字段 · PUT /buses/{id}/strategy 撤 auto_refill_* null 三态说明 · 改成"必须非 null"
+- `docs/03-modules.md §strategy` 依赖描述按字段类分行
+
+**未改的历史残留引用**（`§4.3.2b` / `1f-B` 提法散在 §4.3.5.5 等段）· 保留作历史记录·
+新加的 §4.3.2 override 已明确 · 有明确"作废" 标记 · 不误导。
+
+**下一步**：用户按新契约走一次 PUT /buses/{id}/strategy 验证 · 尤其 auto_refill_*
+传 null 应 400。
 
 ---
 
