@@ -24,6 +24,7 @@
 | [I-01](#i-01) | ✅ verified | P0 | 手工池号 sold 后 credplain 没写 · 推池只能推 placeholder | 2026-08-17 |
 | [I-02](#i-02) | 🟢 fixed(unverified) | P1 | 进车后自动推下游 · push_on_pull 字段留着但无消费路径 | 2026-08-15 |
 | [I-13](#i-13) | ✅ verified | P2 | pullSuccessBridge VendorLabel 硬编 "provider" 泄漏内部术语 | 2026-08-22 |
+| [I-14](#i-14) | 🟡 open | P2 | migration 046 down 后重 up 报 duplicate column · 破坏 down/up 幂等 | 2026-08-22 |
 | [I-03](#i-03) | 🟡 open | P1 | kirodrop 新增 personal 号未接入（vendor.AccountKinds 未声明） | 2026-08-22 |
 | [I-04](#i-04) | 🟡 open | P1 | 5 家 vendor 都只声明 enterprise（只 kirooo 双档接完） | 2026-08-22 |
 | [I-05](#i-05) | 🟢 fixed(unverified) | P1 | 主文档 3 份滞后 migration 040（15-scheduling / 06-db / 05-api / 03-modules） | 2026-08-15 |
@@ -31,7 +32,7 @@
 | [I-07](#i-07) | 🟢 fixed(unverified) | P2 | handoff init 幂等契约不一致（前端送 idempotency key · 后端忽略） | 2026-08-15 |
 | [I-08](#i-08) | ✅ verified | P2 | 05-api-contract 列了未实现端点（/me/buses/{id}/stats 等 3 个） | 2026-08-15 |
 | [I-09](#i-09) | 🟡 open | P2 | housepool / vendoraccount / kiroappio / kiroceo 无单元测试 | 2026-08-15 |
-| [I-10](#i-10) | 🟡 open | P2 | migration 040 缺集成测试 | 2026-08-15 |
+| [I-10](#i-10) | ✅ verified | P2 | migration 040 缺集成测试 | 2026-08-15 |
 | [I-11](#i-11) | 🟡 open | P2 | 缺 stage-1..6 分级 smoke 脚本 | 2026-08-15 |
 | [I-12](#i-12) | 🟡 open | P3 | 主文档 P2 drift（26 条 · 06-db 漏收 9 张新表 / 依赖图漏连线 etc） | 2026-08-15 |
 
@@ -225,11 +226,20 @@ hook 入口 · 装配层注入 pusher + downstreams + vendorView。
 
 ### I-10 · migration 040 缺集成测试
 
-**状态**：🟡 `open`
+**状态**：✅ `verified` · 2026-08-22
 **发现**：2026-08-15
-**症状**：migration 039 有 `TestMigration039_PreservesBusAutoRefillValues` · migration 040 无对应测试。
 
-**修法**：新建 `internal/db/migrations_040_test.go` · 复用 039 骨架 · 验"从 nullable 撤回 NOT NULL 时车级值不丢"。
+**症状**：migration 039 有集成测试 · 040 无。
+
+**修法**：新建 `internal/db/migrations_040_test.go` · 3 个测试:
+1. `TestMigration040_BusColumnsAreNotNull` · schema 层验 `auto_refill_enabled` /
+   `refill_watermark` 是 NOT NULL DEFAULT 0
+2. `TestMigration040_BusNotNullBlocksNullInsert` · 运行时验 NULL 插入被拒 · 显式 0/5 过
+3. `TestMigration040_AddsCrossFleetGuardrails` · 三跨车调度护栏字段可读写
+
+**避开的坑**(I-14 · 顺手记):原计划走 039 up → 塞 nullable 数据 → up 040 验迁移 ·
+但 migration 046 down 有 bug(重 up 报 duplicate column)· 改用"只测最终 schema"方案 ·
+不 down 触发 046 的坑。
 
 ---
 
@@ -254,6 +264,24 @@ hook 入口 · 装配层注入 pusher + downstreams + vendorView。
 - 详见 `docs/phase-1-acceptance.md §P2 Cleanup` 全表
 
 **影响**：不阻运行时 · 只误导下一个 agent 建代码时按老 schema 造字段。
+
+---
+
+### I-14 · migration 046 down 后重 up 报 duplicate column
+
+**状态**：🟡 `open`
+**发现**：2026-08-22 · I-10 集成测试期间
+
+**症状**：migration 046(account_kind_subscription)的 down 未干净删列 · 重新 up 时
+`duplicate column name: account_kind`。破坏 down/up 幂等。
+
+**影响**：不影响单向 up 生产 · 但**测试隔离** / **回滚重演** 场景踩坑。
+我的 I-10 集成测试原本想 up → down 到 39 塞 nullable 数据 → up 040 验迁移 ·
+被这个 bug 挡住 · 改成"只测最终 schema"绕过。
+
+**修法**：把 046 down 段的 DROP COLUMN 补全 · 或走"新表 + 复制"式回退。
+
+**关联**：I-10(集成测试选了绕道方案) · migration 044/045 消失(跳号) 有可能相关。
 
 ---
 
