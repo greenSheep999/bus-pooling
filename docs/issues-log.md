@@ -33,7 +33,7 @@
 | [I-08](#i-08) | ✅ verified | P2 | 05-api-contract 列了未实现端点（/me/buses/{id}/stats 等 3 个） | 2026-08-15 |
 | [I-09](#i-09) | 🟡 open | P2 | housepool / vendoraccount / kiroappio / kiroceo 无单元测试 | 2026-08-15 |
 | [I-10](#i-10) | ✅ verified | P2 | migration 040 缺集成测试 | 2026-08-15 |
-| [I-11](#i-11) | 🟡 open | P2 | 缺 stage-1..6 分级 smoke 脚本 | 2026-08-15 |
+| [I-11](#i-11) | 🟢 fixed(unverified) | P2 | 缺 stage-1..6 分级 smoke 脚本 | 2026-08-15 |
 | [I-12](#i-12) | 🟡 open | P3 | 主文档 P2 drift（26 条 · 06-db 漏收 9 张新表 / 依赖图漏连线 etc） | 2026-08-15 |
 
 ---
@@ -245,11 +245,17 @@ hook 入口 · 装配层注入 pusher + downstreams + vendorView。
 
 ### I-11 · 缺 stage-1..6 分级 smoke 脚本
 
-**状态**：🟡 `open`
+**状态**：🟢 `fixed(unverified)` · 2026-08-22 骨架完成 · 细节等 Stage 3 blocking 解除
 **发现**：2026-08-15
-**症状**：只有 `smoke-1f.sh` 一份 · 每档切换后靠人肉验。
 
-**修法**：派生 `scripts/smoke-stage1-payment.sh` / `smoke-stage2-housepool.sh` / `smoke-stage3-vendor.sh` 三份。
+**症状**：只有 `smoke-1f.sh` 一份综合脚本 · 每档切换后靠人肉验。
+
+**修法**：`scripts/smoke-stage{1,2,3}-*.sh` 三份骨架建好 · 内含 Stage 覆盖说明 + TODO
+标记。**内容留 TODO** —— 因为 Stage 3+ 上游 vendor 还 blocking (sprint-1-final 记)·
+现在写完整流程也没法验 · 收官上线时才补细节。
+
+**目前用**:综合 `smoke-1f.sh` 继续跑 · Stage 分级脚本作**目录索引** · 让后续 agent
+知道哪个 stage 该走哪份。
 
 ---
 
