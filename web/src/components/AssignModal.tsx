@@ -180,7 +180,13 @@ export function AssignModal({
       // 部分成功(assigned>0 · 部分 errors) · 也保弹窗显 · 但成功那部分 UI 已刷
       if (result.errors && result.errors.length > 0) {
         setAssignErrors(result.errors);
-        notify.warn({ title: t("common:toast.assign_partial") });
+        // 明说"成功 X · 失败 Y" · 别只说"部分没派出去"（用户看不清楚哪半在哪半）
+        notify.warn({
+          title: t("common:toast.assign_partial_v2", {
+            ok: result.assigned,
+            fail: result.errors.length,
+          }),
+        });
         return;
       }
       notify.ok({

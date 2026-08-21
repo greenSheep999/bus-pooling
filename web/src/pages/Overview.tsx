@@ -1,9 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   Activity as ActivityIcon, Check, ChevronDown, KeyRound, Send,
   TrendingDown, Users, Wallet,
 } from "lucide-react";
+import { notifLink } from "@/lib/notif-link";
 import {
   useActivities, useMe, useOverview, useTrend, useVendorOffers, useVendorStats,
 } from "@/api/hooks";
@@ -220,6 +222,7 @@ function ActivityFeed({
   loading?: boolean;
 }) {
   const { t } = useTranslation("overview");
+  const nav = useNavigate();
   const [shown, setShown] = useState(ACT_STEP);
   const visible = items.slice(0, shown);
   const remain = Math.max(0, items.length - shown);
@@ -244,9 +247,17 @@ function ActivityFeed({
           <div className="overflow-x-auto">
             <div className="min-w-[640px]">
               <BareList>
-                {visible.map((a) => (
-                  <ActivityRow key={a.id} a={a} />
-                ))}
+                {visible.map((a) => {
+                  // notifLink · 跟铃铛/通知页同一套跳转约定 · 后端权威 + 前端 kind 兜底
+                  const to = notifLink(a);
+                  return (
+                    <ActivityRow
+                      key={a.id}
+                      a={a}
+                      onClick={to ? () => nav(to) : undefined}
+                    />
+                  );
+                })}
               </BareList>
             </div>
           </div>

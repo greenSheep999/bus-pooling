@@ -77,11 +77,14 @@ func (s *Store) Activities(
 			return nil, 0, err
 		}
 		amt := amount
+		walletLink := "/wallet"
 		a := Activity{
 			ID: "l_" + id, CreatedAt: createdAt, Summary: memo,
 			Amount: &amt,
 			// 入账来源（通道商充值 / 兑换码）· 前端 chip 用它区分入账类目
 			TargetKind: "topup_source",
+			// 充值 / 兑换 / 质保退款 → 钱包页看流水
+			Link: &walletLink,
 		}
 		switch reason {
 		case "recharge":
@@ -143,18 +146,27 @@ func (s *Store) Activities(
 			} else {
 				a.Target = busID.String
 			}
+			// 进车 → 车详情
+			link := "/buses/" + busID.String
+			a.Link = &link
 		} else {
 			// **Target 留空** —— 固定去向的文案由前端按 target_kind 出（i18n）·
 			// 后端塞中文会让英文用户看到中文（§0.1:对外文案不许后端硬编码语言）
 			a.TargetKind = "pending"
+			// 号在提取页待派 → 提取页
+			link := "/extract"
+			a.Link = &link
 		}
 		all = append(all, a)
 	}
 	rows.Close()
 
 	// 3) 号失效事件
+	//
+	// owner_bus_id 决定跳转 —— 挂车里的号死了 → 跳车详情（车主要看剩几个活的）·
+	// 挂待派池的号死了 → 跳提取页（用户在待派池看到"废号"）
 	rows, err = s.db.QueryContext(ctx, `
-		SELECT cl.id, cl.vendor_id, cl.pulled_at, cl.dead_at
+		SELECT cl.id, cl.vendor_id, cl.pulled_at, cl.dead_at, COALESCE(cl.owner_bus_id, '')
 		  FROM credential_ledger cl
 		 WHERE `+ownedCredentialWhere+`
 		   AND cl.status = 'dead' AND cl.dead_at IS NOT NULL
@@ -164,8 +176,8 @@ func (s *Store) Activities(
 		return nil, 0, fmt.Errorf("insight: 活动流 credential: %w", err)
 	}
 	for rows.Next() {
-		var id, vendorID, pulledAt, deadAt string
-		if err := rows.Scan(&id, &vendorID, &pulledAt, &deadAt); err != nil {
+		var id, vendorID, pulledAt, deadAt, ownerBusID string
+		if err := rows.Scan(&id, &vendorID, &pulledAt, &deadAt, &ownerBusID); err != nil {
 			rows.Close()
 			return nil, 0, err
 		}
@@ -181,6 +193,13 @@ func (s *Store) Activities(
 			// Summary 不填 —— 前端按 kind=dead 组句(masked/vendor 是数据 · "失效"是文案)
 			CreatedAt:  deadAt,
 		}
+		var link string
+		if ownerBusID != "" {
+			link = "/buses/" + ownerBusID
+		} else {
+			link = "/extract"
+		}
+		a.Link = &link
 		all = append(all, a)
 	}
 	rows.Close()
@@ -231,10 +250,18 @@ func (s *Store) Activities(
 			// Summary 只当前端兜底（前端优先按 kind + source/target 自己组句）·
 			// 车名是数据不是文案 · 可以出
 			a.Summary = fmt.Sprintf("%s → %s", vendorID.String, a.Target)
+			// 进车 → 车详情
+			if busID.String != "" {
+				link := "/buses/" + busID.String
+				a.Link = &link
+			}
 		case "to-passengerpool":
 			a.Kind = ActivityPush
 			// **Target 留空** · "我的号池"这种固定文案交前端 i18n（别后端硬编码中文）
 			a.TargetKind = "push_pool"
+			// 推池 → 号池配置页（用户去检查/配下游 URL）
+			link := "/settings/downstream"
+			a.Link = &link
 		}
 		all = append(all, a)
 	}
@@ -263,6 +290,7 @@ func (s *Store) Activities(
 		var credIDs []string
 		_ = json.Unmarshal([]byte(credIDsJSON), &credIDs)
 		count := len(credIDs)
+		handoffLink := "/extract"
 		a := Activity{
 			ID:         "h_" + id,
 			Kind: ActivityHandoff,
@@ -270,6 +298,8 @@ func (s *Store) Activities(
 			TargetKind: "handoff",
 			Count:      count,
 			CreatedAt:  createdAt,
+			// 拿走 = 号从待派池离开 · 历史落在提取页
+			Link: &handoffLink,
 		}
 		all = append(all, a)
 	}
@@ -298,6 +328,7 @@ func (s *Store) Activities(
 		if assignedCreds[id] {
 			continue // 段 4 已记过这次推池
 		}
+		pushLink := "/settings/downstream"
 		a := Activity{
 			ID:         "p_" + id,
 			Kind:       ActivityPush,
@@ -305,6 +336,7 @@ func (s *Store) Activities(
 			TargetKind: "push_pool",
 			Count:      1,
 			CreatedAt:  pushedAt,
+			Link:       &pushLink,
 		}
 		all = append(all, a)
 	}

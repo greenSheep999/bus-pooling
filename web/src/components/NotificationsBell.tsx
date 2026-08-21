@@ -6,6 +6,7 @@ import {
 import { useActivities, useMe, useWallet } from "@/api/hooks";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn, fmtCredits, fmtRelative, MICRO } from "@/lib/utils";
+import { notifLink } from "@/lib/notif-link";
 import { useTranslation } from "react-i18next";
 import type { Activity, ActivityKind } from "@/types";
 
@@ -218,11 +219,13 @@ export function NotificationsBell() {
                   </span>
                 </>
               );
+              // notifLink · 后端 link 优先 · 前端按 kind 兜底（refill 等后端未填的类别也能点）
+              const to = notifLink(a);
               const cls = "flex items-start gap-2.5 px-3 py-3 transition-colors hover:bg-bg-elevated";
               return (
                 <li key={a.id} className="border-b border-hairline last:border-b-0">
-                  {a.link ? (
-                    <Link to={a.link} onClick={() => setOpen(false)} className={cls}>
+                  {to ? (
+                    <Link to={to} onClick={() => setOpen(false)} className={cls}>
                       {inner}
                     </Link>
                   ) : (
@@ -236,7 +239,7 @@ export function NotificationsBell() {
 
         <div className="border-t border-hairline px-4 py-2.5 text-center">
           <Link
-            to="/overview#activity"
+            to="/notifications"
             onClick={() => setOpen(false)}
             className="text-label font-semibold text-brand-strong hover:opacity-80"
           >

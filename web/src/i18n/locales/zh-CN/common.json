@@ -60,6 +60,7 @@
     "assign_bus_title": "{{count}} 号已进车",
     "assign_push_title": "{{count}} 号已推到我的号池",
     "assign_partial": "部分号没有派出去",
+    "assign_partial_v2": "{{ok}} 号成功 · {{fail}} 号没派出去",
     "handoff_ready_title": "{{count}} 号明文已取出",
     "handoff_ready_desc": "确认保存后才会从池里删除",
     "handoff_done": "已拿走 · 号已离开系统",
@@ -223,6 +224,13 @@
     "hang": "夯",
     "armored": "装甲车",
     "alive-hint": "还在跑"
+  },
+  "notifications-page": {
+    "title": "通知",
+    "sub": "号失效、补车、充值到账都会在这里",
+    "bucket-today": "今天",
+    "bucket-week": "本周",
+    "bucket-older": "更早"
   },
   "ui": {
     "clear-selection": "取消选择",

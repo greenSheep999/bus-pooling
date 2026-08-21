@@ -60,6 +60,7 @@
     "assign_bus_title": "{{count}} keys boarded",
     "assign_push_title": "{{count}} keys pushed to your pool",
     "assign_partial": "Some keys were not assigned",
+    "assign_partial_v2": "{{ok}} sent · {{fail}} rejected",
     "handoff_ready_title": "{{count}} keys ready to copy",
     "handoff_ready_desc": "They stay in the pool until you confirm",
     "handoff_done": "Taken · keys left the system",
@@ -223,6 +224,13 @@
     "hang": "Built Different",
     "armored": "Tank",
     "alive-hint": "still running"
+  },
+  "notifications-page": {
+    "title": "Notifications",
+    "sub": "Dead keys, refills, top-ups land here",
+    "bucket-today": "Today",
+    "bucket-week": "This week",
+    "bucket-older": "Earlier"
   },
   "ui": {
     "clear-selection": "Clear selection",
