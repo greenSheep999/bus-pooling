@@ -31,7 +31,7 @@
 | [I-06](#i-06) | 🟢 fixed(unverified) | P2 | 建车 Advanced 仍含已废弃的 daily_round_limit / daily_spend_limit | 2026-08-15 |
 | [I-07](#i-07) | 🟢 fixed(unverified) | P2 | handoff init 幂等契约不一致（前端送 idempotency key · 后端忽略） | 2026-08-15 |
 | [I-08](#i-08) | ✅ verified | P2 | 05-api-contract 列了未实现端点（/me/buses/{id}/stats 等 3 个） | 2026-08-15 |
-| [I-09](#i-09) | 🟡 open | P2 | housepool / vendoraccount / kiroappio / kiroceo 无单元测试 | 2026-08-15 |
+| [I-09](#i-09) | 🟡 partial | P2 | housepool / vendoraccount / kiroappio / kiroceo 无单元测试 | 2026-08-15 |
 | [I-10](#i-10) | ✅ verified | P2 | migration 040 缺集成测试 | 2026-08-15 |
 | [I-11](#i-11) | 🟢 fixed(unverified) | P2 | 缺 stage-1..6 分级 smoke 脚本 | 2026-08-15 |
 | [I-12](#i-12) | 🟡 open | P3 | 主文档 P2 drift（26 条 · 06-db 漏收 9 张新表 / 依赖图漏连线 etc） | 2026-08-15 |
@@ -212,15 +212,28 @@ hook 入口 · 装配层注入 pusher + downstreams + vendorView。
 
 ### I-09 · 4 个包无单元测试
 
-**状态**：🟡 `open`
+**状态**：🟡 `partial` · vendoraccount 关键路径已覆盖 · 其他 3 个包留阶段 2
 **发现**：2026-08-15
+
 **症状**：
 - `internal/housepool` 只有 kirors 子包有测试 · 主包无
-- `internal/vendoraccount` 无测试（vendor api_key/webhook_secret 明文密态存储关键路径）
+- `internal/vendoraccount` **已补(2026-08-22)**
 - `internal/providers/kiro/vendors/kiroappio` 无测试
 - `internal/providers/kiro/vendors/kiroceo` 无测试
 
-**修法**：`vendoraccount` 补 encrypt/decrypt round-trip · `kiroappio/kiroceo` 补 stock/purchase/webhook 归一化三条测试 · `housepool` 补包级 unit test。
+**已补 · vendoraccount**（`store_test.go` · 5 个测试）：
+- RoundTrip:加密写 → 解密读一致
+- NoPlaintextInDB:落库 blob 不含明文串(AES-GCM 保证)
+- MissingReturnsNilNoError:表空返 nil · nil 让上层 fallback env
+- DisableReturnsNil:软删后 LoadActive 返 nil
+- UpsertUpdateExistingRow:同 vendor_id + label 覆盖不新增行
+
+**待做**(阶段 2 P2 收尾):
+- `housepool` 主包 · 补包级 client mock 测试
+- `kiroappio` / `kiroceo` · stock/purchase/webhook 归一化三条测试(照 kirooo 骨架抄)
+
+**优先级判据**:vendoraccount 是**生产安全边界**(明文永不落库) · 必测。其他 3 个包
+是"覆盖率"考虑 · 不影响阶段 1 收官功能面。
 
 ---
 
