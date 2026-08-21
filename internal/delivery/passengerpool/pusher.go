@@ -277,8 +277,8 @@ func (p *realPusher) classifyResult(creds []PushCredential, res *kirors.BatchImp
 		case "duplicate":
 			out.Duplicate = append(out.Duplicate, cid)
 		case "failed":
-			// ev.Error 是对家 kiro.rs 吐的 raw · 含 HTTP 402 / MONTHLY_REQUEST_COUNT
-			// / TestCredential 等内部术语 · **不透传**（CLAUDE §0.1/§12.6）· 归成人话
+			// ev.Error 是对家吐的 raw · 里边可能带 HTTP 状态码 / 内部限额字段名 /
+			// 内部函数名等术语 · **不透传**（CLAUDE §0.1/§12.6）· 归成人话
 			out.Failed = append(out.Failed, FailedItem{
 				CredentialID: cid,
 				Err: &PushError{
@@ -389,11 +389,10 @@ func firstNonEmpty(a, b string) string {
 	return b
 }
 
-// userFacingPushMessage 把对家 kiro.rs 的 raw error 归类成用户话。
+// userFacingPushMessage 把对家吐的 raw error 归类成用户话。
 //
-// **为什么不透传** —— raw 里带 HTTP 402 / MONTHLY_REQUEST_COUNT / TestCredential /
-// housepool: <Op> 失败 等**内部术语**（CLAUDE §0.1/§12.6）· 直出到 toast 会给
-// 用户看到「MONTHLY_REQUEST_COUNT」「TestCredential Ex...」这类看不懂的字符串。
+// **为什么不透传** —— raw 里可能带 HTTP 状态码 / 内部限额字段名 / 内部函数名
+// 等**内部术语**（CLAUDE §0.1/§12.6）· 直出到 toast 会给用户看到看不懂的字符串。
 //
 // 归类只按**结果对用户的意义**分类 —— 号在对家没收下，是「用完了」「假的/失效」
 // 「网络断」还是「其他」· 让用户能立刻做下一步（换号 / 重试 / 联系我们）。
