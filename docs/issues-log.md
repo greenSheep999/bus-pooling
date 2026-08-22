@@ -28,13 +28,13 @@
 | [I-03](#i-03) | 🔴 blocked | P1 | kirodrop 新增 personal 号未接入 · 缺 vendor API 文档 | 2026-08-22 |
 | [I-04](#i-04) | 🔴 blocked | P1 | 5 家 vendor 都只声明 enterprise · 缺各家 personal API 文档 | 2026-08-22 |
 | [I-05](#i-05) | 🟢 fixed(unverified) | P1 | 主文档 3 份滞后 migration 040（15-scheduling / 06-db / 05-api / 03-modules） | 2026-08-15 |
-| [I-06](#i-06) | ⚠️ 反转 | P1 | ~~撤 daily_* 车级 UI~~ 反转为激活车级 AND · 见 §8.47 | 2026-08-15 |
+| [I-06](#i-06) | ✅ verified | P1 | 车级 daily_* AND 全局 · §8.47 · 2026-08-22 实测通过 | 2026-08-15 |
 | [I-07](#i-07) | 🟢 fixed(unverified) | P2 | handoff init 幂等契约不一致（前端送 idempotency key · 后端忽略） | 2026-08-15 |
 | [I-08](#i-08) | ✅ verified | P2 | 05-api-contract 列了未实现端点（/me/buses/{id}/stats 等 3 个） | 2026-08-15 |
-| [I-09](#i-09) | 🟡 partial | P2 | housepool / vendoraccount / kiroappio / kiroceo 无单元测试 | 2026-08-15 |
+| [I-09](#i-09) | ✅ verified | P2 | 4 包关键路径测试补齐 | 2026-08-15 |
 | [I-10](#i-10) | ✅ verified | P2 | migration 040 缺集成测试 | 2026-08-15 |
 | [I-11](#i-11) | 🟢 fixed(unverified) | P2 | 缺 stage-1..6 分级 smoke 脚本 | 2026-08-15 |
-| [I-12](#i-12) | 🟡 partial | P3 | 主文档 P2 drift（26 条 · 已修 CLAUDE §4.2 核心/支撑分类） | 2026-08-15 |
+| [I-12](#i-12) | 🟢 fixed(deferred) | P3 | 主文档 P2 drift · 关键条已修 · 25 条纯文档 drift 明确 defer 阶段 2 | 2026-08-15 |
 
 ---
 
@@ -192,9 +192,18 @@ kiroappio / kiroappcc / kirodrop** 都还只有 enterprise。
 
 ---
 
-### I-06 · 车级 daily_round / daily_spend 应生效 ⚠️ 反转
+### I-06 · 车级 daily_round / daily_spend 应生效 ✅ verified
 
-**状态**：⚠️ `反转` · 我之前撤 UI 走 §8.27 C 方案是错方向 · 车主拍板走 §8.47 · 激活车级 AND
+**状态**：✅ `verified` · 2026-08-22 端到端实测通过
+**修法方向反转**：撤 §8.27 C 方案 · 走 §8.47 · 激活车级 AND
+
+**端到端验证**（2026-08-22 · 用真号 `ksk_VU...` seed + i01test 账号）：
+- ✅ **场景 A · 车级 daily_round=0 拦所有拉号** — 建车 daily_round_limit=0 · 拉 1 号返
+  `409 daily_limit_reached · limit=0 used=0` —— 车级判据触发（全局 null · 不是全局拦的）
+- ✅ **场景 B · 提取(无 bus_id)绕过车级** — 同乘客走 `POST /me/pull` 不带 bus_id ·
+  拉 pro_max 号成功 · credential_id `b8a7e15b...` · 花 141 积分 · 车级 daily=0 不管 record group
+- ✅ **顺手验 I-01 · credplain 迁移** — 新号 sold 后 credplain 表有行(kiro_rs_id=19 ·
+  enc_len=64 · email `test-i06@x.com`)
 **发现**：2026-08-15（phase-1-acceptance §P1 · 老 C 方案下的 P1）
 **反转**：2026-08-22（车主指出多车预算分配场景 · C 方案无解）
 
