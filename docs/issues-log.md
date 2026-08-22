@@ -26,7 +26,7 @@
 | [I-13](#i-13) | ✅ verified | P2 | pullSuccessBridge VendorLabel 硬编 "provider" 泄漏内部术语 | 2026-08-22 |
 | [I-14](#i-14) | ✅ verified | P2 | migration 046 down 后重 up 报 duplicate column · 破坏 down/up 幂等 | 2026-08-22 |
 | [I-15](#i-15) | 🟢 fixed(unverified) | P1 | 生产延迟高 · 前端 staleTime 30s + vendors/status 无缓存 · 跨海每次 refetch | 2026-08-22 |
-| [I-03](#i-03) | 🔴 blocked | P1 | kirodrop 新增 personal 号未接入 · 缺 vendor API 文档 | 2026-08-22 |
+| [I-03](#i-03) | 🟢 fixed(unverified) | P1 | kirodrop personal 接入 · region=personal 覆写(共用端点)· 待生产端到端 | 2026-08-22 |
 | [I-04](#i-04) | 🔴 blocked | P1 | 5 家 vendor 都只声明 enterprise · 缺各家 personal API 文档 | 2026-08-22 |
 | [I-05](#i-05) | 🟢 fixed(unverified) | P1 | 主文档 3 份滞后 migration 040（15-scheduling / 06-db / 05-api / 03-modules） | 2026-08-15 |
 | [I-06](#i-06) | ✅ verified | P1 | 车级 daily_* AND 全局 · §8.47 · 2026-08-22 实测通过 | 2026-08-15 |
