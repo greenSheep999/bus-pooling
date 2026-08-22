@@ -49,24 +49,32 @@ else
 fi
 
 echo ""
-echo "===== step 4 · 准备 .env（只放 BP_MASTER_KEY · 敏感凭证走 seed-vendor CLI）====="
+echo "===== step 4 · 准备 .env（只放 BP_MASTER_KEY / BP_ADMIN_KEY · 敏感凭证走 seed-vendor CLI）====="
 ssh "$REMOTE" bash <<REMOTE_SH
 set -euo pipefail
 ENV_FILE=${REMOTE_DIR}/.env
 if [ ! -f "\$ENV_FILE" ]; then
   echo "-- 生成新 .env --"
-  # BP_MASTER_KEY 从本地传过来
+  # BP_MASTER_KEY 从本地传过来 · BP_ADMIN_KEY 本地 seed(admin/* 端点鉴权)
+  ADMIN_KEY=\$(openssl rand -hex 32)
   cat > "\$ENV_FILE" <<ENV_END
 BP_MASTER_KEY=${BP_MASTER_KEY:-CHANGE_ME_RUN_GENKEY}
+BP_ADMIN_KEY=\$ADMIN_KEY
 BP_ADDR=:8080
 BP_DB_PATH=/app/data/bus-pooling.db
 BP_CONFIG=/app/config.yaml
 DRY_RUN=0
 ENV_END
   chmod 600 "\$ENV_FILE"
-  echo "-- .env 写入 · chmod 600 --"
+  echo "-- .env 写入 · chmod 600 · BP_ADMIN_KEY 已 seed(cat 一下取 X-Admin-Key 值) --"
 else
   echo "-- .env 已存在·保留 --"
+  # I-29 admin toggle 部署后 · 补 BP_ADMIN_KEY(老 .env 没这行)
+  if ! grep -q "^BP_ADMIN_KEY=" "\$ENV_FILE"; then
+    ADMIN_KEY=\$(openssl rand -hex 32)
+    echo "BP_ADMIN_KEY=\$ADMIN_KEY" >> "\$ENV_FILE"
+    echo "-- 补 BP_ADMIN_KEY 到 .env(老 .env 没这行 · 现在补上让 admin/* 端点可用) --"
+  fi
 fi
 REMOTE_SH
 
@@ -83,18 +91,25 @@ echo "-- 旧 container 已停 + 删 · SuperTokens PostgreSQL 数据卷保留 --
 REMOTE_SH
 
 echo ""
-echo "===== step 6 · 拉新镜像 + 起容器 ====="
+echo "===== step 6 · 拉新镜像 + 迁移 + 起容器 ====="
 ssh "$REMOTE" bash <<REMOTE_SH
 set -euo pipefail
 cd ${REMOTE_DIR}
 docker compose pull
+
+# I-36 · migrate 竞态修复:app 拒启动("有未应用的迁移") → docker exec 就 exec 不进去 →
+# 死锁。所以先 docker run --rm 跑 migrate up · 再 compose up · 让 app 起来时表已就绪。
+echo "-- 迁移 up(compose up 之前 · 避免 pending migration 让 app crashloop 死锁) --"
+docker run --rm \
+  --env-file ${REMOTE_DIR}/.env \
+  -v ${REMOTE_DIR}/data:/app/data \
+  -v ${REMOTE_DIR}/config.yaml:/app/config.yaml \
+  $IMAGE migrate up
+
 docker compose up -d
 sleep 8
 echo ""
 docker ps --filter name=kirobus --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
-echo ""
-echo "-- 迁移 up（首次部署 vendor_account 等表要建）--"
-docker exec kirobus /app/bus-pooling migrate up || true
 REMOTE_SH
 
 echo ""

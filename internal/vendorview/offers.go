@@ -217,6 +217,13 @@ func (s *Service) enabledPlansFor(
 // **I-25 · PriceBands 分档**:从 TierStore 读该 vendor 的 vendor_price_tier(qty_band)·
 // 每档单价过 baseCredits + finalUnitPrice 后填到 PriceBands。TierStore 为 nil / 空
 // 时 PriceBands 留空 · 前端按 flat UnitPrice 渲染(老行为兼容)。
+//
+// **⚠️ 展示 vs 扣费口径注意**(审计 P0-3):decider.Price 目前 flat 单价 · **不查 TierStore**。
+// 如果生产 vendor_price_tier 有数据 · offers 展示"买 10 送 20%" 但 settle 按 flat 扣 ·
+// 用户看到 gap → 客服负担。**当前生产 vendor_price_tier 表空**(backfiller 只拉
+// 实现 KeyTierLister 的家 · 6 家 vendor 都没实现)· PriceBands 永远空数组 · 老行为等价。
+// **接 KeyTierLister 前必须先在 decider.Price / unitCreditsFor 也接 TierStore.QtyBandsOf** ·
+// 让 count 命中档位后单价用档位价。issues-log I-25 跟进 · 补 P0-3。
 func (s *Service) offersFromSnapshot(
 	ctx context.Context, vendorID providers.VendorID,
 	snap *providers.StockSnapshot, plan providers.SubscriptionPlan, v Viewer,

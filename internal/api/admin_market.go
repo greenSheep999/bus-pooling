@@ -181,29 +181,15 @@ func (s *Server) handleAdminMarketImportStock(w http.ResponseWriter, r *http.Req
 		if c.KiroAPIKey == "" && c.RefreshToken == "" {
 			return ErrBadRequest("每把号 kiro_api_key 或 refresh_token 至少一个")
 		}
-		// I-35 · 走 canonical providers.Credential → housepool.ImportCredentialFrom ·
-		// 跟 decider/import.go 同一分派逻辑。SourceChannel 是 admin 塞号特有的元数据 ·
-		// 转换函数不设 · 这里手动补。
-		cred := providers.Credential{
-			KiroAPIKey:    c.KiroAPIKey,
-			RefreshToken:  c.RefreshToken,
-			AccessToken:   c.AccessToken,
-			Email:         c.Email,
-			IssuerURL:     c.IssuerURL,
-			StartURL:      c.StartURL,
-			TokenEndpoint: c.TokenEndpoint,
-			Scopes:        c.Scopes,
-			Region:        c.Region,
-		}
-		// 显式判 AuthMethod · admin 塞号时 3 选 1(校验已在上一行 191 做了)
-		switch {
-		case cred.RefreshToken != "":
-			cred.AuthMethod = providers.AuthRefreshToken
-		case cred.AccessToken != "":
-			cred.AuthMethod = providers.AuthBearer
-		default:
-			cred.AuthMethod = providers.AuthAPIKey
-		}
+		// P0-4 · 走 canonical NewFromPlaintext 单点分派(跟 vendor adapter 同一逻辑)·
+		// 手写 switch 已挪进 providers.NewFromPlaintext · 未来加 AuthBearer 只改一处。
+		cred := providers.NewFromPlaintext(c.RefreshToken, c.AccessToken, c.KiroAPIKey)
+		cred.Email = c.Email
+		cred.IssuerURL = c.IssuerURL
+		cred.StartURL = c.StartURL
+		cred.TokenEndpoint = c.TokenEndpoint
+		cred.Scopes = c.Scopes
+		cred.Region = c.Region
 		imp := housepool.ImportCredentialFrom(cred, []string{prebuyPoolGroup})
 		imp.SourceChannel = "market_admin"
 		creds = append(creds, imp)
