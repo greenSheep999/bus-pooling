@@ -76,13 +76,36 @@ func (a *Adapter) Capability() providers.Capability {
 		KeyPayloadShape:       providers.KeyPayloadFourTuple,
 		MinPerOrder:           1,
 		MaxPerOrder:           200,
+
+		// I-03 · 双档接入(2026-08-22 实测 kirodrop docs 页 · 端点契约)
+		//
+		// **本 vendor 特殊**:personal 池**不是独立端点** · 而是共用
+		//   GET /api/me/stock?region=personal        (查询 personal 池)
+		//   POST /api/my/purchase body.region=personal (下 personal 单)
+		// 跟另一家双档 vendor 走独立 stockPersonal/purchasePersonal 不同。
+		//
+		// 实测数据(2026-08-22 · danielcrazyee@gmail.com 账号):
+		//   stock=9 · price=18.51 USD/125.87 CNY · currency=CNY · rate 6.8
+		//   goods_id=3 · goods_name="Kiro Max Gmail个人正价 RefreshToken"
+		AccountKinds: []providers.AccountKind{
+			providers.AccountEnterprise,
+			providers.AccountPersonal,
+		},
+		SelectablePlans: nil, // 买前不给按档下单 · 只按 region 选 personal 池
 	}
 }
 
 func (a *Adapter) Stock(ctx context.Context, opts providers.StockOptions) (*providers.StockSnapshot, error) {
 	// 本 vendor 特殊：stock 走 /api/me/stock（同其他 vendor 惯用 /api/my/* 不一致）
 	// profile / purchase 仍然走 /api/my/* — 见 vendor 档案 §7
-	req, err := a.newReq(ctx, http.MethodGet, "/api/me/stock", nil)
+	//
+	// **I-03 双档**：personal 池共用端点 · 走 ?region=personal 参数(不是独立端点)。
+	// 企业池不传 region 默认返 us-east-1(vendor docs 明说)。
+	path := "/api/me/stock"
+	if opts.Kind.Normalize() == providers.AccountPersonal {
+		path += "?region=personal"
+	}
+	req, err := a.newReq(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +129,14 @@ func (a *Adapter) Purchase(ctx context.Context, req providers.PurchaseRequest) (
 		Count:         req.Count,
 		ClientOrderID: req.ClientOrderID,
 	}
-	if req.Zone != nil {
+	// **I-03 双档**：personal 池共用 /api/my/purchase · body.region="personal"
+	// (跟另一家 vendor 独立端点不同 · vendor docs §region 明说 personal 是合法值)
+	//
+	// **必须跟估价时的 kind 一致** —— 两池价不同(18.51 vs 5.88 USD)·
+	// 用错池会实扣与预估不符。Kind 优先 · 有 Zone 只作为 us/eu 补充。
+	if req.Kind.Normalize() == providers.AccountPersonal {
+		body.Zone = "personal"
+	} else if req.Zone != nil {
 		body.Zone = string(*req.Zone)
 	}
 	// **涨价保护** · req.MaxTotal 传下来的是 microunit · vendor 要 CNY 保留 6 位小数
