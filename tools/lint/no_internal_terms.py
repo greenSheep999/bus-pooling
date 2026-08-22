@@ -170,6 +170,12 @@ _ALLOWLIST = [
     # seed_vendor.go · knownVendorSlugs 白名单 map · 是 CLI 参数校验数据契约
     (r"cmd/bus-pooling/seed_vendor\.go$",
      r'^\s*"(kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)":\s+true,'),
+    # seed_pricing.go · CLI usage 注释里 vendor 真名(命令行参数示例) · 数据契约
+    (r"cmd/bus-pooling/seed_pricing\.go$",
+     r"kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop"),
+    # admin_plan_config_test.go · 测试断言 vendor id 字面量(测试数据 · 不出外)
+    (r"internal/api/admin_plan_config_test\.go$",
+     r"kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop"),
     # ── SQL migration 里的枚举值 · CHECK IN (...) 白名单 ─
     (r"/migrations/\d+_.*\.sql$",
      r"CHECK\s*\([^)]*(waffo|epusdt|bybit|binance)"),

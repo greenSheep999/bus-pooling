@@ -463,7 +463,12 @@ func (o *Orchestrator) insertCredentials(
 // insertSurchargeHits · I-27 · 每条命中规则一行 pull_round_surcharge。
 //
 // **amount 分摊**:每条规则的 amount(microunit) = 该规则在**该 kind 桶**里的占比 × 该 kind 桶实收总额。
-// 简化实现:直接按 RateBp 占比分摊 kind 总额 · 跟 pricing.Engine.Eval 汇总口径一致。
+//
+// **kind → 桶 映射**:
+//   - vendor / zone / service / single_pull · 独占一个 Breakdown 字段
+//   - capability / retail / adhoc · **合并共用 Breakdown.capabilityFee 桶**(pricing.go:107-108)
+//     3 kind 一起摊 · rate_bp 分母是三者之和 · 分子是各自 · 避免 kindBp["cap"]/["retail"]/["adhoc"]
+//     各自当独立桶摊 · 结果每条都摊整个 capabilityFee · SUM(amount)=3×capabilityFee(P1 审计发现)
 //
 // hits 空(env fallback / 表空)直接返 nil · 不落。跟 marketPopper.PopToCredplainTx 的 nil-safe 风格一致。
 func insertSurchargeHits(
@@ -473,14 +478,23 @@ func insertSurchargeHits(
 	if len(hits) == 0 {
 		return nil
 	}
-	// 按 kind 分组算总 rate_bp · 后面按占比摊 amount。
-	kindBp := make(map[string]int64)
-	for _, h := range hits {
-		kindBp[h.Kind] += h.RateBp
-	}
-	// 每 kind 的实收总额(microunit) · 从 Breakdown 拆出来。
-	kindAmount := func(kind string) int64 {
+	// kindBucket · 把 canonical kind 名归一到"共享的桶名"·capability/retail/adhoc 归 "capability"
+	kindBucket := func(kind string) string {
 		switch kind {
+		case "retail", "adhoc":
+			return "capability"
+		default:
+			return kind
+		}
+	}
+	// 按**桶**分组算总 rate_bp(三桶合并的 kind 之和)· 分摊时按桶 rate_bp 做分母
+	bucketBp := make(map[string]int64)
+	for _, h := range hits {
+		bucketBp[kindBucket(h.Kind)] += h.RateBp
+	}
+	// 每桶的实收总额(microunit) · 从 Breakdown 拆出来
+	bucketAmount := func(bucket string) int64 {
+		switch bucket {
 		case "vendor":
 			return bd.vendorFee
 		case "zone":
@@ -489,17 +503,18 @@ func insertSurchargeHits(
 			return bd.ServiceFee
 		case "single_pull":
 			return bd.singlePullFee
-		case "capability", "retail", "adhoc":
-			return bd.capabilityFee // 三种都归 capability 桶(pricing.go 落库口径)
+		case "capability":
+			return bd.capabilityFee // retail + capability + adhoc 三 kind 共用
 		}
 		return 0
 	}
 	nowStr := now.UTC().Format(time.RFC3339)
 	for _, h := range hits {
-		total := kindAmount(h.Kind)
+		bucket := kindBucket(h.Kind)
+		total := bucketAmount(bucket)
 		var amount int64
-		if kindBp[h.Kind] > 0 {
-			amount = total * h.RateBp / kindBp[h.Kind]
+		if bucketBp[bucket] > 0 {
+			amount = total * h.RateBp / bucketBp[bucket]
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO pull_round_surcharge

@@ -60,6 +60,10 @@
 | [I-37](#i-37) | 🟢 fixed(unverified) | P0 | migration 051 rebuild topup_order 后 3 条索引全丢 · 查询退化 O(N) | 2026-08-22 |
 | [I-38](#i-38) | 🟢 fixed(unverified) | P0 | admin_market bypass canonical FromKeyPayload · 挪进 NewFromPlaintext 单点分派 | 2026-08-22 |
 | [I-39](#i-39) | 🟡 open | P0 | TierStore 只接 offers 展示 · decider.Price 走 flat · 未来接 KeyTierLister 立即出 gap · 已加警告注释 | 2026-08-22 |
+| [I-40](#i-40) | 🟢 fixed(unverified) | P1 | pull_round_surcharge kindAmount 重复计算 · retail/cap/adhoc 共 capabilityFee 桶 · SUM = 3× | 2026-08-22 |
+| [I-41](#i-41) | 🟢 fixed(unverified) | P1 | credplain lookup FetchPlaintext bypass canonical · 走 PushCredentialFrom 按 AuthMethod 分派 | 2026-08-22 |
+| [I-42](#i-42) | 🟢 fixed(unverified) | P1 | vendor_pricing seed CLI 缺失 · 加 seed-pricing 子命令 | 2026-08-22 |
+| [I-43](#i-43) | 🟢 fixed(unverified) | P1 | admin_plan_config 单测补齐 · 4 用例 | 2026-08-22 |
 
 ---
 
@@ -915,6 +919,57 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 1. 先在 decider/orchestrator.go 加 `tierStore` 字段 + `unitCreditsFor` 走 SelectByCount 命中档位
 2. 再在 backfiller 启用该 vendor 的 KeyTierLister 拉取
 3. offers.go PriceBands 已就绪 · 无需改
+
+---
+
+### I-40 · pull_round_surcharge kindAmount 重复计算(P1 审计维度 4)
+
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验
+
+**症状**:`insertSurchargeHits` 里 kindBp 按 canonical kind 分组(retail / capability / adhoc 各自独立)· 但 Breakdown.capabilityFee **是三 kind 共用桶**(pricing.go:107-108)。老逻辑每支都摊了整个 capabilityFee → SUM(amount) = 3×capabilityFee(应等于 capabilityFee)。
+
+**修**:引入 `kindBucket("retail")="capability"` / `kindBucket("adhoc")="capability"` 归一 · bucketBp 累加合并 kind 的 rate_bp · 分摊时按桶分母。vendor/zone/service/single_pull 四支独占桶不变。
+
+**测试**:surcharge_hits_test.go 2 用例(共享桶 + 独占桶) 全绿。
+
+---
+
+### I-41 · credplain lookup bypass canonical(P1 审计维度 3)
+
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验
+
+**症状**:`credplain.LookupAdapter.FetchPlaintext` 老代码直接把 Plaintext 的 refresh/access/api 三字段**一起塞**给 PushCredential。若表某行两个字段都非空(脏数据 / 迁移遗留) · 对家 vendor 使用哪个是未定义行为。
+
+**修**:构造 canonical `providers.Credential` · 走 `passengerpool.PushCredentialFrom` 按 AuthMethod 分派 · 只填一个字段。
+
+---
+
+### I-42 · vendor_pricing seed CLI(P1 审计维度 4 · vendor_pricing 空表 fallback)
+
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完
+
+**症状**:vendor_pricing 表 seed 空时 · fallback (credit, 1_000_000) · USD 家(kirodrop)真实报价 microunit 被当积分直接透传 · 前端展示 = 真实 /6.8。已知**生产 fallback 场景无 vendor_pricing 行**。
+
+**修**:加 `bus-pooling seed-pricing` CLI · 运营 seed vendor_pricing 表:
+```
+docker exec kirobus /app/bus-pooling seed-pricing \
+  -vendor kirodrop -currency USD -credits-per-unit 6800000
+```
+主 dispatcher 加子命令 · 挂 usage 说明。生产部署后必须跑 6 家 seed(CNY 家 1_000_000 · USD 家 6_800_000)。
+
+---
+
+### I-43 · admin_plan_config 单测补齐(P1 审计维度 2 · G11)
+
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完
+
+**症状**:I-29 添加的 admin_plan_config handler(P1 审计 G11)完全零测试。
+
+**修**:admin_plan_config_test.go 4 用例:
+- RequiresAdminKey · 无 X-Admin-Key 应报错
+- UpsertAndList · Store 层直调 · enable/disable 循环验证
+- UpsertBadBody · 缺 vendor_id 应 400 · 错误信息含 vendor_id
+- UpsertReq_JSONShape · JSON 契约字段完整
 
 ---
 

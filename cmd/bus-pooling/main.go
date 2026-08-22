@@ -131,8 +131,10 @@ func run(cmd, cfgPath string, args []string) error {
 		return runVendorProbe(ctx, cfg, args)
 	case "seed-credplain":
 		return runSeedCredplain(ctx, cfg, args)
+	case "seed-pricing":
+		return runSeedPricing(ctx, cfg, args)
 	default:
-		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem | seed-vendor | list-vendors | xi8-backfill | xi8-audit | backfill-probe-zone | backfill-stock-delta | reconcile | vendor-probe）", cmd)
+		return fmt.Errorf("未知子命令 %q（支持 serve | migrate | genkey | redeem | seed-vendor | seed-credplain | seed-pricing | list-vendors | xi8-backfill | xi8-audit | backfill-probe-zone | backfill-stock-delta | reconcile | vendor-probe）", cmd)
 	}
 }
 
