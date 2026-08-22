@@ -108,26 +108,17 @@ func (o *Orchestrator) importToPoolWithMeta(
 	}
 	// 老路径 · 前 6 家：BatchImport 到目标 group
 
+	// I-35 · canonical Credential 走通全链路 —— 老 KeyPayload → Credential 一次转换
+	// 之后所有下游层(housepool / credplain / passengerpool)用同一份 canonical 派生。
+	// 老 vendor adapter 仍返 KeyPayload · 通过 providers.FromKeyPayload 桥接过来。
+	//
+	// 塞错字段的后果:housepool 后端会用错鉴权协议校验 · 号导入必败 · 钱白扣。
+	// canonical Credential 里 AuthMethod 决定分派 · housepool.ImportCredentialFrom 一处收敛。
+	groups := []string{group}
 	creds := make([]housepool.ImportCredential, 0, len(purchase.Keys))
 	for _, k := range purchase.Keys {
-		imp := housepool.ImportCredential{
-			Region: k.Region,
-			Groups: []string{group},
-		}
-		// I-21 · 按 AuthMethod 分派塞哪个字段。空 AuthMethod = 老 4-tuple 号兜底。
-		//
-		// 塞错字段的后果:housepool 后端会用错鉴权协议校验 · 号导入必败 · 钱白扣。
-		switch k.AuthMethod {
-		case providers.AuthRefreshToken:
-			// SSO refresh token 号 · key = "<sso>:<refresh>" 冒号串
-			imp.RefreshToken = k.Key
-		default:
-			// AuthAPIKey / 空 · 走老 4-tuple 路径(kiroApiKey + email + issuer_url)
-			imp.KiroAPIKey = k.Key
-			imp.Email = k.Account
-			imp.IssuerURL = k.IssuerURL
-		}
-		creds = append(creds, imp)
+		cred := providers.FromKeyPayload(k)
+		creds = append(creds, housepool.ImportCredentialFrom(cred, groups))
 	}
 
 	result, err := o.pool.BatchImport(ctx, housepool.BatchImportRequest{

@@ -181,7 +181,10 @@ func (s *Server) handleAdminMarketImportStock(w http.ResponseWriter, r *http.Req
 		if c.KiroAPIKey == "" && c.RefreshToken == "" {
 			return ErrBadRequest("每把号 kiro_api_key 或 refresh_token 至少一个")
 		}
-		creds = append(creds, housepool.ImportCredential{
+		// I-35 · 走 canonical providers.Credential → housepool.ImportCredentialFrom ·
+		// 跟 decider/import.go 同一分派逻辑。SourceChannel 是 admin 塞号特有的元数据 ·
+		// 转换函数不设 · 这里手动补。
+		cred := providers.Credential{
 			KiroAPIKey:    c.KiroAPIKey,
 			RefreshToken:  c.RefreshToken,
 			AccessToken:   c.AccessToken,
@@ -191,9 +194,19 @@ func (s *Server) handleAdminMarketImportStock(w http.ResponseWriter, r *http.Req
 			TokenEndpoint: c.TokenEndpoint,
 			Scopes:        c.Scopes,
 			Region:        c.Region,
-			Groups:        []string{prebuyPoolGroup},
-			SourceChannel: "market_admin",
-		})
+		}
+		// 显式判 AuthMethod · admin 塞号时 3 选 1(校验已在上一行 191 做了)
+		switch {
+		case cred.RefreshToken != "":
+			cred.AuthMethod = providers.AuthRefreshToken
+		case cred.AccessToken != "":
+			cred.AuthMethod = providers.AuthBearer
+		default:
+			cred.AuthMethod = providers.AuthAPIKey
+		}
+		imp := housepool.ImportCredentialFrom(cred, []string{prebuyPoolGroup})
+		imp.SourceChannel = "market_admin"
+		creds = append(creds, imp)
 		plaintextInputs = append(plaintextInputs, c)
 	}
 

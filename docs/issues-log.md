@@ -43,6 +43,19 @@
 | [I-20](#i-20) | 🟢 fixed(unverified) | P0 | vendorview 展示价没接 RatesResolver · 只用 env Rates(生产恒 0) · 跟 decider 拉号 DB 求费率脱钩 | 2026-08-22 |
 | [I-21](#i-21) | 🟢 fixed(unverified) | P0 | kirodrop personal 号 payload 是 refresh_token · decider/import 无脑塞 KiroAPIKey · 号导入必败钱白扣 | 2026-08-22 |
 | [I-22](#i-22) | 🟢 fixed(unverified) | P0 | 拉号成功后 decider/settle 从没调 credplain.Save · 明文全丢 · push/handoff 走 placeholder 交付废号 | 2026-08-22 |
+| [I-23](#i-23) | 🟡 open | P0 | xi8 fire-guard 断路 · vendor blocked=1 明说别 fire · decider 从不查 IsBlocked · 停售仍照拉 · 白烧幂等键 | 2026-08-22 |
+| [I-24](#i-24) | 🟡 open | P0 | 优惠码 service_fee_waiver 只 Lookup 不 Redeem · used_count 不递增 · 同码可无限次 · 每次真扣服务费 · 隐式超收 | 2026-08-22 |
+| [I-25](#i-25) | 🟡 open | P0 | vendor_price_tier 只写不读 · 阶梯降价/数量分档 decider 无视 · 批量购买不享受档位优惠 | 2026-08-22 |
+| [I-26](#i-26) | 🟡 open | P1 | PurchaseResult.PartiallyRefunded 只填不用 · 未来 vendor 语义相反会漏追差额 | 2026-08-22 |
+| [I-27](#i-27) | 🟡 open | P1 | pull_round_surcharge 表 + Engine.Hits 都有 · 无 INSERT · 对账拆不出单条规则贡献 | 2026-08-22 |
+| [I-28](#i-28) | 🟡 open | P1 | kiroceo/kiroappio Capability 声称有签名 vs VerifySignature 硬返 ErrNoSignature · 契约分裂 | 2026-08-22 |
+| [I-29](#i-29) | 🟡 open | P1 | vendor_plan_config 无 admin toggle API · 违反"费率/开关不写代码"铁律 · 运营只能 SQL 手改 | 2026-08-22 |
+| [I-30](#i-30) | 🟡 open | P2 | topup_order.channel CHECK 跟 topupchannel.Registry 不一致 · usdt/tron 开启即 CHECK 500 | 2026-08-22 |
+| [I-31](#i-31) | 🟡 open | P2 | Vendor.KeyHealth/KeyStats/Usage 6 家全 stub · deathwatch 无 vendor 健康信号 | 2026-08-22 |
+| [I-32](#i-32) | 🟡 open | P2 | coalescer 全套实现 · api 层从不调用 · 多人 bus 同时拉号不合流 · 抢货竞争劣势 | 2026-08-22 |
+| [I-33](#i-33) | 🟡 open | P2 | pull_intent 表建了但永远为空 · 代码路径不慎读会得 0 计数 | 2026-08-22 |
+| [I-34](#i-34) | 🟡 open | P2 | vendor_pricing admin 写 API 缺失 · 全靠 Prober fallback · USD 家漏概率 | 2026-08-22 |
+| [I-35](#i-35) | 🟢 fixed(unverified) | P1 | canonical Credential 重构 · providers.Credential + 3 FromCredential 转换函数 · 消除人肉同步 | 2026-08-22 |
 
 ---
 
@@ -588,6 +601,228 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 **关键设计**:**同 tx** · 崩溃回滚同步 · 不会出现"ledger 写了但 credplain 没写"的孤号。跟手工池路径的 `PopToCredplainTx` 对齐。
 
 **测试**:kirodrop 打标测试 3 用例(依赖 I-21) · settle 集成测走的是 mock plaintextSaver · nil 时兼容老行为。
+
+---
+
+### I-23 · xi8 fire-guard 完全断路 · vendor blocked=1 但 decider 从不查
+
+**状态**:🟡 `open` · 2026-08-22 审计发现
+
+**症状**:migration 034 明说"blocked=1 → 别 fire · floating=1 → 必带单价上限" · 写方 `xi8/backfiller.go:369-399` 落库正常 · 读接口 `vendorview.FlagStore.IsBlocked` 定义在 line 85 · **`grep -rn "IsBlocked" internal/decider/` 完全空**。且 `flag_store.go:13/77` 注释已改成"对账 / 诊断查询 · 不接抢号 fire"。
+
+**根因**:xi8 报告 vendor 主动停售 / 成本浮动 → 落库 blocked/floating flag → **decider 拉号时压根不查这两个 flag** → 照常 fire。
+
+**影响**:
+- vendor 停售时用户请求走到 vendor · 被拒 / 白烧一次幂等键
+- 混价单可能超预期扣款(floating=1 明文承诺"必带单价上限"·现在不带)
+- 阶段 1a 上线后**从没起过 fire-guard 作用**
+
+**修**:`decider/decider.go` fire 前调 `flagStore.IsBlocked(vendorID)` · true 直接拒 · floating 时把 `max_total_cny` 兜底填入 PurchaseRequest。
+
+---
+
+### I-24 · 优惠码 service_fee_waiver 静默失效 · 用户被超收
+
+**状态**:🟡 `open` · 2026-08-22 审计发现 · **可能已发生生产超收**
+
+**症状**:`internal/api/pull.go:76-82` 拉号请求带 `CouponCode` 时 · **只调 `s.coupons.Lookup(TypeServiceFeeWaiver)` · 无 `Redeem`**。全项目搜 `coupons.Redeem` 只有 `internal/api/topup.go:395`(充值场景)· 拉号场景**全无**。
+
+**根因**:Lookup 只是查码存在 · 不递增 used_count · 不锁定使用次数。拉号 API 返 200 让前端以为已减免 · 实际 service_fee_total 按原价扣。
+
+**影响**:
+- 用户在拉号确认窗输入 service_fee_waiver 码
+- API 返 200 · 前端"已减免"
+- **服务费仍按原价从积分扣**
+- coupon_code.used_count 不递增 · **同码可无限次触发同一"以为免服务费"错觉**
+- **属于隐式超收 · 涉及所有用了拉号优惠码的用户**
+
+**修**:pull.go 调 `coupons.Redeem(ctx, code, TypeServiceFeeWaiver, passengerID)` · 走跟 topup 一样的完整核销路径 · 落 coupon_redemption 表 · 递增 used_count。
+
+**已发生超收核查**:上线以来查 `SELECT COUNT(*) FROM coupon_redemption WHERE type='service_fee_waiver'` · 如果 0 但前端有过用户输码请求 → 逐条追溯赔偿。
+
+---
+
+### I-25 · vendor_price_tier 只写不读 · 阶梯定价全无效
+
+**状态**:🟡 `open` · 2026-08-22 审计发现
+
+**症状**:写方 `vendorview/tier_store.go:36 ReplaceQtyBands` + `line 92 ReplaceTimeDecay` · 装配在 `main.go:784` · **读方 `QtyBandsOf` / `TimeDecayOf` 在 decider/pricing/api 三处 `grep` 全空**(`grep -rn "TierStore\." internal/`)。
+
+**根因**:migration 035 是"抢号决策 + prices 页数据源"的双承诺 · 数据 backfiller 落库 · 但**上层没人读**。
+
+**影响**:
+- 数量分档 · 用户批量购买不享受档位优惠(拉 5 个价跟 1 个价一样)
+- 时间降价 · reservation 到点降价不生效
+- 前端 /prices 页也没走 TierStore(offers.go 走的是各 vendor 自己的 price_bands 里的 UnitPriceCredits · 跟 tier_store 不同源)
+
+**修**:
+- decider.Price 或 pricing.PricedFor 读 `TierStore.QtyBandsOf(vendorID, kind, plan)` · 按 count 命中的档位算单价
+- /prices 页读 `TierStore.TimeDecayOf(vendorID, kind, plan)` 画时间曲线
+
+**风险**:改 decider.Price 会影响所有 vendor 定价 · 需要跟 I-19/I-20 修好的 finalUnitPrice 链路对齐 · 别互相打架。
+
+---
+
+### I-26 · PartiallyRefunded 只填不用 · 未来 vendor 语义相反会漏追差额
+
+**状态**:🟡 `open` · 2026-08-22 审计发现
+
+**症状**:填在 `kirodrop/mapper.go:92` · 消费点 `grep -rn "PartiallyRefunded" internal/` 除定义处 + kirodrop 一处 mapper · **别处 0 命中**。
+
+**当前巧合正确**:kirodrop `partially_refunded` 状态订单 `Purchased < Requested` · vendor 已把差额退了 · TotalCost 是真实扣 · 我方 settle 靠 `reserved - part.Amount` 释放冻结 · 数值恰好对上。
+
+**未来风险**:另一家 vendor 支持 partial 但语义相反("差额没退给你 · 自己去追") · 我方**不追** · 用户白亏差额。vendor.go:365-367 明写"这两个分支必须分开处理"。
+
+**修**:settle 里显式判 `PartiallyRefunded` · true = 不追(kirodrop 语义)· false + Purchased<Requested = 主动调 vendor Refund 或落 refund_pending 表。
+
+---
+
+### I-27 · pull_round_surcharge 表 + Engine.Hits 都有 · 无 INSERT
+
+**状态**:🟡 `open` · 2026-08-22 审计发现
+
+**症状**:表 CREATE 在 `migrations/015_surcharge_rule.sql:39-51` · Hits 计算在 `pricing/surcharge.go:290-320` · **`grep -rn "pull_round_surcharge" internal/` 只有一处注释** · 无 INSERT。
+
+**影响**:每轮拉号命中了哪些 surcharge · 收了多少 · 无历史。migration 15 明说"对账 / 申诉用" · **全部拿不到**。当前 pull_round 只汇总总费 · 拆不出单条规则贡献。
+
+**修**:settle 里落 credential_ledger 之后 · 同 tx INSERT `pull_round_surcharge` 每条 hit 一行。跟 I-22 落 credplain 是同一处扩展点。
+
+---
+
+### I-28 · webhook 签名 Capability 声称 vs 实现分裂
+
+**状态**:🟡 `open` · 2026-08-22 审计发现
+
+**症状**:kiroceo `WebhookHasSignature: true`(`adapter.go:56`)· `VerifySignature` **硬返 ErrNoSignature**(line 333-335)。kiroappio 同款不一致。`handleVendorWebhook` 走独立 `hmacSpecs` 白名单(`vendor_webhook.go:55-74`)只列 91kiro / kirodrop / kiroappcc 三家。
+
+**根因**:两套"是否 HMAC 签名"事实源分裂 · Capability 声明和实际 VerifySignature 不同步。
+
+**影响**:当前不触发数据损坏(handler 用 hmacSpecs 判 · 不用 Capability)· 但两份事实源分裂 · 后台 / 前端如果读 Capability 会得错误答案。
+
+**修**:两条路径二选一:
+- (a) kiroceo/kiroappio 补 HMAC 实现 · 加入 hmacSpecs
+- (b) 修 Capability 声明成 `WebhookHasSignature: false`
+
+我推荐 (b) —— 三家已 HMAC · 剩两家没接是有原因(vendor 侧协议不同)· 修声明匹配现实。
+
+---
+
+### I-29 · vendor_plan_config 无 admin toggle API · 运营改档只能 SQL 手改
+
+**状态**:🟡 `open` · 2026-08-22 审计发现
+
+**症状**:migration 有 seed(`049_vendor_plan_config.sql:47-64`)· Store 提供 `UpsertPlan` + `ListAll` · **grep 生产 caller 0 命中** · 也无 `/api/admin/vendor-plan-config` handler。
+
+**影响**:migration 明说"后台可关" · 现无 admin API。上游哪天开新档 / 关旧档 · 运营只能 SQL 手改 · 违反 CLAUDE.md "费率 / 开关不写代码"铁律。用户当前流程(读接口正常)不断。
+
+**修**:加两个 admin 端点 · `GET /api/admin/vendor-plan-config` 列全部 · `PUT /api/admin/vendor-plan-config/{vendor}/{kind}/{plan}` 改 enabled。
+
+---
+
+### I-30 · topup_order.channel CHECK 跟代码 Registry 不一致
+
+**状态**:🟡 `open` · 2026-08-22 审计发现
+
+**症状**:CHECK 在 `migrations/010_topup_multichannel.sql:60` = `IN ('waffo', 'epusdt', 'bybit', 'binance')` · 代码 `topupchannel/channel.go:43-46` 定义 `Waffo / Bybit / Binance / USDT / Tron` · **`epusdt` 已删 · `usdt`/`tron` 是新加但 schema 没扩** · 且 4 家非 Waffo 都 `Enabled: false`。
+
+**影响**:任何人把 `BP_TOPUP_USDT_ENABLED=1` 或 `BP_TOPUP_TRON_ENABLED=1` 一开 · 用户下单立即 CHECK 拒绝 500。当前所有 non-Waffo 关着 · 用户不断 · 但**一个环境变量的距离**。
+
+**修**:新增 migration · 扩 CHECK 到 `IN ('waffo','bybit','binance','usdt','tron')`。
+
+---
+
+### I-31 · Vendor.KeyHealth/KeyStats/Usage 6 家全 stub · deathwatch 无 vendor 健康信号
+
+**状态**:🟡 `open` · 2026-08-22 审计发现 · **明标 1d 才做 · 属预期 defer**
+
+**症状**:6 家 adapter 全返 ErrNotSupported · `providers/vendor.go:214` 注释"1d 才实现" · deathwatch 仍只能靠 `housepool.TestCredential` 判死。
+
+**影响**:providers.Vendor 接口设计要求这三个方法 · adapter 全 stub 且无一处产线调用。deathwatch 无 vendor 侧健康信号 · 当前不断用户流程。
+
+**修**:阶段 1d 一并接 · 现在不动。
+
+---
+
+### I-32 · coalescer 全套实现 · api 层从不调用
+
+**状态**:🟡 `open` · 2026-08-22 审计发现
+
+**症状**:`coalescer/window.go` 全套 Window.Join / MaxBatch / 分发结果 都实现 · `coalescer.go:60 Single/Anon/Team` 三入口都在 · **`grep -rn "coalescer\." internal/api/ cmd/` 全空** · api/pull.go 直接调 decider.Pull。
+
+**影响**:多人 anon / team bus 同时下拉号意图**不合流** · 每人各自触发一次 vendor Purchase · 抢货竞争劣势 + 幂等键各不同。当前多人 bus 用户流量小 · 不明显影响。
+
+**修**:api/pull.go 判 bus.kind==anon||team 走 coalescer.Anon/Team · 单人走 Single。
+
+**跟 I-35 结合**:合流的号最终还是一条 Purchase 响应 · 分派给多人 → canonical Credential type 后更好写。
+
+---
+
+### I-33 · pull_intent 表建了但永远为空
+
+**状态**:🟡 `open` · 2026-08-22 审计发现 · **明标预期空 · defer**
+
+**症状**:`migrations/001_init.sql:158` 建表 · **`INSERT INTO pull_intent` grep 全空** · 只有 stockwatch/mode.go:114-116 / insight/overview.go:95 两处注释明说"生产从不写"。
+
+**影响**:该表永远为空 · 若代码路径不慎读会得 0 计数 → 图表恒为 0。当前主流程不依赖(insight overview 已绕开)。
+
+**修**:阶段 1c 集单 pull_intent 写入接进来时一并做 · 或删表(选后者 · 阶段 1c 时再加也不亏)。
+
+---
+
+### I-34 · vendor_pricing admin 写 API 缺失 · 全靠 Prober fallback
+
+**状态**:🟡 `open` · 2026-08-22 审计发现
+
+**症状**:Upsert 在 `pricing/vendor_pricing.go:65` · **grep 生产 caller 0 命中** · Get 找不到时 `FallbackQuote`(line 118) 走 CNY 1:1。
+
+**影响**:USD 家不换算 · 相当于"1 USD = 1 CNY 积分" · 生产库存单价严重偏低。**已被 Prober 落库时同一条换算规则救场**(每 5min 一次) · 未走过 Prober 的 vendor 会用错价。
+
+**修**:加 admin API upsert vendor_pricing · 生产脚本 seed 一份(kirodrop `credits_per_unit=6_800_000` · 前 5 家 `1_000_000`)。
+
+---
+
+### I-35 · canonical Credential 重构(方向 B)
+
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验 · **今天所有 bug 的架构级根因**
+
+**修复要点**:
+1. `internal/providers/credential.go` · canonical `Credential` type · 字段对齐 kiro.rs `wireImportCredential`(权威源) · Go 风格字段名。
+2. `FromKeyPayload / ToKeyPayload` 桥接 · 老 vendor adapter 仍返 KeyPayload · 通过转换过来 · 未来所有 adapter 迁完可删 KeyPayload。
+3. **3 个下游层各自 FromCredential 构造器**(避免 providers 反向依赖):
+   - `internal/housepool/from_credential.go` · `ImportCredentialFrom(cred, groups)`
+   - `internal/credplain/from_credential.go` · `SaveInputFrom(cred, credentialID) → (SaveInput, error)`
+   - `internal/delivery/passengerpool/from_credential.go` · `PushCredentialFrom(cred, credID, vendorLabel)`
+4. **调用点全部走 canonical**:
+   - `decider/import.go` importToPoolWithMeta · `FromKeyPayload → ImportCredentialFrom`
+   - `decider/settle.go` saveCredplainTx · `FromKeyPayload → SaveInputFrom`
+   - `api/admin_market.go` · 手工池路径也走 canonical
+
+**保留原样**(有意):
+- `credplain/lookup.go` FetchPlaintext · 从**已存明文表**读回 · 直接构造 PushCredential 是对的(不是 vendor→canonical 链)
+- `api/pullrecord.go` / `api/bus_credential_push.go` push 调用 · 只填 ID+region+label · pusher 内部 FetchPlaintext 拿明文 · 属 pusher 调用契约
+
+**测试**(10 个新单测全绿):
+- `providers/credential_test.go` · 4 用例 · round-trip 无损 · 兜底 AuthAPIKey
+- `housepool/from_credential_test.go` · 3 用例 · refresh_token / api_key / 兜底
+- `credplain/from_credential_test.go` · 5 用例 · 分派 + 校验 + 兜底
+- `passengerpool/from_credential_test.go` · 3 用例 · 三分派
+
+**症状**:vendor → housepool → credplain → passengerpool **四层各自定义字段** · 靠人肉同步:
+- I-21 · KeyPayload → ImportCredential 字段映射 hardcoded
+- I-22 · KeyPayload → SaveInput 之间**没人负责翻译** · 漏了整环
+
+**方向 B 设计**:
+- `providers.Credential` type 单点定义 · 字段对齐 kiro.rs `wireImportCredential`(权威源)
+- 三个转换函数:`ToImportCredential / ToCredplainSaveInput / ToPushCredential`
+- Go 风格字段名(RefreshToken / IssuerURL) · 只在 kirors 包做最终 kebab/camel 映射
+- 各层入参 struct 保留 · 但都是 Credential 的子集视图
+- KeyPayload 保留 alias 一版平滑过渡
+
+**预估**:约 15 文件 · +200/-150 行 · 3-5 新单测 · **无 schema 变更**。
+
+**范围外**:数据库 · kiro.rs 客户端 · 前端 · webhook / 交付层业务逻辑。
+
+**做完的验证**:golden 字段测试 · Credential → 3 view struct 每个字段有对应位置 · 未来漏映射编译期挂。
 
 ---
 
