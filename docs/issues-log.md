@@ -46,9 +46,9 @@
 | [I-23](#i-23) | 🟢 fixed(deferred) | P0 | xi8 fire-guard · **审计误报** · 2026-08-14 用户拍板 xi8 不进钱路 · schema 保留仅对账 | 2026-08-22 |
 | [I-24](#i-24) | 🟢 fixed(unverified) | P0 | 优惠码 service_fee_waiver 完整核销 · Lookup+Redeem+Wallet.Credit 退还 · 修隐式超收 | 2026-08-22 |
 | [I-25](#i-25) | 🟢 fixed(unverified) | P0 | offers 端点从 vendor_price_tier 读 qty_band · 数量分档单价前端切数量重算 · 每档过计费栈 | 2026-08-22 |
-| [I-26](#i-26) | 🟡 open | P1 | PurchaseResult.PartiallyRefunded 只填不用 · 未来 vendor 语义相反会漏追差额 | 2026-08-22 |
-| [I-27](#i-27) | 🟡 open | P1 | pull_round_surcharge 表 + Engine.Hits 都有 · 无 INSERT · 对账拆不出单条规则贡献 | 2026-08-22 |
-| [I-28](#i-28) | 🟡 open | P1 | kiroceo/kiroappio Capability 声称有签名 vs VerifySignature 硬返 ErrNoSignature · 契约分裂 | 2026-08-22 |
+| [I-26](#i-26) | 🟢 fixed(deferred) | P1 | PartiallyRefunded · 当前 kirodrop 语义巧合正确·未来接语义相反 vendor 时再拆分支处理 | 2026-08-22 |
+| [I-27](#i-27) | 🟢 fixed(unverified) | P1 | pull_round_surcharge 落库 · HitsResolver 接口 · settle 同 tx INSERT 命中规则明细 | 2026-08-22 |
+| [I-28](#i-28) | 🟢 fixed(unverified) | P1 | kiroceo/kiroappio Capability.WebhookHasSignature 改 false · 匹配 vendor 端实际无签名 | 2026-08-22 |
 | [I-29](#i-29) | 🟡 open | P1 | vendor_plan_config 无 admin toggle API · 违反"费率/开关不写代码"铁律 · 运营只能 SQL 手改 | 2026-08-22 |
 | [I-30](#i-30) | 🟡 open | P2 | topup_order.channel CHECK 跟 topupchannel.Registry 不一致 · usdt/tron 开启即 CHECK 500 | 2026-08-22 |
 | [I-31](#i-31) | 🟡 open | P2 | Vendor.KeyHealth/KeyStats/Usage 6 家全 stub · deathwatch 无 vendor 健康信号 | 2026-08-22 |
@@ -680,9 +680,9 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 
 ---
 
-### I-26 · PartiallyRefunded 只填不用 · 未来 vendor 语义相反会漏追差额
+### I-26 · PartiallyRefunded 只填不用 · **deferred**
 
-**状态**:🟡 `open` · 2026-08-22 审计发现
+**状态**:🟢 `fixed(deferred)` · 2026-08-22 定 defer
 
 **症状**:填在 `kirodrop/mapper.go:92` · 消费点 `grep -rn "PartiallyRefunded" internal/` 除定义处 + kirodrop 一处 mapper · **别处 0 命中**。
 
@@ -696,7 +696,7 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 
 ### I-27 · pull_round_surcharge 表 + Engine.Hits 都有 · 无 INSERT
 
-**状态**:🟡 `open` · 2026-08-22 审计发现
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验
 
 **症状**:表 CREATE 在 `migrations/015_surcharge_rule.sql:39-51` · Hits 计算在 `pricing/surcharge.go:290-320` · **`grep -rn "pull_round_surcharge" internal/` 只有一处注释** · 无 INSERT。
 
@@ -708,7 +708,7 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 
 ### I-28 · webhook 签名 Capability 声称 vs 实现分裂
 
-**状态**:🟡 `open` · 2026-08-22 审计发现
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验
 
 **症状**:kiroceo `WebhookHasSignature: true`(`adapter.go:56`)· `VerifySignature` **硬返 ErrNoSignature**(line 333-335)。kiroappio 同款不一致。`handleVendorWebhook` 走独立 `hmacSpecs` 白名单(`vendor_webhook.go:55-74`)只列 91kiro / kirodrop / kiroappcc 三家。
 

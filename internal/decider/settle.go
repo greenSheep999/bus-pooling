@@ -119,6 +119,18 @@ func (o *Orchestrator) settleWithMeta(
 		return nil, err
 	}
 
+	// I-27 · 落 pull_round_surcharge 每条 hit 一行(对账 / 申诉拆规则贡献用)。
+	// hitsResolver nil / 表空 / env fallback 时返 nil · 跳过落库(兼容老部署)。
+	if o.hitsResolver != nil {
+		hits := o.hitsResolver.ResolveHits(ctx, RateContext{
+			VendorID: pending.VendorID,
+			Count:    purchase.Purchased,
+		})
+		if err := insertSurchargeHits(ctx, tx, pullRoundID, hits, bd, o.now()); err != nil {
+			return nil, fmt.Errorf("decider: 落 pull_round_surcharge: %w", err)
+		}
+	}
+
 	// credential_ledger 每号一行
 	ledgerIDs, err := o.insertCredentials(ctx, tx, pending, pullRoundID, purchase, imported)
 	if err != nil {
@@ -446,6 +458,59 @@ func (o *Orchestrator) insertCredentials(
 		out = append(out, id)
 	}
 	return out, nil
+}
+
+// insertSurchargeHits · I-27 · 每条命中规则一行 pull_round_surcharge。
+//
+// **amount 分摊**:每条规则的 amount(microunit) = 该规则在**该 kind 桶**里的占比 × 该 kind 桶实收总额。
+// 简化实现:直接按 RateBp 占比分摊 kind 总额 · 跟 pricing.Engine.Eval 汇总口径一致。
+//
+// hits 空(env fallback / 表空)直接返 nil · 不落。跟 marketPopper.PopToCredplainTx 的 nil-safe 风格一致。
+func insertSurchargeHits(
+	ctx context.Context, tx *sql.Tx,
+	pullRoundID string, hits []SurchargeHit, bd Breakdown, now time.Time,
+) error {
+	if len(hits) == 0 {
+		return nil
+	}
+	// 按 kind 分组算总 rate_bp · 后面按占比摊 amount。
+	kindBp := make(map[string]int64)
+	for _, h := range hits {
+		kindBp[h.Kind] += h.RateBp
+	}
+	// 每 kind 的实收总额(microunit) · 从 Breakdown 拆出来。
+	kindAmount := func(kind string) int64 {
+		switch kind {
+		case "vendor":
+			return bd.vendorFee
+		case "zone":
+			return bd.regionFee
+		case "service":
+			return bd.ServiceFee
+		case "single_pull":
+			return bd.singlePullFee
+		case "capability", "retail", "adhoc":
+			return bd.capabilityFee // 三种都归 capability 桶(pricing.go 落库口径)
+		}
+		return 0
+	}
+	nowStr := now.UTC().Format(time.RFC3339)
+	for _, h := range hits {
+		total := kindAmount(h.Kind)
+		var amount int64
+		if kindBp[h.Kind] > 0 {
+			amount = total * h.RateBp / kindBp[h.Kind]
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO pull_round_surcharge
+			  (pull_round_id, rule_id, rule_name, rule_kind, rate_bp, amount, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			pullRoundID, h.RuleID, h.RuleName, h.Kind, h.RateBp, amount, nowStr,
+		); err != nil {
+			return fmt.Errorf("INSERT pull_round_surcharge[%s]: %w", h.RuleID, err)
+		}
+	}
+	return nil
 }
 
 // saveCredplainTx · I-22 · 拉号成功后同 tx 把号明文落 credential_plaintext。

@@ -549,6 +549,8 @@ func buildDecider(
 		},
 		// 抢号链 · auto 模式缺货时挂单等补货（decisions §11.15）
 		Enqueuer: enqueuer,
+		// I-27 · 命中规则明细落 pull_round_surcharge(对账/申诉用) · 跟 RatesResolver 同一实例。
+		HitsResolver: surchargeResolver,
 		// 我方第 7 家手工池 seller · settle 里跟 credential_ledger.INSERT 同 tx 卖号
 		// nil 允许（老装配 / 未接手工池）· 但号一旦是 market 来源就必须有
 		MarketStock: marketStockStore,

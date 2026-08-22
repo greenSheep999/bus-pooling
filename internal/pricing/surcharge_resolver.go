@@ -119,3 +119,33 @@ func (r *SurchargeResolver) Invalidate() {
 	r.cachedAt = time.Time{}
 	r.mu.Unlock()
 }
+
+// ResolveHits · I-27 · 供 decider settle 落 pull_round_surcharge 用。
+//
+// 返命中的规则明细(RuleID/RuleName/Kind/RateBp) · 表空 / 出错时返 nil (跟 Resolve 兜底一致)。
+// 满足 decider.HitsResolver 接口 · 装配层跟 RatesResolver 用同一 Store 实例。
+func (r *SurchargeResolver) ResolveHits(ctx context.Context, rc decider.RateContext) []decider.SurchargeHit {
+	rules, err := r.rules(ctx)
+	if err != nil || len(rules) == 0 {
+		return nil
+	}
+	engine := NewEngine(rules)
+	res := engine.Eval(EvalContext{
+		VendorID:         rc.VendorID,
+		Zone:             rc.Zone,
+		Count:            rc.Count,
+		PassengerInvited: rc.PassengerInvited,
+		BusAvgLifespanH:  rc.BusAvgLifespanH,
+	})
+	if len(res.Hits) == 0 {
+		return nil
+	}
+	out := make([]decider.SurchargeHit, 0, len(res.Hits))
+	for _, h := range res.Hits {
+		out = append(out, decider.SurchargeHit{
+			RuleID: h.RuleID, RuleName: h.RuleName,
+			Kind: string(h.Kind), RateBp: h.RateBp,
+		})
+	}
+	return out
+}
