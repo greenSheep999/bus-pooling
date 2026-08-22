@@ -2778,6 +2778,24 @@ vendor 供给（6 家 + xi8 聚合站）
 4. **§13.6** 015 调度文档权威入口
 5. **§13.2** /docs 对接文档扩
 
+## §14 xi8 不进钱路（2026-08-14 补记 · issues-log I-23 审计误报后补）
+
+**决策**：xi8 聚合源的 `xi8_vendor_flags`(buyable/blocked/floating) **不接入抢号 fire-guard** · schema 保留但只用于**对账 / 诊断查询**。
+
+**背景**：migration 034 早期意图是"blocked=1 → 别 fire" · 后来 2026-08-14 用户拍板：
+- xi8 数据滞后 5min · 走它 fire-guard 是**单点故障** —— xi8 挂了整个采购停摆
+- fail-open 语义(查不到不拦) 等于没 guard · fail-close 又太激进
+- 用户视角"xi8 说停 · 但我直连能买"的信任问题
+
+**当前状态**：
+- vendor 侧真 blocked 时直连返 4xx · fire 前无预检
+- 幂等键在**扣钱前**校验 · 白烧一次 vendor RTT 不涉及钱
+- `internal/vendorview/flag_store.go:12-13` 注释已定死"不接抢号 fire"
+
+**审计误报**：2026-08-22 大 audit 报告把这条列为 P0 漏洞(I-23) · 实际是 by design · 补记本条决策防止下次再被"发现"。
+
+**要 revert 的话**：需要先解决 xi8 单点故障问题(比如加降级链)。
+
 ## 记录约定（未来加决策时）
 
 - 每条格式：`### N.M 提议 [❌ / ⏸ / ✅]` + 提议 + 状态说明 + 参考（若有）

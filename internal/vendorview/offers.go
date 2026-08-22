@@ -213,10 +213,34 @@ func (s *Service) enabledPlansFor(
 //   - CNY 家 1:1 换算 · 数字巧合看着对 · 但漏了计费栈其他分项
 //   - USD 家漏 exchange_rate 换算 · vendor 原始报价被前端当积分显示
 // 修复:跟 VendorStock 走同一条路 · 定价只有一个入口(docs/10-pricing §4)。
+//
+// **I-25 · PriceBands 分档**:从 TierStore 读该 vendor 的 vendor_price_tier(qty_band)·
+// 每档单价过 baseCredits + finalUnitPrice 后填到 PriceBands。TierStore 为 nil / 空
+// 时 PriceBands 留空 · 前端按 flat UnitPrice 渲染(老行为兼容)。
 func (s *Service) offersFromSnapshot(
 	ctx context.Context, vendorID providers.VendorID,
 	snap *providers.StockSnapshot, plan providers.SubscriptionPlan, v Viewer,
 ) []OfferItem {
+	// 先读 vendor 的 qty_band 一次(每 zone 复用 · TierStore 里 band 是全 vendor 共享·不按 zone 分)
+	var priceBands []providers.QtyPriceBand
+	if s.tierStore != nil {
+		if raw, err := s.tierStore.QtyBandsOf(ctx, string(vendorID)); err == nil && len(raw) > 0 {
+			priceBands = make([]providers.QtyPriceBand, 0, len(raw))
+			for _, b := range raw {
+				// 分档单价走同一条计费栈 · 保证 offers.UnitPrice 跟 offers.PriceBands 口径一致
+				finalPrice := s.finalUnitPrice(ctx, vendorID,
+					s.baseCredits(ctx, vendorID,
+						providers.Money{Amount: b.UnitPriceCredits, Currency: providers.CurrencyCredit}), v)
+				priceBands = append(priceBands, providers.QtyPriceBand{
+					Region:           b.Region,
+					Lower:            b.Lower,
+					Upper:            b.Upper,
+					UnitPriceCredits: finalPrice,
+				})
+			}
+		}
+	}
+
 	out := make([]OfferItem, 0, len(snap.Zones))
 	for _, z := range snap.Zones {
 		zone := string(z.Zone)
@@ -228,6 +252,7 @@ func (s *Service) offersFromSnapshot(
 			Zone:         zone,
 			Available:    z.Available,
 			UnitPrice:    s.finalUnitPrice(ctx, vendorID, s.baseCredits(ctx, vendorID, z.UnitPrice), v),
+			PriceBands:   priceBands,
 		})
 	}
 	return out

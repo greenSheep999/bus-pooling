@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/bus-pooling/bus-pooling/internal/decider"
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 	"github.com/bus-pooling/bus-pooling/internal/strategy"
+	"github.com/bus-pooling/bus-pooling/internal/wallet"
 )
 
 // pullRequest / pullResponse 是 POST /api/me/pull 的对外形状（05-api-contract §5）。
@@ -73,14 +75,6 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 		return ErrBadRequest("count 必须 ≥ 1")
 	}
 
-	// decisions §8.43 v2 · 优惠码 pull 场景校验 · service_fee_waiver type
-	// 阶段 1:只 Lookup 不 Redeem · 拉号本身还没真跑(需要上游 vendor 支持 · #190 挂起)
-	// 校验通过 = 前端 UI 收 200 · 不报错("码适用此场景")· 等真拉号联通后再补 Redeem + service_fee_waived 逻辑
-	if s.coupons != nil && strings.TrimSpace(req.CouponCode) != "" {
-		if _, err := s.coupons.Lookup(r.Context(), req.CouponCode, coupon.TypeServiceFeeWaiver); err != nil {
-			return translateCouponErr(err)
-		}
-	}
 	// 前端会发 "auto" 表示"让系统派" —— 服务端等价于空
 	if req.VendorID == "auto" {
 		req.VendorID = ""
@@ -128,6 +122,15 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	case idemConflict:
 		return ErrIdempotencyConflict()
+	}
+
+	// decisions §8.43 v2 · 优惠码 pull 场景校验(I-24 修 · Lookup 挪到幂等 hit 之后·
+	// 幂等 replay 时不重跑 Lookup · 避免"额度用尽"错误在 replay 路径上被 spurious 抛)。
+	// 真正的核销走 Redeem(见下方 Pull 成功后的 result.ServiceFee 分支)。
+	if s.coupons != nil && strings.TrimSpace(req.CouponCode) != "" {
+		if _, err := s.coupons.Lookup(r.Context(), req.CouponCode, coupon.TypeServiceFeeWaiver); err != nil {
+			return translateCouponErr(err)
+		}
 	}
 
 	// 1f-C · 策略优先级铁律 · record 单独拉(busID 空 · 不查车级 · §4.3.3 底部)。
@@ -197,6 +200,57 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) error {
 		ServiceFee:       result.ServiceFee,
 		TotalDebit:       result.TotalDebit,
 		BalanceRemaining: result.BalanceRemaining,
+	}
+
+	// I-24 · 优惠码 service_fee_waiver 完整核销 · 修上线以来的隐式超收 bug。
+	//
+	// 老 bug:上面只 Lookup 不 Redeem · used_count 不递增 · 同码可无限次触发前端"已减免"
+	// 错觉 · 服务费实际按原价扣。
+	//
+	// 修法:Pull 成功后(拿到 pull_round_id) · 走 Coupon.Redeem 走完整核销 + Wallet.Credit
+	// 退还 service_fee 部分 · 更新 response 三项金额。
+	//
+	// **失败策略**:
+	//   - Redeem 失败(ErrAlreadyUsed 幂等重放 / ExpiredMaxUses 等) · log warn 不阻塞主流程
+	//   - Wallet.Credit 失败 · log warn 不阻塞(用户吃小亏 · 后台对账兜底)
+	//   - 顺序:Redeem 先 · 只有核销成功才退还(避免用户绕过限制多领)
+	if s.coupons != nil && s.wallets != nil &&
+		strings.TrimSpace(req.CouponCode) != "" && result.ServiceFee > 0 {
+		discount := result.ServiceFee
+		_, rerr := s.coupons.Redeem(r.Context(), coupon.RedeemInput{
+			Code:           req.CouponCode,
+			PassengerID:    p.ID,
+			Context:        coupon.ContextPull,
+			ContextRef:     result.PullRoundID,
+			DiscountAmount: discount,
+		})
+		if rerr != nil {
+			// ErrAlreadyUsed = 幂等重放(HTTP retry) · 不打断 · 之前的 Credit 已经跑过一次
+			if !errors.Is(rerr, coupon.ErrAlreadyUsed) {
+				slog.Warn("pull coupon Redeem 失败·服务费按原价扣·后台对账",
+					"pull_round_id", result.PullRoundID, "code", req.CouponCode, "err", rerr)
+			}
+		} else {
+			// 核销成功 → 退还 service_fee 部分。
+			// RefType=pull_round · RefID=pull_round_id · 对账时按此关联(跟老 Debit 的 RefType 一致)。
+			credited, cerr := s.wallets.Credit(r.Context(), wallet.Move{
+				PassengerID: p.ID,
+				Reason:      wallet.ReasonRedeem,
+				Amount:      discount,
+				RefType:     "pull_round",
+				RefID:       result.PullRoundID,
+				Memo:        "service_fee_waiver: " + req.CouponCode,
+			})
+			if cerr != nil {
+				slog.Warn("pull coupon Wallet.Credit 失败·核销已成但钱没退·后台对账",
+					"pull_round_id", result.PullRoundID, "code", req.CouponCode, "err", cerr)
+			} else {
+				// response 三项金额同步更新(用户看到"服务费 0 · 少扣 X · 余额多 X")
+				resp.ServiceFee = 0
+				resp.TotalDebit = result.TotalDebit - discount
+				resp.BalanceRemaining = credited.BalanceAfter
+			}
+		}
 	}
 
 	// 先写响应，再落幂等（顺序反了的话，客户端拿到响应后重放会拿到 conflict）

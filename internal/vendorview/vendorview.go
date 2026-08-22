@@ -61,6 +61,10 @@ type Service struct {
 	// 实现方 *PlanConfigStore · 见 offers.go PlanConfigReader
 	planConfig PlanConfigReader
 
+	// tierStore · vendor_price_tier 表读取(I-25 · migration 035)。
+	// nil 时 offers 不带 price_bands · 前端按 flat 单价渲染(老行为)。
+	tierStore *TierStore
+
 	// now / newCtx 可注入 · 测试时控时钟和取消
 	now func() time.Time
 }
@@ -84,6 +88,9 @@ type Config struct {
 	MarketReader MarketOfferReader
 	// PlanConfig · vendor 档位开关读取 · 传 *PlanConfigStore · nil = 用默认档兜底
 	PlanConfig PlanConfigReader
+	// TierStore · vendor_price_tier 读取 · 数量分档接进 offers.price_bands(I-25)。
+	// 传 nil = offers 不带 price_bands · 前端按 flat 单价渲染(老行为)。
+	TierStore *TierStore
 	// RatesResolver · 让展示价按 surcharge_rule DB 表求费率 · 跟 decider 拉号同源。
 	// 传 nil 时退回 Rates(env 兜底) —— 老部署行为不变。
 	RatesResolver decider.RatesResolver
@@ -114,6 +121,7 @@ func New(cfg Config) (*Service, error) {
 		quality:       cfg.Quality,
 		marketReader:  cfg.MarketReader,
 		planConfig:    cfg.PlanConfig,
+		tierStore:     cfg.TierStore,
 		now:           func() time.Time { return time.Now().UTC() },
 	}, nil
 }

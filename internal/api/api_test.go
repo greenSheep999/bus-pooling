@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/bus-pooling/bus-pooling/internal/bus"
+	"github.com/bus-pooling/bus-pooling/internal/coupon"
 	"github.com/bus-pooling/bus-pooling/internal/db"
 	"github.com/bus-pooling/bus-pooling/internal/decider"
 	"github.com/bus-pooling/bus-pooling/internal/delivery/handoff"
@@ -30,6 +31,7 @@ type testEnv struct {
 	db      *db.DB
 	wallets *wallet.Store
 	topups  *topup.Store
+	coupons *coupon.Store // I-24 · 拉号优惠码测试用
 	server  *Server // 可选·装配 gateway / mock 依赖时用
 }
 
@@ -67,6 +69,7 @@ func newEnvBase(t *testing.T, mkDecider func(*db.DB) *decider.Orchestrator) *tes
 	}
 
 	topups := topup.NewStore(d.DB)
+	coupons := coupon.NewStore(d.DB)
 	mux := http.NewServeMux()
 	server := NewServer(ServerDeps{
 		DB:            d.DB,
@@ -77,6 +80,7 @@ func newEnvBase(t *testing.T, mkDecider func(*db.DB) *decider.Orchestrator) *tes
 		Decider:       orch,
 		Redeems:       redeem.NewStore(d.DB),
 		Topups:        topups,
+		Coupons:       coupons,
 		PullRecords:   pullrecord.NewStore(d.DB),
 		Handoffs:      handoff.NewStore(d.DB, 0),
 		Insights:      insight.NewStore(d.DB),
@@ -92,7 +96,7 @@ func newEnvBase(t *testing.T, mkDecider func(*db.DB) *decider.Orchestrator) *tes
 		srv.Close()
 		_ = d.Close()
 	})
-	return &testEnv{srv: srv, db: d, wallets: wallets, topups: topups, server: server}
+	return &testEnv{srv: srv, db: d, wallets: wallets, topups: topups, coupons: coupons, server: server}
 }
 
 // walletCreditForTest 造一个测试用的充值 Move。
