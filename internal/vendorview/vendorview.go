@@ -26,7 +26,12 @@ import (
 // Service 是对外的 vendor 视图。api 层拿 Service 调 Stock / Prices / AutoPick / Status 等。
 type Service struct {
 	registry *providers.Registry
-	rates    decider.Rates
+	// rates · env 兜底费率(1a 兼容 · 装配层从 BP_RATE_* 读)
+	rates decider.Rates
+	// ratesResolver · 优先从 surcharge_rule 表按上下文求费率(1b · docs/10-pricing §4)。
+	// nil 时退回 s.rates。**展示价必须跟拉号价用同一份费率源** ——
+	// decider 装了 resolver 而这里不装 · 会导致"预估 vs 实扣"不一致。
+	ratesResolver decider.RatesResolver
 	// stockTimeout 单家 vendor Stock 调用的超时。默认 3s。
 	// 聚合端点里一家慢不能拖垮整体（默认值兜底：Config 传 0 时用 3s）。
 	stockTimeout time.Duration
@@ -79,6 +84,9 @@ type Config struct {
 	MarketReader MarketOfferReader
 	// PlanConfig · vendor 档位开关读取 · 传 *PlanConfigStore · nil = 用默认档兜底
 	PlanConfig PlanConfigReader
+	// RatesResolver · 让展示价按 surcharge_rule DB 表求费率 · 跟 decider 拉号同源。
+	// 传 nil 时退回 Rates(env 兜底) —— 老部署行为不变。
+	RatesResolver decider.RatesResolver
 }
 
 // New 建 Service。rates 为零值时零费率（真实环境从后台配置注入）。
@@ -97,6 +105,7 @@ func New(cfg Config) (*Service, error) {
 	return &Service{
 		registry:      cfg.Registry,
 		rates:         cfg.Rates,
+		ratesResolver: cfg.RatesResolver,
 		stockTimeout:  to,
 		probeStore:    cfg.ProbeStore,
 		probeInterval: probeInterval,
@@ -376,7 +385,7 @@ func (s *Service) VendorStock(ctx context.Context, vendorID string, v Viewer) (*
 			Enabled:   true,
 			Available: z.Available,
 			// 先按 vendor_pricing 换成积分 · 再进计费栈（USD 家不换会少算 6.8 倍）
-			UnitPrice: s.finalUnitPrice(s.baseCredits(ctx, e.VendorID, z.UnitPrice), v),
+			UnitPrice: s.finalUnitPrice(ctx, e.VendorID, s.baseCredits(ctx, e.VendorID, z.UnitPrice), v),
 		})
 	}
 	return view, nil
@@ -603,7 +612,7 @@ func (s *Service) autoPickForKind(
 		AnonID:          anon,
 		Zone:            zonePtr,
 		Available:       best.pickedZone.Available,
-		UnitPrice:       s.finalUnitPrice(best.credits, v),
+		UnitPrice:       s.finalUnitPrice(ctx, best.entry.VendorID, best.credits, v),
 		WarrantyMinutes: best.snap.WarrantyMinutes,
 		MaxPerOrder:     best.snap.MaxPerOrder,
 		MinPerOrder:     best.snap.MinPerOrder,
@@ -921,11 +930,24 @@ func (s *Service) baseCredits(ctx context.Context, vendorID providers.VendorID, 
 //
 // `single_pull` / `service` 三档都收 —— 别在这里置 0。
 // WaiveMarkup 是运营手工豁免（跟档次正交）· 置 0 区域层。
-func (s *Service) finalUnitPrice(unit int64, v Viewer) int64 {
+//
+// **费率源**（I-20 · docs/10-pricing §4）：
+//   - ratesResolver != nil · 走 surcharge_rule DB 表(跟 decider 拉号同源)
+//   - resolver 未装或找不到 vendor · 退回 s.rates(env)
+//
+// vendorID 传 "" 时仍会调 resolver(拿"全局"规则)· ctx 用来给 store 查询。
+func (s *Service) finalUnitPrice(ctx context.Context, vendorID providers.VendorID, unit int64, v Viewer) int64 {
 	if unit <= 0 {
 		return 0
 	}
 	rates := s.rates
+	if s.ratesResolver != nil {
+		rates = s.ratesResolver.Resolve(ctx, decider.RateContext{
+			VendorID:         string(vendorID),
+			Count:            1, // 列表页展示的是"单拉一份"最终报价
+			PassengerInvited: v.Invited,
+		})
+	}
 	switch v.Tier {
 	case TierWholesale:
 		rates.VendorMarkup = 0

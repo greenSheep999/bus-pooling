@@ -132,6 +132,25 @@ const (
 	KeyPayloadKeyRegion KeyPayloadShape = "key_region"
 )
 
+// AuthMethod · 号的鉴权语义 · 决定往 housepool 后端 / 号池的哪个字段塞。
+//
+// 跟 KeyPayloadShape 正交:
+//   - shape 是 vendor 响应的 JSON 形状(几个字段·各叫啥)
+//   - AuthMethod 是号本身用啥认证(refresh_token / api_key / bearer)
+//
+// 老 4-tuple 号一律是 API key(kiroApiKey 字段)· personal 类的 refresh_token 号
+// 一律走 refreshToken 字段。空值 = 未声明 · 上层按老默认 api_key 兜底。
+type AuthMethod string
+
+const (
+	// AuthAPIKey 号本身是一个 kiro API key(ksk_...) · 4-tuple 型 vendor 默认走这个
+	AuthAPIKey AuthMethod = "api_key"
+	// AuthRefreshToken 号本身是一个 SSO refresh token(可能带 sso_token 前缀) · personal 池
+	AuthRefreshToken AuthMethod = "refresh_token"
+	// AuthBearer 号是短期 bearer token(现无 vendor 支持 · schema 保留兼容)
+	AuthBearer AuthMethod = "bearer"
+)
+
 // Capability 声明每家的能力差异。
 //
 // **为什么不做"最大公约数"接口**（契约 §3）：各家能力不同（幂等键 / 分区 /
@@ -355,6 +374,9 @@ type KeyPayload struct {
 	// VendorKeyID vendor 侧的 key id（补拉 / 对账用）
 	VendorKeyID string
 	Key         string
+	// AuthMethod · 决定这个 Key 往 housepool 后端 / passengerpool 的哪个字段塞。
+	// 空 = 未声明 · 上层按老默认 AuthAPIKey 兜底(前 6 家 4-tuple 号老行为)。
+	AuthMethod AuthMethod
 	// 以下几个按 Capability.KeyPayloadShape 决定有没有值
 	Account   string
 	Password  string
