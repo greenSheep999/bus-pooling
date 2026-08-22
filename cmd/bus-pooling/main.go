@@ -718,6 +718,9 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		PlanConfig: vendorview.NewPlanConfigStore(database.DB),
 		// I-20 · 展示价跟 decider 拉号同源(surcharge_rule DB 表)· nil 时退 Rates env 兜底
 		RatesResolver: surchargeResolver,
+		// I-25 · offers 数量分档从 vendor_price_tier(qty_band)读入·前端切数量重算单价
+		// 数据源:backfiller 每 5min 从实现 KeyTierLister 的家拉·nil = offers 不带 price_bands
+		TierStore: vendorview.NewTierStore(database.DB),
 	})
 	if err != nil {
 		return err

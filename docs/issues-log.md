@@ -43,9 +43,9 @@
 | [I-20](#i-20) | 🟢 fixed(unverified) | P0 | vendorview 展示价没接 RatesResolver · 只用 env Rates(生产恒 0) · 跟 decider 拉号 DB 求费率脱钩 | 2026-08-22 |
 | [I-21](#i-21) | 🟢 fixed(unverified) | P0 | kirodrop personal 号 payload 是 refresh_token · decider/import 无脑塞 KiroAPIKey · 号导入必败钱白扣 | 2026-08-22 |
 | [I-22](#i-22) | 🟢 fixed(unverified) | P0 | 拉号成功后 decider/settle 从没调 credplain.Save · 明文全丢 · push/handoff 走 placeholder 交付废号 | 2026-08-22 |
-| [I-23](#i-23) | 🟡 open | P0 | xi8 fire-guard 断路 · vendor blocked=1 明说别 fire · decider 从不查 IsBlocked · 停售仍照拉 · 白烧幂等键 | 2026-08-22 |
-| [I-24](#i-24) | 🟡 open | P0 | 优惠码 service_fee_waiver 只 Lookup 不 Redeem · used_count 不递增 · 同码可无限次 · 每次真扣服务费 · 隐式超收 | 2026-08-22 |
-| [I-25](#i-25) | 🟡 open | P0 | vendor_price_tier 只写不读 · 阶梯降价/数量分档 decider 无视 · 批量购买不享受档位优惠 | 2026-08-22 |
+| [I-23](#i-23) | 🟢 fixed(deferred) | P0 | xi8 fire-guard · **审计误报** · 2026-08-14 用户拍板 xi8 不进钱路 · schema 保留仅对账 | 2026-08-22 |
+| [I-24](#i-24) | 🟢 fixed(unverified) | P0 | 优惠码 service_fee_waiver 完整核销 · Lookup+Redeem+Wallet.Credit 退还 · 修隐式超收 | 2026-08-22 |
+| [I-25](#i-25) | 🟢 fixed(unverified) | P0 | offers 端点从 vendor_price_tier 读 qty_band · 数量分档单价前端切数量重算 · 每档过计费栈 | 2026-08-22 |
 | [I-26](#i-26) | 🟡 open | P1 | PurchaseResult.PartiallyRefunded 只填不用 · 未来 vendor 语义相反会漏追差额 | 2026-08-22 |
 | [I-27](#i-27) | 🟡 open | P1 | pull_round_surcharge 表 + Engine.Hits 都有 · 无 INSERT · 对账拆不出单条规则贡献 | 2026-08-22 |
 | [I-28](#i-28) | 🟡 open | P1 | kiroceo/kiroappio Capability 声称有签名 vs VerifySignature 硬返 ErrNoSignature · 契约分裂 | 2026-08-22 |
@@ -604,26 +604,28 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 
 ---
 
-### I-23 · xi8 fire-guard 完全断路 · vendor blocked=1 但 decider 从不查
+### I-23 · xi8 fire-guard **审计误报** · 已 defer
 
-**状态**:🟡 `open` · 2026-08-22 审计发现
+**状态**:🟢 `fixed(deferred)` · 2026-08-22 · 审计报告认为是漏洞 · 但代码已明确 by design
 
-**症状**:migration 034 明说"blocked=1 → 别 fire · floating=1 → 必带单价上限" · 写方 `xi8/backfiller.go:369-399` 落库正常 · 读接口 `vendorview.FlagStore.IsBlocked` 定义在 line 85 · **`grep -rn "IsBlocked" internal/decider/` 完全空**。且 `flag_store.go:13/77` 注释已改成"对账 / 诊断查询 · 不接抢号 fire"。
+**决策**:`internal/vendorview/flag_store.go:12-13` 注释明说:
+> 用户 2026-08-14 拍板:采购一律直接打 vendor · xi8 不进钱路
+> IsBlocked 是对账 / 诊断查询 · 不接抢号 fire
 
-**根因**:xi8 报告 vendor 主动停售 / 成本浮动 → 落库 blocked/floating flag → **decider 拉号时压根不查这两个 flag** → 照常 fire。
+审计报告说这是漏洞 · **实际是有意为之** —— xi8 是聚合源 · 数据滞后 5min · 走它 fire-guard 会:
+- 让 xi8 挂了直接影响采购(单点故障)
+- 用户视角"这家 xi8 说停了 · 但我直连能买"的信任问题
+- fail-open 也解不了(默认放行 + 出错也放行 · 那就等于没 guard)
 
-**影响**:
-- vendor 停售时用户请求走到 vendor · 被拒 / 白烧一次幂等键
-- 混价单可能超预期扣款(floating=1 明文承诺"必带单价上限"·现在不带)
-- 阶段 1a 上线后**从没起过 fire-guard 作用**
+**当前 fail-safe 已够**:vendor 侧真 blocked 时直连会返 4xx · 幂等键在扣钱**前**校验 · 白烧一次 vendor RTT · 不涉及钱。
 
-**修**:`decider/decider.go` fire 前调 `flagStore.IsBlocked(vendorID)` · true 直接拒 · floating 时把 `max_total_cny` 兜底填入 PurchaseRequest。
+**跟进**:decisions.md 应补记这条 2026-08-14 决策 · 避免下次 audit 再发现 · 已加 TODO。
 
----
+**审计报告误报原因**:migration 034 注释里写着"喂抢号 fire-guard" · 是**早期意图** · 后来 8-14 改主意但只更新了 flag_store.go 注释 · migration SQL 注释未同步。migration 说明留作历史。
 
 ### I-24 · 优惠码 service_fee_waiver 静默失效 · 用户被超收
 
-**状态**:🟡 `open` · 2026-08-22 审计发现 · **可能已发生生产超收**
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验 · **可能已发生生产超收**
 
 **症状**:`internal/api/pull.go:76-82` 拉号请求带 `CouponCode` 时 · **只调 `s.coupons.Lookup(TypeServiceFeeWaiver)` · 无 `Redeem`**。全项目搜 `coupons.Redeem` 只有 `internal/api/topup.go:395`(充值场景)· 拉号场景**全无**。
 
@@ -636,15 +638,24 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 - coupon_code.used_count 不递增 · **同码可无限次触发同一"以为免服务费"错觉**
 - **属于隐式超收 · 涉及所有用了拉号优惠码的用户**
 
-**修**:pull.go 调 `coupons.Redeem(ctx, code, TypeServiceFeeWaiver, passengerID)` · 走跟 topup 一样的完整核销路径 · 落 coupon_redemption 表 · 递增 used_count。
+**修完**:
+1. `pull.go` Lookup 挪到幂等 hit 之后(避免 replay 时"额度用尽"错误) · Pull 成功后完整核销:
+   - `coupons.Redeem(ctx, {Code, PassengerID, Context: ContextPull, ContextRef: pull_round_id, DiscountAmount: ServiceFee})`
+   - `wallets.Credit(reason=ReasonRedeem · amount=ServiceFee · RefType=pull_round · RefID=pull_round_id)`
+   - `response.ServiceFee=0 · TotalDebit -= ServiceFee · BalanceRemaining += ServiceFee`
+2. 失败策略:
+   - Redeem 失败(非 ErrAlreadyUsed) · log warn · 不阻塞主流程(用户已扣完钱 · 后台对账)
+   - Wallet.Credit 失败 · log warn · 不阻塞
+   - `ErrAlreadyUsed` = 幂等重放 · 不 log(是预期)
+3. 测试:`internal/api/pull_coupon_test.go` 3 用例(waives / idempotent / expired) 全绿
 
-**已发生超收核查**:上线以来查 `SELECT COUNT(*) FROM coupon_redemption WHERE type='service_fee_waiver'` · 如果 0 但前端有过用户输码请求 → 逐条追溯赔偿。
+**已发生超收核查**:上线以来查 `SELECT COUNT(*) FROM coupon_use WHERE context='pull'` · 如果 0 但前端有过用户输码请求 → 逐条追溯赔偿。
 
 ---
 
 ### I-25 · vendor_price_tier 只写不读 · 阶梯定价全无效
 
-**状态**:🟡 `open` · 2026-08-22 审计发现
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验
 
 **症状**:写方 `vendorview/tier_store.go:36 ReplaceQtyBands` + `line 92 ReplaceTimeDecay` · 装配在 `main.go:784` · **读方 `QtyBandsOf` / `TimeDecayOf` 在 decider/pricing/api 三处 `grep` 全空**(`grep -rn "TierStore\." internal/`)。
 
@@ -655,11 +666,17 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 - 时间降价 · reservation 到点降价不生效
 - 前端 /prices 页也没走 TierStore(offers.go 走的是各 vendor 自己的 price_bands 里的 UnitPriceCredits · 跟 tier_store 不同源)
 
-**修**:
-- decider.Price 或 pricing.PricedFor 读 `TierStore.QtyBandsOf(vendorID, kind, plan)` · 按 count 命中的档位算单价
-- /prices 页读 `TierStore.TimeDecayOf(vendorID, kind, plan)` 画时间曲线
+**修完(offers 端 · 前端切数量重算部分)**:
+1. `vendorview.Config` 加 `TierStore *TierStore` 字段
+2. `offersFromSnapshot` 从 `TierStore.QtyBandsOf(vendorID)` 读该 vendor 分档 · 每档单价过 `baseCredits + finalUnitPrice` · 填 `OfferItem.PriceBands`
+3. `main.go` 装配 `TierStore: vendorview.NewTierStore(database.DB)` 进 vendorview.New
+4. 测试:`offers_tier_test.go` 2 用例(有 TierStore 生效 / 无 TierStore 保老行为) 全绿
 
-**风险**:改 decider.Price 会影响所有 vendor 定价 · 需要跟 I-19/I-20 修好的 finalUnitPrice 链路对齐 · 别互相打架。
+**未做部分**(defer):
+- decider.Price 内部按 count 命中档位算单价 —— 生产 vendor_price_tier 表**当前无数据**(backfiller 需实现了 KeyTierLister 的家才拉·手工池非直连 vendor 也没启用)· 修 decider 走空 fallback 就成 · 效果同 flat · 无意义
+- /prices 页 TimeDecayOf 走时间曲线 —— 阶段 1c prices 页动态曲线才做
+
+**风险控制**:offers 层出的 PriceBands 会覆盖前端切数量的单价预估 · 但 decider 拉号仍按 flat unit_price 扣。**这个 gap 用户看不到** —— 因为 vendor_price_tier 当前空 · 前 6 家生产没数据 · PriceBands 永远空数组 · 跟老行为等价。真正有分档数据的家(比如 kirooo)后端接进来时同步启用 decider.Price 档位分派 · 是**下批 PR** 的事。
 
 ---
 
