@@ -39,6 +39,10 @@
 | [I-11](#i-11) | 🟢 fixed(unverified) | P2 | 缺 stage-1..6 分级 smoke 脚本 | 2026-08-15 |
 | [I-12](#i-12) | 🟢 fixed(deferred) | P3 | 主文档 P2 drift · 关键条已修 · 25 条纯文档 drift 明确 defer 阶段 2 | 2026-08-15 |
 | [I-18](#i-18) | 🟢 fixed(unverified) | P0 | /api/vendors/{anon_id}/stock 和 /history 404 · handler 拿 anon_id 直查 lookupEnabled(只认真 id) · 阻塞所有散客选 vendor 后的数据面板 | 2026-08-22 |
+| [I-19](#i-19) | 🟢 fixed(unverified) | P0 | Offers 端点绕过 PricedFor · USD 家 18.51 USD 被当 18.51 积分 · CNY 家漏计费栈 | 2026-08-22 |
+| [I-20](#i-20) | 🟢 fixed(unverified) | P0 | vendorview 展示价没接 RatesResolver · 只用 env Rates(生产恒 0) · 跟 decider 拉号 DB 求费率脱钩 | 2026-08-22 |
+| [I-21](#i-21) | 🟢 fixed(unverified) | P0 | kirodrop personal 号 payload 是 refresh_token · decider/import 无脑塞 KiroAPIKey · 号导入必败钱白扣 | 2026-08-22 |
+| [I-22](#i-22) | 🟢 fixed(unverified) | P0 | 拉号成功后 decider/settle 从没调 credplain.Save · 明文全丢 · push/handoff 走 placeholder 交付废号 | 2026-08-22 |
 
 ---
 
@@ -510,6 +514,80 @@ out, err := s.vendorView.VendorStock(r.Context(), realVendorID, viewerOf(p, r))
 vendorView 装配 nil 时退回 "vendor" 通用词。
 
 **跟同类修复对齐**：commit 6860b1c 修过 assignErrItem 同样的泄漏 · 这次一并清了。
+
+---
+
+### I-19 · Offers 端点绕过 PricedFor · USD 家价错
+
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验
+
+**症状**:`/api/vendors/offers` 直接透传 `Money.Amount` 到前端·**没走 baseCredits + finalUnitPrice**·
+- CNY 家(前 5 家)`credits_per_unit=1_000_000`·1:1 数字巧合看着对·**但漏了服务费/单次议价整条计费栈**
+- USD 家 18.51 USD 被前端当 18.51 积分显示·实际应 = 18.51 × 6.8 × 计费栈 ≈ 126+ 积分
+
+**根因**:`internal/vendorview/offers.go` `offersFromSnapshot` 从函数改成方法·加 ctx + vendorID + viewer·走跟 `VendorStock` 同一条 `s.finalUnitPrice(s.baseCredits(...))`。手工池 `offersFromMarket` 同理·`PriceBands.UnitPriceCredits` 每档也过 finalUnitPrice。
+
+**修复**:定价单一入口(docs/10-pricing §4)。4 处调用点全走同一函数。
+
+**测试**:offers_pricing_test.go 6 用例(CNY/USD/三档减免/无术语/resolver 优先/env fallback) · 全绿。
+
+---
+
+### I-20 · vendorview 展示价没接 RatesResolver
+
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验
+
+**症状**:decider 拉号从 DB `surcharge_rule` 求费率(实时可配)·但 vendorview 展示价只用 env `Rates`(启动时固定)。生产 env 从没配过 `BP_RATE_*`·env 全 0·**展示价永远 0 服务费**。后台运营就算加规则·展示还是 0·跟实扣脱钩。
+
+**根因**:`vendorview.Service.finalUnitPrice` 只用 `s.rates` env 值 · `decider.RatesResolver` 只装到 orchestrator · 展示层没接。
+
+**修复**:
+1. `vendorview.Config` 加 `RatesResolver decider.RatesResolver` 字段
+2. `finalUnitPrice` 签名加 `ctx + vendorID` · 优先走 resolver.Resolve · fallback env
+3. 5 处调用点(vendorview + offers)全传 ctx/vendorID
+4. `main.go buildDecider` 返 surchargeResolver · vendorview.New 装配点传入
+
+**测试**:`TestOffers_RatesResolver_TakesPrecedenceOverEnv` + `TestOffers_EnvFallback_WhenNoResolver` 全绿。
+
+---
+
+### I-21 · kirodrop personal 号 payload 是 refresh_token · 走错字段
+
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验
+
+**症状**:kirodrop personal 号 vendor 只返 `{key, region}` · key 是 `<sso>:<refresh>` 冒号串。`decider/import.go` 无脑塞 `KiroAPIKey` 字段 → housepool 后端用 API key 协议校验 · 号导入必败 · 钱白扣。
+
+**证据**:2026-08-22 leedx2011 手动拉一个 personal 号 · `/api/v1/orders/store_.../keys[0]` 只有 `{key, region: "personal"}` · 无 account/password/issuer_url。
+
+**修复**:
+1. `providers.KeyPayload` 加 `AuthMethod` 字段 · 新 enum `AuthAPIKey / AuthRefreshToken / AuthBearer`
+2. `kirodrop/mapper.go toKeyPayloads` 按 `k.Region == "personal"` 打标 AuthRefreshToken · 其他 AuthAPIKey
+3. `decider/import.go importToPoolWithMeta` 按 AuthMethod 分派 · refresh_token 走 `RefreshToken` · api_key 走 `KiroAPIKey/Email/IssuerURL`(老)
+
+**测试**:kirodrop `personal_auth_test.go` 3 用例(personal/us-east/eu-central) 全绿。
+
+**待跟进**:I-23 · 抽象化 vendor→housepool→credplain→passengerpool 四层的字段映射 · 走 canonical `Credential` type。
+
+---
+
+### I-22 · 拉号成功后从没落 credplain 明文 · push/handoff 走 placeholder 交付废号
+
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验
+
+**症状**:migration 043 早在 2026-08-12 就落表 · credplain.Save 三种 auth_method 都写了 · 但**拉号真链路 `decider/settle.insertCredentials` 从来没调 credplain.Save**。明文全丢 · 后续 `push_pool` / `handoff` 从 `credential_plaintext` 表 FetchPlaintext 拿不到 · 走 placeholder 兜底 · 用户拿到的号是**占位符 · 完全用不了**。
+
+**首次触发**:kirodrop personal 号 e2e 测试 · 深入排查 push_pool 链路时发现。之前生产 leedx2011 只做过"进车"路径(号进 housepool 由 kiro.rs 侧持有明文 · 我方不需要复本) · 没触发。
+
+**修复**:
+1. `credplain.Store` 加 `SaveTx(ctx, tx, in)` 方法 · 跟 `Save` 共用 `validateAndEncrypt` 帮手
+2. `decider.PlaintextSaver` 新接口 · Orchestrator 加 `plaintextSaver` 字段
+3. `settle.insertCredentials` 每号 INSERT credential_ledger 之后 · 同 tx 调 `saveCredplainTx`
+4. `saveCredplainTx` 按 `KeyPayload.AuthMethod` 分派 credplain.SaveInput(refresh_token/api_key/bearer)
+5. `main.go` 装配点 `PlaintextSaver: credplainStore`
+
+**关键设计**:**同 tx** · 崩溃回滚同步 · 不会出现"ledger 写了但 credplain 没写"的孤号。跟手工池路径的 `PopToCredplainTx` 对齐。
+
+**测试**:kirodrop 打标测试 3 用例(依赖 I-21) · settle 集成测走的是 mock plaintextSaver · nil 时兼容老行为。
 
 ---
 

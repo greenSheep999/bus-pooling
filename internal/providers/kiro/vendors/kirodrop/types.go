@@ -91,6 +91,9 @@ type keyItem struct {
 	Account       string `json:"account"`
 	Password      string `json:"password"`
 	IssuerURL     string `json:"issuer_url"`
+	// Region · vendor 每号自带 · personal 号返 "personal" · 企业号返 "us-east-1"/"eu-central-1"。
+	// I-21:用来分派 AuthMethod(personal → refresh_token · 其他 → api_key)。
+	Region        string `json:"region"`
 	Free          bool   `json:"free"`
 	Paid          int64  `json:"paid"`
 	WarrantyUntil string `json:"warranty_until"`

@@ -11,6 +11,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/bus-pooling/bus-pooling/internal/credplain"
 	"github.com/bus-pooling/bus-pooling/internal/housepool"
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 	"github.com/bus-pooling/bus-pooling/internal/stockwatch"
@@ -58,6 +59,9 @@ type Orchestrator struct {
 	// marketPopper · 手工池号 sold 时 · 把明文从暂存表迁到 credential_plaintext(I-01)·
 	// nil = 不迁 · push_pool 会走 placeholder(跟修复前行为一致)。
 	marketPopper MarketStockPlaintextPopper
+	// plaintextSaver · 前 6 家 BatchImport 路径 · 拉号成功后同 tx 落号明文(I-22)·
+	// nil = 不落 · push_pool / handoff 会走 placeholder 兜底(老行为兼容)。
+	plaintextSaver PlaintextSaver
 	// now / newID 可注入，测试里用来控时钟和 id 生成
 	now   func() time.Time
 	newID func() string
@@ -77,6 +81,16 @@ type MarketStockSeller interface {
 // 号仍能卖 · 只是推池会走 placeholder(跟 I-01 修复前行为一致)。
 type MarketStockPlaintextPopper interface {
 	PopToCredplainTx(ctx context.Context, tx *sql.Tx, kiroRSCredentialID uint64, credentialID string) error
+}
+
+// PlaintextSaver · 拉号真链路(前 6 家 BatchImport 路径)拿到号明文后同 tx 落 credplain(I-22)。
+//
+// **老 bug**:decider/import 从没调 credplain · 明文全丢 · push_pool / handoff 走 placeholder
+// 交付废号。schema(migration 043)+ credplain.SaveTx 都早就写好 · 就 settle 这一步没接。
+//
+// 装配层实现方是 *credplain.Store · nil = 不落(老行为兼容 · 交付时走 placeholder)。
+type PlaintextSaver interface {
+	SaveTx(ctx context.Context, tx *sql.Tx, in credplain.SaveInput) error
 }
 
 // PullSuccessNotifier · 拉号成功事件通知(避免 decider → webhookout 硬依赖)。
@@ -193,6 +207,9 @@ type Config struct {
 	// MarketPopper · 手工池号 sold 时 · 迁明文 stash → credential_plaintext(I-01)
 	// 装配层传 *credplain.Store（它满足 MarketStockPlaintextPopper 接口）· nil = 不迁
 	MarketPopper MarketStockPlaintextPopper
+	// PlaintextSaver · 前 6 家 BatchImport 路径 · 拉号成功后同 tx 落号明文(I-22)。
+	// 装配层传 *credplain.Store(它满足 PlaintextSaver 接口)· nil = 不落 · 交付走 placeholder。
+	PlaintextSaver PlaintextSaver
 }
 
 func New(cfg Config) *Orchestrator {
@@ -221,6 +238,7 @@ func New(cfg Config) *Orchestrator {
 		balanceChecker: cfg.BalanceChecker,
 		marketStock:    cfg.MarketStock,
 		marketPopper:   cfg.MarketPopper,
+		plaintextSaver: cfg.PlaintextSaver,
 		now:            func() time.Time { return time.Now().UTC() },
 		newID:          uuid.NewString,
 	}

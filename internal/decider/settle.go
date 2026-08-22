@@ -406,6 +406,18 @@ func (o *Orchestrator) insertCredentials(
 		if err != nil {
 			return nil, fmt.Errorf("decider: 写 credential_ledger[%d]: %w", i, err)
 		}
+		// I-22 · 拉号真链路(前 6 家 BatchImport 路径)拉回来的号 · 同 tx 落 credplain(明文)。
+		//
+		// 老 bug:此处一直没接 · 明文全丢 · push_pool / handoff 走 placeholder 交付废号。
+		// schema(043)+ credplain.SaveTx 早就写好 · 就这里没调。
+		//
+		// 手工池路径已经在下面 marketPopper 里覆盖 · 两条路径都落到 credplain 表 · 交付层
+		// FetchPlaintext 统一读同一张表。
+		if o.plaintextSaver != nil {
+			if err := o.saveCredplainTx(ctx, tx, id, purchase.Keys[i]); err != nil {
+				return nil, fmt.Errorf("decider: 落 credplain[%d]: %w", i, err)
+			}
+		}
 		// 手工池路径:同 tx 里 reserved → sold（Step 3f · docs/24 §3）
 		// 必须跟上面的 credential_ledger INSERT 同一 tx · 否则崩溃后 sweeper 会误释放：
 		//   若 sold 单独 commit · ledger 已落但 sold 没落 → sweeper 5min 后把号放回 available →
@@ -434,6 +446,40 @@ func (o *Orchestrator) insertCredentials(
 		out = append(out, id)
 	}
 	return out, nil
+}
+
+// saveCredplainTx · I-22 · 拉号成功后同 tx 把号明文落 credential_plaintext。
+//
+// 按 KeyPayload.AuthMethod 分派 credplain.SaveInput 的字段:
+//   - AuthRefreshToken · key 是 SSO refresh token 字符串
+//   - AuthAPIKey / 空 · key 是 kiro API key(老 4-tuple 号)
+//
+// **不能 fatal 于"AuthMethod 空"**:老 vendor adapter 可能没打标 · 兜底按 AuthAPIKey 处理。
+// 但 key 空 = 数据出错 · 直接返错(整个 settle tx 回滚 · 崩溃安全)。
+func (o *Orchestrator) saveCredplainTx(
+	ctx context.Context, tx *sql.Tx, credentialID string, k providers.KeyPayload,
+) error {
+	if k.Key == "" {
+		return errors.New("KeyPayload.Key 空 · vendor 响应异常")
+	}
+	in := credplain.SaveInput{CredentialID: credentialID, Email: k.Account}
+	// 空 AuthMethod 兜底走 api_key(前 6 家 4-tuple 老行为)。
+	authMethod := k.AuthMethod
+	if authMethod == "" {
+		authMethod = providers.AuthAPIKey
+	}
+	switch authMethod {
+	case providers.AuthRefreshToken:
+		in.AuthMethod = credplain.AuthRefreshToken
+		in.RefreshToken = k.Key
+	case providers.AuthBearer:
+		in.AuthMethod = credplain.AuthBearer
+		in.AccessToken = k.Key
+	default: // AuthAPIKey
+		in.AuthMethod = credplain.AuthAPIKey
+		in.KiroAPIKey = k.Key
+	}
+	return o.plaintextSaver.SaveTx(ctx, tx, in)
 }
 
 // normalizePlan · 号池回报的原始档位串 → 我方枚举。

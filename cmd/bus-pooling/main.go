@@ -383,7 +383,7 @@ func buildDecider(
 	enqueuer decider.StockEnqueuer,
 	marketStockStore *marketstock.Store,
 	credplainStore *credplain.Store,
-) (*decider.Orchestrator, housepool.HousePool, decider.Rates, error) {
+) (*decider.Orchestrator, housepool.HousePool, decider.Rates, *pricing.SurchargeResolver, error) {
 	live := !cfg.DryRun && os.Getenv("BP_ALLOW_LIVE_PULL") == "1"
 
 	var vendor decider.VendorClient
@@ -416,13 +416,13 @@ func buildDecider(
 				Proxy:         cfg.HTTPX.Proxy, NoProxy: cfg.HTTPX.NoProxy,
 			})
 			if herr != nil {
-				return nil, nil, decider.Rates{}, fmt.Errorf("mock+housepool · httpx: %w", herr)
+				return nil, nil, decider.Rates{}, nil, fmt.Errorf("mock+housepool · httpx: %w", herr)
 			}
 			poolClient, perr := kirors.New(kirors.Config{
 				BaseURL: cfg.Housepool.BaseURL, AdminKey: cfg.Secrets.HousepoolAdminKey,
 			}, hc)
 			if perr != nil {
-				return nil, nil, decider.Rates{}, fmt.Errorf("mock+housepool · client: %w", perr)
+				return nil, nil, decider.Rates{}, nil, fmt.Errorf("mock+housepool · client: %w", perr)
 			}
 			pool = poolClient
 			pubPool = poolClient
@@ -451,19 +451,19 @@ func buildDecider(
 			}
 		}
 		if len(vendors) == 0 {
-			return nil, nil, decider.Rates{}, fmt.Errorf(
+			return nil, nil, decider.Rates{}, nil, fmt.Errorf(
 				"live 模式必须至少启用一家 vendor（config.vendors.*.enabled = true）")
 		}
 
 		// default vendor · 客户端不传 vendor_id 时用（1a-1b 手工配·1d+ 算法比价）
 		defaultID := providers.VendorID(cfg.Decider.DefaultVendor)
 		if defaultID == "" {
-			return nil, nil, decider.Rates{}, fmt.Errorf(
+			return nil, nil, decider.Rates{}, nil, fmt.Errorf(
 				"live 模式必须显式配 decider.default_vendor · 见 config.example.yaml")
 		}
 		v, ok := vendors[defaultID]
 		if !ok {
-			return nil, nil, decider.Rates{}, fmt.Errorf(
+			return nil, nil, decider.Rates{}, nil, fmt.Errorf(
 				"decider.default_vendor 未启用·检查 config.vendors 配置")
 		}
 		hc, err := httpx.New(httpx.Config{
@@ -472,13 +472,13 @@ func buildDecider(
 			Proxy:         cfg.HTTPX.Proxy, NoProxy: cfg.HTTPX.NoProxy,
 		})
 		if err != nil {
-			return nil, nil, decider.Rates{}, err
+			return nil, nil, decider.Rates{}, nil, err
 		}
 		poolClient, err := kirors.New(kirors.Config{
 			BaseURL: cfg.Housepool.BaseURL, AdminKey: cfg.Secrets.HousepoolAdminKey,
 		}, hc)
 		if err != nil {
-			return nil, nil, decider.Rates{}, fmt.Errorf("装配号池客户端: %w", err)
+			return nil, nil, decider.Rates{}, nil, fmt.Errorf("装配号池客户端: %w", err)
 		}
 		// expected_version 真校验（Iss #13）· 空 = 不校验
 		// live 模式下强烈建议配·防 housepool 契约漂移后我方误发请求
@@ -489,11 +489,11 @@ func buildDecider(
 			gotVersion, verErr := poolClient.GetVersion(ctx)
 			cancel()
 			if verErr != nil {
-				return nil, nil, decider.Rates{}, fmt.Errorf(
+				return nil, nil, decider.Rates{}, nil, fmt.Errorf(
 					"housepool 版本校验失败·无法拉版本·拒启动: %w", verErr)
 			}
 			if gotVersion != cfg.Housepool.ExpectedVersion {
-				return nil, nil, decider.Rates{}, fmt.Errorf(
+				return nil, nil, decider.Rates{}, nil, fmt.Errorf(
 					"housepool 版本对不上·期望 %q·实际 %q·契约可能已漂移·拒启动",
 					cfg.Housepool.ExpectedVersion, gotVersion)
 			}
@@ -515,7 +515,7 @@ func buildDecider(
 	// live 模式下**零费率拒启动** —— 那意味着号价 pass-through 没有收入，
 	// 是配错不是设计。DRY_RUN 允许零，方便本地跑通闭环。
 	if live && rates == (decider.Rates{}) {
-		return nil, nil, decider.Rates{}, fmt.Errorf(
+		return nil, nil, decider.Rates{}, nil, fmt.Errorf(
 			"live 模式必须显式配费率：BP_RATE_SERVICE_BP=<n> 等 · 零费率是配错防身",
 		)
 	}
@@ -555,7 +555,10 @@ func buildDecider(
 		// I-01 · 手工池号 sold 时 · 迁明文 stash → credential_plaintext(同 tx)
 		// nil 允许(cipher 未配)· 号仍能卖 · push_pool 会走 placeholder
 		MarketPopper: credplainStore,
-	}), pubPool, rates, nil
+		// I-22 · 前 6 家 BatchImport 路径 · 拉号成功后同 tx 落号明文。
+		// nil 允许(cipher 未配)· 号仍能卖 · push_pool / handoff 走 placeholder。
+		PlaintextSaver: credplainStore,
+	}), pubPool, rates, surchargeResolver, nil
 }
 
 func runServe(ctx context.Context, cfg config.Config) error {
@@ -685,7 +688,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		"kill_flag", killFlag.Path(),
 		"mode", modeMgr.Current().String())
 
-	orch, poolClient, rates, err := buildDecider(cfg, database, vendorRegistry, stockWatcher, marketStockStore, credplainStore)
+	orch, poolClient, rates, surchargeResolver, err := buildDecider(cfg, database, vendorRegistry, stockWatcher, marketStockStore, credplainStore)
 	if err != nil {
 		return err
 	}
@@ -713,6 +716,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		MarketReader: newMarketReader(marketStockStore),
 		// vendor 档位开关（migration 049）· 后台可 toggle · 不写代码
 		PlanConfig: vendorview.NewPlanConfigStore(database.DB),
+		// I-20 · 展示价跟 decider 拉号同源(surcharge_rule DB 表)· nil 时退 Rates env 兜底
+		RatesResolver: surchargeResolver,
 	})
 	if err != nil {
 		return err

@@ -63,53 +63,98 @@ type SaveInput struct {
 	Email        string
 }
 
+// SaveTx · 在给定 tx 内落一份加密明文(用于跟 credential_ledger INSERT 同 tx)。
+//
+// 语义跟 Save 一致(校验 · 加密 · UPSERT)· 只是走 tx.ExecContext。**加密仍走 s.cipher**
+// (无状态) · 校验和 SQL 复用同一份 · 变化的只有执行器。
+//
+// 用于:decider/settle.insertCredentials 里拉号成功后 · 每号一行 credential_ledger 之后
+// 同 tx 落 credplain(I-22)· 崩溃回滚同步 · 不会出现"ledger 写了但 credplain 没写"的孤号。
+func (s *Store) SaveTx(ctx context.Context, tx *sql.Tx, in SaveInput) error {
+	if s == nil || s.cipher == nil {
+		return errors.New("credplain: Store 未装配 cipher")
+	}
+	if tx == nil {
+		return errors.New("credplain: SaveTx 需 tx 非 nil")
+	}
+	rtEnc, atEnc, akEnc, err := s.validateAndEncrypt(in)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	exp := now.Add(s.ttl)
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO credential_plaintext
+		  (credential_id, auth_method,
+		   refresh_token_encrypted, access_token_encrypted, kiro_api_key_encrypted,
+		   email, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(credential_id) DO UPDATE SET
+		  auth_method             = excluded.auth_method,
+		  refresh_token_encrypted = excluded.refresh_token_encrypted,
+		  access_token_encrypted  = excluded.access_token_encrypted,
+		  kiro_api_key_encrypted  = excluded.kiro_api_key_encrypted,
+		  email                   = excluded.email,
+		  expires_at              = excluded.expires_at,
+		  used_at                 = NULL`,
+		in.CredentialID, string(in.AuthMethod),
+		rtEnc, atEnc, akEnc,
+		nullIfEmpty(in.Email), now.Format(time.RFC3339Nano), exp.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return fmt.Errorf("credplain: SaveTx 落库: %w", err)
+	}
+	return nil
+}
+
+// validateAndEncrypt · Save / SaveTx 共用的校验 + 加密逻辑
+func (s *Store) validateAndEncrypt(in SaveInput) (rtEnc, atEnc, akEnc []byte, err error) {
+	if in.CredentialID == "" {
+		return nil, nil, nil, errors.New("credplain: credential_id 不能空")
+	}
+	switch in.AuthMethod {
+	case AuthRefreshToken:
+		if in.RefreshToken == "" {
+			return nil, nil, nil, errors.New("credplain: refresh_token 方法需 RefreshToken 非空")
+		}
+	case AuthAPIKey:
+		if in.KiroAPIKey == "" {
+			return nil, nil, nil, errors.New("credplain: api_key 方法需 KiroAPIKey 非空")
+		}
+	case AuthBearer:
+		if in.AccessToken == "" {
+			return nil, nil, nil, errors.New("credplain: bearer 方法需 AccessToken 非空")
+		}
+	default:
+		return nil, nil, nil, fmt.Errorf("credplain: 未知 auth_method %q", in.AuthMethod)
+	}
+	if in.RefreshToken != "" {
+		if rtEnc, err = s.cipher.Encrypt([]byte(in.RefreshToken)); err != nil {
+			return nil, nil, nil, fmt.Errorf("credplain: 加密 refresh_token: %w", err)
+		}
+	}
+	if in.AccessToken != "" {
+		if atEnc, err = s.cipher.Encrypt([]byte(in.AccessToken)); err != nil {
+			return nil, nil, nil, fmt.Errorf("credplain: 加密 access_token: %w", err)
+		}
+	}
+	if in.KiroAPIKey != "" {
+		if akEnc, err = s.cipher.Encrypt([]byte(in.KiroAPIKey)); err != nil {
+			return nil, nil, nil, fmt.Errorf("credplain: 加密 kiro_api_key: %w", err)
+		}
+	}
+	return rtEnc, atEnc, akEnc, nil
+}
+
 // Save · 存一份加密明文 · 已存在则覆盖(用于 refresh_token 转轮等场景)
 func (s *Store) Save(ctx context.Context, in SaveInput) error {
 	if s == nil || s.cipher == nil {
 		return errors.New("credplain: Store 未装配 cipher")
 	}
-	if in.CredentialID == "" {
-		return errors.New("credplain: credential_id 不能空")
+	rtEnc, atEnc, akEnc, err := s.validateAndEncrypt(in)
+	if err != nil {
+		return err
 	}
-	switch in.AuthMethod {
-	case AuthRefreshToken:
-		if in.RefreshToken == "" {
-			return errors.New("credplain: refresh_token 方法需 RefreshToken 非空")
-		}
-	case AuthAPIKey:
-		if in.KiroAPIKey == "" {
-			return errors.New("credplain: api_key 方法需 KiroAPIKey 非空")
-		}
-	case AuthBearer:
-		if in.AccessToken == "" {
-			return errors.New("credplain: bearer 方法需 AccessToken 非空")
-		}
-	default:
-		return fmt.Errorf("credplain: 未知 auth_method %q", in.AuthMethod)
-	}
-
-	var (
-		rtEnc []byte
-		atEnc []byte
-		akEnc []byte
-		err   error
-	)
-	if in.RefreshToken != "" {
-		if rtEnc, err = s.cipher.Encrypt([]byte(in.RefreshToken)); err != nil {
-			return fmt.Errorf("credplain: 加密 refresh_token: %w", err)
-		}
-	}
-	if in.AccessToken != "" {
-		if atEnc, err = s.cipher.Encrypt([]byte(in.AccessToken)); err != nil {
-			return fmt.Errorf("credplain: 加密 access_token: %w", err)
-		}
-	}
-	if in.KiroAPIKey != "" {
-		if akEnc, err = s.cipher.Encrypt([]byte(in.KiroAPIKey)); err != nil {
-			return fmt.Errorf("credplain: 加密 kiro_api_key: %w", err)
-		}
-	}
-
 	now := time.Now().UTC()
 	exp := now.Add(s.ttl)
 

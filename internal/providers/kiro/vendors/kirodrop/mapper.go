@@ -36,7 +36,13 @@ func parseTime(s string) *time.Time {
 	return &t
 }
 
-// toKeyPayloads 翻译 keys[]。四件套 {key, account, password, issuer_url}。
+// toKeyPayloads 翻译 keys[]。
+//
+// **两种号型**(I-21 · 2026-08-22 · 生产验)：
+//   - 企业号 · region us/eu · 4-tuple {key, account, password, issuer_url} · AuthAPIKey
+//   - 个人号 · region personal · 只有 {key, region} · key = "<sso_token>:<refresh_token>" · AuthRefreshToken
+//
+// 判据:vendor 侧不显式返 auth_type · 我方按 region 值判(personal region 恒为 refresh_token)。
 // 逐把的 paid 是权威值（混价单里 Σ paid == total_credits）。
 func toKeyPayloads(items []keyItem) []providers.KeyPayload {
 	if len(items) == 0 {
@@ -44,12 +50,18 @@ func toKeyPayloads(items []keyItem) []providers.KeyPayload {
 	}
 	out := make([]providers.KeyPayload, 0, len(items))
 	for _, k := range items {
+		authMethod := providers.AuthAPIKey
+		if k.Region == "personal" {
+			authMethod = providers.AuthRefreshToken
+		}
 		out = append(out, providers.KeyPayload{
 			VendorKeyID:   k.ID,
 			Key:           k.Key,
+			AuthMethod:    authMethod,
 			Account:       k.Account,
 			Password:      k.Password,
 			IssuerURL:     k.IssuerURL,
+			Region:        k.Region,
 			Paid:          credits(k.Paid),
 			WarrantyUntil: parseTime(k.WarrantyUntil),
 			Free:          k.Free,

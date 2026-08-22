@@ -136,13 +136,14 @@ func TestFinalUnitPrice_AfterConversion(t *testing.T) {
 	}
 	base := s.baseCredits(context.Background(), providers.VendorKiroDrop,
 		providers.Money{Amount: 7_350_000, Currency: providers.CurrencyUSD})
-	got := s.finalUnitPrice(base, Viewer{Tier: TierWholesale})
+	ctx := context.Background()
+	got := s.finalUnitPrice(ctx, providers.VendorKiroDrop, base, Viewer{Tier: TierWholesale})
 	// 49.98 × 1.05 = 52.479 积分
 	if got != 52_479_000 {
 		t.Errorf("展示价 = %d · want 52_479_000（49.98 积分 × 1.05）", got)
 	}
 	// 不换算直接进栈的话是 7.35 × 1.05 = 7.7175 —— 差 6.8 倍
-	if wrong := s.finalUnitPrice(7_350_000, Viewer{Tier: TierWholesale}); wrong == got {
+	if wrong := s.finalUnitPrice(ctx, providers.VendorKiroDrop, 7_350_000, Viewer{Tier: TierWholesale}); wrong == got {
 		t.Error("换算前后应该不同 —— 否则说明换算没生效")
 	}
 }

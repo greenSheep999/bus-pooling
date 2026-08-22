@@ -140,7 +140,7 @@ func (s *Service) buildVendorRow(ctx context.Context, e providers.VendorEntry, v
 			Supported: e.Vendor.Capability().SupportsKind(kind),
 		}
 		if cell.Supported {
-			cell.Offers = s.offersForVendor(ctx, e, kind)
+			cell.Offers = s.offersForVendor(ctx, e, kind, v)
 			for _, o := range cell.Offers {
 				cell.Available += o.Available
 			}
@@ -158,11 +158,11 @@ func (s *Service) buildVendorRow(ctx context.Context, e providers.VendorEntry, v
 //
 // 后台今天开 Power · 明天关 Power 开 Pro Max · 都不改代码 —— UPDATE 表即可。
 func (s *Service) offersForVendor(
-	ctx context.Context, e providers.VendorEntry, kind providers.AccountKind,
+	ctx context.Context, e providers.VendorEntry, kind providers.AccountKind, v Viewer,
 ) []OfferItem {
 	// ── 手工池 · 只有 kiro_market 走这条 ─────────────────
 	if e.VendorID == providers.VendorKiroMarket {
-		return s.offersFromMarket(ctx, string(e.VendorID), kind)
+		return s.offersFromMarket(ctx, string(e.VendorID), kind, v)
 	}
 
 	// ── 正常 vendor · Stock 拿实时库存/价 · 档位从 vendor_plan_config 拿开关 ─────
@@ -189,7 +189,7 @@ func (s *Service) offersForVendor(
 	// Stock 成功 · 每档 × 每 zone 出一条(上游不按档报库存·各档共享 Zones 数字)
 	out := make([]OfferItem, 0, len(plans)*len(snap.Zones))
 	for _, plan := range plans {
-		out = append(out, offersFromSnapshot(snap, plan)...)
+		out = append(out, s.offersFromSnapshot(ctx, e.VendorID, snap, plan, v)...)
 	}
 	return out
 }
@@ -207,7 +207,16 @@ func (s *Service) enabledPlansFor(
 }
 
 // offersFromSnapshot · 把 StockSnapshot.Zones 展开成 OfferItem · 可选带 plan
-func offersFromSnapshot(snap *providers.StockSnapshot, plan providers.SubscriptionPlan) []OfferItem {
+//
+// **UnitPrice 必须走 baseCredits + finalUnitPrice**(docs/10-pricing §1.3 §4)·
+// 直接透传 z.UnitPrice.Amount 会漏两件事:
+//   - CNY 家 1:1 换算 · 数字巧合看着对 · 但漏了计费栈其他分项
+//   - USD 家漏 exchange_rate 换算 · vendor 原始报价被前端当积分显示
+// 修复:跟 VendorStock 走同一条路 · 定价只有一个入口(docs/10-pricing §4)。
+func (s *Service) offersFromSnapshot(
+	ctx context.Context, vendorID providers.VendorID,
+	snap *providers.StockSnapshot, plan providers.SubscriptionPlan, v Viewer,
+) []OfferItem {
 	out := make([]OfferItem, 0, len(snap.Zones))
 	for _, z := range snap.Zones {
 		zone := string(z.Zone)
@@ -218,15 +227,19 @@ func offersFromSnapshot(snap *providers.StockSnapshot, plan providers.Subscripti
 			Subscription: plan,
 			Zone:         zone,
 			Available:    z.Available,
-			UnitPrice:    z.UnitPrice.Amount,
+			UnitPrice:    s.finalUnitPrice(ctx, vendorID, s.baseCredits(ctx, vendorID, z.UnitPrice), v),
 		})
 	}
 	return out
 }
 
 // offersFromMarket · 从 marketReader 组 · 每 offer 一条
+//
+// **UnitPrice / PriceBands.UnitPriceCredits 都要过 finalUnitPrice 计费栈**·
+// 库里存的是**基价 credits**(手工池录入时已是积分口径 · 无需 baseCredits 换算)·
+// 但仍需要进 finalUnitPrice 走服务费等档次减免分项。跟 offersFromSnapshot 对齐。
 func (s *Service) offersFromMarket(
-	ctx context.Context, vendorID string, kind providers.AccountKind,
+	ctx context.Context, vendorID string, kind providers.AccountKind, v Viewer,
 ) []OfferItem {
 	if s.marketReader == nil {
 		return nil
@@ -246,7 +259,13 @@ func (s *Service) offersFromMarket(
 		}
 		unit := int64(0)
 		if len(o.PriceBands) > 0 {
-			unit = o.PriceBands[0].UnitPriceCredits
+			unit = s.finalUnitPrice(ctx, providers.VendorID(vendorID), o.PriceBands[0].UnitPriceCredits, v)
+		}
+		// PriceBands 每档单价也过计费栈 · 前端切数量选中哪档就直接用哪档最终价
+		bands := make([]providers.QtyPriceBand, len(o.PriceBands))
+		for i, b := range o.PriceBands {
+			bands[i] = b
+			bands[i].UnitPriceCredits = s.finalUnitPrice(ctx, providers.VendorID(vendorID), b.UnitPriceCredits, v)
 		}
 		out = append(out, OfferItem{
 			OfferID:      o.ID,
@@ -254,7 +273,7 @@ func (s *Service) offersFromMarket(
 			Zone:         "", // 手工池无区
 			Available:    n,
 			UnitPrice:    unit,
-			PriceBands:   o.PriceBands,
+			PriceBands:   bands,
 			Source:       o.Source,
 		})
 	}

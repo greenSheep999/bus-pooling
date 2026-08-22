@@ -110,14 +110,24 @@ func (o *Orchestrator) importToPoolWithMeta(
 
 	creds := make([]housepool.ImportCredential, 0, len(purchase.Keys))
 	for _, k := range purchase.Keys {
-		creds = append(creds, housepool.ImportCredential{
-			// vendor 四件套映射到号池 · key 走 KiroAPIKey · account/password/issuer_url 走对应字段
-			KiroAPIKey: k.Key,
-			Email:      k.Account,
-			IssuerURL:  k.IssuerURL,
-			Region:     k.Region,
-			Groups:     []string{group},
-		})
+		imp := housepool.ImportCredential{
+			Region: k.Region,
+			Groups: []string{group},
+		}
+		// I-21 · 按 AuthMethod 分派塞哪个字段。空 AuthMethod = 老 4-tuple 号兜底。
+		//
+		// 塞错字段的后果:housepool 后端会用错鉴权协议校验 · 号导入必败 · 钱白扣。
+		switch k.AuthMethod {
+		case providers.AuthRefreshToken:
+			// SSO refresh token 号 · key = "<sso>:<refresh>" 冒号串
+			imp.RefreshToken = k.Key
+		default:
+			// AuthAPIKey / 空 · 走老 4-tuple 路径(kiroApiKey + email + issuer_url)
+			imp.KiroAPIKey = k.Key
+			imp.Email = k.Account
+			imp.IssuerURL = k.IssuerURL
+		}
+		creds = append(creds, imp)
 	}
 
 	result, err := o.pool.BatchImport(ctx, housepool.BatchImportRequest{
