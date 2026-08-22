@@ -33,6 +33,25 @@ type RatesResolver interface {
 	Resolve(ctx context.Context, ec RateContext) Rates
 }
 
+// SurchargeHit · 一条命中规则的快照(供 pull_round_surcharge 对账用 · I-27)
+//
+// 从 pricing.Engine.Eval.Hits 抽象出来 · 避免 decider 反依赖 pricing 包。
+// 实现方 pricing.SurchargeResolver 走 HitsResolver 接口下发。
+type SurchargeHit struct {
+	RuleID   string
+	RuleName string
+	Kind     string // vendor / zone / service / single_pull / capability / retail / adhoc
+	RateBp   int64
+}
+
+// HitsResolver 可选接口 · 满足则 orchestrator 在 pull_round 落库后调 · 落 pull_round_surcharge。
+//
+// 不满足(env fallback / 表空)时返 nil · 不落 surcharge 明细。跟 RatesResolver 是两个正交接口 ·
+// 装配层可以只装 RatesResolver 不装 HitsResolver(比如 env-only 部署)。
+type HitsResolver interface {
+	ResolveHits(ctx context.Context, ec RateContext) []SurchargeHit
+}
+
 // RateContext · 求费率时的上下文·映射到 surcharge Rule.applies_when 判定。
 type RateContext struct {
 	VendorID         string

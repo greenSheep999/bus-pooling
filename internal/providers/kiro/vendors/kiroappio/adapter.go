@@ -53,7 +53,9 @@ func (a *Adapter) Capability() providers.Capability {
 		SupportsIdempotency:   true,
 		SupportsZones:         true,
 		SupportsWebhook:       true,
-		WebhookHasSignature:   true,
+		// I-28 · 本 vendor 无 HMAC 签名(vendor 档案未定义 header / 算法)·
+		// VerifySignature 硬返 ErrNoSignature 是正确行为 · 之前声明 true 是 Capability 契约漂移。
+		WebhookHasSignature:   false,
 		SupportsBatchPurchase: true,
 		HasWarranty:           true,
 		WarrantyMinutes:       10,

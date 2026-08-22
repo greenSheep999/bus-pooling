@@ -183,6 +183,12 @@ _ALLOWLIST = [
     # migration 010 的 header 注释：channel 属性对照表·是数据契约文档·允许
     (r"/migrations/010_topup_multichannel\.sql$",
      r"^--.*(waffo|epusdt|bybit|binance)"),
+    # migration 051 · I-30 · 扩 topup_order.channel CHECK · 允许 usdt/tron
+    # 跟 010 一样是数据契约(枚举字面量 + 注释里说明)
+    (r"/migrations/051_topup_channel_check_expand\.sql$",
+     r"'(waffo|epusdt|bybit|binance|usdt|tron)'"),
+    (r"/migrations/051_topup_channel_check_expand\.sql$",
+     r"^--.*(waffo|epusdt|bybit|binance|usdt|tron)"),
     # migration 028 · pricing 标准化 · seed vendor_pricing 6 家 · vendor id 是
     # 数据契约字面量（跟 providers.VendorXxx 常量绑定）· 允许
     (r"/migrations/028_pricing_normalize\.sql$",

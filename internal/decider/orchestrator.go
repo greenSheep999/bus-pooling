@@ -42,6 +42,9 @@ type Orchestrator struct {
 	credits CreditsLookup
 	// ratesResolver · surcharge_rule 实时求值（1b P1-2B）· nil = 用 o.rates（env 兜底）
 	ratesResolver RatesResolver
+	// hitsResolver · I-27 · 命中规则明细·supplied resolver 才落 pull_round_surcharge。
+	// nil / env fallback / 表空时不落 · 兼容老部署。装配层跟 ratesResolver 用同一实现方。
+	hitsResolver HitsResolver
 	// limits · 拉号并发 + 数量区间（config.pull · §8.35 #18）· 零值 = 不限
 	limits Limits
 	// enqueuer · 抢号链缺货挂单（stockwatch.Watcher）· nil = 缺货直接失败（老行为）
@@ -192,6 +195,9 @@ type Config struct {
 	Credits CreditsLookup
 	// RatesResolver · surcharge_rule 表的实时求值（1b P1-2B）· nil = 用 env Rates
 	RatesResolver RatesResolver
+	// HitsResolver · I-27 · 命中规则明细·满足则 settle 落 pull_round_surcharge。
+	// 装配层跟 RatesResolver 用同一 pricing.SurchargeResolver 实例。nil = 不落。
+	HitsResolver HitsResolver
 	// Limits · 拉号并发 + 数量区间上限（config.pull · decisions §8.35 #18）
 	// 零值 = 全不限（老装配 / 测试兼容）
 	Limits Limits
@@ -232,6 +238,7 @@ func New(cfg Config) *Orchestrator {
 		pricing:        cfg.Pricing,
 		credits:        cfg.Credits,
 		ratesResolver:  cfg.RatesResolver,
+		hitsResolver:   cfg.HitsResolver,
 		limits:         cfg.Limits,
 		enqueuer:       cfg.Enqueuer,
 		picker:         cfg.Picker,

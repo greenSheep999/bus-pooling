@@ -549,6 +549,8 @@ func buildDecider(
 		},
 		// 抢号链 · auto 模式缺货时挂单等补货（decisions §11.15）
 		Enqueuer: enqueuer,
+		// I-27 · 命中规则明细落 pull_round_surcharge(对账/申诉用) · 跟 RatesResolver 同一实例。
+		HitsResolver: surchargeResolver,
 		// 我方第 7 家手工池 seller · settle 里跟 credential_ledger.INSERT 同 tx 卖号
 		// nil 允许（老装配 / 未接手工池）· 但号一旦是 market 来源就必须有
 		MarketStock: marketStockStore,
@@ -1061,6 +1063,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		// I-01 · admin_market POST /admin/market/stock 时 · 明文加密写 market_stock_plaintext
 		// 暂存表 · settle 时同 tx 迁到 credential_plaintext。跟 buildDecider / pusher 同实例
 		Credplain: credplainStore,
+		// I-29 · vendor_plan_config admin toggle · 运营改档位不改 SQL(要 BP_ADMIN_KEY)
+		PlanConfigStore: vendorview.NewPlanConfigStore(database.DB),
 		// I-02 · assign into_bus 场景 · handler 后台调 bridge 自动推
 		AutoPushOnAssign: pullBridge.AutoPushOnAssign,
 	})
