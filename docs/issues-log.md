@@ -26,6 +26,8 @@
 | [I-13](#i-13) | ✅ verified | P2 | pullSuccessBridge VendorLabel 硬编 "provider" 泄漏内部术语 | 2026-08-22 |
 | [I-14](#i-14) | ✅ verified | P2 | migration 046 down 后重 up 报 duplicate column · 破坏 down/up 幂等 | 2026-08-22 |
 | [I-15](#i-15) | 🟢 fixed(unverified) | P1 | 生产延迟高 · 前端 staleTime 30s + vendors/status 无缓存 · 跨海每次 refetch | 2026-08-22 |
+| [I-16](#i-16) | 🟡 open | P1 | Prober 只探 enterprise · vendor_probe/vendor_probe_zone 缺 personal 数据 · Status 页看不见个人号 | 2026-08-22 |
+| [I-17](#i-17) | 🟡 open | P2 | 生产 credential_ledger 号显示 alive 但很久没用 · 疑似 vendor 侧已死号池未同步 · 需主动 TestCredential | 2026-08-22 |
 | [I-03](#i-03) | 🟢 fixed(unverified) | P1 | kirodrop personal 接入 · region=personal 覆写(共用端点)· 待生产端到端 | 2026-08-22 |
 | [I-04](#i-04) | 🔴 blocked | P1 | 5 家 vendor 都只声明 enterprise · 缺各家 personal API 文档 | 2026-08-22 |
 | [I-05](#i-05) | 🟢 fixed(unverified) | P1 | 主文档 3 份滞后 migration 040（15-scheduling / 06-db / 05-api / 03-modules） | 2026-08-15 |
@@ -36,6 +38,7 @@
 | [I-10](#i-10) | ✅ verified | P2 | migration 040 缺集成测试 | 2026-08-15 |
 | [I-11](#i-11) | 🟢 fixed(unverified) | P2 | 缺 stage-1..6 分级 smoke 脚本 | 2026-08-15 |
 | [I-12](#i-12) | 🟢 fixed(deferred) | P3 | 主文档 P2 drift · 关键条已修 · 25 条纯文档 drift 明确 defer 阶段 2 | 2026-08-15 |
+| [I-18](#i-18) | 🟢 fixed(unverified) | P0 | /api/vendors/{anon_id}/stock 和 /history 404 · handler 拿 anon_id 直查 lookupEnabled(只认真 id) · 阻塞所有散客选 vendor 后的数据面板 | 2026-08-22 |
 
 ---
 
@@ -385,6 +388,58 @@ kiroappio / kiroappcc / kirodrop** 都还只有 enterprise。
 
 ---
 
+### I-16 · Prober 只探 enterprise · Status 页无个人号数据
+
+**状态**：🟡 `open`
+**发现**：2026-08-22 · 用户"vendor 的个人数据上了吗?" 问出的
+
+**症状**：
+- `internal/vendorview/prober.go` 只调 `v.Stock(ctx, StockOptions{})` · Kind 空
+- providers.StockOptions.Kind 空 → `Normalize()` 归 enterprise
+- **personal 池永远不入 `vendor_probe` / `vendor_probe_zone`**
+- 结果:vendor status 页所有 vendor 显示的都是 enterprise 池数据 · personal 池不可见
+- 只有 I-03 修的 kirodrop / 已双档的另一家 vendor 有 personal 库存 · 但 Status 页看不到
+
+**修法**（下一 PR · 阶段 1 收尾）：
+- Prober 循环两次:`Stock(Kind=Enterprise)` + `Stock(Kind=Personal)`
+- `vendor_probe` schema 加 `account_kind` 列(migration 051)
+- `vendor_probe_zone` 同
+- Uptime/DispatchSummary/Incidents 按 kind 分组聚合
+- `VendorStatusRow` 加 `PersonalPublicStatus` / `PersonalStockBucket` 字段(或分行)
+- 前端 status 页展示两列
+
+**影响面**：数据库 schema + prober + status_view + 前端 · **中等改动**。
+需要用户拍板 UI 展示方式:两行 vs 两 chip vs 分开卡片。
+
+---
+
+### I-17 · Vendor Status "ongoing" 但号早死 · 上游数据未拉齐
+
+**状态**：🟡 `open`
+**发现**：2026-08-22 · 用户澄清:"死不死首先要看车死不死 · vendor 的车死了 · 我们肯定死了 · 有可能我们都没有 · vendor status 主要看上游"
+
+**语义纠正**（防未来 agent 漂移）:
+- **Vendor Status 页 = 上游 vendor 侧 fleet 状态**（母号 aka "车" 的死活）
+- 数据源:`public_status` 端点(vendor 自报 `keys_active / keys_dead / keys_stock / generating`)
+- **跟我方 `credential_ledger` 完全无关** —— 我方 alive 只是"我方拉到手的号还活"·
+  但上游车早死时 · 号根本进不了我方池 · 或者早就交付走了
+- "ongoing" 应该显示**上游 vendor 那边母号还在跑没死**
+
+**症状**：Status 页某些 vendor 显示 ongoing 但状态可能不真实（数据老/未拉/vendor 侧接口挂）
+
+**验证方法**：
+1. 逐个 vendor 打 `public_status` 端点 · 对比 Status 页显示
+2. 看 `vendor_probe` 的 `probed_at` 是不是新鲜(60s 一探 · 应该都是最近一分钟内)
+
+**修法**（分层）：
+- 上游端点挂 → 探针 error_kind 明标 · UI 显示"数据陈旧"
+- 上游返数据但我方 status_view 展示逻辑错 → 修 status_view.go
+- **不改** deathwatch 逻辑(那是我方号池死号 · 跟 vendor status 无关)
+
+**关联**：I-16(Prober 只探 enterprise · personal 池 status 也看不见)
+
+---
+
 ### I-14 · migration 046 down 后重 up 报 duplicate column
 
 **状态**：✅ `verified` · 2026-08-22 修完
@@ -406,6 +461,41 @@ ALTER TABLE pending_purchase DROP COLUMN source;
 **验证**(2026-08-22)：`migrate up → migrate down 5 → migrate up` 全绿。
 
 **顺手记**：migration 044/045 缺号 —— 应该是历史 rebase 造成 · 编号跳过但功能没缺。
+
+---
+
+### I-18 · /api/vendors/{anon_id}/stock 和 /history 404 · anon_id 未还原
+
+**状态**：🟢 `fixed(unverified)` · 2026-08-22 e2e 测 kirodrop personal 时发现 · 已改 · 待部署验
+
+**症状**：Extract 页选特定 vendor(比如 Vendor 06 · anon `aecc48`) · 面板卡在
+"加载 vendor 状态…" 和 "正在算价…" · console 报两个 404：
+- `GET /api/vendors/aecc48/stock` → 404
+- `GET /api/vendors/aecc48/history` → 404
+
+阻塞所有散客选 vendor 后的数据面板 · **等于选 vendor 后什么都看不到**。
+
+**根因**：`internal/api/vendors.go` 的 `handleVendorStock` / `handleVendorHistory`
+直接拿前端传的 vendor_id 去 `vendorView.VendorStock/History` → 内部走
+`lookupEnabled` **只匹配内部 vendor_id 常量**(如 `kirodrop`) · 拿 anon_id
+`aecc48` 必然 miss → 返 `ErrVendorNotFound` → api 层 404。
+
+同文件的 `handleVendorPricesDaily` 是对的 · 明确调了 `ResolveAnonID` 还原。
+stock / history 漏了这层还原 · 属于**遗留 bug** —— 前端从 wholesale-only 真名
+下发改成 retail/community anon 下发后就有 · 一直没触发。
+
+**修复**：两个 handler 加 `ResolveAnonID` 还原 · 还原不到当真 id 用(照顾 wholesale
+档能看真名的场景 · 手工池 kiro_market 也是真 id 传下去) · 再交给 vendorView。
+
+```go
+realVendorID := id
+if resolved, ok := s.vendorView.ResolveAnonID(id); ok {
+    realVendorID = resolved
+}
+out, err := s.vendorView.VendorStock(r.Context(), realVendorID, viewerOf(p, r))
+```
+
+**验收**：leedx2011 生产账号 Extract 页选 Vendor 06 → 上游状态面板出数据 · 单价出结果 · 提取按钮可点。
 
 ---
 

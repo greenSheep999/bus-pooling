@@ -202,6 +202,11 @@ func (s *Server) handleVendorsPrices(w http.ResponseWriter, r *http.Request) err
 }
 
 // GET /api/vendors/{vendor_id}/stock
+//
+// 前端只见 anon_id(6 位 hash · retail/community 档 · 见 visibleVendorID) ·
+// 这里先 ResolveAnonID 还原到内部 vendor_id · 再查 vendorView(它只认内部 id) ·
+// wholesale 档能看真名 · 传真 id 也接得住(还原不到就当真 id 用)。
+// 跟 handleVendorPricesDaily 同一套路。
 func (s *Server) handleVendorStock(w http.ResponseWriter, r *http.Request) error {
 	if s.vendorView == nil {
 		return vendorViewUnavailable()
@@ -214,7 +219,11 @@ func (s *Server) handleVendorStock(w http.ResponseWriter, r *http.Request) error
 	if id == "" {
 		return ErrBadRequest("缺少 vendor_id")
 	}
-	out, err := s.vendorView.VendorStock(r.Context(), id, viewerOf(p, r))
+	realVendorID := id
+	if resolved, ok := s.vendorView.ResolveAnonID(id); ok {
+		realVendorID = resolved
+	}
+	out, err := s.vendorView.VendorStock(r.Context(), realVendorID, viewerOf(p, r))
 	if errors.Is(err, vendorview.ErrVendorNotFound) {
 		return ErrNotFound("找不到这家 vendor")
 	}
@@ -262,6 +271,8 @@ func (s *Server) handleVendorPricesDaily(w http.ResponseWriter, r *http.Request)
 }
 
 // GET /api/vendors/{vendor_id}/history
+//
+// 匿名 id / 真 id 都接 · 跟 handleVendorStock 同套路(见那里注释)。
 func (s *Server) handleVendorHistory(w http.ResponseWriter, r *http.Request) error {
 	if s.vendorView == nil {
 		return vendorViewUnavailable()
@@ -273,7 +284,11 @@ func (s *Server) handleVendorHistory(w http.ResponseWriter, r *http.Request) err
 	if id == "" {
 		return ErrBadRequest("缺少 vendor_id")
 	}
-	out, err := s.vendorView.History(r.Context(), id)
+	realVendorID := id
+	if resolved, ok := s.vendorView.ResolveAnonID(id); ok {
+		realVendorID = resolved
+	}
+	out, err := s.vendorView.History(r.Context(), realVendorID)
 	if errors.Is(err, vendorview.ErrVendorNotFound) {
 		return ErrNotFound("找不到这家 vendor")
 	}
