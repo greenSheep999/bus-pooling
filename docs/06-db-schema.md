@@ -277,8 +277,8 @@ CREATE TABLE bus (
   refill_min_count       INTEGER,                           -- nullable · nil = 按 (watermark - alive) gap 补 · 建车抄 default_refill_min_count seed
   per_round_count        INTEGER,                           -- 每轮拉几号 · nullable · NULL = 跟随全局(其他覆盖字段仍走继承)
   max_unit_price         INTEGER,                           -- microunit · 单号最高价
-  daily_round_limit      INTEGER,                           -- DEPRECATED 车级不生效 · 当前只读 passenger_strategy_default
-  daily_spend_limit      INTEGER,                           -- DEPRECATED 同上
+  daily_round_limit      INTEGER,                           -- 车级 · nil=不加严 · 跟全局 AND(decisions §8.47)
+  daily_spend_limit      INTEGER,                           -- microunit · 同上
   preferred_vendor       TEXT,                              -- NULL = 有效成本比价自动选
 
   -- 1c-1 · 匿名撮合（migration 011）

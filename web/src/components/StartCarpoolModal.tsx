@@ -52,8 +52,10 @@ export function StartCarpoolModal({
   const [vendorId, setVendorId] = useState<string>("auto");
   const [autoRefill, setAutoRefill] = useState(false);
   const [maxPrice, setMaxPrice] = useState("");
-  // I-06 · daily_round_limit / daily_spend_limit 车级已废(15-scheduling §4.1)·
-  // 撤 UI · 用户上限走全局 Preferences 页 · 建车不填这两项
+  // §8.47 · 车级 daily_* AND 全局 · 建车向导给车级入口
+  // 语义:全局管"所有车加起来" · 这两项管"这辆车" · 用户能给单车限死
+  const [dailyRoundLimit, setDailyRoundLimit] = useState("");
+  const [dailySpendLimit, setDailySpendLimit] = useState("");
   const [refillWatermark, setRefillWatermark] = useState(3);
   const [perRoundCount, setPerRoundCount] = useState(3);
 
@@ -65,6 +67,8 @@ export function StartCarpoolModal({
       setVendorId("auto");
       setAutoRefill(false);
       setMaxPrice("");
+      setDailyRoundLimit("");
+      setDailySpendLimit("");
     }
   }, [open, defaultName]);
 
@@ -79,7 +83,9 @@ export function StartCarpoolModal({
       refill_min_count: null,
       per_round_count: perRoundCount,
       max_unit_price: maxPrice ? Number(maxPrice) * 1_000_000 : null,
-      // I-06 · daily_round_limit / daily_spend_limit 车级已废(15-scheduling §4.1)· 只走全局
+      // §8.47 · 车级 daily_* AND 全局 · null = 车级不加严 · 只受全局管
+      daily_round_limit: dailyRoundLimit ? Number(dailyRoundLimit) : null,
+      daily_spend_limit: dailySpendLimit ? Number(dailySpendLimit) * 1_000_000 : null,
       preferred_vendor: picked,
     };
     // 建车不传 kind —— 用户建的车都一样（后端默认 single·跟 team 行为一致·都带邀请码）。
@@ -212,8 +218,23 @@ export function StartCarpoolModal({
                     placeholder={t("start-modal.no-limit")}
                   />
                 </Field>
-                {/* I-06 · daily_round_limit / daily_spend_limit 车级字段废弃 ·
-                    这两项走全局 Preferences 页(跨车累加统一) · 建车不再单独填 */}
+                {/* §8.47 · 车级 daily_* AND 全局 · 语义:全局管跨车总额 · 这两项管本车 */}
+                <Field label={t("start-modal.field-daily-round")}>
+                  <Input
+                    type="number"
+                    value={dailyRoundLimit}
+                    onChange={(e) => setDailyRoundLimit(e.target.value)}
+                    placeholder={t("start-modal.no-limit")}
+                  />
+                </Field>
+                <Field label={t("start-modal.field-daily-spend")}>
+                  <Input
+                    type="number"
+                    value={dailySpendLimit}
+                    onChange={(e) => setDailySpendLimit(e.target.value)}
+                    placeholder={t("start-modal.no-limit")}
+                  />
+                </Field>
               </div>
             </CollapsiblePanel>
 

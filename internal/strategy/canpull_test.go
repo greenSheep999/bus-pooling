@@ -312,3 +312,109 @@ func TestStricter(t *testing.T) {
 		}
 	}
 }
+
+// §8.47 · 车级每日轮数上限 · 两层 AND 独立生效
+//
+// 语义:
+//   - 全局管"所有车加起来" · 用 in.Used 判(跨车累加)
+//   - 车级管"这辆车" · 用 in.UsedBus 判(本车累加)
+//   - 两层任一层拦都拦
+func TestBusDailyRoundLimit_ANDWithGlobal(t *testing.T) {
+	st := Defaults("p1")
+	st.DailyRoundLimit = ip(10) // 全局 10 轮 · 跨所有车
+
+	// 场景 A · 全局远没到 · 车级 3 轮 · 本车已用 3 → 拦
+	busLimit := 3
+	_, err := decide(st, "p1", CheckInput{
+		BusID:         "b1",
+		Count:         1,
+		BusDailyRound: &busLimit,
+		Used:          Usage{Rounds: 5}, // 跨车 5(<10 全局 OK)
+		UsedBus:       &Usage{Rounds: 3}, // 本车已 3 · 再拉 1 = 4 > 3 · 车级拦
+	})
+	if err == nil {
+		t.Fatal("车级 3 轮已满 · 应拦")
+	}
+	var le *LimitError
+	if !errors.As(err, &le) || le.Kind != LimitDailyRound {
+		t.Errorf("应报车级 daily_round · 得 %v", err)
+	}
+	if le.Limit != 3 {
+		t.Errorf("Limit 应为车级 3 · 得 %d", le.Limit)
+	}
+
+	// 场景 B · 车级没设 · 只受全局管 · 全局够(5<10)· 通过
+	if _, err := decide(st, "p1", CheckInput{
+		BusID:   "b1",
+		Count:   1,
+		Used:    Usage{Rounds: 5},
+		UsedBus: &Usage{Rounds: 5}, // 车级 nil · 这个字段被忽略
+	}); err != nil {
+		t.Errorf("车级未设应过全局判 · 得 %v", err)
+	}
+
+	// 场景 C · 提取(BusID 空)· 车级参数被主动忽略
+	if _, err := decide(st, "p1", CheckInput{
+		BusID:         "",
+		Count:         1,
+		BusDailyRound: &busLimit,     // 传了也不生效
+		UsedBus:       &Usage{Rounds: 100},
+		Used:          Usage{Rounds: 5},
+	}); err != nil {
+		t.Errorf("提取应只受全局管 · 得 %v", err)
+	}
+}
+
+// §8.47 · 车级每日花费上限 · 两层 AND 独立生效
+func TestBusDailySpendLimit_ANDWithGlobal(t *testing.T) {
+	st := Defaults("p1")
+	st.DailySpendLimit = i64(1000 * micro) // 全局 1000 · 跨所有车
+
+	// 场景 · 本车已用 900 · 车级 950 · 再拉 1 号单价 100 → 车级拦(900+100=1000 > 950)
+	busSpend := int64(950 * micro)
+	_, err := decide(st, "p1", CheckInput{
+		BusID:         "b1",
+		Count:         1,
+		UnitPriceHint: 100 * micro,
+		Balance:       10000 * micro,
+		BusDailySpend: &busSpend,
+		Used:          Usage{Spend: 500 * micro}, // 跨车 500(远 < 1000 全局)
+		UsedBus:       &Usage{Spend: 900 * micro}, // 本车 900 · 再花 100 = 1000 > 950
+	})
+	if err == nil {
+		t.Fatal("车级 spend 已快满 · 应拦")
+	}
+	var le *LimitError
+	if !errors.As(err, &le) || le.Kind != LimitDailySpend {
+		t.Errorf("应报车级 daily_spend · 得 %v", err)
+	}
+	if le.Limit != busSpend {
+		t.Errorf("Limit 应为车级 %d · 得 %d", busSpend, le.Limit)
+	}
+}
+
+// §8.47 · 全局跟车级放宽时 · 全局仍生效(不能放宽)
+func TestBusDaily_CannotRelaxGlobal(t *testing.T) {
+	st := Defaults("p1")
+	st.DailyRoundLimit = ip(5) // 全局 5 轮
+
+	// 车级 100 轮(远宽于全局)· 跨车已用 5 · 全局拦
+	busLimit := 100
+	_, err := decide(st, "p1", CheckInput{
+		BusID:         "b1",
+		Count:         1,
+		BusDailyRound: &busLimit,
+		Used:          Usage{Rounds: 5}, // 全局 5 已满
+		UsedBus:       &Usage{Rounds: 0},
+	})
+	if err == nil {
+		t.Fatal("全局已满 · 车级即使很宽 · 也该被全局拦")
+	}
+	var le *LimitError
+	if !errors.As(err, &le) || le.Kind != LimitDailyRound {
+		t.Errorf("应报全局 daily_round · 得 %v", err)
+	}
+	if le.Limit != 5 {
+		t.Errorf("Limit 应为全局 5 · 得 %d", le.Limit)
+	}
+}

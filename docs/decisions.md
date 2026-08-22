@@ -595,6 +595,68 @@ live-readiness gate**；用户上传 / 运营预库存 / 公开市场 = 阶段 2
 - kiro.rs 1.8.3 balance.nextResetAt 返 unix epoch number · 我方 wire 定义 *string · 用 json.Number 兼容
 - 生产 GetBalance 之前 100% 解析失败 · usage 检查静默跳过 · K3(99.9%)被误放行 (P1-m #205)
 
+### 8.47 车级 daily_round / daily_spend 限额生效 · AND 取更严 ✅（2026-08-22 定 · 覆盖 §8.27 C 方案）
+
+**问题场景**（车主 2026-08-22 提出）：
+
+> "3 辆车同时再跑 · 全局设置 500 是每个都 500 吗?"
+
+**当前** `passenger_daily_counter` 是 passenger 维度（`(passenger_id, date)` 主键 · 跨所有车累加）· 全局 500 = 3 辆车 + 提取 key 共享 500。
+
+**用户真实痛点**：
+- 车 A · 主力车（要花 300）
+- 车 B · 试验 anon 撮合车（想限 100 · 防失控）
+- 车 C · 给朋友的 team 车（想限 100 · 帮垫）
+- **全局 500 无法分配** —— 谁先跑谁抢完 · 另外两辆爆预算
+- **C 方案（§8.27）说"每日限额是人的预算不是车的预算"** —— 但**多车场景下这个假设不成立** · 用户就是需要"每车预算"
+
+**决策**：
+
+**语义**（全局 + 车级各管一层 · 独立 AND）：
+
+| 层 | 管什么 | 数据源 |
+|---|---|---|
+| **全局** `passenger_strategy_default.daily_round_limit / daily_spend_limit` | 所有车加起来 + 提取 key | `passenger_daily_counter`（跨车累加）|
+| **车级** `bus.daily_round_limit / daily_spend_limit` | 这辆车 | `pull_round` 按 `bus_id` 聚合 |
+
+**AND 取更严**（`strategy.canpull.decide`）：
+- 车级 null = 车级不加严 · 只受全局管
+- 车级非 null + 全局 null = 只受车级管
+- 都非 null → **两层都要过**（任一拦都拦）
+- 车级放宽全局仍生效（CLAUDE §1.5 · 硬上限不能放宽）
+
+**语义示例**（全局 500 + 车 A 车级 100）：
+- 车 A：最多花 100（车级严）
+- 车 B/C：合计 ≤ 500（全局严）· 且车 A 花的 100 也算在这 500 里
+- 用户能给单车限死 · 同时保总盘不失控
+
+**用户 UI**：
+- 建车向导 Advanced · 有 daily_round / daily_spend 输入位（**建车就能设** · 撤销 I-06）
+- BusDetail EditStrategyPanel · 三车级字段齐（max_unit_price / daily_round / daily_spend）
+- 全局 Preferences 提示："车里也能各自设限额 · 两个都不超才让拉（取更严的那个）· 去车详情看每辆车的" —— **这句话现在真的兑现了**
+
+**推翻 §8.27 C 方案 · 保留的部分**：
+- ✅ 通用护栏 AND 取更严（§8.27 line 1661 定的原则）· 现在真的生效
+- ✅ 提取（BusID 空）只受全局管 —— record group 无车级 · 不变
+- ✅ `max_unit_price` 车级 AND · 不变
+- ❌ 撤 "**车级 daily_* 不生效 · 走 C 方案**" · 改为 "**AND 取更严**"
+- ❌ 撤 "**N 辆车 × 2 个限额认知爆炸**" 理由 · 前端 EditStrategyPanel 事实早就给车级 UI · 用户 UI 里能看到并能设 · 认知负担实测不成立
+
+**代码改动**（2026-08-22 落码）：
+- `internal/strategy/canpull.go` · `CheckInput` 加 `UsedBus / BusDailyRound / BusDailySpend` · `decide()` 加车级 AND 判据
+- `internal/wallet/wallet.go` · 加 `TodayUsageByBus(busID)` · 走 `pull_round` 聚合
+- `internal/api/bus.go handleBusPull` · 读车级 daily_* + 本车今日已用 · 传给 CanPull
+- `internal/bus/bus.go` · Strategy struct 撤 DEPRECATED 注释
+- `web/src/components/StartCarpoolModal.tsx` · 撤销 I-06 · 建车向导加回 daily_* 输入
+- `web/src/components/EditStrategyPanel.tsx` · 保留（前端本来就有 · 现在跟后端对齐）
+
+**未做（阶段 1 不做）**：
+- `Effective()` 层暴露 EffectiveStrategy.DailyRoundLimit 分车级 —— 现由 canpull 直接读车级值 · 未来 1f-C 收口再统一
+- 自动补车链路（refill/scheduler/webhook 三桥）走车级 daily_* —— 三桥调 `Effective()` 后走 `canpull.CanPull(..., BusMaxUnitPrice, ...)` 时也应传车级 daily_* · 阶段 1 完全跑通后补
+- `passenger_daily_counter` 加 bus 维度 —— 现走 pull_round 聚合 · 若数据量大到影响性能再考虑
+
+**关联**：`§8.27`（老 C 方案 · 已被本条覆盖 daily_* 部分）· `22-buy-race 缺口 3`（老 C 方案的原始定稿 · 记入历史）· `CLAUDE §1.5`（硬上限不能放宽 · 本条对齐）
+
 ### 8.44 车内号手动重推 · 现状缺口 ⚠️ 待补(2026-08-16)
 
 **问题**:车里的号(`owner_bus_id` 非空)自动 push_pool 失败后 · **没有手动重试入口**。
@@ -1665,7 +1727,9 @@ CREATE TABLE invite_reward (
 
 **① `bus.daily_round_limit` / `bus.daily_spend_limit` 是死字段**（`internal/bus/bus.go`）：schema 里有 · `bus.Strategy` struct 读了 · 但 `strategy.decide()` **只判全局的** · 车级那两个从来没生效过。
 
-**定稿**：走 **C 方案** —— 字段保留（SQLite 不支持 DROP COLUMN · 强删要 rebuild 表 · 不值当）· **UI 不给车级设置入口** · `bus.Strategy` 加 DEPRECATED 注释。理由：每日限额的意义是"人的预算"不是"车的预算" · 用户维护 N 辆车 × 2 个限额认知爆炸。
+**当时定稿**：走 **C 方案** —— UI 不给车级设置入口 · `bus.Strategy` 加 DEPRECATED · 理由 "每日限额是人的预算不是车的预算 · N 辆车 × 2 个限额认知爆炸"。
+
+**⚠️ 2026-08-22 已被 §8.47 覆盖** —— 车主拍板：**多车预算分配场景下 · C 方案让用户无法给单车限死** · 全局是"跨车总盘" · 车级是"这辆车额度" · 语义分工清晰 · 走 AND 取更严。详见 `§8.47`。
 
 **② 提取（BusID 空）绕过车级上限**（`internal/strategy/canpull.go:127-135`）：行为正确 —— record group 没有车级限额 · 但 §8.27 原表格没写明。本条补上。
 

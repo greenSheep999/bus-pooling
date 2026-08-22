@@ -245,6 +245,8 @@ _ALLOWLIST = [
     # cmd/bus-pooling/xi8.go · CLI 里 seed-vendor xi8 说明 · dev.env 路径注释 · identifier
     (r"cmd/bus-pooling/xi8\.go$",
      r'\b(kiro91|kiroceo|kirooo|kiroappio|kiroappcc|kirodrop)\b'),
+    # vendoraccount 测试里 vendor_id 用作 test fixture identifier(2026-08-22 I-09)
+    (r"/vendoraccount/.*_test\.go$", r'\bkiro91\b'),
     # providers/provider_test.go 里各 vendor id 用作测试 identifier
     (r"/providers/provider_test\.go$",
      r'"kiro(91|ceo|ooo)"|"kiroapp(io|cc)"|"kirodrop"|"91kiro"'),

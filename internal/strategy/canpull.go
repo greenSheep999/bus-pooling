@@ -78,7 +78,7 @@ type Usage struct {
 // CheckInput 是一次拉号前的校验输入。
 type CheckInput struct {
 	// BusID 为空 = 单独拉号（提取 key）。
-	// **提取只受全局限额管** —— record group 没有车级限额（decisions §8.27）
+	// **提取只受全局限额管** —— record group 没有车级限额（decisions §8.27 / §8.47）
 	BusID string
 	// Count 本轮想拉几个
 	Count int
@@ -87,11 +87,18 @@ type CheckInput struct {
 	UnitPriceHint int64
 	// Balance 当前可用余额（microunit）
 	Balance int64
-	// Used 今日已用
+	// Used 今日已用 · **passenger 维度**（跨所有车累加 · passenger_daily_counter）
 	Used Usage
-	// BusMaxUnitPrice 车级单价上限 · nil = 车没设。
-	// 跟全局取**更严**的（AND）
+	// UsedBus 今日**本车**已用 · 从 pull_round 按 bus_id 聚合(BusID 非空时才要)
+	// nil = 调用方没查 · 车级 daily_* 那两层跳过判(等价于 nil 上限)
+	UsedBus *Usage
+	// BusMaxUnitPrice 车级单价上限 · nil = 车没设。跟全局取**更严**(AND)
 	BusMaxUnitPrice *int64
+	// BusDailyRound / BusDailySpend 车级每日轮次 / 花费上限(decisions §8.47)
+	// nil = 车没设(不加严) · 非 nil = 跟全局取 min · 车级放宽不听(CLAUDE §1.5)
+	// 语义:全局管"所有车加起来" · 车级管"这辆车" · 两层各自独立 AND
+	BusDailyRound *int
+	BusDailySpend *int64
 }
 
 // CanPull 判「当下能不能拉」，能就给出 Intent。
@@ -112,8 +119,19 @@ func (s *Store) CanPull(ctx context.Context, passengerID string, in CheckInput) 
 }
 
 // decide 是纯函数版的 CanPull —— 不碰 DB，方便直接测各种上限组合。
+//
+// **护栏三字段全走 AND 取更严**（decisions §8.47 · 推翻老 §8.27 C 方案）:
+//   - 全局层 st.DailyRoundLimit / DailySpendLimit 用 in.Used(跨所有车累加)判
+//   - 车级层 in.BusDailyRound / BusDailySpend 用 in.UsedBus(本车累加)判
+//   - 两层独立 AND · 任一层触发都拦 · 车级放宽全局仍生效(CLAUDE §1.5 铁律)
+//   - 提取(BusID="")只受全局管 —— record group 无车级
+//
+// **语义拆开**:全局管"所有车加起来" · 车级管"这辆车"。全局 500 + 车 A 车级 100:
+//   车 A 最多花 100 · 车 B/C 只受全局(3 辆合计 500)。用户能给单车"限死"·
+//   同时保总盘子不失控。
 func decide(st Strategy, passengerID string, in CheckInput) (*Intent, error) {
 	// ① 每日轮数 —— **1 轮 = 1 次拉号动作**，不管这轮拉几个号（CLAUDE.md §2）
+	// 全局层
 	if st.DailyRoundLimit != nil {
 		if in.Used.Rounds+1 > *st.DailyRoundLimit {
 			return nil, &LimitError{
@@ -123,16 +141,18 @@ func decide(st Strategy, passengerID string, in CheckInput) (*Intent, error) {
 			}
 		}
 	}
+	// 车级层(提取跳过 · record group 无车)
+	if in.BusID != "" && in.BusDailyRound != nil && in.UsedBus != nil {
+		if in.UsedBus.Rounds+1 > *in.BusDailyRound {
+			return nil, &LimitError{
+				Kind:  LimitDailyRound,
+				Limit: int64(*in.BusDailyRound),
+				Used:  int64(in.UsedBus.Rounds),
+			}
+		}
+	}
 
-	// ② 单价上限 —— 全局跟车级取更严的（AND）。
-	//
-	// **策略字段口径**（docs/22-buy-race 缺口 3）：
-	//   - 护栏类（拦操作 · MaxUnitPrice / DailyRound / DailySpend）→ AND 取更严
-	//   - 偏好类（默认选择 · PerRoundCount / PreferredVendor / Zone）→ 就近优先
-	//
-	// **提取（BusID 空）只受全局管** —— record group 没有车级限额（decisions §8.27）。
-	// 这里主动忽略车级上限而不是信任调用方：调用方多传一个字段就会让提取被
-	// 一个本不该管它的上限拦住，而那种 bug 从现象上看像"上限算错了"，极难查。
+	// ② 单价上限 —— 全局跟车级取更严的（AND）· 提取跳过车级
 	busCap := in.BusMaxUnitPrice
 	if in.BusID == "" {
 		busCap = nil
@@ -149,12 +169,23 @@ func decide(st Strategy, passengerID string, in CheckInput) (*Intent, error) {
 	// ③ 每日消费 —— 用预估总额判。比价前（hint=0）判不了，
 	// 那时 estTotal=0 恒不超；decider 拿到真价后会再判一次。
 	estTotal := in.UnitPriceHint * int64(in.Count)
+	// 全局层
 	if st.DailySpendLimit != nil && estTotal > 0 {
 		if in.Used.Spend+estTotal > *st.DailySpendLimit {
 			return nil, &LimitError{
 				Kind:  LimitDailySpend,
 				Limit: *st.DailySpendLimit,
 				Used:  in.Used.Spend,
+			}
+		}
+	}
+	// 车级层(提取跳过 · record group 无车)
+	if in.BusID != "" && in.BusDailySpend != nil && in.UsedBus != nil && estTotal > 0 {
+		if in.UsedBus.Spend+estTotal > *in.BusDailySpend {
+			return nil, &LimitError{
+				Kind:  LimitDailySpend,
+				Limit: *in.BusDailySpend,
+				Used:  in.UsedBus.Spend,
 			}
 		}
 	}

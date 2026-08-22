@@ -28,7 +28,7 @@
 | [I-03](#i-03) | 🔴 blocked | P1 | kirodrop 新增 personal 号未接入 · 缺 vendor API 文档 | 2026-08-22 |
 | [I-04](#i-04) | 🔴 blocked | P1 | 5 家 vendor 都只声明 enterprise · 缺各家 personal API 文档 | 2026-08-22 |
 | [I-05](#i-05) | 🟢 fixed(unverified) | P1 | 主文档 3 份滞后 migration 040（15-scheduling / 06-db / 05-api / 03-modules） | 2026-08-15 |
-| [I-06](#i-06) | 🟢 fixed(unverified) | P2 | 建车 Advanced 仍含已废弃的 daily_round_limit / daily_spend_limit | 2026-08-15 |
+| [I-06](#i-06) | ⚠️ 反转 | P1 | ~~撤 daily_* 车级 UI~~ 反转为激活车级 AND · 见 §8.47 | 2026-08-15 |
 | [I-07](#i-07) | 🟢 fixed(unverified) | P2 | handoff init 幂等契约不一致（前端送 idempotency key · 后端忽略） | 2026-08-15 |
 | [I-08](#i-08) | ✅ verified | P2 | 05-api-contract 列了未实现端点（/me/buses/{id}/stats 等 3 个） | 2026-08-15 |
 | [I-09](#i-09) | 🟡 partial | P2 | housepool / vendoraccount / kiroappio / kiroceo 无单元测试 | 2026-08-15 |
@@ -192,13 +192,39 @@ kiroappio / kiroappcc / kirodrop** 都还只有 enterprise。
 
 ---
 
-### I-06 · 建车 Advanced 仍含已废弃的 daily_round_limit / daily_spend_limit
+### I-06 · 车级 daily_round / daily_spend 应生效 ⚠️ 反转
 
-**状态**：🟡 `open`
-**发现**：2026-08-15（phase-1-acceptance §P1）
-**症状**：`docs/15-scheduling §4.1` 明标车级已废弃 · 但 DB / API / TS / 前端建车表单 Advanced 段都还保留。
+**状态**：⚠️ `反转` · 我之前撤 UI 走 §8.27 C 方案是错方向 · 车主拍板走 §8.47 · 激活车级 AND
+**发现**：2026-08-15（phase-1-acceptance §P1 · 老 C 方案下的 P1）
+**反转**：2026-08-22（车主指出多车预算分配场景 · C 方案无解）
 
-**修法**：前端建车表单拿掉两字段（`StartCarpoolModal.tsx L84-85`）· 后端 DTO 加 deprecated 注释。
+**车主的关键问题**（原话）：
+> "3 辆车同时再跑 · 全局设置 500 是每个都 500 吗?"
+
+**答**：现在是**跨车累加 500** · 但**用户想要能给单车限死** —— 那辆试验车最多 100 · 另两辆合计 400 · 全局兜底不失控。**C 方案没这个能力** · 必须激活车级 AND。
+
+**§8.47 定稿**（覆盖 §8.27 C 方案 daily_* 部分）：
+- **全局** 管 "所有车加起来 + 提取"（`passenger_daily_counter` 跨车累加）
+- **车级** 管 "这辆车"（`pull_round` 按 bus_id 聚合）
+- **两层独立 AND 取更严** · 车级 null = 不加严 · 车级放宽全局仍生效（CLAUDE §1.5）
+- 提取（BusID 空）只受全局管 —— record group 无车级
+
+**修法（2026-08-22）**：
+- `internal/strategy/canpull.go` `CheckInput` 加 `UsedBus / BusDailyRound / BusDailySpend` · `decide()` 加车级 AND 判据
+- `internal/wallet/wallet.go` `TodayUsageByBus(busID)` 走 pull_round 聚合
+- `internal/api/bus.go handleBusPull` 读车级 daily_* + 本车今日已用 · 传下去
+- `internal/bus/bus.go` Strategy struct 撤 DEPRECATED 注释
+- `web/src/components/StartCarpoolModal.tsx` **撤销之前的 I-06 撤字段** · 加回建车向导 daily_* 输入
+- `docs/decisions.md §8.47` 新加 · §8.27 daily_* 部分标 "已被覆盖" · `22-buy-race 缺口 3` 加 "已被 §8.47 覆盖"
+- `docs/06-db-schema.md §8` 撤 DEPRECATED 注释
+
+**新单测**（`internal/strategy/canpull_test.go`）：
+- `TestBusDailyRoundLimit_ANDWithGlobal` · 车级拦 / 全局拦 / 提取跳过车级 三场景
+- `TestBusDailySpendLimit_ANDWithGlobal` · 车级 spend AND
+- `TestBusDaily_CannotRelaxGlobal` · 车级放宽全局仍生效（CLAUDE §1.5）
+
+**待做**（自动补车链路 · 阶段 1 主链通了后补）：
+- refill/scheduler/webhook 三桥调 `canpull.CanPull` 时也传车级 daily_* · 现在只 handleBusPull 手动路径生效
 
 ---
 

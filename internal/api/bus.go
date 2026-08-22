@@ -361,7 +361,7 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// 保留 canpull 硬护栏(余额 / daily_round / daily_spend / 单价上限)校验 ·
-	// **护栏值来自 EffectiveStrategy** · 别再从 bus.Strategy 抽字段。
+	// **护栏值来自 EffectiveStrategy(全局) + 车级 daily_*(decisions §8.47)**
 	bal, err := s.wallets.Get(r.Context(), p.ID)
 	if err != nil {
 		return err
@@ -370,12 +370,28 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// §8.47 · 本车今日已用 · 用于车级 daily_* AND 判据
+	usedBus, err := s.wallets.TodayUsageByBus(r.Context(), busID)
+	if err != nil {
+		return err
+	}
+	// 读车级 daily_* · Effective 只吐全局(daily 不在其列)· 车级由 canpull AND 判
+	busForStrat, _ := s.buses.Get(r.Context(), busID)
+	var busDailyRound *int
+	var busDailySpend *int64
+	if busForStrat != nil {
+		busDailyRound = busForStrat.Strategy.DailyRoundLimit
+		busDailySpend = busForStrat.Strategy.DailySpendLimit
+	}
 	_, err = s.strategies.CanPull(r.Context(), p.ID, strategy.CheckInput{
 		BusID:           busID,
 		Count:           req.Count,
 		Balance:         bal.Balance,
 		Used:            strategy.Usage{Rounds: used.Rounds, Spend: used.Spend},
+		UsedBus:         &strategy.Usage{Rounds: usedBus.Rounds, Spend: usedBus.Spend},
 		BusMaxUnitPrice: nilIfZeroInt64(eff.MaxUnitPrice),
+		BusDailyRound:   busDailyRound,
+		BusDailySpend:   busDailySpend,
 	})
 	if err != nil {
 		if fail := translateStrategyErr(err); fail != nil {

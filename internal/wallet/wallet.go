@@ -506,6 +506,35 @@ func (s *Store) TodayUsage(ctx context.Context, passengerID string) (DailyUsage,
 	return u, nil
 }
 
+// TodayUsageByBus · 本车今日已用(decisions §8.47 · 车级 daily_* AND 全局)
+//
+// **为什么不用 counter 表**:passenger_daily_counter 是 passenger 维度 · 不带 bus_id。
+// pull_round 表本来就有 (bus_id, created_at) 索引 · 直接 SUM · 数据源一致
+// (counter 是这张表 write-through 的缓存)· 一次查询开销可忽略。
+//
+// 只算 status IN (completed, partial) —— pending/failed 不占额度(canpull 前置拦)。
+func (s *Store) TodayUsageByBus(ctx context.Context, busID string) (DailyUsage, error) {
+	if busID == "" {
+		return DailyUsage{}, nil
+	}
+	date := time.Now().UTC().Format("2006-01-02")
+	var u DailyUsage
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*),
+		       COALESCE(SUM(
+		         key_cost_total + vendor_fee_total + region_fee_total +
+		         single_pull_fee_total + capability_fee_total + service_fee_total), 0)
+		  FROM pull_round
+		 WHERE bus_id = ?
+		   AND status IN ('completed', 'partial')
+		   AND substr(created_at, 1, 10) = ?`,
+		busID, date).Scan(&u.Rounds, &u.Spend)
+	if err != nil {
+		return DailyUsage{}, fmt.Errorf("wallet: 查本车日用量: %w", err)
+	}
+	return u, nil
+}
+
 func (s *Store) inTx(ctx context.Context, fn func(*sql.Tx) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
