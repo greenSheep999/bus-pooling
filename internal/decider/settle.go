@@ -450,34 +450,18 @@ func (o *Orchestrator) insertCredentials(
 
 // saveCredplainTx · I-22 · 拉号成功后同 tx 把号明文落 credential_plaintext。
 //
-// 按 KeyPayload.AuthMethod 分派 credplain.SaveInput 的字段:
-//   - AuthRefreshToken · key 是 SSO refresh token 字符串
-//   - AuthAPIKey / 空 · key 是 kiro API key(老 4-tuple 号)
+// **I-35** · 走 canonical providers.Credential + credplain.SaveInputFrom 分派 ·
+// 老 KeyPayload 通过 providers.FromKeyPayload 桥接。全项目 vendor→housepool→credplain→
+// passengerpool 都走同一 canonical · 不再各自解构再重组。
 //
-// **不能 fatal 于"AuthMethod 空"**:老 vendor adapter 可能没打标 · 兜底按 AuthAPIKey 处理。
-// 但 key 空 = 数据出错 · 直接返错(整个 settle tx 回滚 · 崩溃安全)。
+// key 空 / 或校验错 = vendor 响应异常 · SaveInputFrom 返 err · settle tx 回滚(崩溃安全)。
 func (o *Orchestrator) saveCredplainTx(
 	ctx context.Context, tx *sql.Tx, credentialID string, k providers.KeyPayload,
 ) error {
-	if k.Key == "" {
-		return errors.New("KeyPayload.Key 空 · vendor 响应异常")
-	}
-	in := credplain.SaveInput{CredentialID: credentialID, Email: k.Account}
-	// 空 AuthMethod 兜底走 api_key(前 6 家 4-tuple 老行为)。
-	authMethod := k.AuthMethod
-	if authMethod == "" {
-		authMethod = providers.AuthAPIKey
-	}
-	switch authMethod {
-	case providers.AuthRefreshToken:
-		in.AuthMethod = credplain.AuthRefreshToken
-		in.RefreshToken = k.Key
-	case providers.AuthBearer:
-		in.AuthMethod = credplain.AuthBearer
-		in.AccessToken = k.Key
-	default: // AuthAPIKey
-		in.AuthMethod = credplain.AuthAPIKey
-		in.KiroAPIKey = k.Key
+	cred := providers.FromKeyPayload(k)
+	in, err := credplain.SaveInputFrom(cred, credentialID)
+	if err != nil {
+		return err
 	}
 	return o.plaintextSaver.SaveTx(ctx, tx, in)
 }
