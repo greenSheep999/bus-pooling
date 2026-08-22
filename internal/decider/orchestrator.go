@@ -65,6 +65,9 @@ type Orchestrator struct {
 	// plaintextSaver · 前 6 家 BatchImport 路径 · 拉号成功后同 tx 落号明文(I-22)·
 	// nil = 不落 · push_pool / handoff 会走 placeholder 兜底(老行为兼容)。
 	plaintextSaver PlaintextSaver
+	// tierPicker · I-39 · 按 count 命中数量分档·扣费用档位单价·跟 offers 展示同源。
+	// nil = 走 flat unit_cost(老行为 · vendor 无分档配置时也返 hit=false)。
+	tierPicker TierPicker
 	// now / newID 可注入，测试里用来控时钟和 id 生成
 	now   func() time.Time
 	newID func() string
@@ -94,6 +97,17 @@ type MarketStockPlaintextPopper interface {
 // 装配层实现方是 *credplain.Store · nil = 不落(老行为兼容 · 交付时走 placeholder)。
 type PlaintextSaver interface {
 	SaveTx(ctx context.Context, tx *sql.Tx, in credplain.SaveInput) error
+}
+
+// TierPicker · I-39 · vendor_price_tier 数量分档命中·后端扣费按 count 用档位单价。
+//
+// **为什么单独接口**:decider 层跟 offers 展示层用**同一份**分档结果 · 避免前端显示"买 10 送 20%"
+// 但后端 flat 扣费的展示 vs 扣费系统性 gap(审计 P0-2 · I-39)。
+//
+// 装配层实现方 *vendorview.TierStore · 空 = 走 flat unit_cost 兜底(老行为 · 6 家 vendor
+// 未实现 KeyTierLister 时表空 · 该接口返 hit=false 即可)。
+type TierPicker interface {
+	UnitPriceFor(ctx context.Context, vendorID string, count int) (price int64, hit bool)
 }
 
 // PullSuccessNotifier · 拉号成功事件通知(避免 decider → webhookout 硬依赖)。
@@ -216,6 +230,8 @@ type Config struct {
 	// PlaintextSaver · 前 6 家 BatchImport 路径 · 拉号成功后同 tx 落号明文(I-22)。
 	// 装配层传 *credplain.Store(它满足 PlaintextSaver 接口)· nil = 不落 · 交付走 placeholder。
 	PlaintextSaver PlaintextSaver
+	// TierPicker · I-39 · 数量分档 · 装配 *vendorview.TierStore · nil = 走 flat 老行为。
+	TierPicker TierPicker
 }
 
 func New(cfg Config) *Orchestrator {
@@ -246,6 +262,7 @@ func New(cfg Config) *Orchestrator {
 		marketStock:    cfg.MarketStock,
 		marketPopper:   cfg.MarketPopper,
 		plaintextSaver: cfg.PlaintextSaver,
+		tierPicker:     cfg.TierPicker,
 		now:            func() time.Time { return time.Now().UTC() },
 		newID:          uuid.NewString,
 	}
@@ -514,6 +531,18 @@ func (o *Orchestrator) Pull(ctx context.Context, in PullInput) (*PullResult, err
 	// 估价基准 · 优先按 zone 读 vendor_probe_zone.our_unit_credits · 精确到区（docs/10-pricing §1.4）·
 	// 读不到才按本轮快照现算（冷启动兜底）。实扣不看这个值 —— 走 settle 里 vendor 的 TotalCost。
 	unitCostHint, _ := o.unitCreditsFor(ctx, vendor.ID(), in.Zone, rawUnitPrice)
+
+	// I-39 · 数量分档命中 · 用档位单价替换 flat unit_cost · 跟 offers.PriceBands 展示同源。
+	// TierPicker 未装配 / vendor 无分档 / count 落不到任何档 · 保持 flat(老行为)。
+	//
+	// **为什么在这里**:unitCostHint 后立即用于 priceCapExceeded + reserve 冻结 + max_total_cny 涨价保护 ·
+	// 换成档位单价才能正确冻结(冻多了浪费余额·冻少了 settle 时补冻更复杂)。settle 里 vendor TotalCost
+	// 是权威实扣 · 该修不修 · 只影响 hint 精度。
+	if o.tierPicker != nil {
+		if tierPrice, hit := o.tierPicker.UnitPriceFor(ctx, string(vendor.ID()), in.Count); hit && tierPrice > 0 {
+			unitCostHint = tierPrice
+		}
+	}
 
 	// **单价上限硬拦（积分口径 · 2026-08-14 P2 修）**：
 	//
