@@ -562,6 +562,9 @@ func buildDecider(
 		// I-22 · 前 6 家 BatchImport 路径 · 拉号成功后同 tx 落号明文。
 		// nil 允许(cipher 未配)· 号仍能卖 · push_pool / handoff 走 placeholder。
 		PlaintextSaver: credplainStore,
+		// I-39 · 数量分档 · 冻结阶段按 count 用档位单价·跟 offers 展示同源。
+		// 表空(vendor 未接 KeyTierLister)时 UnitPriceFor 返 hit=false · 走 flat 老行为。
+		TierPicker: vendorview.NewTierStore(sqldb.DB),
 	}), pubPool, rates, surchargeResolver, nil
 }
 

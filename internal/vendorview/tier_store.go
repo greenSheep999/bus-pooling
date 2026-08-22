@@ -217,3 +217,34 @@ func (s *TierStore) QtyBandsOf(ctx context.Context, vendorID string) ([]provider
 	}
 	return out, rows.Err()
 }
+
+// UnitPriceFor · I-39 · 按 count 命中档位取单价(microunit · 我方积分)。
+//
+// **返值**:
+//   - hit=true · price 是命中档的 UnitPriceCredits(microunit)
+//   - hit=false · vendor 无分档配置 / 表空 · price=0 · 调用方走 flat 单价
+//
+// **档位规则**:bands 按 tier_index 升序 · 每档 [Lower, Upper] 闭区间。
+// 最高档 Upper=0 表示"及以上"。count 落在哪档取哪档单价。
+//
+// **decider 和 offers 都调这个** · 保证展示 vs 扣费用**同一份**分档结果。
+func (s *TierStore) UnitPriceFor(ctx context.Context, vendorID string, count int) (price int64, hit bool) {
+	if s == nil || count <= 0 {
+		return 0, false
+	}
+	bands, err := s.QtyBandsOf(ctx, vendorID)
+	if err != nil || len(bands) == 0 {
+		return 0, false
+	}
+	for _, b := range bands {
+		// upper=0 = 及以上 · 命中
+		if b.Upper == 0 && count >= b.Lower {
+			return b.UnitPriceCredits, true
+		}
+		if count >= b.Lower && count <= b.Upper {
+			return b.UnitPriceCredits, true
+		}
+	}
+	// count 小于最低 lower(不该发生 · 表里应 lower=1) · 兜底返 flat
+	return 0, false
+}

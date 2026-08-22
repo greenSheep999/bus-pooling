@@ -59,7 +59,7 @@
 | [I-36](#i-36) | 🟢 fixed(unverified) | P0 | deploy 脚本双问题:migrate 竞态死锁 + BP_ADMIN_KEY 从没 seed(admin/* 端点上线即隐形) | 2026-08-22 |
 | [I-37](#i-37) | 🟢 fixed(unverified) | P0 | migration 051 rebuild topup_order 后 3 条索引全丢 · 查询退化 O(N) | 2026-08-22 |
 | [I-38](#i-38) | 🟢 fixed(unverified) | P0 | admin_market bypass canonical FromKeyPayload · 挪进 NewFromPlaintext 单点分派 | 2026-08-22 |
-| [I-39](#i-39) | 🟡 open | P0 | TierStore 只接 offers 展示 · decider.Price 走 flat · 未来接 KeyTierLister 立即出 gap · 已加警告注释 | 2026-08-22 |
+| [I-39](#i-39) | 🟢 fixed(unverified) | P0 | decider 接 TierStore.UnitPriceFor · 冻结按 count 命中档位单价 · 跟 offers 展示同源 | 2026-08-22 |
 | [I-40](#i-40) | 🟢 fixed(unverified) | P1 | pull_round_surcharge kindAmount 重复计算 · retail/cap/adhoc 共 capabilityFee 桶 · SUM = 3× | 2026-08-22 |
 | [I-41](#i-41) | 🟢 fixed(unverified) | P1 | credplain lookup FetchPlaintext bypass canonical · 走 PushCredentialFrom 按 AuthMethod 分派 | 2026-08-22 |
 | [I-42](#i-42) | 🟢 fixed(unverified) | P1 | vendor_pricing seed CLI 缺失 · 加 seed-pricing 子命令 | 2026-08-22 |
@@ -900,9 +900,25 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 
 ---
 
-### I-39 · TierStore decider vs offers 展示口径 · **未来定时炸弹**
+### I-39 · TierStore decider vs offers 展示口径
 
-**状态**:🟡 `open` · 2026-08-22 · **当前生产不触发** · 生产 vendor_price_tier 表空
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验
+
+**语义澄清**(修完后):
+- vendor_price_tier 表数据源 = vendor 自己的分档 API(如 kirooo `/api/my/key-price-tiers`)
+- vendor 侧原生分档:vendor 那边扣钱按分档扣 · settle 里 `purchase.TotalCost/count` 拿到的**已经是分档单价**
+- 我方只需在**冻结阶段**(decider Pull 里的 unitCostHint)用档位价 · 避免冻多了触发余额不足
+
+**修完的做法**:
+1. `TierStore.UnitPriceFor(vendorID, count)` · 新增 helper · 按 count 命中档位(1-9/10-49/50+ 等)· 返档位单价 microunit
+2. `decider.TierPicker` 接口 · Orchestrator 加 tierPicker 字段
+3. `decider.Pull` 拿到 unitCostHint 后·若 tierPicker != nil 且命中·替换 unitCostHint
+4. `offers.offersFromSnapshot` 保留展示 PriceBands 逻辑(跟 decider 同源) · 之前 P0-2 警告注释改成"已同源"说明
+5. main.go 装配 `TierPicker: vendorview.NewTierStore(sqldb.DB)`
+
+**表空 fallback**:6 家 vendor 只 kirooo 实现 KeyTierLister · 其余 5 家 QtyBandsOf 返空 · UnitPriceFor 返 hit=false · unitCostHint 保持 flat(老行为兼容)。
+
+**测试**:tier_store_pick_test.go 4 用例(命中中间档 / 空表 / count=0 / nil store) 全绿。
 
 **症状** 审计 P0-2(维度 3):
 - offers.go 展示 PriceBands(从 TierStore 读)
