@@ -4,10 +4,49 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/passenger"
 	"github.com/bus-pooling/bus-pooling/internal/vendorview"
 )
+
+// I-15 · vendors/status 内存缓存(2026-08-22 生产延迟排查)
+//
+// 症状:loopback 也要 240ms · vendorview.StatusOverview 遍历 7 vendor × 5 SQL(24h/168h
+// 窗口聚合)· 全用户共享同一份数据。
+//
+// 30s TTL 内存缓存 · 全用户共享 · 跨用户复用 · O(1) 读。
+// key = windowHours(不同窗口不同缓存 · 但只 168/24/720 三个常用值 · 内存开销可忽略)。
+type statusCache struct {
+	mu   sync.RWMutex
+	data map[int]statusCacheEntry
+}
+
+type statusCacheEntry struct {
+	value  vendorview.StatusOverview
+	expiry time.Time
+}
+
+const statusCacheTTL = 30 * time.Second
+
+var globalStatusCache = &statusCache{data: make(map[int]statusCacheEntry)}
+
+func (c *statusCache) get(windowHours int) (vendorview.StatusOverview, bool) {
+	c.mu.RLock()
+	entry, ok := c.data[windowHours]
+	c.mu.RUnlock()
+	if !ok || time.Now().After(entry.expiry) {
+		return vendorview.StatusOverview{}, false
+	}
+	return entry.value, true
+}
+
+func (c *statusCache) set(windowHours int, v vendorview.StatusOverview) {
+	c.mu.Lock()
+	c.data[windowHours] = statusCacheEntry{value: v, expiry: time.Now().Add(statusCacheTTL)}
+	c.mu.Unlock()
+}
 
 // vendors 只读端点。**要鉴权** —— 单价按调用者身份差异化（decisions §8.20），
 // 拿不到身份就没法定价。
@@ -57,7 +96,13 @@ func (s *Server) handleVendorsStatus(w http.ResponseWriter, r *http.Request) err
 	if windowHours > 720 {
 		windowHours = 720
 	}
+	// I-15 · 30s 内存缓存 · 跨用户共享 · 生产 240ms → <1ms 感知消失
+	if cached, ok := globalStatusCache.get(windowHours); ok {
+		writeJSON(w, http.StatusOK, cached)
+		return nil
+	}
 	out := s.vendorView.StatusOverview(r.Context(), windowHours)
+	globalStatusCache.set(windowHours, out)
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }
