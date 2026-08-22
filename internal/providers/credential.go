@@ -81,6 +81,32 @@ func (c Credential) ToKeyPayload() KeyPayload {
 	}
 }
 
+// NewFromPlaintext · admin_market 手工塞号 / seed CLI 入口 · 单点收敛
+// 三选一明文 → canonical Credential(I-35 · 输入侧收敛)。
+//
+// 优先级 refresh_token > access_token > api_key(跟 personal SSO / 老 4-tuple 兼容)。
+// 三个都空返 zero Credential(调用方应先校验)。
+//
+// **元数据字段**(email/issuerURL/startURL/tokenEndpoint/scopes/region)是**独立于 AuthMethod**
+// 的透传字段·调用方按需填入(admin_market 前端表单三选一时元数据也可能有)。
+// 建议:AuthAPIKey 号必带 email + issuer_url·AuthRefreshToken 号只需 email 就够。
+func NewFromPlaintext(refreshToken, accessToken, kiroAPIKey string) Credential {
+	c := Credential{
+		RefreshToken: refreshToken,
+		AccessToken:  accessToken,
+		KiroAPIKey:   kiroAPIKey,
+	}
+	switch {
+	case refreshToken != "":
+		c.AuthMethod = AuthRefreshToken
+	case accessToken != "":
+		c.AuthMethod = AuthBearer
+	case kiroAPIKey != "":
+		c.AuthMethod = AuthAPIKey
+	}
+	return c
+}
+
 // FromKeyPayload · 老 vendor adapter 返 KeyPayload · 反向转 Credential 用。
 //
 // 迁移路径:decider 层拿到 []KeyPayload 后先转成 []Credential · 之后所有下游

@@ -56,6 +56,10 @@
 | [I-33](#i-33) | 🟢 fixed(deferred) | P2 | pull_intent 表永远为空 · 明标 1c 集单接进来时一并做 | 2026-08-22 |
 | [I-34](#i-34) | 🟢 fixed(deferred) | P2 | vendor_pricing admin API 缺失 · 需 seed 脚本 + CLI · 下批 PR · Prober fallback 现在够用 | 2026-08-22 |
 | [I-35](#i-35) | 🟢 fixed(unverified) | P1 | canonical Credential 重构 · providers.Credential + 3 FromCredential 转换函数 · 消除人肉同步 | 2026-08-22 |
+| [I-36](#i-36) | 🟢 fixed(unverified) | P0 | deploy 脚本双问题:migrate 竞态死锁 + BP_ADMIN_KEY 从没 seed(admin/* 端点上线即隐形) | 2026-08-22 |
+| [I-37](#i-37) | 🟢 fixed(unverified) | P0 | migration 051 rebuild topup_order 后 3 条索引全丢 · 查询退化 O(N) | 2026-08-22 |
+| [I-38](#i-38) | 🟢 fixed(unverified) | P0 | admin_market bypass canonical FromKeyPayload · 挪进 NewFromPlaintext 单点分派 | 2026-08-22 |
+| [I-39](#i-39) | 🟡 open | P0 | TierStore 只接 offers 展示 · decider.Price 走 flat · 未来接 KeyTierLister 立即出 gap · 已加警告注释 | 2026-08-22 |
 
 ---
 
@@ -840,6 +844,77 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 **范围外**:数据库 · kiro.rs 客户端 · 前端 · webhook / 交付层业务逻辑。
 
 **做完的验证**:golden 字段测试 · Credential → 3 view struct 每个字段有对应位置 · 未来漏映射编译期挂。
+
+---
+
+### I-36 · deploy 脚本双问题 · migrate 竞态 + BP_ADMIN_KEY 未 seed
+
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待下次部署验
+
+**症状 1** · migrate 竞态死锁(2026-08-22 PR #18 部署时触发):
+- deploy 脚本先 `docker compose up -d` 再 `docker exec kirobus migrate up`
+- 但 app 发现 pending migration 就拒启动("有未应用的迁移 · 先跑 migrate up")
+- kirobus 容器 crashloop · `docker exec` 无法 exec 进去 · **死锁**
+- 手工用 `docker run --rm` 跑 migrate up 才恢复
+
+**症状 2** · BP_ADMIN_KEY 从没 seed(审计 P0-1):
+- .env 只有 BP_MASTER_KEY / BP_ADDR / DRY_RUN 等 · **没 BP_ADMIN_KEY**
+- `server.go:333/342/348` 三块 `if s.adminKey != ""` 全 false
+- PR #18 装的 `/api/admin/vendor-plan-config` GET/PUT · admin/market/* · admin/data-health 全部**不挂 mux** · 404 而不是 401
+- 运维完全不知道有这些端点
+
+**修**:
+1. `scripts/deploy-vps22.sh` step 4 · 加 `BP_ADMIN_KEY=$(openssl rand -hex 32)` seed · 老 .env 补检查也补
+2. step 6 顺序:先 `docker run --rm ... migrate up` 再 `docker compose up -d` · 避免竞态
+
+---
+
+### I-37 · migration 051 rebuild topup_order 后索引全丢
+
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验
+
+**症状** 审计 P0-1(维度 4):migration 051 `DROP TABLE topup_order` + `ALTER TABLE topup_order_051 RENAME TO topup_order` **没 CREATE INDEX** · 老表 002/006/010 累计 3 条索引跟着 DROP 一起蒸发:
+- `idx_topup_passenger_time`(passenger_id, created_at DESC) → 面向 `/api/me/topups` 分页
+- `idx_topup_status`(status, expires_at) → 面向 janitor 扫 pending
+- `idx_topup_gateway_payment_id`(gateway_payment_id) UNIQUE PARTIAL → 面向 gateway webhook
+
+**影响**:三条热查询变全表扫 · 数据本身没丢 · latency 上量后线性膨胀。
+
+**修**:migration 052_topup_order_indexes.sql · IF NOT EXISTS 幂等 · down 也 IF EXISTS。
+
+---
+
+### I-38 · admin_market bypass canonical FromKeyPayload
+
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验
+
+**症状** 审计 P0-3(维度 3):admin_market.go 手工塞号时构造 `providers.Credential` · **手写 switch AuthMethod**(3 选 1) · 不走 canonical 输入分派逻辑。跟 vendor adapter 分派是**两套代码** · 未来加 AuthBearer / 新字段时忘同步 → 手工池号 auth_method 归错档 → push_pool 用错 token 字段。
+
+**修**:`providers.NewFromPlaintext(refresh, access, kiroKey)` 单点收敛输入分派(I-35 输入侧)· admin_market 调它 · 逻辑跟未来 vendor adapter 加 AuthBearer 保持一致。
+
+**测试**:credential_plaintext_test.go 5 用例(3 分派 + 优先级 + empty) 全绿。
+
+---
+
+### I-39 · TierStore decider vs offers 展示口径 · **未来定时炸弹**
+
+**状态**:🟡 `open` · 2026-08-22 · **当前生产不触发** · 生产 vendor_price_tier 表空
+
+**症状** 审计 P0-2(维度 3):
+- offers.go 展示 PriceBands(从 TierStore 读)
+- decider.Price / unitCreditsFor **不查 TierStore** · 按 flat unit_price 扣
+- 若生产接了实现 KeyTierLister 的 vendor 并 seed vendor_price_tier → 前端展示"买 10 -20%" · 后端 flat 扣 → 展示 vs 扣费系统性 gap
+
+**当前状态**:生产 vendor_price_tier 表空(backfiller 只拉实现 KeyTierLister 的家 · 6 家 vendor 都没实现)· PriceBands 永远空 · 老行为等价 · **暂不触发**。
+
+**已做保护**:offers.go 已加**明确注释警告** · 未来接 KeyTierLister 前必须先在 decider 也接 TierStore.QtyBandsOf。
+
+**未做**:decider 侧 TierStore 接入 —— 涉及 orchestrator.unitCreditsFor 深路径改造 · 大手术 · 未来接 KeyTierLister 之前先做。
+
+**跟进 checklist**(接第一家 KeyTierLister vendor 时):
+1. 先在 decider/orchestrator.go 加 `tierStore` 字段 + `unitCreditsFor` 走 SelectByCount 命中档位
+2. 再在 backfiller 启用该 vendor 的 KeyTierLister 拉取
+3. offers.go PriceBands 已就绪 · 无需改
 
 ---
 
