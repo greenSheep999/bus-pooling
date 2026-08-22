@@ -25,6 +25,7 @@
 | [I-02](#i-02) | 🟢 fixed(unverified) | P1 | 进车后自动推下游 · push_on_pull 字段留着但无消费路径 | 2026-08-15 |
 | [I-13](#i-13) | ✅ verified | P2 | pullSuccessBridge VendorLabel 硬编 "provider" 泄漏内部术语 | 2026-08-22 |
 | [I-14](#i-14) | ✅ verified | P2 | migration 046 down 后重 up 报 duplicate column · 破坏 down/up 幂等 | 2026-08-22 |
+| [I-15](#i-15) | 🟢 fixed(unverified) | P1 | 生产延迟高 · 前端 staleTime 30s + vendors/status 无缓存 · 跨海每次 refetch | 2026-08-22 |
 | [I-03](#i-03) | 🔴 blocked | P1 | kirodrop 新增 personal 号未接入 · 缺 vendor API 文档 | 2026-08-22 |
 | [I-04](#i-04) | 🔴 blocked | P1 | 5 家 vendor 都只声明 enterprise · 缺各家 personal API 文档 | 2026-08-22 |
 | [I-05](#i-05) | 🟢 fixed(unverified) | P1 | 主文档 3 份滞后 migration 040（15-scheduling / 06-db / 05-api / 03-modules） | 2026-08-15 |
@@ -344,6 +345,43 @@ kiroappio / kiroappcc / kirodrop** 都还只有 enterprise。
 - 其他见 phase-1-acceptance §P2 Cleanup
 
 **影响**：不阻运行时 · 只误导下一个 agent 建代码时按老 schema 造字段。
+
+---
+
+### I-15 · 生产延迟高 · 点了没反应 · 加两层缓存
+
+**状态**：🟢 `fixed(unverified)` · 2026-08-22 · 部署后需用户实测
+**发现**：2026-08-22 · 用户报告"点设置都慢 · 从没见过这么慢"
+
+**症状**：
+- 点任何页面/tab 卡好几秒才渲染 · 数据一次性全出来
+- healthz(极简端点)外网 900ms · 内网 loopback 0.6ms → **网络+CF 握手 700ms**
+- `/api/vendors/status` loopback 240ms(遍历 7 vendor × 5 SQL 窗口聚合)· 外网 900ms+
+- 每页并发 4-8 个 API · 最慢的 gate 整个渲染
+
+**根因分层**：
+1. **前端 staleTime 30s 太短**:切 tab 40 秒回来 · 所有 hook 触发 refetch · 8 API × 跨海 300ms
+2. **`/api/vendors/status` 无缓存**:全用户共享同一份数据 · 每人每 30s 都重跑 7×5 SQL 聚合
+3. 物理网络跨海 RTT(不可控 · 是背景 · 不解决)
+
+**修法**：
+- **前端**(`web/src/main.tsx`)· QueryClient 默认:
+  - `staleTime: 30_000` → `5 * 60_000`(5 分钟)· 切 tab 回来不 refetch
+  - `gcTime` 补 `30 * 60_000`(30 分钟)· 后台 tab 缓存留更久
+  - 保留 `refetchOnWindowFocus: false` + `retry: 1`
+- **后端**(`internal/api/vendors.go`)· `handleVendorsStatus` 加 30s 内存缓存(sync.RWMutex):
+  - key=windowHours · 跨用户共享(status 端点是**全用户同视角**的公开数据)
+  - 240ms → <1ms 命中
+
+**为什么不用 Redis**:CPU 0% · DB 只 234M · 单机 sync.Map 够用 · CLAUDE §13"不要抽象要够用"。
+
+**未做**(followup):
+- `vendors/stock` / `vendors/prices` 走 tier 视角 · **不能全用户缓存** · 若真慢可按 tier 缓
+- 手动操作后(拉号/建车)已有 `invalidateQueries` 强制刷 · 不受 staleTime 影响
+
+**待验**:部署后用户测"切 tab / 进设置 / 进详情"是否明显变快。
+
+**关联**:CLAUDE §11 "缓存"从未讨论过 · 这条视为**性能优化**不是新功能 · 阶段一收官后打的补丁。
 
 ---
 
