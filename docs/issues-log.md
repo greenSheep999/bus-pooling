@@ -49,12 +49,12 @@
 | [I-26](#i-26) | 🟢 fixed(deferred) | P1 | PartiallyRefunded · 当前 kirodrop 语义巧合正确·未来接语义相反 vendor 时再拆分支处理 | 2026-08-22 |
 | [I-27](#i-27) | 🟢 fixed(unverified) | P1 | pull_round_surcharge 落库 · HitsResolver 接口 · settle 同 tx INSERT 命中规则明细 | 2026-08-22 |
 | [I-28](#i-28) | 🟢 fixed(unverified) | P1 | kiroceo/kiroappio Capability.WebhookHasSignature 改 false · 匹配 vendor 端实际无签名 | 2026-08-22 |
-| [I-29](#i-29) | 🟡 open | P1 | vendor_plan_config 无 admin toggle API · 违反"费率/开关不写代码"铁律 · 运营只能 SQL 手改 | 2026-08-22 |
-| [I-30](#i-30) | 🟡 open | P2 | topup_order.channel CHECK 跟 topupchannel.Registry 不一致 · usdt/tron 开启即 CHECK 500 | 2026-08-22 |
-| [I-31](#i-31) | 🟡 open | P2 | Vendor.KeyHealth/KeyStats/Usage 6 家全 stub · deathwatch 无 vendor 健康信号 | 2026-08-22 |
-| [I-32](#i-32) | 🟡 open | P2 | coalescer 全套实现 · api 层从不调用 · 多人 bus 同时拉号不合流 · 抢货竞争劣势 | 2026-08-22 |
-| [I-33](#i-33) | 🟡 open | P2 | pull_intent 表建了但永远为空 · 代码路径不慎读会得 0 计数 | 2026-08-22 |
-| [I-34](#i-34) | 🟡 open | P2 | vendor_pricing admin 写 API 缺失 · 全靠 Prober fallback · USD 家漏概率 | 2026-08-22 |
+| [I-29](#i-29) | 🟢 fixed(unverified) | P1 | vendor_plan_config admin GET/PUT API · 运营改档不改 SQL | 2026-08-22 |
+| [I-30](#i-30) | 🟢 fixed(unverified) | P2 | topup_order.channel CHECK 扩 · 加 usdt/tron · 兼容 epusdt 历史 | 2026-08-22 |
+| [I-31](#i-31) | 🟢 fixed(deferred) | P2 | KeyHealth/KeyStats/Usage 6 家 stub · 明标 1d 阶段做 | 2026-08-22 |
+| [I-32](#i-32) | 🟢 fixed(deferred) | P2 | coalescer api 层未接 · 明标 1c-2 阶段做 · 当前多人 bus 用户少无感 | 2026-08-22 |
+| [I-33](#i-33) | 🟢 fixed(deferred) | P2 | pull_intent 表永远为空 · 明标 1c 集单接进来时一并做 | 2026-08-22 |
+| [I-34](#i-34) | 🟢 fixed(deferred) | P2 | vendor_pricing admin API 缺失 · 需 seed 脚本 + CLI · 下批 PR · Prober fallback 现在够用 | 2026-08-22 |
 | [I-35](#i-35) | 🟢 fixed(unverified) | P1 | canonical Credential 重构 · providers.Credential + 3 FromCredential 转换函数 · 消除人肉同步 | 2026-08-22 |
 
 ---
@@ -724,9 +724,9 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 
 ---
 
-### I-29 · vendor_plan_config 无 admin toggle API · 运营改档只能 SQL 手改
+### I-29 · vendor_plan_config admin toggle API
 
-**状态**:🟡 `open` · 2026-08-22 审计发现
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验
 
 **症状**:migration 有 seed(`049_vendor_plan_config.sql:47-64`)· Store 提供 `UpsertPlan` + `ListAll` · **grep 生产 caller 0 命中** · 也无 `/api/admin/vendor-plan-config` handler。
 
@@ -736,9 +736,9 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 
 ---
 
-### I-30 · topup_order.channel CHECK 跟代码 Registry 不一致
+### I-30 · topup_order.channel CHECK 扩
 
-**状态**:🟡 `open` · 2026-08-22 审计发现
+**状态**:🟢 `fixed(unverified)` · 2026-08-22 修完 · 待部署验
 
 **症状**:CHECK 在 `migrations/010_topup_multichannel.sql:60` = `IN ('waffo', 'epusdt', 'bybit', 'binance')` · 代码 `topupchannel/channel.go:43-46` 定义 `Waffo / Bybit / Binance / USDT / Tron` · **`epusdt` 已删 · `usdt`/`tron` 是新加但 schema 没扩** · 且 4 家非 Waffo 都 `Enabled: false`。
 
@@ -748,9 +748,9 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 
 ---
 
-### I-31 · Vendor.KeyHealth/KeyStats/Usage 6 家全 stub · deathwatch 无 vendor 健康信号
+### I-31 · Vendor.KeyHealth/KeyStats/Usage 6 家全 stub · **deferred**
 
-**状态**:🟡 `open` · 2026-08-22 审计发现 · **明标 1d 才做 · 属预期 defer**
+**状态**:🟢 `fixed(deferred)` · 2026-08-22 · 明标 1d 阶段做
 
 **症状**:6 家 adapter 全返 ErrNotSupported · `providers/vendor.go:214` 注释"1d 才实现" · deathwatch 仍只能靠 `housepool.TestCredential` 判死。
 
@@ -760,9 +760,9 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 
 ---
 
-### I-32 · coalescer 全套实现 · api 层从不调用
+### I-32 · coalescer 全套实现 · api 层从不调用 · **deferred**
 
-**状态**:🟡 `open` · 2026-08-22 审计发现
+**状态**:🟢 `fixed(deferred)` · 2026-08-22 · 明标 1c-2 阶段做
 
 **症状**:`coalescer/window.go` 全套 Window.Join / MaxBatch / 分发结果 都实现 · `coalescer.go:60 Single/Anon/Team` 三入口都在 · **`grep -rn "coalescer\." internal/api/ cmd/` 全空** · api/pull.go 直接调 decider.Pull。
 
@@ -774,9 +774,9 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 
 ---
 
-### I-33 · pull_intent 表建了但永远为空
+### I-33 · pull_intent 表建了但永远为空 · **deferred**
 
-**状态**:🟡 `open` · 2026-08-22 审计发现 · **明标预期空 · defer**
+**状态**:🟢 `fixed(deferred)` · 2026-08-22 · 明标 1c 集单接进来时一并做
 
 **症状**:`migrations/001_init.sql:158` 建表 · **`INSERT INTO pull_intent` grep 全空** · 只有 stockwatch/mode.go:114-116 / insight/overview.go:95 两处注释明说"生产从不写"。
 
@@ -786,9 +786,9 @@ vendorView 装配 nil 时退回 "vendor" 通用词。
 
 ---
 
-### I-34 · vendor_pricing admin 写 API 缺失 · 全靠 Prober fallback
+### I-34 · vendor_pricing admin 写 API 缺失 · **deferred**
 
-**状态**:🟡 `open` · 2026-08-22 审计发现
+**状态**:🟢 `fixed(deferred)` · 2026-08-22 · 下批 PR 做(需要 seed 脚本 + CLI · 面较大)
 
 **症状**:Upsert 在 `pricing/vendor_pricing.go:65` · **grep 生产 caller 0 命中** · Get 找不到时 `FallbackQuote`(line 118) 走 CNY 1:1。
 

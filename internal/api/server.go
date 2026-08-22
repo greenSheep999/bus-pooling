@@ -96,6 +96,9 @@ type Server struct {
 	// credplain · 号明文加密缓存 · admin_market 塞号时走 StashByKiroRS 落暂存表 ·
 	// nil = 手工池 push_pool 只能推 placeholder(跟 I-01 修复前一致)
 	credplain *credplain.Store
+	// planConfigStore · I-29 · vendor_plan_config admin toggle 端点(GET/PUT) · nil = 不挂端点
+	// 运营改档不必 SQL 手改 · 遵循 CLAUDE "费率/开关不写代码"铁律。
+	planConfigStore *vendorview.PlanConfigStore
 	// autoPushOnAssign · I-02 · 提取 key 派进车场景 · 装配层实现 · 后台推池
 	// nil = 不自动推(测试 / dev / 用户没配下游)· 用户仍可手动走 push_pool 分支
 	autoPushOnAssign func(ctx context.Context, passengerID string, credentialIDs []string)
@@ -161,6 +164,8 @@ type ServerDeps struct {
 	// Credplain · 明文加密缓存 · admin_market POST /admin/market/stock 时用它落暂存表 ·
 	// nil = 装配层没接入 · 手工池 push_pool 走 placeholder(issues-log I-01)
 	Credplain *credplain.Store
+	// PlanConfigStore · I-29 · vendor_plan_config admin toggle · nil = 不挂端点
+	PlanConfigStore *vendorview.PlanConfigStore
 	// AutoPushOnAssign · I-02 · 提取 key 派 into_bus 后自动推下游
 	// 装配层传 · 内部走 pullSuccessBridge.autoPush · nil = 不自动(测试)
 	AutoPushOnAssign func(ctx context.Context, passengerID string, credentialIDs []string)
@@ -205,6 +210,7 @@ func NewServer(d ServerDeps) *Server {
 		coupons:             d.Coupons,
 		marketStock:         d.MarketStock,
 		credplain:           d.Credplain,
+		planConfigStore:     d.PlanConfigStore,
 		autoPushOnAssign:    d.AutoPushOnAssign,
 	}
 }
@@ -337,6 +343,11 @@ func (s *Server) Routes(mux *http.ServeMux) {
 		mux.Handle("GET  /api/admin/market/offers", handler(s.requireAdmin(s.handleAdminMarketListOffers)))
 		mux.Handle("POST /api/admin/market/offers", handler(s.requireAdmin(s.handleAdminMarketUpsertOffer)))
 		mux.Handle("POST /api/admin/market/stock", handler(s.requireAdmin(s.handleAdminMarketImportStock)))
+	}
+	// I-29 · vendor_plan_config admin toggle · vendor 档位开关不改 SQL
+	if s.adminKey != "" && s.planConfigStore != nil {
+		mux.Handle("GET /api/admin/vendor-plan-config", handler(s.requireAdmin(s.handleAdminListPlanConfig)))
+		mux.Handle("PUT /api/admin/vendor-plan-config", handler(s.requireAdmin(s.handleAdminUpsertPlanConfig)))
 	}
 
 	// 首页 / 数据 tab / 活动流（05-api-contract §9b）

@@ -1063,6 +1063,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		// I-01 · admin_market POST /admin/market/stock 时 · 明文加密写 market_stock_plaintext
 		// 暂存表 · settle 时同 tx 迁到 credential_plaintext。跟 buildDecider / pusher 同实例
 		Credplain: credplainStore,
+		// I-29 · vendor_plan_config admin toggle · 运营改档位不改 SQL(要 BP_ADMIN_KEY)
+		PlanConfigStore: vendorview.NewPlanConfigStore(database.DB),
 		// I-02 · assign into_bus 场景 · handler 后台调 bridge 自动推
 		AutoPushOnAssign: pullBridge.AutoPushOnAssign,
 	})
