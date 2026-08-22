@@ -8,6 +8,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { useTranslation } from "react-i18next";
 import { Card, Chip, Em, SectionHead } from "@/components/ui/primitives";
+import { notify } from "@/lib/toast";
 
 /** 社群页 · /community
  *
@@ -37,6 +38,7 @@ export default function Community() {
     try {
       await bind.mutateAsync(c);
       setMsg({ tone: "ok", text: t("bind.success") });
+      notify.ok({ title: t("common:toast.community_ok") });
       setCode("");
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : String(err);

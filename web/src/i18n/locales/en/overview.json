@@ -20,7 +20,8 @@
   "metric": {
     "credits": "Spend",
     "pulls": "Pulls",
-    "lifespan": "Lifespan"
+    "lifespan": "Lifespan",
+    "usage": "Usage"
   },
   "dest": {
     "pending": "Pending",
@@ -134,7 +135,8 @@
     "unit": {
       "credits": "credits",
       "pulls": "pulls",
-      "lifespan": "h"
+      "lifespan": "h",
+      "usage": "credits"
     },
     "avg-label": "Avg {{value}} {{unit}}",
     "peak-label": "Peak {{value}} {{unit}} · {{date}}",

@@ -139,7 +139,7 @@ export const buses: Bus[] = [
     /* 周末拼车局 · 演示"全覆盖"态 —— 所有覆盖字段都有值,不跟随全局 */
     id: "bus_weekend", name: "周末拼车局", kind: "single", status: "active",
     member_count: 1, invite_code: null, created_at: ago(24 * 8),
-    alive_count: 12, dead_count: 1, spend_today: C(28),
+    alive_count: 12, dead_count: 1, spend_today: C(28), spend_total: C(340),
     avg_lifespan_seconds: 42 * 3600,
     strategy: {
       auto_refill_enabled: true, refill_watermark: 3, refill_min_count: 5,
@@ -152,7 +152,7 @@ export const buses: Bus[] = [
     /* 日常一号 · 演示"混合"态 —— auto/watermark 覆盖 · min_count/perRound 跟随全局 */
     id: "bus_daily", name: "日常一号", kind: "single", status: "active",
     member_count: 1, invite_code: null, created_at: ago(24 * 15),
-    alive_count: 4, dead_count: 0, spend_today: C(12),
+    alive_count: 4, dead_count: 0, spend_today: C(12), spend_total: C(156),
     avg_lifespan_seconds: 36 * 3600,
     strategy: {
       auto_refill_enabled: true, refill_watermark: 2, refill_min_count: null,
@@ -165,7 +165,7 @@ export const buses: Bus[] = [
     /* Kiro 常驻车 · 演示"全跟随全局"态 —— auto/watermark/min_count/perRound 全 null · 只覆盖 preferred_vendor */
     id: "bus_kiro", name: "Kiro 常驻车", kind: "team", status: "active",
     member_count: 4, invite_code: "K7X-2M4", created_at: ago(24 * 30),
-    alive_count: 6, dead_count: 1, spend_today: C(5),
+    alive_count: 6, dead_count: 1, spend_today: C(5), spend_total: C(890),
     avg_lifespan_seconds: 28 * 3600,
     strategy: {
       // 1f-refactor · auto/watermark 是纯车级 bool/int · 团车这里关自动补
@@ -684,6 +684,10 @@ const mkKey = (
   region,
   credits_used: C(creditsK * 1000),
   lifespan_seconds: Math.round(lifeH * 3600),
+  // 用量真值 + 上限 · 派发历史展开行画进度条用（PRO+ 2000 档）
+  usage_current: C(creditsK * 1000),
+  usage_limit: C(2000),
+  subscription: "pro_plus",
 });
 
 export const assignEvents: AssignEvent[] = [
@@ -752,29 +756,33 @@ export const assignEvents: AssignEvent[] = [
 
 export const activities: Activity[] = [
   // 号流转（走 vendor → 车/号池 双 badge）· target 简洁一点，箭头承担"去向"语义
-  { id: "a1", kind: "extract",  source: vl("kirodrop"),   target: "我的号池",     target_kind: "push_pool",  count: 2,  count_unit: "个 key", summary: `${vl("kirodrop")} → 我的号池`,             amount: -C(6),   created_at: ago(0.5), link: "/extract" },
-  { id: "a2", kind: "push",     source: "号池",         target: "我的号池",     target_kind: "push_pool",  count: 2,  count_unit: "个号",   summary: "号池 → 我的号池",                   amount: null,    created_at: ago(0.6), link: "/settings/downstream" },
-  { id: "a3", kind: "into_bus", source: vl("kiro91"), target: "Kiro 常驻车",   target_kind: "into_bus",   count: 3,  count_unit: "个号",   summary: `${vl("kiro91")} → Kiro 常驻车`,         amount: -C(8),   created_at: ago(1),   link: "/buses/bus_kiro" },
-  { id: "a5", kind: "into_bus", source: vl("kiroceo"),    target: "周末拼车局",    target_kind: "into_bus",   count: 5,  count_unit: "个号",   summary: `${vl("kiroceo")} → 周末拼车局`,             amount: -C(12),  created_at: ago(2.7), link: "/buses/bus_weekend" },
-  { id: "a7", kind: "extract",  source: vl("kirooo"),    target: "待派",          target_kind: "pending",    count: 10, count_unit: "个 key", summary: `${vl("kirooo")} → 待派`,                   amount: -C(25),  created_at: ago(4.3), link: "/extract" },
+  { id: "a1", kind: "extract",  source: vl("kirodrop"),   target: "",     target_kind: "push_pool",  count: 2, summary: "",             amount: -C(6),   created_at: ago(0.5), link: "/extract" },
+  { id: "a2", kind: "push",     source: vl("kiroappio"),         target: "",     target_kind: "push_pool",  count: 2,   summary: "",                   amount: null,    created_at: ago(0.6), link: "/settings/downstream" },
+  { id: "a3", kind: "into_bus", source: vl("kiro91"), target: "Kiro 常驻车",   target_kind: "into_bus",   count: 3,   summary: `${vl("kiro91")} → Kiro 常驻车`,         amount: -C(8),   created_at: ago(1),   link: "/buses/bus_kiro" },
+  { id: "a5", kind: "into_bus", source: vl("kiroceo"),    target: "周末拼车局",    target_kind: "into_bus",   count: 5,   summary: `${vl("kiroceo")} → 周末拼车局`,             amount: -C(12),  created_at: ago(2.7), link: "/buses/bus_weekend" },
+  { id: "a7", kind: "extract",  source: vl("kirooo"),    target: "",target_kind: "pending",    count: 10, summary: "",                   amount: -C(25),  created_at: ago(4.3), link: "/extract" },
 
-  // 非流转（走完整叙述文字，不套 badge）
-  { id: "a4", kind: "refill",                                                                              summary: "周末拼车局 · 号少于 3 个 · 自动补车触发",                                                            amount: null,    created_at: ago(1.4), link: "/buses/bus_weekend" },
-  { id: "a6", kind: "dead",                                                                                summary: `cred_…4F2 · ${vl("kirodrop")} · 存活 42h 后失效`,                                                          amount: null,    created_at: ago(3.5), link: "/buses/bus_weekend" },
-  { id: "a8", kind: "topup",                                                                               summary: "waffo · 支付宝支付 200 元 · 通道费 10 元 · 到账 190 积分",                                            amount: C(190),  created_at: ago(9.8), link: "/wallet" },
-  { id: "a9", kind: "redeem",                                                                              summary: "兑换码 KIRO-8Q2P · 邀请奖励 · 到账 50 积分",                                                        amount: C(50),   created_at: ago(12),  link: "/wallet" },
+  /* 非流转事件 · **形状跟后端对齐**:
+       - dead  · 给 source(vendor) + target(masked key) · 前端按 kind 组句("失效"走 i18n)
+       - refill · 后端目前不落事件行(docs/25 §1 唯一真缺源) · 这里给车名当 summary 占位
+       - topup / redeem · summary 空 → 前端按 summary_code 出 i18n 兜底文案
+         (memo 非空时后端才给 summary —— 那是运营写的原文 · 是数据不翻译) */
+  { id: "a4", kind: "refill", summary: "周末拼车局", amount: null, created_at: ago(1.4), link: "/buses/bus_weekend" },
+  { id: "a6", kind: "dead", source: vl("kirodrop"), target: "cred_…4F2", target_kind: "cred_dead", count: 1, summary: "", amount: null, created_at: ago(3.5), link: "/buses/bus_weekend" },
+  { id: "a8", kind: "topup", summary: "", summary_code: "recharge", amount: C(190), created_at: ago(9.8), link: "/wallet" },
+  { id: "a9", kind: "redeem", summary: "", summary_code: "redeem", amount: C(50), created_at: ago(12), link: "/wallet" },
 ];
 
 /* ── Vendor ── */
 
 /* avg_credits_per_cred = 每号平均能用多少积分才挂 · warranty_count = 被 30 分钟内挂退款的次数 */
 export const vendorStats: VendorStat[] = [
-  { vendor_id: "kiro91",    rank: 1, unit_price: C(20),   avg_lifespan_seconds: 42 * 3600, effective_cost: 0.48, avg_credits_per_cred: C(8200), warranty_count: 0, alive_rate: 98, pulls_today: 12, fallback_count: 0, out_of_stock: false },
-  { vendor_id: "kiroceo",   rank: 2, unit_price: C(18.5), avg_lifespan_seconds: 36 * 3600, effective_cost: 0.51, avg_credits_per_cred: C(6800), warranty_count: 0, alive_rate: 95, pulls_today: 8,  fallback_count: 0, out_of_stock: false },
-  { vendor_id: "kirooo",    rank: 3, unit_price: C(22),   avg_lifespan_seconds: 38 * 3600, effective_cost: 0.58, avg_credits_per_cred: C(5900), warranty_count: 1, alive_rate: 92, pulls_today: 3,  fallback_count: 1, out_of_stock: false },
-  { vendor_id: "kirodrop",  rank: 4, unit_price: C(15),   avg_lifespan_seconds: 22 * 3600, effective_cost: 0.68, avg_credits_per_cred: C(3800), warranty_count: 2, alive_rate: 88, pulls_today: 5,  fallback_count: 2, out_of_stock: false },
-  { vendor_id: "kiroappio", rank: 5, unit_price: C(25),   avg_lifespan_seconds: 30 * 3600, effective_cost: 0.83, avg_credits_per_cred: C(3500), warranty_count: 0, alive_rate: 85, pulls_today: 0,  fallback_count: 0, out_of_stock: false },
-  { vendor_id: "kiroappcc", rank: 6, unit_price: 0,       avg_lifespan_seconds: 0,          effective_cost: 0,    avg_credits_per_cred: 0,       warranty_count: 0, alive_rate: 0,  pulls_today: 0,  fallback_count: 0, out_of_stock: true  },
+  { vendor_id: "kiro91",    rank: 1, unit_price: C(20),   avg_lifespan_seconds: 42 * 3600, effective_cost: 0.48, avg_credits_per_cred: C(8200), warranty_count: 0, alive_rate: 98, pulls_today: 12, fallback_count: 0, out_of_stock: false , quality: { tags: [{ kind: "stable" }, { kind: "high-volume" }, { kind: "active" }, { kind: "in-stock" }, { kind: "warranty" }] } },
+  { vendor_id: "kiroceo",   rank: 2, unit_price: C(18.5), avg_lifespan_seconds: 36 * 3600, effective_cost: 0.51, avg_credits_per_cred: C(6800), warranty_count: 0, alive_rate: 95, pulls_today: 8,  fallback_count: 0, out_of_stock: false , quality: { tags: [{ kind: "stable" }, { kind: "active" }, { kind: "in-stock" }] } },
+  { vendor_id: "kirooo",    rank: 3, unit_price: C(22),   avg_lifespan_seconds: 38 * 3600, effective_cost: 0.58, avg_credits_per_cred: C(5900), warranty_count: 1, alive_rate: 92, pulls_today: 3,  fallback_count: 1, out_of_stock: false , quality: { tags: [{ kind: "active" }, { kind: "in-stock" }] } },
+  { vendor_id: "kirodrop",  rank: 4, unit_price: C(15),   avg_lifespan_seconds: 22 * 3600, effective_cost: 0.68, avg_credits_per_cred: C(3800), warranty_count: 2, alive_rate: 88, pulls_today: 5,  fallback_count: 2, out_of_stock: false , quality: { tags: [{ kind: "active" }, { kind: "in-stock" }, { kind: "warranty" }] } },
+  { vendor_id: "kiroappio", rank: 5, unit_price: C(25),   avg_lifespan_seconds: 30 * 3600, effective_cost: 0.83, avg_credits_per_cred: C(3500), warranty_count: 0, alive_rate: 85, pulls_today: 0,  fallback_count: 0, out_of_stock: false , quality: { tags: [{ kind: "watching" }] } },
+  { vendor_id: "kiroappcc", rank: 6, unit_price: 0,       avg_lifespan_seconds: 0,          effective_cost: 0,    avg_credits_per_cred: 0,       warranty_count: 0, alive_rate: 0,  pulls_today: 0,  fallback_count: 0, out_of_stock: true  , quality: { tags: [{ kind: "out-of-stock" }, { kind: "watching" }] } },
 ];
 
 /* 6 家 vendor 全列，跟 vendorStats 一一对应 · pulls=0 前端渲染成 "-" 而不是 "0 次" */

@@ -290,7 +290,8 @@
       "lifespan": "Lifespan",
       "pulled-at": "Pulled",
       "region": "Region",
-      "used": "Used"
+      "used": "Used",
+      "rank": "Rank"
     },
     "empty": {
       "desc": "Tap \"Extract keys\" above to pull a batch · pulled keys show up here to dispatch",
@@ -325,5 +326,9 @@
   "unit": {
     "count": "",
     "credits": "credits"
+  },
+  "account-kind": {
+    "enterprise": "Enterprise",
+    "personal": "Personal"
   }
 }

@@ -218,7 +218,22 @@ export function vendorColor(id: string): string {
   return VENDOR_COLOR[id] ?? "#9147FF";
 }
 
-/** 相对时间：8/07 18:24 / 昨 20:15 / 18:24 */
+/** 相对时间 · Intl.RelativeTimeFormat 跟当前 UI 语言走
+ *  中文「2 分钟前」· 英文「2 minutes ago」· 不硬编文案 */
+export function fmtRelative(iso: string, lang: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(diffMs)) return "";
+  const rtf = new Intl.RelativeTimeFormat(lang, { numeric: "auto" });
+  const min = Math.round(diffMs / 60_000);
+  if (min < 1) return rtf.format(0, "minute");
+  if (min < 60) return rtf.format(-min, "minute");
+  const h = Math.round(min / 60);
+  if (h < 24) return rtf.format(-h, "hour");
+  const d = Math.round(h / 24);
+  if (d < 7) return rtf.format(-d, "day");
+  return fmtTime(iso);
+}
+
 /** 时间统一 · 全用 "MM/DD HH:mm" —— 每行 11 字符等宽，列对齐；
     不做"今天只显示时分 / 昨 HH:mm"的省略变体（同列不同格式看着乱） */
 export function fmtTime(iso: string): string {
@@ -230,9 +245,11 @@ export function fmtTime(iso: string): string {
   return `${mm}/${dd} ${hh}:${mn}`;
 }
 
-/** 寿命:秒 → "42h" / "3.2d" · 空/NaN 返 "—"(避免 NaNd) */
+/** 寿命:秒 → "38m" / "42h" / "3.2d" · 空/NaN 返 "—"(避免 NaNd)
+ *  <1h 显示分钟 —— 原来 Math.round 小时会把 1-29min 显示成 "0h"(像空值 · 车主报过) */
 export function fmtLifespan(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "—";
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
   const h = seconds / 3600;
   if (h < 48) return `${Math.round(h)}h`;
   return `${(h / 24).toFixed(1)}d`;

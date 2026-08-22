@@ -84,7 +84,8 @@
       "pulled": "拉入",
       "push": "推池",
       "status": "状态",
-      "usage": "消耗"
+      "usage": "消耗",
+      "rank": "评价"
     },
     "push": {
       "failed": "推失败",
@@ -92,7 +93,8 @@
       "pushed": "已推",
       "retry": "重推",
       "retrying": "推送中…",
-      "retry-tip": "点重试自动 push · 号已失效会拒推"
+      "retry-tip": "点重试自动 push · 号已失效会拒推",
+      "neterr": "网络出错 · 请稍后再试"
     },
     "status": {
       "alive": "正常",
@@ -147,7 +149,8 @@
       "max-price": "单价 ≤ <1>{{value}}</1>",
       "daily-limit": "日限 <1>{{value}}</1>",
       "preferred": "首选 <1>{{vendor}}</1>"
-    }
+    },
+    "owner-badge": "我发起"
   },
   "join-anon-modal": {
     "title": "搭车",
@@ -176,7 +179,8 @@
     "submit": "加入",
     "error-too-short": "拼车码至少 4 位",
     "error-not-found": "拼车码无效或车已解散",
-    "error-full": "车已满 · 找车主确认或另找一辆"
+    "error-full": "车已满 · 找车主确认或另找一辆",
+    "error-generic": "加入失败 · 稍后重试"
   },
   "start-modal": {
     "title": "发起拼车",

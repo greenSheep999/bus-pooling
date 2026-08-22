@@ -53,6 +53,10 @@ func (s *Store) Trend(
 		if err := s.trendLifespan(ctx, passengerID, scope, windowStart, byDate); err != nil {
 			return nil, err
 		}
+	case TrendUsage:
+		if err := s.trendUsage(ctx, passengerID, scope, windowStart, byDate); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("insight: 不支持的 metric %q", metric)
 	}
@@ -215,6 +219,62 @@ func (s *Store) trendLifespan(
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return fmt.Errorf("insight: trend lifespan: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var d string
+		var v sql.NullFloat64
+		if err := rows.Scan(&d, &v); err != nil {
+			return err
+		}
+		if _, ok := byDate[d]; ok && v.Valid {
+			byDate[d] = v.Float64
+		}
+	}
+	return rows.Err()
+}
+
+// trendUsage 每日号用量（积分）· 数据源 credential_usage_snapshot（号池 5min 采样）。
+//
+// **取每号每天最后一次采样**再跨号相加 —— 采样值是"累计已用额度"不是增量 ·
+// 一天内多次采样直接 SUM 会把同一个号重复计几十次。
+// 号死后不再有新采样 · 那天之后它自然不进合计（不用特殊处理）。
+func (s *Store) trendUsage(
+	ctx context.Context, passengerID string, scope TrendScope,
+	start time.Time, byDate map[string]float64,
+) error {
+	q := `
+		WITH daily AS (
+		  SELECT substr(cus.observed_at, 1, 10) AS d,
+		         cus.kiro_rs_credential_id AS kr,
+		         MAX(cus.observed_at) AS last_obs
+		    FROM credential_usage_snapshot cus
+		    JOIN credential_ledger cl ON cl.kiro_rs_credential_id = cus.kiro_rs_credential_id
+		   WHERE ` + ownedCredentialWhere + `
+		     AND cus.observed_at >= ?`
+	args := []any{passengerID, passengerID, formatTime(start)}
+	if scope.BusID != "" {
+		q += ` AND cl.owner_bus_id = ?`
+		args = append(args, scope.BusID)
+	}
+	if scope.VendorID != "" {
+		q += ` AND cl.vendor_id = ?`
+		args = append(args, scope.VendorID)
+	}
+	q += `
+		   GROUP BY d, kr
+		)
+		SELECT daily.d,
+		       SUM(cus.current_usage_micro) / 1000000.0
+		  FROM daily
+		  JOIN credential_usage_snapshot cus
+		    ON cus.kiro_rs_credential_id = daily.kr
+		   AND cus.observed_at = daily.last_obs
+		 GROUP BY daily.d`
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return fmt.Errorf("insight: trend usage: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {

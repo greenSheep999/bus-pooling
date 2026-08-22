@@ -11,6 +11,11 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
+import { notify } from "@/lib/toast";
+
+/** 表单校验用 inline · API 错误用 sonner —— docs/13 §7.4 反馈铁律：
+ *  校验 = 用户还在输入 · 反馈要贴输入位；
+ *  API = 提交完成后的结果 · 走全局 toast · 通道统一（不在这里另开红条） */
 
 /**
  * 输入拼车码加入一辆车。
@@ -36,25 +41,28 @@ export function JoinByInviteModal({
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
     const trimmed = code.trim();
+    // 长度校验是"用户还在输入"的问题 · 走 inline —— toast 一闪就没了看不清哪儿错
     if (trimmed.length < 4) {
       setError(t("join-invite-modal.error-too-short"));
       return;
     }
+    setError(null);
     try {
       const bus = await join.mutateAsync(trimmed);
+      notify.ok({ title: t("common:toast.joined") });
       onClose();
       nav(`/buses/${bus.id}`);
     } catch (err: unknown) {
+      // API 错误走全局 toast · 通道统一（不在模态里另挂红条）
       const msg = err instanceof Error ? err.message : String(err);
-      // 后端 404 = 拼车码无效 · 409 = 车满 · 别的按原文
-      if (msg.includes("404") || msg.toLowerCase().includes("not_found")) {
-        setError(t("join-invite-modal.error-not-found"));
-      } else if (msg.includes("409") || msg.toLowerCase().includes("bus_full")) {
-        setError(t("join-invite-modal.error-full"));
+      const lower = msg.toLowerCase();
+      if (msg.includes("404") || lower.includes("not_found")) {
+        notify.fail(err, t("join-invite-modal.error-not-found"));
+      } else if (msg.includes("409") || lower.includes("bus_full")) {
+        notify.fail(err, t("join-invite-modal.error-full"));
       } else {
-        setError(msg);
+        notify.fail(err, t("join-invite-modal.error-generic"));
       }
     }
   };
@@ -87,6 +95,7 @@ export function JoinByInviteModal({
               {t("join-invite-modal.alert-body")}
             </Alert>
 
+            {/* 只留输入位校验 · API 错误已走 notify.fail */}
             {error && (
               <Alert tone="danger" icon={Info}>{error}</Alert>
             )}

@@ -28,6 +28,7 @@ const Community = lazy(() => import("./pages/Community"));
 const Invite = lazy(() => import("./pages/Invite"));
 const Legal = lazy(() => import("./pages/Legal"));
 const StatusPage = lazy(() => import("./pages/Status"));
+const Notifications = lazy(() => import("./pages/Notifications"));
 
 // 页级 Suspense fallback · 无文案 · 一个轻量 spinner 避免中英不一致
 // （单个页面自己会拿 skeleton 骨架显示 data loading · 这里只是 chunk 加载态）
@@ -58,6 +59,8 @@ export const router = createBrowserRouter([
       { path: "/dispatch", element: withSuspense(<Dispatch />) },
       { path: "/docs", element: withSuspense(<Docs />) },
       { path: "/wallet", element: withSuspense(<WalletPage />) },
+      /* 通知全部页 · 铃铛"查看全部通知" 落地页 */
+      { path: "/notifications", element: withSuspense(<Notifications />) },
       /* promo 跳转目标（config.promo.items 里配的 to） */
       { path: "/community", element: withSuspense(<Community />) },
       { path: "/invite", element: withSuspense(<Invite />) },

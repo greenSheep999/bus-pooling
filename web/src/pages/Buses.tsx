@@ -17,7 +17,7 @@ import { BareHead, BareList, BareRow, Card, Chip, Em, SectionHead } from "@/comp
 import { Button } from "@/components/ui/button";
 import { LoadMoreButton } from "@/components/ui/load-more-button";
 import { Popover, PopoverContent, PopoverItem, PopoverTrigger } from "@/components/ui/popover";
-import { TokenTag, VendorTag } from "@/components/ui/tags";
+import { MicroStat, TokenTag, VendorTag } from "@/components/ui/tags";
 import {
   cn, fmtCredits, fmtTime, vendorLabel,
 } from "@/lib/utils";
@@ -306,12 +306,13 @@ const RESULT_TONE: Record<PullResult, "ok" | "warn" | "danger" | "brand"> = {
   refunded: "brand",
 };
 
+/** 推送态 · 行内次级状态 · 10px 小 pill —— 12px Chip 只留给行首主状态列（docs/13 §4） */
 function PushCell({ state, ratio }: { state: PushState; ratio: string | null }) {
   const { t } = useTranslation("buses");
-  if (state === "pushed") return <Chip tone="ok" icon={<Check className="size-3" />}>{t("push.pushed")}</Chip>;
-  if (state === "partial") return <Chip tone="warn" icon={<Check className="size-3" />}>{t("push.partial", { ratio: ratio ?? "" })}</Chip>;
-  if (state === "failed") return <Chip tone="danger" icon={<X className="size-3" />}>{t("push.failed")}</Chip>;
-  return <Chip tone="neutral">{t("push.none")}</Chip>;
+  if (state === "pushed") return <MicroStat tone="ok"><Check className="mr-1 size-2.5" />{t("push.pushed")}</MicroStat>;
+  if (state === "partial") return <MicroStat tone="warn"><Check className="mr-1 size-2.5" />{t("push.partial", { ratio: ratio ?? "" })}</MicroStat>;
+  if (state === "failed") return <MicroStat tone="danger"><X className="mr-1 size-2.5" />{t("push.failed")}</MicroStat>;
+  return <MicroStat tone="neutral">{t("push.none")}</MicroStat>;
 }
 
 function PoolingPullHistory({ buses }: { buses: string[] }) {
@@ -344,13 +345,15 @@ function PoolingPullHistory({ buses }: { buses: string[] }) {
       ) : (
         <>
           <div className="overflow-x-auto">
-            <div className="min-w-[820px]">
+            {/* result w-24 / push w-28：按英文最长词（Refunded / Push failed）定宽 ·
+                原 w-14 + Chip w-full 会让英文撑出格子（中文两字侥幸没炸） */}
+            <div className="min-w-[880px]">
               <BareHead>
                 <span className="w-[86px] shrink-0">{t("history.table.time")}</span>
-                <span className="w-14 shrink-0">{t("history.table.result")}</span>
+                <span className="w-24 shrink-0">{t("history.table.result")}</span>
                 <span className="min-w-0 flex-1">{t("history.table.flow")}</span>
                 <span className="w-20 shrink-0 text-center">{t("history.table.key-status")}</span>
-                <span className="w-24 shrink-0 text-center">{t("history.table.push")}</span>
+                <span className="w-28 shrink-0 text-center">{t("history.table.push")}</span>
                 <span className="w-24 shrink-0 text-right">{t("history.table.cost")}</span>
               </BareHead>
               <BareList>
@@ -379,8 +382,8 @@ function PullHistRow({ r }: { r: PullRound }) {
       <span className="w-[86px] shrink-0 text-label font-medium tnum text-fg-tertiary">
         {fmtTime(r.created_at)}
       </span>
-      <span className="w-14 shrink-0">
-        <Chip tone={tone} dot className="w-full justify-center">{label}</Chip>
+      <span className="w-24 shrink-0">
+        <Chip tone={tone} dot>{label}</Chip>
       </span>
 
       <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
@@ -394,9 +397,9 @@ function PullHistRow({ r }: { r: PullRound }) {
             <span className="shrink-0 text-fg-secondary">{t("row.pulled-prefix")}</span>
             <span className="shrink-0 font-semibold tnum text-fg">{r.count_purchased}</span>
             <span className="shrink-0 text-fg-secondary">{t("row.pulled-mid")}</span>
-            <VendorTag name={vendorLabel(r.vendor_id, me?.tier)} size="sm" />
+            <VendorTag name={vendorLabel(r.vendor_id, me?.tier)} />
             <span className="shrink-0 text-fg-tertiary">→</span>
-            <TokenTag size="sm">{r.bus_name}</TokenTag>
+            <TokenTag>{r.bus_name}</TokenTag>
           </>
         )}
       </span>
@@ -419,7 +422,7 @@ function PullHistRow({ r }: { r: PullRound }) {
         )}
       </span>
 
-      <span className="flex w-24 shrink-0 justify-center">
+      <span className="flex w-28 shrink-0 justify-center">
         <PushCell state={r.push_state} ratio={r.push_ratio} />
       </span>
 

@@ -46,7 +46,9 @@ type KPI struct {
 	AliveCount         int   `json:"alive_count"`
 	DeadCount          int   `json:"dead_count"`
 	PendingRefill      int   `json:"pending_refill"`
-	AvgLifespanSeconds int64 `json:"avg_lifespan_seconds"`
+	// nil = 还没有号死过（全是活号）· 前端显"暂无"而非误导性的 0 秒
+	// （口径同 busResponse.AvgLifespanSeconds · 别让 Overview 显 0h 而车详情显 —）
+	AvgLifespanSeconds *int64 `json:"avg_lifespan_seconds"`
 }
 
 // BusesSummary Overview 的车汇总块。
@@ -105,6 +107,10 @@ const (
 	TrendCredits  TrendMetric = "credits"
 	TrendPulls    TrendMetric = "pulls"
 	TrendLifespan TrendMetric = "lifespan"
+	// TrendUsage 号的**实际用量**(号池 5min 采样的 current_usage)· 跟 credits 不是一回事:
+	//   credits = 买号花的钱(我方扣的积分) · usage = 号在上游被用掉的额度
+	// 「用量趋势」这个图原来三条线全是花费/拉号/补车 · 压根没有用量 —— 这条补上。
+	TrendUsage TrendMetric = "usage"
 )
 
 // TrendScope 可选过滤 —— bus 或 vendor（二选一，不同时传，handler 层拦掉）。
@@ -123,6 +129,9 @@ type Activity struct {
 	Count      int     `json:"count,omitempty"`
 	CountUnit  string  `json:"count_unit,omitempty"`
 	Summary    string  `json:"summary"`
+	// SummaryCode 兜底文案的**机器码**（memo 为空时才有）· 前端按码出 i18n ·
+	// Summary 非空时优先用 Summary（那是运营写的 memo 原文 · 是数据）
+	SummaryCode string `json:"summary_code,omitempty"`
 	Amount     *Money  `json:"amount"`
 	CreatedAt  string  `json:"created_at"`
 	Link       *string `json:"link"`
@@ -137,4 +146,5 @@ const (
 	ActivityTopup   = "topup"
 	ActivityRedeem  = "redeem"
 	ActivityPush    = "push"
+	ActivityHandoff = "handoff"
 )

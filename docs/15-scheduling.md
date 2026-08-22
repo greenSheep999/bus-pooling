@@ -218,14 +218,17 @@ xi8 是数据补齐 · **不参与抢号**。
 ```
 
 - **本次请求约束**:用户手动动作携带的一次性参数(手动拉号带 `count`/`vendor`/`zone` · 建车向导若携带首次拉号参数)· **不落库** · 只影响这一次
-- **车级策略**:`bus` 表 · 每车一份 · **两种状态**:
-  - **跟随全局**:字段 NULL(方案 A) 或 inherit=true(方案 B) · 运行时读全局当前值 · 全局变化会影响该车
-  - **覆盖本车**:字段有值(方案 A) 或 inherit=false(方案 B) · 运行时读本车值 · 全局变化不影响该字段
-  - 建车时若走"覆盖本车"路径 · 抄一份全局值作为 seed 后独立演化;走"跟随全局"路径 · 不 seed · 运行时始终读全局
-- **全局默认**:`passenger_strategy_default` 表 · 每乘客一份 · **三种用途**:
+- **车级策略**:`bus` 表 · 每车一份 · **字段按类分两种状态语义**(migration 040 落码后):
+  - **auto_refill_* 三字段**:**纯车级** · `NOT NULL DEFAULT 0` · **无"跟随全局"语义** · 建车时抄全局 default_* seed 一次 · 之后独立演化
+  - **其他覆盖字段**(`per_round_count / preferred_vendor / zone`):`nullable` · NULL = 跟随全局默认 · 非 NULL(含 0/false) = 覆盖本车
+- **全局默认**:`passenger_strategy_default` 表 · 每乘客一份 · **四种用途**:
   1. **硬上限**(`MaxUnitPrice / DailyRoundLimit / DailySpendLimit`):运行时**始终参与** · 跨所有车生效
-  2. **新车默认 seed**:建车向导预填 UI · 用户显式选"覆盖本车"时把这份值落到车表
-  3. **运行时 inherit fallback**(1f-B 引入后):字段处于"跟随全局"态时 · 运行时读全局当前值
+  2. **新车默认 seed**(`default_auto_refill_enabled / default_refill_watermark / default_refill_min_count`):建车向导预填 UI · 落到车表后独立 · **不做运行时 fallback**
+  3. **运行时 inherit fallback**(**仅对其他覆盖字段** · 不含 auto_refill_*):字段 NULL 时读全局当前值
+  4. **跨车调度护栏**(migration 040 新加 · 只对自动补车生效):
+     - `auto_refill_daily_budget` 所有 auto 车合计每日预算(microunit)
+     - `auto_refill_min_wallet_reserve` 钱包低于此值所有 auto 车暂停(microunit)
+     - `auto_refill_vendor_allowlist` 自动补车允许的 vendor JSON 数组
 - **系统默认值**:`config.pull.MinCount / MaxCount / DefaultCount` 等 · vendor 静态限 · 无用户入口
 
 #### 4.3.2 字段两类 · 规则不同
@@ -253,32 +256,28 @@ xi8 是数据补齐 · **不参与抢号**。
 | `RefillWatermark` | 车级(**当前唯一来源** · 同上) |
 | `RefillMinCount` | 车级(**当前唯一来源** · 同上) |
 
-**覆盖的"是否有值"由字段继承语义决定** · **不是**用"非空"泛化所有字段:
+**覆盖的"是否有值"由字段类决定**(migration 040 后):
 
-| 继承方案 | "跟随上层" | "覆盖本车" |
+| 字段类 | "跟随上层" | "覆盖本车" |
 |---|---|---|
-| **方案 A · nullable** | 字段 = NULL | 字段非 NULL(**包括 0 / false**) |
-| **方案 B · inherit flag** | `xxx_inherit = true` | `xxx_inherit = false`(值字段允许 0 / false) |
-| **request override** | 请求 payload 里字段**未出现** | 请求 payload 里字段**出现且合法**(**包括 0 / false**) |
+| **auto_refill_* 三字段**(纯车级) | ❌ **无此语义** —— 字段 `NOT NULL DEFAULT 0` · false/0 就是"关自动补" · 不是"跟随全局" | 字段任意合法值 |
+| **其他覆盖字段**(per_round_count / preferred_vendor / zone) · nullable | 字段 = NULL | 字段非 NULL(**含 0 / false**) |
+| **request override**(手动拉号一次性参数) | 请求 payload 字段**未出现** | 字段**出现且合法**(**含 0 / false**) |
 
-**关键**:对 `bool` / `int` 字段 · `0` 和 `false` 是**合法覆盖值** · 不是"空"。**别用"非空"判"是否覆盖"** —— 判断依据是"是否存在 / 是否显式声明" · 见上表。
+**关键**:对 `bool` / `int` 字段 · `0` 和 `false` 是**合法覆盖值** · 不是"空"。别用"非空"判"是否覆盖" —— 判据见上表。
 
-**关键**:对 `bool` / `int` 字段 · `0` 和 `false` 是**合法覆盖值** · 不是"空"。**别用"非空"判"是否覆盖"** —— 判断依据是"是否存在 / 是否显式声明" · 见上表。
+**⚠️ `AutoRefillEnabled` / `RefillWatermark` / `RefillMinCount` · 最终口径**(migration 040 · CLAUDE §1.5):
 
-**⚠️ `AutoRefillEnabled` / `RefillWatermark` · 分层最终口径**(migration 040 · CLAUDE §1.5):
+- **车级**:**纯车级值** · `NOT NULL DEFAULT 0`(RefillMinCount 保留 nullable · nil = 按 gap 补) · **无"跟随全局"语义**
+- **全局 `passenger_strategy_default.default_*` 三字段**:**只做建车向导 seed** · 建车预填一次 · **不做运行时 fallback** · 改这里不影响老车
+- **全局 3 个跨车调度护栏**(migration 040 新加 · 只对自动补车生效):`auto_refill_daily_budget` / `auto_refill_min_wallet_reserve` / `auto_refill_vendor_allowlist` —— 手动拉号不受此约束(见 §4.3.4)
 
-- **车级**(`bus.auto_refill_enabled` / `bus.refill_watermark`):**纯车级值** · `NOT NULL DEFAULT 0` · 无"跟随全局"语义
-- **全局层的 `passenger_strategy_default.default_*` 三字段**:**只做建车向导 seed**(建车预填一次)· **不做**运行时 fallback · 改这里不影响老车
-- **全局层的 3 个跨车调度护栏**(migration 040 新加):`auto_refill_daily_budget` / `auto_refill_min_wallet_reserve` / `auto_refill_vendor_allowlist` —— 真正跨车才能表达的护栏 · 只对自动补车链路生效 · 手动拉号不受此约束(见 §4.3.4)
-
-**已作废方案**(sprint-1f-A/B 期间的中间态 · 用户拍板撤回):
-- ❌ 车级 `auto_refill_enabled` / `refill_watermark` 改 nullable · NULL=跟随全局
+**已作废方案**(sprint-1f-A/B 中间态 · migration 040 撤回):
+- ❌ 车级 `auto_refill_enabled` / `refill_watermark` 改 nullable · NULL = 跟随全局
 - ❌ 车级 3 个 Segmented toggle "跟随全局 / 覆盖本车"
 - ❌ 全局 `default_*` 作为运行时 fallback
 
-**决策记录**:见 `docs/decisions.md §13.5`(migration 040 撤镜像的完整语义讨论)。
-
-`RefillMinCount` 保持可空 · nil = 按 gap 补齐差额(§4.1 原语义 · Step 3 已在用)· 无"跟随全局"语义。
+**决策记录**:`docs/decisions.md §13.5`(migration 040 撤镜像的完整语义讨论)。
 
 #### 4.3.2d `request.count` vs `PerRoundCount` · 别混
 
@@ -395,30 +394,55 @@ strategy.Effective(ctx, passengerID, busID, requestOverride) → EffectiveStrate
 
 **硬上限字段无 toggle** —— 硬上限总是取 min · 车级设的值只作为**更严的补充** · UI 直接输入 · 但旁边**必须**标"仍受全局 X 约束(实际生效 min(车级, 全局))"。
 
-##### 4.3.5.3 前端字段契约(TS 类型 · 1f-B 后端按此对齐)
+##### 4.3.5.3 前端字段契约(TS 类型 · migration 040 落码后)
 
-**推荐**:方案 A(nullable)· TS 侧 `null` = 跟随全局 · 非 `null` = 覆盖:
+**分两组** —— nullable(覆盖字段) vs 非 null(auto_refill_* 纯车级):
 
 ```typescript
 interface BusStrategy {
   // 硬上限 · 车级值 · 无二态 · null = 车级不加严 · min(车级, 全局) 由后端算
   max_unit_price: Money | null;
 
-  // 覆盖字段 · 当前已成立 · null = 跟随全局
+  // 覆盖字段 · null = 跟随全局 · 非 null(含 0/false) = 覆盖
   per_round_count: number | null;
   preferred_vendor: string | null;
   zone: "us" | "eu" | "auto" | null;
 
-  // 覆盖字段 · 1f-B 目标 · null = 跟随全局(1f-B DB migration 落后生效)
-  auto_refill_enabled: boolean | null;
-  refill_watermark: number | null;
-  refill_min_count: number | null;
+  // auto_refill_* 三字段 · **纯车级 · 非 null**(migration 040 后)
+  // - 无"跟随全局"语义 · 建车时抄一次 default_* seed · 之后独立
+  // - false / 0 就是"这辆车关自动补" · 不是"跟随全局"
+  auto_refill_enabled: boolean;
+  refill_watermark: number;
+  refill_min_count: number | null; // 单独保留 nullable · nil = 按 gap 补
+}
+
+interface GlobalStrategy {
+  // 硬上限 · 跨车累加
+  max_unit_price: Money | null;
+  daily_round_limit: number | null;
+  daily_spend_limit: number | null;
+
+  // 覆盖字段 · 车级 NULL 时的运行时 fallback
+  per_round_count: number | null;
+  preferred_vendor: string | null;
+  zone: "us" | "eu" | "auto" | null;
+
+  // 新车 seed · 建车向导预填 · **不做运行时 fallback**
+  default_auto_refill_enabled: boolean;
+  default_refill_watermark: number;
+  default_refill_min_count: number | null;
+
+  // 跨车调度护栏(migration 040) · 只对自动补车生效
+  auto_refill_daily_budget: Money | null;         // 所有 auto 车每日合计预算
+  auto_refill_min_wallet_reserve: Money | null;   // 钱包低于此值 auto 车暂停
+  auto_refill_vendor_allowlist: string[] | null;  // 允许的 vendor id
 }
 ```
 
-**关键**:前端 TS 类型全部改成 `| null` · 未来 1f-B DB migration 落 nullable 时前端不用改类型 · 只需要:
-1. 建车 / 存量车读取时 · null 走"跟随全局"分支
-2. 保存时 · toggle "跟随全局" 就发 `null` · toggle "覆盖本车" 就发用户填的值(允许 `0` / `false`)
+**关键**:
+1. **auto_refill_* 非 nullable** —— 用户界面**没有** toggle "跟随全局 / 覆盖本车" · 直接编辑
+2. **改全局 default_* 不影响老车** —— 只影响新建车的 seed
+3. **保存时** · 覆盖字段 toggle "跟随全局" 就发 `null` · toggle "覆盖本车" 就发用户填的值(允许 `0` / `false`)
 
 ##### 4.3.5.4 全局页(Preferences.tsx)契约
 
@@ -428,16 +452,17 @@ interface BusStrategy {
 2. 覆盖字段旁标"**新车默认值** + 车级选'跟随全局'时的运行时值"(1f-B 后)
 3. **今日已用/上限** 进度条(`used_today.rounds / rounds_limit` · 已存在)
 
-##### 4.3.5.5 当前 vs 1f-B 目标 · 前端落地节奏
+##### 4.3.5.5 落地状态(migration 040 后 · 阶段 1 收官)
 
-**当前可以先做的**(不依赖后端 migration):
-- ✅ EditStrategyPanel 现有字段的 UI(已完成 · sprint-1e 之前)
-- ⏸ **给现有可覆盖字段加 toggle UI**(`per_round_count / preferred_vendor / zone`) · 后端已支持 nullable · 前端 toggle 立刻能落
-- ⏸ Preferences 页加"新车默认值"标注
+**已完成**:
+- ✅ EditStrategyPanel 现有字段的 UI
+- ✅ auto_refill_* 三字段前端**非 null**契约(TS 已对齐 · commit 3a0eca3 撤 useGlobalStrategy fallback)
+- ✅ 全局 Preferences 三跨车护栏输入(daily_budget / min_wallet_reserve / vendor_allowlist)
+- ✅ 三桥(refill/scheduler/webhook auto scan)decider 层 enforce 跨车护栏(commit 29174b0)
 
-**依赖 1f-B DB migration 才能做的**:
-- ⏸ `auto_refill_enabled / refill_watermark / refill_min_count` 的 toggle UI(等 migration 把这三字段改 nullable 后)
-- ⏸ 全局 Preferences 加这三字段的输入(依赖 1f-B 新加全局默认字段)
+**待做**(阶段 2 · P2 收尾):
+- ⏸ 覆盖字段(`per_round_count / preferred_vendor / zone`) toggle UI(现有 UI 让用户填 · null 语义未暴露)
+- ⏸ Preferences 页"新车默认值"标注(现有 UI 未明说这是 seed · 不做运行时 fallback)
 
 ##### 4.3.5.6 交互失败态
 

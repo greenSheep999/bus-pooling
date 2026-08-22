@@ -367,7 +367,7 @@ func (s *Service) PricedFor(ctx, vendorID, region, count, viewer) (*PricedView, 
 ## 8 · 参考
 
 - `docs/vendors/*.md` · 6 家 API 详情
-- `docs/17-vendor-work-order.md` · 全套编排 · A 层
+- `docs/archive/17-vendor-work-order.md` · 全套编排 · A 层（已归档）
 - `docs/22-buy-race.md` · 抢号链
 - `internal/pricing/*.go` · 换算实现（本文档 §1.3 落码后重写）
 - `internal/decider/orchestrator.go` · 加价栈实现（本文档 §2.2 落码后重写）

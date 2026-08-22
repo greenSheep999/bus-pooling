@@ -63,12 +63,15 @@ export interface LedgerEntry {
 export type BusKind = "single" | "anon" | "team";
 export type BusStatus = "active" | "dissolved"; // UI: 活跃 / 已解散
 
-/** 车级策略 · docs/15-scheduling §4.3.5.3 前端契约(1f-B 落地)
+/** 车级策略 · docs/15-scheduling §4.3.5.3 前端契约(1f-refactor · migration 040 后)
  *
- *  **两类字段** —— 语义完全不同,别混:
+ *  **三类字段** —— 语义完全不同,别混:
  *
- *  **类② 覆盖字段** —— `null` = 跟随全局默认 · 非 null(含 `0` / `false`) = 覆盖本车:
- *    `auto_refill_enabled` / `refill_watermark` / `refill_min_count` / `per_round_count` / `preferred_vendor`
+ *  **纯车级字段** —— 非 null · 无全局 fallback(全局 default_* 只做建车 seed):
+ *    `auto_refill_enabled` / `refill_watermark`(`refill_min_count` 保留 null = 按 gap)
+ *
+ *  **类② 覆盖字段** —— `null` = 跟随全局默认 · 非 null = 覆盖本车:
+ *    `per_round_count` / `preferred_vendor`
  *
  *  **类① 硬上限字段** —— `null` = 车级不加严(取全局) · 非 null = 车级追加更严的约束(实际生效 = min(车级, 全局)):
  *    `max_unit_price`
@@ -105,7 +108,10 @@ export interface Bus {
   alive_count: number;
   dead_count: number;
   spend_today: Money;
-  avg_lifespan_seconds: number;
+  /** 累计消费 · 健康车今日常为 0（轮次不在今天）· 累计才有意义 */
+  spend_total: Money;
+  /** null = 车里还没有号死过（全是活号）· 前端显"暂无"而非误导性的 0 秒 */
+  avg_lifespan_seconds: number | null;
   strategy: BusStrategy;
   /** 车内成员 + 分摊比例 · single 车只有自己一条
    *  派号进车时按 share_pct 清算（decisions §8.23） */
@@ -367,6 +373,11 @@ export interface AssignedKey {
   credits_used: Money;
   /** 派发那一刻的存活时长（秒）· 0 = 刚拉的 */
   lifespan_seconds: number;
+  /** 用量真值 + 上限 · 画进度条用（活号读实时采样 · 死号 credits_used 才是终值）
+   *  跟 Credential 同名同义 —— UsageMeter 两处共用一套口径 */
+  usage_current: Money;
+  usage_limit: Money;
+  subscription?: "power" | "pro" | "pro_plus" | "pro_max";
 }
 
 // ── 派发事件 · 每次派动作一条 · docs/14 §6.5
@@ -396,7 +407,8 @@ export type ActivityKind =
   | "dead"
   | "topup"
   | "redeem"
-  | "push";
+  | "push"
+  | "handoff";
 
 /** 去向枚举（跟 Destination 语义对齐，另加 refill/dead 场景的非去向 target） */
 export type ActivityTarget =
@@ -418,14 +430,30 @@ export interface Activity {
   count?: number;               // 量（个号/个 key/次数）
   count_unit?: string;          // 量词（"个号" · "个 key" · "元"）
   summary: string;              // 兜底叙述，也用于结构化字段不足时
+  /** 兜底文案的机器码（summary 为空时才有）· 前端按码出 i18n(common:activity.ledger.*)
+   *  summary 非空 = 运营写的 memo 原文（**数据** · 直接显示不翻译） */
+  summary_code?: string;
   amount: Money | null;
   created_at: ISOTime;
   link: string | null;
 }
 
 // ── Vendor 监测
+/** Vendor 质量标签 kind · 后端 computeQuality 决定挂哪些（decisions §11.8）
+ *  前端按 kind 映射色调 + i18n（components/VendorQualityTags.tsx）·
+ *  Score 是内部排序用 · **不下发** */
+export type VendorQualityTagKind =
+  | "stable" | "high-volume" | "active" | "in-stock" | "out-of-stock" | "warranty" | "watching";
+
+export interface VendorQualityOut {
+  tags: { kind: VendorQualityTagKind }[];
+}
+
 export interface VendorStat {
   vendor_id: string;
+  /** 后端已按 tier 判完的展示名（匿名档带编号 · wholesale 真名）·
+   *  优先用它 —— 本地 vendorLabel() 对 anon_id 查不到编号只能给通用名（尾号丢失分不清哪家）*/
+  vendor_label?: string;
   rank: number;
   unit_price: Money;
   avg_lifespan_seconds: number;
@@ -438,6 +466,9 @@ export interface VendorStat {
   pulls_today: number;
   fallback_count: number; // 拉这家失败、我方 fallback 到别家的次数
   out_of_stock: boolean;
+  /** 质量标签 · 跟 Status 页同源（后端 computeQuality · decisions §11.8）
+   *  Score 不下发（内部排序用）· 只给 tags · 前端 QualityTags 渲染 */
+  quality?: VendorQualityOut;
   /** 这家 vendor 当前有货的 account kind · 提取页按 tab 过滤 vendor 下拉
    *  缺省时前端按 ["enterprise"] 处理（当前 6 家供的就是企业号）
    *  ⚠️ 只表示"有货"· 分不清"不支持"vs"支持但缺货" —— 正式形状要 supported/available
@@ -477,7 +508,9 @@ export interface OverviewKpi {
   alive_count: number;
   dead_count: number;
   pending_refill: number;
-  avg_lifespan_seconds: number;
+  /** null = 还没有号死过（全是活号）· 前端显"暂无"而非误导性的 0 秒
+   *  （口径同 Bus.avg_lifespan_seconds · Overview 与车详情空态一致） */
+  avg_lifespan_seconds: number | null;
 }
 
 export interface OverviewBuses {
@@ -515,7 +548,8 @@ export interface TrendPoint {
   value: number;
 }
 
-export type TrendMetric = "credits" | "pulls" | "lifespan";
+/** usage = 号在上游被用掉的额度（号池 5min 采样）· 跟 credits（买号花的钱）不是一回事 */
+export type TrendMetric = "credits" | "pulls" | "lifespan" | "usage";
 
 // ── 配置
 export interface DownstreamConfig {

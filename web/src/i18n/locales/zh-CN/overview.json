@@ -20,7 +20,8 @@
   "metric": {
     "credits": "消耗",
     "pulls": "拉号",
-    "lifespan": "寿命"
+    "lifespan": "寿命",
+    "usage": "用量"
   },
   "dest": {
     "pending": "待派去向",
@@ -134,7 +135,8 @@
     "unit": {
       "credits": "积分",
       "pulls": "次",
-      "lifespan": "h"
+      "lifespan": "h",
+      "usage": "积分"
     },
     "avg-label": "平均 {{value}} {{unit}}",
     "peak-label": "峰值 {{value}} {{unit}} · {{date}}",

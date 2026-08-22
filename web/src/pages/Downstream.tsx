@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Card, Chip, Em, SectionHead } from "@/components/ui/primitives";
 import { SecretField } from "@/components/ui/secret-field";
 import { Switch } from "@/components/ui/switch";
+import { notify } from "@/lib/toast";
 import { cn, fmtTime } from "@/lib/utils";
 import type { DownstreamConfig } from "@/types";
 import { useTranslation } from "react-i18next";
@@ -49,11 +50,16 @@ export default function Downstream() {
   const dirty = !!cfg && (url !== cfg.passengerpool_url || token.trim() !== "");
 
   const onSave = async () => {
-    await save.mutateAsync({
-      passengerpool_url: url.trim(),
-      ...(token.trim() ? { token: token.trim() } : {}),
-    });
-    setToken("");
+    try {
+      await save.mutateAsync({
+        passengerpool_url: url.trim(),
+        ...(token.trim() ? { token: token.trim() } : {}),
+      });
+      setToken("");
+      notify.ok({ title: t("common:toast.downstream_ok") });
+    } catch (err) {
+      notify.fail(err, t("common:toast.generic_fail"));
+    }
   };
 
   const onTest = async () => {

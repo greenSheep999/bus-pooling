@@ -20,11 +20,67 @@
     "stock_personal": "个人",
     "stock_total": "合计",
     "notifications": "通知",
-    "notifications_title": "通知中心",
-    "notifications_desc": "集中式通知开发中 · 现在具体事件分散在这些位置",
-    "notifications_link_events": "拉号 / 号失效 / 号入车",
-    "notifications_link_webhook": "推送日志（webhook）",
-    "notifications_link_wallet": "充值 / 退款流水"
+    "notifications_title": "通知",
+    "notifications_mark_all": "全部已读",
+    "notifications_view_all": "查看全部通知",
+    "notifications_empty_title": "还没有通知",
+    "notifications_empty_desc": "号失效、补车、充值到账会显示在这里",
+    "notif": {
+      "low_title": "余额将不足",
+      "low_desc": "当前 {{balance}} 积分 · 建议充值",
+      "dead_title": "{{count}} 号刚失效",
+      "dead_desc_fallback": "已从车上摘下",
+      "refill_title": "补车成功 · +{{count}} 号",
+      "refill_desc_fallback": "已自动补上车",
+      "topup_title": "充值到账 +{{amount}} 积分",
+      "topup_title_plain": "充值到账",
+      "topup_desc": "积分已入账",
+      "redeem_title": "兑换到账 +{{amount}} 积分",
+      "redeem_title_plain": "兑换到账",
+      "redeem_desc": "兑换码已使用",
+      "extract_title": "{{count}} 号已进池待派",
+      "extract_desc_paid": "{{source}} · 花费 {{amount}} 积分",
+      "extract_desc_fallback": "可去提取页派去向",
+      "source_fallback": "上游",
+      "into_bus_title": "{{count}} 号已进车",
+      "into_bus_desc": "已派进拼车",
+      "push_title": "{{count}} 号已推到我的号池",
+      "push_desc": "我的号池",
+      "handoff_title": "{{count}} 号已拿走",
+      "handoff_desc": "明文已交付 · 不再监控"
+    }
+  },
+  "toast": {
+    "extract_ok_title": "{{count}} 号已进池待派",
+    "extract_ok_desc": "花费 {{amount}} 积分",
+    "extract_ok_action": "派去向",
+    "extract_fail": "拉号失败",
+    "pull_ok_title": "{{count}} 号已上车",
+    "pull_ok_desc": "花费 {{amount}} 积分",
+    "assign_bus_title": "{{count}} 号已进车",
+    "assign_push_title": "{{count}} 号已推到我的号池",
+    "assign_partial": "部分号没有派出去",
+    "assign_partial_v2": "{{ok}} 号成功 · {{fail}} 号没派出去",
+    "handoff_ready_title": "{{count}} 号明文已取出",
+    "handoff_ready_desc": "确认保存后才会从池里删除",
+    "handoff_done": "已拿走 · 号已离开系统",
+    "bus_created": "车已建好",
+    "bus_created_action": "去看这辆车",
+    "joined": "已上车",
+    "anon_created": "没匹配到现成的车 · 已为你新建",
+    "redeem_ok": "兑换成功 · +{{amount}} 积分",
+    "topup_redirect": "正在跳转支付",
+    "saved": "已保存",
+    "dissolved": "车已解散",
+    "password_ok": "密码已更新",
+    "key_created": "API key 已创建",
+    "key_revoked": "API key 已吊销",
+    "push_ok": "已重新推送",
+    "push_fail": "推送失败",
+    "community_ok": "专属邀请码已绑定",
+    "downstream_ok": "号池配置已保存",
+    "webhook_ok": "通知配置已保存",
+    "generic_fail": "操作失败"
   },
   "avatar": {
     "community": "社群",
@@ -124,7 +180,8 @@
       "dead": "key 失效",
       "topup": "充值",
       "redeem": "兑换",
-      "push": "推池"
+      "push": "推池",
+      "handoff": "拿走"
     },
     "verb": {
       "into_bus": "入车",
@@ -143,6 +200,53 @@
       "credits-zero": "0",
       "credits-suffix": "积分",
       "amount-suffix": "积分"
+    },
+    "target": {
+      "pending": "待派",
+      "push_pool": "我的号池",
+      "handoff": "已拿走",
+      "into_bus": "车里"
+    },
+    "dead-suffix": "失效",
+    "ledger": {
+      "recharge": "充值到账",
+      "redeem": "兑换码到账",
+      "warranty_refund": "质保退款",
+      "credit_in": "入账",
+      "credit_out": "出账"
     }
+  },
+  "rank": {
+    "la": "拉",
+    "npc": "NPC",
+    "renshangren": "人上人",
+    "topji": "顶级",
+    "hang": "夯",
+    "armored": "装甲车",
+    "alive-hint": "还在跑"
+  },
+  "notifications-page": {
+    "title": "通知",
+    "sub": "号失效、补车、充值到账都会在这里",
+    "bucket-today": "今天",
+    "bucket-week": "本周",
+    "bucket-older": "更早"
+  },
+  "ui": {
+    "clear-selection": "取消选择",
+    "close": "关闭",
+    "toggle-menu": "切换菜单",
+    "load-failed": "加载失败",
+    "load-failed-desc": "网络或服务异常 · 点下面重试",
+    "retry": "重试",
+    "selected-count": "已选 {{count}} 个",
+    "collapse": "收起",
+    "items-unit": "条",
+    "days-unit": "天",
+    "not-open-yet": "暂未开放",
+    "cred-alive": "正常",
+    "cred-dead": "已失效",
+    "load-more": "加载更多",
+    "remain-prefix": "还剩"
   }
 }

@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { notify } from "@/lib/toast";
 import {
   cn, creditsToUSD, fmtCredits, fmtTime, MICRO, toCredits, TOPUP_PRESETS,
 } from "@/lib/utils";
@@ -183,15 +184,20 @@ function TopupCard() {
     /* couponCode · 空串 = 不用 · decisions §8.43
        hook 已支持 · 后端 topupRequest 加字段 + 落库前 · 会被 decodeStrict 拒
        所以先在 hook 内 gate 一下 · 有值才带 · Go 侧字段落地后自然生效 */
-    const o = await create.mutateAsync({
-      credits,
-      channel: activeChannel,
-      couponCode: couponCode || undefined,
-    });
-    setConfirmOpen(false);
-    /* 拿到 checkout_url 直接跳 · 无中间 dialog(hosted 通道就是要跳)*/
-    if (o.checkout_url) {
-      window.location.href = o.checkout_url;
+    try {
+      const o = await create.mutateAsync({
+        credits,
+        channel: activeChannel,
+        couponCode: couponCode || undefined,
+      });
+      setConfirmOpen(false);
+      notify.info({ title: t("common:toast.topup_redirect") });
+      /* 拿到 checkout_url 直接跳 · 无中间 dialog(hosted 通道就是要跳)*/
+      if (o.checkout_url) {
+        window.location.href = o.checkout_url;
+      }
+    } catch (err) {
+      notify.fail(err, t("common:toast.generic_fail"));
     }
   };
 
@@ -577,9 +583,10 @@ function RedeemCard() {
     try {
       const r = await redeem.mutateAsync(code.trim());
       setOkMsg(t("redeem.success.message", { credits: fmtCredits(r.credits) }));
+      notify.ok({ title: t("common:toast.redeem_ok", { amount: fmtCredits(r.credits) }) });
       setCode("");
-    } catch {
-      /* 错误走下面 redeem.error 渲染 */
+    } catch (err) {
+      notify.fail(err, t("common:toast.generic_fail"));
     }
   };
 

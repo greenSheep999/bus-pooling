@@ -200,7 +200,9 @@ func (s *Service) rowFor(ctx context.Context, v providers.Vendor, windowHours in
 		row.Alive = latest.Alive
 		row.ErrorKind = latest.ErrorKind
 		row.RegionCount = len(latest.StockByRegion)
-		row.StockBucket = bucketStock(latest.StockTotal, latest.Alive)
+		// availableFromProbe 带分区求和兜底 —— 只报分区库存（stock_total 恒 0）的家
+		// 直接拿 StockTotal 会永远判成 out（Overview 那边一直是对的 · 两页曾打架）
+		row.StockBucket = bucketStock(availableFromProbe(latest), latest.Alive)
 		// 探测到的 warranty / max 覆盖 capability（capability 是静态·探测是运行时）
 		if latest.WarrantyMinutes > 0 {
 			row.WarrantyMinutes = latest.WarrantyMinutes

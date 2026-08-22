@@ -150,7 +150,8 @@ func (s *Server) handleBusPulls(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	busID := r.PathValue("bus_id")
-	if _, err := s.buses.GetForPassenger(r.Context(), busID, p.ID); err != nil {
+	busRow, err := s.buses.GetForPassenger(r.Context(), busID, p.ID)
+	if err != nil {
 		if errors.Is(err, bus.ErrNotFound) || errors.Is(err, bus.ErrNotMember) {
 			return ErrNotFound("找不到这辆车")
 		}
@@ -182,10 +183,12 @@ func (s *Server) handleBusPulls(w http.ResponseWriter, r *http.Request) error {
 		         WHERE source_pull_round_id = pr.id AND owner_bus_id = ?
 		           AND push_error_code IS NOT NULL AND pushed_to_passengerpool_at IS NULL)
 		  FROM pull_round pr
-		 WHERE pr.bus_id = ?
+		 WHERE (pr.bus_id = ?
 		    OR pr.id IN (
 		         SELECT DISTINCT source_pull_round_id FROM credential_ledger
-		          WHERE owner_bus_id = ? AND source_pull_round_id IS NOT NULL)
+		          WHERE owner_bus_id = ? AND source_pull_round_id IS NOT NULL))
+		   -- initiated 不进历史：mapPullRoundResult 会把进行中标成"失败"（几秒后又变成功）
+		   AND pr.status != 'initiated'
 		 ORDER BY pr.created_at DESC`,
 		busID, busID, busID, busID, busID, busID, busID)
 	if err != nil {
@@ -209,6 +212,9 @@ func (s *Server) handleBusPulls(w http.ResponseWriter, r *http.Request) error {
 			s := busIDCol.String
 			p.BusID = &s
 		}
+		// bus_name 一直是 TS 契约字段但从没填过（前端流向句里显示车名 · 恒空）·
+		// 本端点范围就是这辆车 · 直接用它的名字（提取后进车的轮次 bus_id 为空也成立）
+		p.BusName = &busRow.Name
 		p.TotalCost = -totalCost
 		p.Result = mapPullRoundResult(internalStatus, p.CountRequested, p.CountPurchased)
 		// 推送态按本车从该轮拿到的号算真值：全推成功=pushed · 部分=partial(带比例) ·

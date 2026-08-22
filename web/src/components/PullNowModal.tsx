@@ -14,6 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { notify } from "@/lib/toast";
 import { fmtCredits, toCredits } from "@/lib/utils";
 
 /** 车详情立即拉号模态 · 参数用车策略默认，允许覆盖
@@ -109,13 +110,21 @@ export function PullNowModal({
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     // vendor_id/zone 的 "auto" 归一由后端做(bus.go)· 前端 auto 时不传 · 省一次约束
-    await pull.mutateAsync({
-      count,
-      vendor_id: isAuto ? undefined : vendorId,
-      account_kind: category,
-      plan: (subscription || undefined) as "power" | "pro" | "pro_plus" | "pro_max" | undefined,
-    });
-    onClose();
+    try {
+      const r = await pull.mutateAsync({
+        count,
+        vendor_id: isAuto ? undefined : vendorId,
+        account_kind: category,
+        plan: (subscription || undefined) as "power" | "pro" | "pro_plus" | "pro_max" | undefined,
+      });
+      notify.ok({
+        title: t("common:toast.pull_ok_title", { count: r.purchased }),
+        desc: t("common:toast.pull_ok_desc", { amount: fmtCredits(r.total_debit) }),
+      });
+      onClose();
+    } catch (err) {
+      notify.fail(err, t("common:toast.extract_fail"));
+    }
   };
 
   return (

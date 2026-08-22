@@ -63,6 +63,8 @@ var wantTables = []string{
 	// migration 049 · vendor 档位开关(vendor × kind × plan × enabled) · 后台可 toggle
 	// 撤 Capability.SelectablePlans 硬编码 · 上游开新档只需 UPDATE 表(§0.1)
 	"vendor_plan_config",
+	// migration 050 · 手工池号明文暂存(issues-log I-01) · admin 塞号时落 · sold 时同 tx 迁到 credential_plaintext
+	"market_stock_plaintext",
 }
 
 func openTestDB(t *testing.T) *DB {

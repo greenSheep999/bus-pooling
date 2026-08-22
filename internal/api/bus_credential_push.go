@@ -11,6 +11,7 @@ package api
 // 死号护栏: pool.TestCredential 探活 · 失败拒重推(减 §8.43 语义)
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -70,7 +71,12 @@ func (s *Server) handleBusCredentialPush(w http.ResponseWriter, r *http.Request)
 		return err
 	}
 	if status != "alive" {
-		return ErrBadRequest("号已 " + status + " · 不能重推")
+		// 内部枚举不拼进用户文案（CLAUDE §12.5）· dead/handed_off 都收敛成人话
+		reason := "已失效"
+		if status == "handed_off" {
+			reason = "已拿走"
+		}
+		return ErrBadRequest("号" + reason + " · 不能重推")
 	}
 
 	// 幂等:已推过 且 无失败标记 → no-op 200
@@ -94,9 +100,11 @@ func (s *Server) handleBusCredentialPush(w http.ResponseWriter, r *http.Request)
 				strings.Contains(msg, "Payment Required") || strings.Contains(msg, "reached the limit") {
 				hint = "号已用完额度 · 车里共享号需活号 · 请换号或等 quota 重置"
 			}
+			deadMsg := hint + ": " + truncate(msg, 200)
+			writePushError(r.Context(), s.db, credID, nil, deadMsg)
 			writeJSON(w, http.StatusOK, busCredentialPushResp{
 				State:   "dead",
-				Message: hint + ": " + truncate(msg, 200),
+				Message: deadMsg,
 			})
 			return nil
 		}
@@ -106,10 +114,12 @@ func (s *Server) handleBusCredentialPush(w http.ResponseWriter, r *http.Request)
 			slog.Warn("busCredentialPush · GetBalance 失败·跳过 usage 检查", "cred", credID, "err", berr)
 		}
 		if berr == nil && bal != nil && bal.UsagePercentage >= 95.0 {
+			deadMsg := fmt.Sprintf("号快用完(%.1f%%)· 车里共享号需活号 · 请换号或等 quota 重置",
+				bal.UsagePercentage)
+			writePushError(r.Context(), s.db, credID, nil, deadMsg)
 			writeJSON(w, http.StatusOK, busCredentialPushResp{
-				State: "dead",
-				Message: fmt.Sprintf("号快用完(%.1f%%)· 车里共享号需活号 · 请换号或等 quota 重置",
-					bal.UsagePercentage),
+				State:   "dead",
+				Message: deadMsg,
 			})
 			return nil
 		}
@@ -174,19 +184,51 @@ func (s *Server) handleBusCredentialPush(w http.ResponseWriter, r *http.Request)
 		return nil
 	}
 
-	// 失败 · 落 push_error_* 六字段
-	var failMsg string
+	// 失败 · 落 push_error_* 六字段(跟成功分支对称)· 刷新页面仍能看到失败原因
+	var failErr *passengerpool.PushError
 	for _, f := range pushResult.Failed {
 		if f.CredentialID == credID {
-			failMsg = f.Err.Message
+			failErr = f.Err
 			break
 		}
 	}
+	failMsg := "对家未返此号的推送结果"
+	if failErr != nil {
+		failMsg = failErr.Message
+	}
+	writePushError(r.Context(), s.db, credID, failErr, failMsg)
 	writeJSON(w, http.StatusOK, busCredentialPushResp{
 		State:   "failed",
 		Message: "推送失败: " + truncate(failMsg, 200),
 	})
 	return nil
+}
+
+// writePushError · failed/dead 分支落 credential_ledger 六字段(跟成功分支对称)。
+// err 为 nil 时(死号护栏拦下·没真调对家)用 code=dead / 不可重试兜底。
+func writePushError(ctx context.Context, db *sql.DB, credID string, err *passengerpool.PushError, msg string) {
+	code := "dead"
+	var status any
+	retri := 0
+	if err != nil {
+		code = string(err.Kind)
+		if err.Status > 0 {
+			status = err.Status
+		}
+		if err.Retriable() {
+			retri = 1
+		}
+	}
+	nowStr := nowRFC3339()
+	if _, uerr := db.ExecContext(ctx, `
+		UPDATE credential_ledger
+		   SET push_error_code = ?, push_error_status = ?,
+		       push_error_message = ?, push_error_retriable = ?,
+		       push_attempts = COALESCE(push_attempts, 0) + 1,
+		       push_last_attempt_at = ?
+		 WHERE id = ?`, code, status, truncate(msg, 200), retri, nowStr, credID); uerr != nil {
+		slog.Warn("busCredentialPush · 落 push_error 失败", "cred", credID, "err", uerr)
+	}
 }
 
 func truncate(s string, n int) string {

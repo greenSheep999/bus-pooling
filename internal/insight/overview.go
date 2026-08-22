@@ -91,10 +91,12 @@ func (s *Store) overviewKPI(ctx context.Context, passengerID string) (KPI, error
 		return k, fmt.Errorf("insight: 号池计数: %w", err)
 	}
 
-	// 待补车（pull_intent.status IN ('pending','in_flight') 且是本乘客发起的）
+	// 待补车 · 查 pending_refill（deathwatch 补车队列的真表）——
+	// 原来查 pull_intent · 但生产路径从不写那张表（stockwatch/mode.go 已注明）·
+	// KPI 恒 0 · 跟真实补车队列脱节
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(1) FROM pull_intent
-		 WHERE passenger_id = ? AND status IN ('pending','in_flight')`,
+		SELECT COUNT(1) FROM pending_refill
+		 WHERE passenger_id = ? AND status IN ('pending','processing')`,
 		passengerID).Scan(&k.PendingRefill); err != nil {
 		return k, fmt.Errorf("insight: 待补: %w", err)
 	}
@@ -110,7 +112,8 @@ func (s *Store) overviewKPI(ctx context.Context, passengerID string) (KPI, error
 		return k, fmt.Errorf("insight: 平均寿命: %w", err)
 	}
 	if avgSec.Valid {
-		k.AvgLifespanSeconds = int64(avgSec.Float64)
+		v := int64(avgSec.Float64)
+		k.AvgLifespanSeconds = &v
 	}
 
 	return k, nil
@@ -177,16 +180,21 @@ func (s *Store) overviewBuses(ctx context.Context, passengerID string) (BusesSum
 			Scan(&buses[i].alive, &buses[i].dead); err != nil {
 			return out, fmt.Errorf("insight: 车号统计: %w", err)
 		}
-		// 今日车级花费 · 本乘客在这辆车里今天花了多少
-		//   participants_split_json 里的 count 决定本人的分摊，1a 单人车恒等于总数
-		//   1a 简化：直接按 pull_round.key_cost + service_fee + single_pull_fee 累加
+		// 今日车级花费 · **口径跟车详情 busCredStats 一字不差**（api/bus.go）——
+		// 只按 bus_id 过滤会漏"提取页拉号再进车"的轮次（那轮 bus_id 为空）·
+		// 车详情有数 Overview 车行恒 0（两页对同一辆车说两套数）· 走 owner_bus_id 回溯 ·
+		// DISTINCT round 防一轮 N 号乘 N 倍 · 不过滤 status（同 busCredStats · gross 口径）
 		if err := s.db.QueryRowContext(ctx, `
 			SELECT COALESCE(SUM(
 			  key_cost_total + vendor_fee_total + region_fee_total +
 			  single_pull_fee_total + capability_fee_total + service_fee_total), 0)
-			  FROM pull_round
-			 WHERE bus_id = ? AND substr(created_at, 1, 10) = ?
-			   AND status IN ('completed','partial')`, buses[i].id, today).
+			  FROM pull_round pr
+			 WHERE substr(pr.created_at, 1, 10) = ?
+			   AND (pr.bus_id = ?
+			        OR pr.id IN (
+			              SELECT DISTINCT source_pull_round_id FROM credential_ledger
+			               WHERE owner_bus_id = ? AND source_pull_round_id IS NOT NULL))`,
+			today, buses[i].id, buses[i].id).
 			Scan(&buses[i].spend); err != nil {
 			return out, fmt.Errorf("insight: 车今日花: %w", err)
 		}
@@ -241,25 +249,31 @@ func (s *Store) overviewExtract(ctx context.Context, passengerID string) (Extrac
 		return out, fmt.Errorf("insight: 今日拉号: %w", err)
 	}
 
-	// 号池分布(4 桶)· 用户视角:拉出来的号最终去哪儿了?
-	// 待派(pending)  = 我的 record group 里 alive 且未推
-	// 进车(into_bus) = 我参与的 bus 里 alive 且未推
-	// 推池(push_pool)= 已推(pushed_to_passengerpool_at 非空)
-	// 拿走(handoff)  = 已 handoff · status='handed_off'(号已 DELETE 但台账留着做售后追溯)
-	// **handoff 也算一种去向** —— 用户视角"这号我下载拿走了"是 3 种去向之一(见 fixtures 里对齐)
+	// 号池分布(4 桶 · **互斥** · 见 TestOverview_ExtractDestinationsMutuallyExclusive)
+	//
+	// 待派(pending)  = 还在我的 record group(owner_bus_id 空)· 未 handoff
+	//   **口径必须跟提取页待派列表一致**(api/pullrecord.go listPending:排 handoff + 排进车 ·
+	//   **不排已推池**)—— 否则卡片数字跟点进去的列表条数对不上(实测 1 vs 2 · 车主报的 bug)。
+	//   为什么已推池仍算待派:push_pool 是双写(docs/15 §14.3)· housepool 副本还在 ·
+	//   号还属于这个乘客 · 还能再派去别处。
+	// 进车(into_bus) = owner_bus_id 有值 且 未推池（推了归 push_pool 桶 · 保互斥）
+	// 推池(push_pool)= 已推 且 在车里（车外已推的号归 pending · 它还能再派）
+	// 拿走(handoff)  = status='handed_off'(号已 DELETE 但台账留着做售后追溯)
 	var pending, intoBus, pushPool, handoff int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT
 		  COALESCE(SUM(CASE
-		    WHEN status = 'alive' AND pushed_to_passengerpool_at IS NULL
+		    WHEN status != 'handed_off'
 		         AND owner_record_passenger_id IS NOT NULL
+		         AND owner_bus_id IS NULL
 		    THEN 1 ELSE 0 END), 0),
 		  COALESCE(SUM(CASE
-		    WHEN status = 'alive' AND pushed_to_passengerpool_at IS NULL
-		         AND owner_bus_id IS NOT NULL
+		    WHEN status = 'alive' AND owner_bus_id IS NOT NULL
+		         AND pushed_to_passengerpool_at IS NULL
 		    THEN 1 ELSE 0 END), 0),
 		  COALESCE(SUM(CASE
 		    WHEN status = 'alive' AND pushed_to_passengerpool_at IS NOT NULL
+		         AND owner_bus_id IS NOT NULL
 		    THEN 1 ELSE 0 END), 0),
 		  COALESCE(SUM(CASE
 		    WHEN status = 'handed_off'

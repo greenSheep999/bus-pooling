@@ -12,6 +12,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Card, Chip, SectionHead } from "@/components/ui/primitives";
 import { SkeletonLine } from "@/components/ui/skeleton";
+import { notify } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 /** 账号设置 · 邮箱 / 用户名 / 密码 / 社交登录绑定
@@ -107,8 +108,11 @@ function ChangePasswordCard() {
     try {
       await change.mutateAsync({ old_password: oldPw, new_password: newPw });
       setDone(true);
+      notify.ok({ title: t("common:toast.password_ok") });
       setOldPw(""); setNewPw(""); setConfirm("");
-    } catch { /* 错误渲染在下面 */ }
+    } catch (err) {
+      notify.fail(err, t("common:toast.generic_fail"));
+    }
   };
 
   return (

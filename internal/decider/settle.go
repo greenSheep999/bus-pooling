@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/bus-pooling/bus-pooling/internal/credplain"
 	"github.com/bus-pooling/bus-pooling/internal/housepool"
 	"github.com/bus-pooling/bus-pooling/internal/providers"
 	"github.com/bus-pooling/bus-pooling/internal/wallet"
@@ -415,6 +417,18 @@ func (o *Orchestrator) insertCredentials(
 			}
 			if err := o.marketStock.SellTx(ctx, tx, imported[i].StockItemID, id); err != nil {
 				return nil, fmt.Errorf("decider: market SellTx[%d]: %w", i, err)
+			}
+			// **I-01 修**：同 tx 里把明文从 market_stock_plaintext 迁到
+			// credential_plaintext(kiro_rs_credential_id 主键 → credential_id 主键)。
+			// popper nil 或找不到 stash(老导入的号 / TTL 过期)不 fatal · 号仍能卖 ·
+			// 只是推池会走 placeholder(跟修复前行为一致 · 不新增回归)。
+			if o.marketPopper != nil {
+				if err := o.marketPopper.PopToCredplainTx(
+					ctx, tx, uint64(imported[i].ID), id,
+				); err != nil && !errors.Is(err, credplain.ErrNotFound) {
+					// 真正的写库错才回滚 · ErrNotFound 只 slog(号是 I-01 修复前 stash 的老号)
+					return nil, fmt.Errorf("decider: market PopToCredplainTx[%d]: %w", i, err)
+				}
 			}
 		}
 		out = append(out, id)

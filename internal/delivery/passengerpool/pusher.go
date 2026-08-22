@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/bus-pooling/bus-pooling/internal/delivery/passengerpool/kirors"
@@ -276,19 +277,22 @@ func (p *realPusher) classifyResult(creds []PushCredential, res *kirors.BatchImp
 		case "duplicate":
 			out.Duplicate = append(out.Duplicate, cid)
 		case "failed":
+			// ev.Error 是对家吐的 raw · 里边可能带 HTTP 状态码 / 内部限额字段名 /
+			// 内部函数名等术语 · **不透传**（CLAUDE §0.1/§12.6）· 归成人话
 			out.Failed = append(out.Failed, FailedItem{
 				CredentialID: cid,
 				Err: &PushError{
 					Kind:    ErrKindBadRequest,
-					Message: firstNonEmpty(ev.Error, "对家未接受此号"),
+					Message: userFacingPushMessage(ev.Error),
 				},
 			})
 		default:
+			// 未识别事件 · 内部诊断信息（ev.Status）不出对外 message
 			out.Failed = append(out.Failed, FailedItem{
 				CredentialID: cid,
 				Err: &PushError{
 					Kind:    ErrKindStreamBroken,
-					Message: "对家返未识别事件: " + ev.Status,
+					Message: "推送中断 · 稍后可重试",
 				},
 			})
 		}
@@ -383,4 +387,38 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// userFacingPushMessage 把对家吐的 raw error 归类成用户话。
+//
+// **为什么不透传** —— raw 里可能带 HTTP 状态码 / 内部限额字段名 / 内部函数名
+// 等**内部术语**（CLAUDE §0.1/§12.6）· 直出到 toast 会给用户看到看不懂的字符串。
+//
+// 归类只按**结果对用户的意义**分类 —— 号在对家没收下，是「用完了」「假的/失效」
+// 「网络断」还是「其他」· 让用户能立刻做下一步（换号 / 重试 / 联系我们）。
+func userFacingPushMessage(raw string) string {
+	if raw == "" {
+		return "对家未接受此号"
+	}
+	lower := strings.ToLower(raw)
+	switch {
+	case strings.Contains(lower, "quota_exceeded"),
+		strings.Contains(lower, "monthly_request_count"),
+		strings.Contains(lower, "reached the limit"),
+		strings.Contains(raw, "402"),
+		strings.Contains(lower, "payment required"):
+		return "号已用完额度 · 换号或等 quota 重置"
+	case strings.Contains(lower, "unauthorized"),
+		strings.Contains(lower, "invalid"),
+		strings.Contains(lower, "suspended"),
+		strings.Contains(raw, "401"),
+		strings.Contains(raw, "403"):
+		return "号已失效 · 无法推送"
+	case strings.Contains(lower, "timeout"),
+		strings.Contains(lower, "stream"),
+		strings.Contains(lower, "network"):
+		return "推送中断 · 稍后可重试"
+	default:
+		return "对家未接受此号"
+	}
 }

@@ -23,12 +23,15 @@ import { PullExtractForm } from "@/components/PullExtractForm";
 import {
   BareHead, BareList, BareRow, Card, Chip, Em, SectionHead,
 } from "@/components/ui/primitives";
+import { UsageMeter } from "@/components/UsageMeter";
+import { AccountKindTag, KeyRankBadge } from "@/components/RankBadge";
+import { liveLifespanSeconds, useNowTick } from "@/lib/useNowTick";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TokenTag, VendorTag } from "@/components/ui/tags";
+import { MicroStat, TokenTag, VendorTag } from "@/components/ui/tags";
 import {
   cn, fmtCredits, fmtLifespan, fmtTime, vendorLabel,
 } from "@/lib/utils";
@@ -318,7 +321,8 @@ function PendingTab({
         />
       ) : (
         <div className="overflow-x-auto">
-          <div className="min-w-[720px]">
+          {/* 加了评价列 · min-w 跟上(否则窄屏列会挤) */}
+          <div className="min-w-[820px]">
             <BareHead>
               <span className="w-8 shrink-0 pl-2">
                 <Checkbox
@@ -329,6 +333,8 @@ function PendingTab({
               <span className="min-w-0 flex-1">{t("pending.col.key")}</span>
               <span className="w-14 shrink-0 text-center">{t("pending.col.region")}</span>
               <span className="w-16 shrink-0 text-center">{t("pending.col.lifespan")}</span>
+              {/* 评价档单独一列 · 不跟寿命叠在一格里 */}
+              <span className="w-24 shrink-0 text-center">{t("pending.col.rank")}</span>
               <span className="w-20 shrink-0 text-center">{t("pending.col.used")}</span>
               <span className="w-24 shrink-0 text-right">{t("pending.col.pulled-at")}</span>
             </BareHead>
@@ -358,6 +364,9 @@ function RecordRow({
   /* 质保内失效 = 可退 · 过了质保只能认（拉下来放太久没派的情况） */
   const inWarranty =
     dead && c.warranty_until != null && new Date(c.warranty_until) > new Date();
+  /* 寿命本地 tick · 活号数字在两次 refetch 之间也在走（死号是定值不动） */
+  const now = useNowTick();
+  const liveSecs = liveLifespanSeconds(c, now);
 
   return (
     <BareRow
@@ -382,6 +391,8 @@ function RecordRow({
           {c.key_masked}
         </span>
         <VendorTag name={vendorLabel(c.vendor_id, me?.tier)} />
+        {/* 企业 / 个人 —— 一律显示（只有一种档时用户也得知道这是哪种号） */}
+        <AccountKindTag kind={c.account_kind} />
         {/* 状态标记 · 正常 / 已失效（质保内的标出来，能退） */}
         {dead ? (
           inWarranty ? (
@@ -402,13 +413,22 @@ function RecordRow({
           <span className="text-fg-tertiary">—</span>
         )}
       </span>
+      {/* 寿命 · live 秒数本地 tick · 两次 refetch 之间数字也在走（useNowTick） */}
       <span className="w-16 shrink-0 text-center text-label font-medium tnum text-fg-secondary">
-        {fmtLifespan(c.lifespan_seconds)}
+        {fmtLifespan(liveSecs)}
       </span>
-      {/* 用量 · 活号读实时采样 · 死号才用 credits_used 终值（同 BusDetail 口径） */}
-      <span className="w-20 shrink-0 text-center text-label font-semibold tnum">
-        {fmtCredits(c.usage_current || c.credits_used)}
-        <span className="ml-1 font-medium text-fg-tertiary">{t("unit.credits")}</span>
+      {/* 评价档 · 独立一列 · 活号按"当前已存活"给档 · 会随时间升级（lib/rank.ts） */}
+      <span className="flex w-24 shrink-0 items-center justify-center">
+        <KeyRankBadge lifespanSeconds={liveSecs} />
+      </span>
+      {/* 用量 · 活号读实时采样 · 死号才用 credits_used 终值（同 BusDetail 口径）·
+          数字下方带进度条 · max 走 usage_limit 真值 · 老数据按 subscription 兜底 */}
+      <span className="flex w-20 shrink-0 flex-col items-center gap-1">
+        <span className="text-label font-semibold tnum">
+          {fmtCredits(c.usage_current || c.credits_used)}
+          <span className="ml-1 font-medium text-fg-tertiary">{t("unit.credits")}</span>
+        </span>
+        <UsageMeter c={c} className="w-full" />
       </span>
       <span className="w-24 shrink-0 text-right text-label font-medium tnum text-fg-tertiary">
         {fmtTime(c.pulled_at)}
@@ -483,7 +503,7 @@ function ExtractEventRow({ e }: { e: ExtractEvent }) {
         <Chip tone={res.tone} dot>{t(res.labelKey)}</Chip>
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-2">
-        <VendorTag name={vendorLabel(e.vendor_id, me?.tier)} size="sm" />
+        <VendorTag name={vendorLabel(e.vendor_id, me?.tier)} />
         {e.zone && (
           <TokenTag>
             {e.zone}
@@ -626,16 +646,17 @@ function AssignEventRow({ e }: { e: AssignEvent }) {
         {/* 目标 · 进车给车名 · 推池给 host · 拿走给"已下载" chip */}
         <span className="flex min-w-0 flex-1 items-center gap-2">
           {e.bus_name ? (
-            <TokenTag size="sm">{e.bus_name}</TokenTag>
+            <TokenTag>{e.bus_name}</TokenTag>
           ) : e.target_host ? (
-            <TokenTag size="sm">
-              <Send className="size-3" />
+            <TokenTag>
+              <Send className="size-2.5" />
               <span className="ml-1">{e.target_host}</span>
             </TokenTag>
           ) : (
             /* 已下载 = 成功完成的动作 · 用 ok 绿不用 danger 红
-               红色留给失败 / 危险操作 · 下载成功不是危险 */
-            <Chip tone="ok" icon={<Check className="size-3" />}>{t("assign-history.chip.downloaded")}</Chip>
+               红色留给失败 / 危险操作 · 下载成功不是危险 ·
+               尺寸跟同列的车名/host tag 一致（10px · 行内不混两种大小） */
+            <MicroStat tone="ok"><Check className="mr-1 size-2.5" />{t("assign-history.chip.downloaded")}</MicroStat>
           )}
         </span>
 
@@ -679,9 +700,11 @@ function AssignEventRow({ e }: { e: AssignEvent }) {
                   {k.key_masked || "—"}
                 </span>
                 <span className="w-24 shrink-0 tnum text-fg-tertiary">{k.region}</span>
-                <span className="w-24 shrink-0 text-right font-semibold tnum">
-                  {fmtCredits(k.credits_used)}
+                {/* 用量 + 进度条 · 跟待派列表 / 车内号列表同一个组件(口径不漂) */}
+                <span className="w-24 shrink-0 text-right">
+                  <span className="font-semibold tnum">{fmtCredits(k.usage_current || k.credits_used)}</span>
                   <span className="ml-0.5 font-medium text-fg-tertiary">{t("unit.credits")}</span>
+                  <UsageMeter c={k} className="mt-0.5 w-full" />
                 </span>
                 <span className="w-24 shrink-0 text-right tnum text-fg-secondary">
                   {k.lifespan_seconds > 0 ? fmtLifespan(k.lifespan_seconds) : t("assign-history.detail.just-pulled")}

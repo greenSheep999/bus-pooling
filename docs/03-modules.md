@@ -141,8 +141,15 @@
 
 - **目的**：存 / 校验乘客的策略参数；判断"当下能否拉号"；生成拉号意图；**给所有运行时决策路径吐"最终生效值"**（1f-C 收口）
 - **参数**：
-  - 乘客全局 `passenger_strategy_default`：`{max_unit_price, daily_round_limit, daily_spend_limit, per_round_count, preferred_vendor, default_zone, default_auto_refill_enabled, default_refill_watermark, default_refill_min_count}`（后三字段 1f-B 加 · fallback + 新车 seed 双职 · 见 `docs/06-db-schema §16`）
-  - 车级 `bus`：`{auto_refill_enabled, refill_watermark, refill_min_count, per_round_count, max_unit_price, preferred_vendor}` —— 前三 nullable · `null=跟随全局`（`docs/15-scheduling §4.3.2b` 方案 A）
+  - 乘客全局 `passenger_strategy_default`（migration 040 后）：
+    - 硬上限：`{max_unit_price, daily_round_limit, daily_spend_limit}`
+    - 新车 seed + 覆盖字段 fallback：`{per_round_count, preferred_vendor, default_zone}`
+    - 新车 seed 补车字段（**只做建车预填 · 不做运行时 fallback**）：`{default_auto_refill_enabled, default_refill_watermark, default_refill_min_count}`
+    - 跨车调度护栏（只对自动补车生效）：`{auto_refill_daily_budget, auto_refill_min_wallet_reserve, auto_refill_vendor_allowlist}` · 见 `docs/06-db-schema §16`
+  - 车级 `bus`（migration 040 后）：
+    - 纯车级 NOT NULL DEFAULT 0（无"跟随全局"语义）：`{auto_refill_enabled, refill_watermark}`
+    - nullable · null = 跟随全局：`{refill_min_count, per_round_count, max_unit_price, preferred_vendor}`
+    - 见 `docs/15-scheduling §4.3.2`
 - **唯一入口 · `strategy.Effective(ctx, passengerID, busID, requestOverride) → EffectiveStrategy`**（`docs/15-scheduling §4.3.4`）：
   - 已算好优先级链 `request > 车级 > 全局 > 系统默认`（覆盖字段）/ 取 min（硬上限）
   - 调用方**不能**再二次拼字段 · `_test.go` / DB CRUD / DTO 定义除外

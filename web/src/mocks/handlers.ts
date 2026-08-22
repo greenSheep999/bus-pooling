@@ -82,6 +82,25 @@ export const handlers = [
   }),
   http.put("/api/me/buses/:id", () => ok({ ok: true }, 300)),
   http.post("/api/me/buses/:id/pull", () => ok({ round_id: "rd_new", status: "initiated" }, 600)),
+
+  /* 车内号手动重推 · 4 态都返 200（前端必须按 state 分支 · 别当 HTTP 200 就是成功）
+     按 cred_id 尾号造不同结果 · 好在 mock 里也能看到失败态的红 pill + 原因全文 */
+  http.post("/api/me/buses/:id/credentials/:credId/push", ({ params }) => {
+    const cid = String(params.credId);
+    if (/[02468]$/.test(cid)) {
+      return ok({ state: "pushed", message: "重推成功" }, 700);
+    }
+    if (/1$/.test(cid)) {
+      return ok({ state: "already_pushed", message: "该号已推过 · 未重复推送" }, 500);
+    }
+    if (/3$/.test(cid)) {
+      return ok({ state: "dead", message: "号已失效 · 拒绝推送（死号不进下游池）" }, 500);
+    }
+    return ok({
+      state: "failed",
+      message: "推送失败: 凭据无效: refreshToken 已被截断（长度: 65 字符）。",
+    }, 700);
+  }),
   http.delete("/api/me/buses/:id", () => ok({ ok: true }, 400)),
 
   /* 成员管理 · decisions §8.26

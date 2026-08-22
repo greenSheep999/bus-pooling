@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { ArrowRight, Check, X } from "lucide-react";
 import { useMe } from "@/api/hooks";
 import { BareRow, Chip } from "./ui/primitives";
-import { TokenTag } from "./ui/tags";
+import { MicroStat, TokenTag } from "./ui/tags";
 import {
   cn, fmtCredits, fmtLifespan, fmtTime, vendorLabel,
 } from "@/lib/utils";
@@ -17,12 +17,13 @@ const RESULT_TONE: Record<PullResult, "ok" | "warn" | "danger" | "brand"> = {
   refunded: "brand",
 };
 
+/** 推送态 · 行内次级状态 · 10px 小 pill —— 12px Chip 只留给行首主状态列（docs/13 §4） */
 function PushCell({ state, ratio }: { state: PushState; ratio: string | null }) {
   const { t } = useTranslation("common");
-  if (state === "pushed") return <Chip tone="ok" icon={<Check className="size-3" />}>{t("status.push.pushed")}</Chip>;
-  if (state === "partial") return <Chip tone="warn" icon={<Check className="size-3" />}>{t("status.push.partial", { ratio })}</Chip>;
-  if (state === "failed") return <Chip tone="danger" icon={<X className="size-3" />}>{t("status.push.failed")}</Chip>;
-  return <Chip tone="neutral">{t("status.push.none")}</Chip>;
+  if (state === "pushed") return <MicroStat tone="ok"><Check className="mr-1 size-2.5" />{t("status.push.pushed")}</MicroStat>;
+  if (state === "partial") return <MicroStat tone="warn"><Check className="mr-1 size-2.5" />{t("status.push.partial", { ratio })}</MicroStat>;
+  if (state === "failed") return <MicroStat tone="danger"><X className="mr-1 size-2.5" />{t("status.push.failed")}</MicroStat>;
+  return <MicroStat tone="neutral">{t("status.push.none")}</MicroStat>;
 }
 
 export function PullRow({ r }: { r: PullRound }) {
@@ -38,8 +39,9 @@ export function PullRow({ r }: { r: PullRound }) {
         {fmtTime(r.created_at)}
       </span>
 
-      <span className="w-14 shrink-0">
-        <Chip tone={resTone} dot className="w-full justify-center">
+      {/* w-24 按英文最长词（Refunded）定宽 · 原 w-14 + Chip w-full 英文会撑出格子 */}
+      <span className="w-24 shrink-0">
+        <Chip tone={resTone} dot>
           {resLabel}
         </Chip>
       </span>
@@ -86,7 +88,7 @@ export function PullRow({ r }: { r: PullRound }) {
         )}
       </div>
 
-      <div className="flex w-20 shrink-0 justify-center">
+      <div className="flex w-28 shrink-0 justify-center">
         <PushCell state={r.push_state} ratio={r.push_ratio} />
       </div>
 
@@ -114,6 +116,7 @@ const KIND_TONE: Record<Activity["kind"], BadgeTone> = {
   topup: "ok",
   redeem: "ok",
   push: "neutral",
+  handoff: "neutral",
 };
 
 /* 去向流可视化：vendor [badge] → 车/号池 [badge]
@@ -126,9 +129,9 @@ const FLOW_TARGETS: Record<string, boolean> = {
   pending: true,
 };
 
-/** 流转 badge · 走 TokenTag sm · 保持全站 vendor/bus 标签样式一致（避免第三处样式漂移） */
+/** 流转 badge · 走 TokenTag（10px 统一小号）· 保持全站 vendor/bus 标签样式一致（避免第三处样式漂移） */
 function FlowBadge({ children }: { children: React.ReactNode }) {
-  return <TokenTag size="sm">{children}</TokenTag>;
+  return <TokenTag>{children}</TokenTag>;
 }
 
 /** 内容单元：把活动描述完整渲染在这一列，不做多列拆分
@@ -138,7 +141,9 @@ function ActivityContent({ a }: { a: Activity }) {
   const { t } = useTranslation("common");
   const isFlow = a.target_kind && FLOW_TARGETS[a.target_kind];
 
-  if (isFlow && a.source && a.target) {
+  /* 固定去向（待派 / 我的号池 / 已拿走）**没有 target** —— 文案由 target_kind 出 i18n ·
+     所以这里不能要求 a.target 非空（要求了那几行会整行空白） */
+  if (isFlow && a.source) {
     /* 号流转行 · 完整中文描述句：
        「共 <动词> N 个号 / 个 key，从 [vendor] → [目的地]」
        动词按 kind 派生：提取 / 入车 / 推池 · 数量加粗嵌在句子里 · 流转 badge 在后 */
@@ -159,20 +164,36 @@ function ActivityContent({ a }: { a: Activity }) {
             {a.count}
           </span>
         )}
+        {/* 量词走 i18n · **不用后端的 count_unit**（那是后端硬编码的中文 ·
+            英文用户会看到"个号"）· 后端只该给数字 · 量词是文案 */}
         <span className="shrink-0 text-fg-secondary">
-          {a.count_unit ?? t("activity.flow.count-unit-fallback")}{t("activity.flow.from")}
+          {t("activity.flow.count-unit-fallback")}{t("activity.flow.from")}
         </span>
         <FlowBadge>{a.source}</FlowBadge>
         <ArrowRight className="size-3 shrink-0 text-fg-tertiary" />
-        <FlowBadge>{a.target}</FlowBadge>
+        {/* 去向:车名是数据(后端给)· 固定去向(待派/我的号池/已拿走)是文案(走 i18n) */}
+        <FlowBadge>{a.target || t(`activity.target.${a.target_kind}`)}</FlowBadge>
       </span>
     );
   }
 
-  // 补车 / 失效 / 充值 / 兑换：完整叙述（用 summary 兜底最保险）
+  // 号失效 · 前端组句（后端别塞中文 summary —— 英文用户会看到中文）
+  // masked key 和 vendor 是数据 · "失效"是文案
+  if (a.kind === "dead" && a.target) {
+    return (
+      <span className="flex min-w-0 items-center gap-1.5">
+        <FlowBadge>{a.target}</FlowBadge>
+        {a.source && <FlowBadge>{a.source}</FlowBadge>}
+        <span className="shrink-0 text-fg-secondary">{t("activity.dead-suffix")}</span>
+      </span>
+    );
+  }
+
+  // 补车 / 充值 / 兑换：summary 非空 = 运营写的 memo 原文（**数据**·直接显示）·
+  // 空则按 summary_code 出 i18n 兜底文案（后端只给码·不给中文）
   return (
     <span className="min-w-0 truncate font-medium text-fg-secondary">
-      {a.summary}
+      {a.summary || (a.summary_code ? t(`activity.ledger.${a.summary_code}`) : "")}
     </span>
   );
 }
@@ -189,9 +210,11 @@ export function ActivityRow({ a, onClick }: { a: Activity; onClick?: () => void 
         {fmtTime(a.created_at)}
       </span>
 
-      {/* 类型 badge · 定宽不换行 */}
-      <span className="w-14 shrink-0">
-        <Chip tone={tone} className="w-full justify-center whitespace-nowrap">
+      {/* 类型 badge · **按内容自适应**（原来 w-14 写死 + Chip w-full 撑满 ——
+          中文"补车"两字刚好 · 英文 "Key expired" 直接撑出格子）·
+          给 min-w 保证短词（Push / 推池）也对齐 · 不写死上限 */}
+      <span className="flex min-w-[56px] shrink-0 justify-start">
+        <Chip tone={tone} className="whitespace-nowrap">
           {kindLabel}
         </Chip>
       </span>

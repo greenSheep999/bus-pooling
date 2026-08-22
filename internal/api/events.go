@@ -55,9 +55,12 @@ func listPullEvents(ctx context.Context, db *sql.DB, passengerID string, limit, 
 	if err := db.QueryRowContext(ctx, `
 		SELECT count(1) FROM pull_round pr
 		 WHERE pr.id IN (SELECT pull_round_id FROM pending_purchase WHERE passenger_id = ? AND pull_round_id IS NOT NULL)
+		   AND pr.status != 'initiated'
 		`, passengerID).Scan(&total); err != nil {
 		return 0, nil, err
 	}
+	// status != 'initiated'：进行中的轮次不进历史列表 —— mapPullRoundResult 对
+	// initiated 只能落 default 'failed' · 会把正在拉的轮次显示成"失败"（几秒后又变成功）
 	rows, err := db.QueryContext(ctx, `
 		SELECT pr.id, pr.created_at, pr.vendor_id,
 		       pr.count_requested, pr.count_purchased,
@@ -71,14 +74,17 @@ func listPullEvents(ctx context.Context, db *sql.DB, passengerID string, limit, 
 		                 OR cl.pushed_to_passengerpool_at IS NOT NULL
 		                 OR cl.status = 'handed_off')) AS assigned_count,
 		       -- 待派：号还在 record-<pid> 组等处置
+		       -- **口径跟 Overview 卡片 + 提取页待派列表一字不差**（都不排已推池 ——
+		       -- push_pool 是双写 · 号还属于这个乘客 · 还能再派去别处）· 三处不一致
+		       -- 就会出现"卡片说 1 个 · 列表列 2 条"（车主报的 bug）
 		       (SELECT count(1) FROM credential_ledger cl
 		          WHERE cl.source_pull_round_id = pr.id
 		            AND cl.owner_bus_id IS NULL
 		            AND cl.owner_record_passenger_id IS NOT NULL
-		            AND cl.status != 'handed_off'
-		            AND cl.pushed_to_passengerpool_at IS NULL) AS pending_count
+		            AND cl.status != 'handed_off') AS pending_count
 		  FROM pull_round pr
 		 WHERE pr.id IN (SELECT pull_round_id FROM pending_purchase WHERE passenger_id = ? AND pull_round_id IS NOT NULL)
+		   AND pr.status != 'initiated'
 		 ORDER BY pr.created_at DESC
 		 LIMIT ? OFFSET ?`, passengerID, limit, offset)
 	if err != nil {
@@ -144,6 +150,10 @@ type assignedKeyDTO struct {
 	Region          string `json:"region"`
 	CreditsUsed     int64  `json:"credits_used"`
 	LifespanSeconds int64  `json:"lifespan_seconds"`
+	// 用量真值 + 上限 · 前端画进度条（跟待派列表 / 车内号列表同一个 UsageMeter）
+	UsageCurrent int64  `json:"usage_current"`
+	UsageLimit   int64  `json:"usage_limit"`
+	Subscription string `json:"subscription,omitempty"`
 }
 
 func (s *Server) handleListAssignEvents(w http.ResponseWriter, r *http.Request) error {
@@ -183,7 +193,9 @@ func listAssignEvents(ctx context.Context, db *sql.DB, passengerID string, limit
 		       COALESCE(cl.region, ''),
 		       -- 用量 · 活号取最近一次采样 · 号死了 credits_used 才是终值
 		       COALESCE(cus.current_usage_micro, cl.credits_used, 0),
-		       cl.dead_at
+		       cl.dead_at,
+		       COALESCE(cus.usage_limit_micro, 0),
+		       COALESCE(cl.subscription, '')
 		  FROM pending_assignment pa
 		  LEFT JOIN credential_ledger cl ON cl.id = pa.credential_id
 		  LEFT JOIN credential_usage_snapshot cus
@@ -205,12 +217,12 @@ func listAssignEvents(ctx context.Context, db *sql.DB, passengerID string, limit
 		var e assignEventDTO
 		var target string
 		var targetBusID sql.NullString
-		var credID, vendorID, keyMasked, pulledAt, busName, region string
-		var usedMicro int64
+		var credID, vendorID, keyMasked, pulledAt, busName, region, subscription string
+		var usedMicro, limitMicro int64
 		var deadAt sql.NullString
 		if err := rows.Scan(&e.ID, &e.CreatedAt, &target, &targetBusID, &credID,
 			&vendorID, &keyMasked, &pulledAt, &busName,
-			&region, &usedMicro, &deadAt); err != nil {
+			&region, &usedMicro, &deadAt, &limitMicro, &subscription); err != nil {
 			return 0, nil, err
 		}
 		e.Destination = mapAssignDestination(target)
@@ -225,12 +237,17 @@ func listAssignEvents(ctx context.Context, db *sql.DB, passengerID string, limit
 		// key_masked / region / 用量 / 寿命 全读真值 —— 原来 region/credits_used/lifespan
 		// 是写死的 0 和空串（"1a 阶段先给 0"的占位）· 于是派发历史展开后每个号都显示 0
 		e.Keys = []assignedKeyDTO{{
-			CredentialID:    credID,
-			KeyMasked:       keyMasked,
-			VendorID:        vendorID,
-			Region:          region,
-			CreditsUsed:     usedMicro,
-			LifespanSeconds: lifespanOf(pulledAt, deadAt),
+			CredentialID: credID,
+			KeyMasked:    keyMasked,
+			VendorID:     vendorID,
+			Region:       region,
+			CreditsUsed:  usedMicro,
+			// "Alive at dispatch" = 截到**派发时刻**的存活时长（快照语义）·
+			// 原来用 lifespanOf(→now) · 数字会自己长 · 跟列名说的不是一回事
+			LifespanSeconds: lifespanAt(pulledAt, deadAt, e.CreatedAt),
+			UsageCurrent:    usedMicro,
+			UsageLimit:      limitMicro,
+			Subscription:    subscription,
 		}}
 		if vendorID != "" {
 			e.Vendors = []string{vendorID}

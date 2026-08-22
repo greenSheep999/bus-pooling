@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { notify } from "@/lib/toast";
 import {
   toCredits, vendorLabel,
 } from "@/lib/utils";
@@ -73,18 +74,23 @@ export function EditStrategyPanel({
   const onSave = async () => {
     if (!dirty) return;
     setSaved(false);
-    await upd.mutateAsync({
-      auto_refill_enabled: auto,
-      refill_watermark: watermark,
-      refill_min_count: null,
-      per_round_count: perRound,
-      max_unit_price: maxPrice ? Number(maxPrice) * 1_000_000 : null,
-      daily_round_limit: dailyRound ? Number(dailyRound) : null,
-      daily_spend_limit: dailySpend ? Number(dailySpend) * 1_000_000 : null,
-      preferred_vendor: pref === "auto" ? null : pref,
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      await upd.mutateAsync({
+        auto_refill_enabled: auto,
+        refill_watermark: watermark,
+        refill_min_count: null,
+        per_round_count: perRound,
+        max_unit_price: maxPrice ? Number(maxPrice) * 1_000_000 : null,
+        daily_round_limit: dailyRound ? Number(dailyRound) : null,
+        daily_spend_limit: dailySpend ? Number(dailySpend) * 1_000_000 : null,
+        preferred_vendor: pref === "auto" ? null : pref,
+      });
+      setSaved(true);
+      notify.ok({ title: t("common:toast.saved") });
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      notify.fail(err, t("common:toast.generic_fail"));
+    }
   };
 
   return (

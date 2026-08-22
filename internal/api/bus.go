@@ -28,10 +28,13 @@ type busResponse struct {
 	Members     []memberResp  `json:"members"`
 	Strategy    busStrategyDT `json:"strategy"`
 	// 号池汇总 · 1a 先给 0（Iss #10 只做元数据，号统计在 §credentials 端点单独查）
-	AliveCount         int   `json:"alive_count"`
-	DeadCount          int   `json:"dead_count"`
-	SpendToday         int64 `json:"spend_today"`
-	AvgLifespanSeconds int64 `json:"avg_lifespan_seconds"`
+	AliveCount int   `json:"alive_count"`
+	DeadCount  int   `json:"dead_count"`
+	SpendToday int64 `json:"spend_today"`
+	// 累计消费 · 健康车今日常为 0（生产轮次不在今天）· 累计才看得出这车花了多少
+	SpendTotal int64 `json:"spend_total"`
+	// nil = 车里还没有号死过（全是活号 · 前端显"暂无"而不是误导性的 0 秒）
+	AvgLifespanSeconds *int64 `json:"avg_lifespan_seconds"`
 }
 
 // busStrategyDT 对齐前端 BusStrategy（TS 是权威 · CLAUDE.md §0）
@@ -358,7 +361,7 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// 保留 canpull 硬护栏(余额 / daily_round / daily_spend / 单价上限)校验 ·
-	// **护栏值来自 EffectiveStrategy** · 别再从 bus.Strategy 抽字段。
+	// **护栏值来自 EffectiveStrategy(全局) + 车级 daily_*(decisions §8.47)**
 	bal, err := s.wallets.Get(r.Context(), p.ID)
 	if err != nil {
 		return err
@@ -367,12 +370,28 @@ func (s *Server) handleBusPull(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// §8.47 · 本车今日已用 · 用于车级 daily_* AND 判据
+	usedBus, err := s.wallets.TodayUsageByBus(r.Context(), busID)
+	if err != nil {
+		return err
+	}
+	// 读车级 daily_* · Effective 只吐全局(daily 不在其列)· 车级由 canpull AND 判
+	busForStrat, _ := s.buses.Get(r.Context(), busID)
+	var busDailyRound *int
+	var busDailySpend *int64
+	if busForStrat != nil {
+		busDailyRound = busForStrat.Strategy.DailyRoundLimit
+		busDailySpend = busForStrat.Strategy.DailySpendLimit
+	}
 	_, err = s.strategies.CanPull(r.Context(), p.ID, strategy.CheckInput{
 		BusID:           busID,
 		Count:           req.Count,
 		Balance:         bal.Balance,
 		Used:            strategy.Usage{Rounds: used.Rounds, Spend: used.Spend},
+		UsedBus:         &strategy.Usage{Rounds: usedBus.Rounds, Spend: usedBus.Spend},
 		BusMaxUnitPrice: nilIfZeroInt64(eff.MaxUnitPrice),
+		BusDailyRound:   busDailyRound,
+		BusDailySpend:   busDailySpend,
 	})
 	if err != nil {
 		if fail := translateStrategyErr(err); fail != nil {
@@ -583,7 +602,7 @@ func (s *Server) buildBusResponse(r *http.Request, b *bus.Bus) (busResponse, err
 		invite = &c
 	}
 	// 号汇总 · 查不到不该让整个车详情 500（前端拿 0 也能渲染）· 只降级
-	alive, dead, spendToday, avgLifespan, statsErr := s.busCredStats(r.Context(), b.ID)
+	alive, dead, spendToday, spendTotal, avgLifespan, statsErr := s.busCredStats(r.Context(), b.ID)
 	if statsErr != nil {
 		slogWarn("busResponse · 号汇总查询失败(降级返 0)", "bus", b.ID, "err", statsErr)
 	}
@@ -605,6 +624,7 @@ func (s *Server) buildBusResponse(r *http.Request, b *bus.Bus) (busResponse, err
 		AliveCount:         alive,
 		DeadCount:          dead,
 		SpendToday:         spendToday,
+		SpendTotal:         spendTotal,
 		AvgLifespanSeconds: avgLifespan,
 	}, nil
 }
@@ -615,8 +635,9 @@ func (s *Server) buildBusResponse(r *http.Request, b *bus.Bus) (busResponse, err
 // 头部显示 0 个 key（生产实测）。这里一次查齐 · 别让前端再猜。
 //
 // avg_lifespan 只算**已死**的号（活着的还在计时 · 混进去会把均值拉低成"当前已存活"）。
+// 车里还没有号死过时返 nil（不是 0）· 让前端显"暂无"而不是误导性的"0 秒"。
 func (s *Server) busCredStats(ctx context.Context, busID string) (
-	alive, dead int, spendToday, avgLifespan int64, err error,
+	alive, dead int, spendToday, spendTotal int64, avgLifespan *int64, err error,
 ) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT
@@ -630,10 +651,11 @@ func (s *Server) busCredStats(ctx context.Context, busID string) (
 		 WHERE owner_bus_id = ?`, busID)
 	var lifeSum, deadWithTime int64
 	if err = row.Scan(&alive, &dead, &lifeSum, &deadWithTime); err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, 0, 0, nil, err
 	}
 	if deadWithTime > 0 {
-		avgLifespan = lifeSum / deadWithTime
+		v := lifeSum / deadWithTime
+		avgLifespan = &v
 	}
 	// 今日花费 · **按车内号回溯它们那一轮的花费** · 不能只看 pull_round.bus_id ——
 	// 从提取页拉号再"进车"的号 · 那一轮 bus_id 是空的（拉的时候还没归属车）·
@@ -654,9 +676,24 @@ func (s *Server) busCredStats(ctx context.Context, busID string) (
 		          WHERE owner_bus_id = ? AND source_pull_round_id IS NOT NULL
 		       )`, today, busID,
 	).Scan(&spendToday); err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, 0, 0, nil, err
 	}
-	return alive, dead, spendToday, avgLifespan, nil
+	// 累计消费 · 同回溯口径去掉日期过滤（DISTINCT round 防一轮 N 号乘 N 倍）。
+	if err = s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(
+		         COALESCE(pr.key_cost_total,0) + COALESCE(pr.vendor_fee_total,0) +
+		         COALESCE(pr.region_fee_total,0) + COALESCE(pr.single_pull_fee_total,0) +
+		         COALESCE(pr.capability_fee_total,0) + COALESCE(pr.service_fee_total,0)
+		       ), 0)
+		  FROM pull_round pr
+		 WHERE pr.id IN (
+		         SELECT DISTINCT source_pull_round_id FROM credential_ledger
+		          WHERE owner_bus_id = ? AND source_pull_round_id IS NOT NULL
+		       )`, busID,
+	).Scan(&spendTotal); err != nil {
+		return 0, 0, 0, 0, nil, err
+	}
+	return alive, dead, spendToday, spendTotal, avgLifespan, nil
 }
 
 // passengerBriefFor 拿一个乘客的 username + 钱包余额（拼进 BusMember）。

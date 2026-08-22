@@ -36,6 +36,11 @@ type QualityStats struct {
 	VendorID           string
 	AvgLifespanSeconds int64
 	AliveRate30d       int // 0-100
+	// AvgCreditsUsed 死号平均已耗额度（vendor_key.current_usage · 原始 0-10k 档 · 非 microunit）·
+	// 语义 = "这家的号平均烧到多少积分才挂" · 越大越耐用（Overview 耐用度 Meter）
+	AvgCreditsUsed int64
+	// WarrantyDeaths 死在质保期内的号数（dead_at <= warranty_until）· Overview「保修」列
+	WarrantyDeaths int
 	// SampleSize 参与聚合的死号数 · < 3 视为数据不足（返 ok=false）
 	SampleSize int
 }
@@ -49,7 +54,7 @@ func (s *QualityStore) Get(ctx context.Context, vendorID string) (*QualityStats,
 	}
 	cutoff := time.Now().Add(-30 * 24 * time.Hour).UTC().Format(time.RFC3339)
 
-	// 一次 SQL 拿死号平均寿命 + 死号数量 + alive 数量
+	// 一次 SQL 拿死号平均寿命 + 死号数量 + alive 数量 + 死号平均耗额 + 质保期内死亡数
 	// COALESCE 保护空表（AVG 恒空 · SUM 也空）
 	// **CAST 是必需的** —— SQLite julianday * 86400 是 float · 转 INTEGER 避免精度漂
 	q := `
@@ -59,6 +64,12 @@ func (s *QualityStore) Get(ctx context.Context, vendorID string) (*QualityStats,
 	         THEN (julianday(dead_at) - julianday(created_at)) * 86400
 	    END
 	  ) AS INTEGER), 0) AS avg_lifespan_seconds,
+	  COALESCE(CAST(AVG(
+	    CASE WHEN status = 'dead' THEN current_usage END
+	  ) AS INTEGER), 0) AS avg_credits_used,
+	  SUM(CASE WHEN status = 'dead'
+	           AND dead_at IS NOT NULL AND warranty_until IS NOT NULL
+	           AND dead_at <= warranty_until THEN 1 ELSE 0 END) AS warranty_deaths,
 	  SUM(CASE WHEN status = 'dead' THEN 1 ELSE 0 END) AS dead_count,
 	  SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS alive_count,
 	  COUNT(*) AS total
@@ -66,9 +77,10 @@ func (s *QualityStore) Get(ctx context.Context, vendorID string) (*QualityStats,
 	 WHERE vendor_id = ?
 	   AND created_at >= ?
 	`
-	var avgLife int64
-	var dead, alive, total int
-	err := s.db.QueryRowContext(ctx, q, vendorID, cutoff).Scan(&avgLife, &dead, &alive, &total)
+	var avgLife, avgCredits int64
+	var warrantyDeaths, dead, alive, total int
+	err := s.db.QueryRowContext(ctx, q, vendorID, cutoff).
+		Scan(&avgLife, &avgCredits, &warrantyDeaths, &dead, &alive, &total)
 	if err != nil {
 		return nil, false, err
 	}
@@ -84,6 +96,8 @@ func (s *QualityStore) Get(ctx context.Context, vendorID string) (*QualityStats,
 		VendorID:           vendorID,
 		AvgLifespanSeconds: avgLife,
 		AliveRate30d:       rate,
+		AvgCreditsUsed:     avgCredits,
+		WarrantyDeaths:     warrantyDeaths,
 		SampleSize:         dead,
 	}, true, nil
 }

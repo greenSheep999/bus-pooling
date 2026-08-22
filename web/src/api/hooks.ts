@@ -391,6 +391,9 @@ export const useBusCredentials = (id: string | undefined) =>
     queryKey: ["busCredentials", id],
     queryFn: () => api<Credential[]>(`/me/buses/${id}/credentials`),
     enabled: !!id,
+    /* 用量进度条要自己动 —— 号池 5min 采样一次 · 这里 60s 拉一次够跟上 ·
+       挂着页面不用手动刷新就能看到进度条走 · 也能看到号从活变死 */
+    refetchInterval: 60_000,
   });
 
 /** 车内号手动重推 · decisions §8.44 · 自动 push 失败后手动重试
@@ -524,6 +527,17 @@ export const useRegenInviteCode = (busId: string) => {
   });
 };
 
+export interface PullResponse {
+  pull_round_id: string;
+  vendor_id: string;
+  purchased: number;
+  credential_ids: string[];
+  unit_price: number;
+  service_fee: number;
+  total_debit: number;
+  balance_remaining: number;
+}
+
 export const usePullForBus = (busId: string) => {
   const qc = useQueryClient();
   return useMutation({
@@ -533,11 +547,13 @@ export const usePullForBus = (busId: string) => {
       account_kind?: "enterprise" | "personal";
       plan?: "power" | "pro" | "pro_plus" | "pro_max";
     }) =>
-      postIdempotent(`/me/buses/${busId}/pull`, body),
+      postIdempotent<PullResponse>(`/me/buses/${busId}/pull`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["bus", busId] });
       qc.invalidateQueries({ queryKey: ["busCredentials", busId] });
       qc.invalidateQueries({ queryKey: ["busPulls", busId] });
+      qc.invalidateQueries({ queryKey: ["activities"] });
+      qc.invalidateQueries({ queryKey: ["wallet"] });
     },
   });
 };
@@ -582,7 +598,7 @@ export const useExtract = () => {
         ...rest,
         ...(vendor_id && vendor_id !== "auto" ? { vendor_id } : {}),
       };
-      return postIdempotent("/me/pull", payload);
+      return postIdempotent<PullResponse>("/me/pull", payload);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["extractRecords"] });
@@ -591,6 +607,7 @@ export const useExtract = () => {
       qc.invalidateQueries({ queryKey: ["wallet"] });
       qc.invalidateQueries({ queryKey: ["vendorOffers"] });
       qc.invalidateQueries({ queryKey: ["stock"] });
+      qc.invalidateQueries({ queryKey: ["activities"] });
     },
   });
 };
@@ -656,6 +673,9 @@ export const usePullRecords = () =>
   useQuery({
     queryKey: ["pullRecords"],
     queryFn: () => api<Paged<Credential>>("/me/pull-records"),
+    /* 同 useBusCredentials · 60s 自动刷 · 进度条 / 寿命 / 评价档都会自己更新
+       （评价档按当前已存活算 · 号活久了会从"拉"升到"人上人"· 不刷新看不到） */
+    refetchInterval: 60_000,
   });
 
 /* 派去向 · 两种走 assign：进车（into_bus + bus_id）· 推池（push_pool）
@@ -696,6 +716,7 @@ export const useAssign = () => {
       // 清算动了钱包（share_income / share_expense）· 余额和流水都要刷
       qc.invalidateQueries({ queryKey: ["wallet"] });
       qc.invalidateQueries({ queryKey: ["ledger"] });
+      qc.invalidateQueries({ queryKey: ["activities"] });
     },
   });
 };
@@ -717,11 +738,15 @@ export interface HandoffKeys {
   keys: { credential_id: string; key: string; vendor_id: string; account: string }[];
 }
 
-/** ① 发 token · 号还在池里（disabled），这步**不返回明文** */
+/** ① 发 token · 号还在池里（disabled），这步**不返回明文**
+ *  I-07 · 用普通 post 不送 idempotency key · 后端 handleHandoffInit 未验幂等 ·
+ *  前端送 idempotency 反而契约不一致(前端以为幂等 · 后端根本不查) · 双击/重发
+ *  会为同一批 credential 起两个 download_token · 各自 5min 内都能取明文。
+ *  改回普通 post · 让前端明确知道"这不是幂等端点 · UI 该防重复提交"。 */
 export const useHandoffInit = () =>
   useMutation({
     mutationFn: (credential_ids: string[]) =>
-      postIdempotent<HandoffToken>("/me/handoff", { credential_ids }),
+      post<HandoffToken>("/me/handoff", { credential_ids }),
   });
 
 /** ② 用 token 取明文 · TTL 内可反复取（断线重试就靠这个） */
@@ -738,6 +763,7 @@ export const useHandoffConfirm = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pullRecords"] });
       qc.invalidateQueries({ queryKey: ["assignEvents"] });
+      qc.invalidateQueries({ queryKey: ["activities"] });
     },
   });
 };
@@ -810,6 +836,7 @@ export const useCreateTopup = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["wallet"] });
       qc.invalidateQueries({ queryKey: ["ledger"] });
+      qc.invalidateQueries({ queryKey: ["activities"] });
     },
   });
 };
@@ -821,6 +848,7 @@ export const useRedeem = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["wallet"] });
       qc.invalidateQueries({ queryKey: ["ledger"] });
+      qc.invalidateQueries({ queryKey: ["activities"] });
     },
   });
 };

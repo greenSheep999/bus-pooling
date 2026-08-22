@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { notify } from "@/lib/toast";
 import {
   vendorLabel,
 } from "@/lib/utils";
@@ -51,6 +52,8 @@ export function StartCarpoolModal({
   const [vendorId, setVendorId] = useState<string>("auto");
   const [autoRefill, setAutoRefill] = useState(false);
   const [maxPrice, setMaxPrice] = useState("");
+  // §8.47 · 车级 daily_* AND 全局 · 建车向导给车级入口
+  // 语义:全局管"所有车加起来" · 这两项管"这辆车" · 用户能给单车限死
   const [dailyRoundLimit, setDailyRoundLimit] = useState("");
   const [dailySpendLimit, setDailySpendLimit] = useState("");
   const [refillWatermark, setRefillWatermark] = useState(3);
@@ -80,6 +83,7 @@ export function StartCarpoolModal({
       refill_min_count: null,
       per_round_count: perRoundCount,
       max_unit_price: maxPrice ? Number(maxPrice) * 1_000_000 : null,
+      // §8.47 · 车级 daily_* AND 全局 · null = 车级不加严 · 只受全局管
       daily_round_limit: dailyRoundLimit ? Number(dailyRoundLimit) : null,
       daily_spend_limit: dailySpendLimit ? Number(dailySpendLimit) * 1_000_000 : null,
       preferred_vendor: picked,
@@ -87,9 +91,17 @@ export function StartCarpoolModal({
     // 建车不传 kind —— 用户建的车都一样（后端默认 single·跟 team 行为一致·都带邀请码）。
     // 1 个人时是独享·把邀请码给朋友进来就是拼车·不需要建车时选类型。
     // max_members 走后端 config.bus.max_members·前端不传。
-    const bus = await createBus.mutateAsync({ name, strategy });
-    onClose();
-    nav(`/buses/${bus.id}`);
+    try {
+      const bus = await createBus.mutateAsync({ name, strategy });
+      notify.ok({
+        title: t("common:toast.bus_created"),
+        action: { label: t("common:toast.bus_created_action"), href: `/buses/${bus.id}` },
+      });
+      onClose();
+      nav(`/buses/${bus.id}`);
+    } catch (err) {
+      notify.fail(err, t("common:toast.generic_fail"));
+    }
   };
 
   return (
@@ -206,6 +218,7 @@ export function StartCarpoolModal({
                     placeholder={t("start-modal.no-limit")}
                   />
                 </Field>
+                {/* §8.47 · 车级 daily_* AND 全局 · 语义:全局管跨车总额 · 这两项管本车 */}
                 <Field label={t("start-modal.field-daily-round")}>
                   <Input
                     type="number"

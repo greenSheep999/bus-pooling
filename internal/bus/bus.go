@@ -55,12 +55,13 @@ type Bus struct {
 // Strategy 每车一策略（decisions §8.6）· 落 bus 表同名列。
 // 指针字段 nil = 不限 / 未设。
 //
-// **策略字段口径**（docs/22-buy-race 缺口 3）：
-//   - **护栏类** · `MaxUnitPrice` —— 全局 + 车级 AND 取更严 · 任一层拦住就拦
+// **策略字段口径**（decisions §8.27 + §8.47 · 2026-08-22 更新）：
+//   - **护栏类** · `MaxUnitPrice` / `DailyRoundLimit` / `DailySpendLimit`
+//     —— 全局 + 车级 AND 取更严 · 任一层拦住就拦
+//     · 语义:全局管"所有车加起来" · 车级管"这辆车" · 两层独立
+//     · 车级放宽全局仍生效(CLAUDE §1.5 · 硬上限不能放宽)
+//     · 提取(BusID 空)只受全局管 —— record group 无车级
 //   - **偏好类** · `PerRoundCount` / `PreferredVendor` —— 车级 > 全局 · 就近优先
-//   - **DailyRoundLimit / DailySpendLimit** —— **车级不生效**（strategy.decide 只判全局）·
-//     字段保留是因为 SQLite 不支持 DROP COLUMN · 别在 UI 上暴露车级设置入口 ·
-//     每日限额的意义是"人的预算"不是"车的预算"
 //
 // 1f-B(15-scheduling §4.3.2b 方案 A) · auto/refill 三字段改 *bool / *int：
 //
@@ -80,7 +81,9 @@ type Strategy struct {
 	PerRoundCount   *int
 	MaxUnitPrice    *int64
 	PreferredVendor *string
-	// DailyRoundLimit / DailySpendLimit · **DEPRECATED · 车级不生效** · 见 struct 注释
+	// DailyRoundLimit / DailySpendLimit · 车级每日轮次/花费上限(decisions §8.47)
+	// nil = 车没设(不加严) · 非 nil = 跟全局 AND 取更严(canpull.decide)
+	// UI:建车向导 Advanced + BusDetail EditStrategyPanel 都能设
 	DailyRoundLimit *int
 	DailySpendLimit *int64
 }

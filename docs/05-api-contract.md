@@ -295,7 +295,7 @@ curl https://<base-url>/api/me \
 | PUT | `/api/me/buses/{bus_id}/strategy` | 该车的补车策略（`decisions §8.6` 跟车绑） | 1a |
 | GET | `/api/me/buses/{bus_id}/credentials` | 该 bus 的号列表（含存活状态 + 用量） | 1a |
 | GET | `/api/me/buses/{bus_id}/pulls` | 该 bus 的拉号历史（分页） | 1a |
-| GET | `/api/me/buses/{bus_id}/stats` | 该 bus 号池的聚合统计（跨窗口） | 1d |
+| ~~GET~~ | ~~`/api/me/buses/{bus_id}/stats`~~ | ~~该 bus 号池的聚合统计（跨窗口）~~ · **未实现** · 现有统计走 `GET /api/me/buses/{bus_id}` 返回体的 `alive_count / dead_count / spend_today / avg_lifespan_seconds` 字段 · 阶段 3+ 需要窗口对比时再单开 | ⏸ 阶段 3+ |
 | PUT | `/api/me/buses/{bus_id}/members/{pid}` | 挂起 / 解挂成员（`§8.26`） | 2a |
 | DELETE | `/api/me/buses/{bus_id}/members/{pid}` | 移除成员（车主有权 · `§8.36`）· 剩余成员 share_pct 均分重算 | 1c |
 | POST | `/api/me/buses/{bus_id}/invite-code` | 重新生成**拼车码**（旧码和旧链接立即失效） | 1c |
@@ -472,11 +472,11 @@ curl https://<base-url>/api/me \
 
 | Method | Path | 说明 |
 |---|---|---|
-| GET | `/api/me/credentials` | 我名下所有活的号（跨 bus / 拉号记录 / 已推 passengerpool 的） |
-| GET | `/api/me/credentials?history=1` | 含死号 |
-| GET | `/api/me/credentials/{id}` | 单号详情：进池时间 / 死亡时间 / 用了多少 / 平均积分消耗 / 并发（若有） |
+| ~~GET~~ | ~~`/api/me/credentials`~~ | ~~我名下所有活的号（跨 bus / 拉号记录 / 已推 passengerpool 的）~~ · **未实现** · 现有查询走 `GET /api/me/buses/{id}/credentials`（车里的号）+ `GET /api/me/pull-records`（待派号）· 阶段 3+ 需要跨源统一列表再合 |
+| ~~GET~~ | ~~`/api/me/credentials?history=1`~~ | ~~含死号~~ · 同上 · **未实现** |
+| ~~GET~~ | ~~`/api/me/credentials/{id}`~~ | ~~单号详情~~ · **未实现** · 号详情走车详情 / 提取详情按上下文查 |
 
-**这是"我名下号"的入口**。`handoff` 出去的号不在这里（已离开 housepool）。
+**这些端点在 1a 规划表里 · 但一直没实现** · 现有查询路径按上下文分：车里的号走车详情 · 待派号走提取页 · 已 handoff 号不再存在。阶段 3+ 数据看板做起来时统一 endpoint 再补。
 
 ### 单号详情返回字段（`GET /api/me/credentials/{id}`）
 
@@ -531,20 +531,29 @@ curl https://<base-url>/api/me \
 
 ### `GET /api/me/buses/{bus_id}/pulls` 返回（拉号历史）
 
+对齐 `web/src/types/index.ts` 的 `PullRound`（可执行契约 · 冲突以 TS 为准）。
+**计费只出汇总 `total_cost`** —— `key_cost_total / single_pull_fee_total` 等分项在后端 SQL
+里求和后丢弃 · 不下发（CLAUDE.md §0.1 · 分项链不对外）。
+
 ```json
 {
   "items": [
     {
-      "pull_round_id": "01H...",
+      "id": "01H...",
       "vendor_id": "kiro91",
+      "bus_id": "01H...",
+      "bus_name": "周末拼车局",
+      "result": "success",           // success | partial | failed | refunded（§12.5 收敛后）
+      "count_requested": 5,
       "count_purchased": 5,
-      "participants_split": { "01H_alice": 2, "01H_bob": 3 },  // 谁分几个
-      "key_cost_total": 100000000,
-      "service_fee_total": 5000000,   // 按 share_pct 在 alice/bob 之间分摊
-      "single_pull_fee_total": 0,
+      "alive_count": 4,
+      "dead_count": 1,
+      "push_state": "pushed",        // pushed | partial | failed | none
+      "push_ratio": null,            // partial 时 "2/3"
+      "total_cost": 105000000,       // microunit · 全部计费层求和后的单一数字
+      "fail_reason": null,
       "created_at": "..."
-    },
-    ...
+    }
   ],
   "total": 42, "page": 1, "page_size": 50
 }
@@ -589,9 +598,12 @@ curl https://<base-url>/api/me \
   "per_round_count": 3,             // 新车默认值
   "preferred_vendor": null,         // 新车默认值 · null = 让系统比价
   "default_zone": "auto",           // 新车默认值
-  "default_auto_refill_enabled": false,   // 补车全局默认（1f-B）· 车级 auto_refill_enabled = null 时读这个
-  "default_refill_watermark": 0,          // 补车全局默认（1f-B）· 车级 refill_watermark = null 时读这个
-  "default_refill_min_count": null,       // 补车全局默认（1f-B）· 车级 refill_min_count = null 且此值也 null 时走 watermark-alive gap
+  "default_auto_refill_enabled": false,   // 新车 seed(migration 040) · 建车时抄到 bus 表 · 不做运行时 fallback
+  "default_refill_watermark": 0,          // 新车 seed · 同上
+  "default_refill_min_count": null,       // 新车 seed · null = 建车不 seed 该字段
+  "auto_refill_daily_budget": null,       // 跨车调度护栏 · 所有 auto 车合计每日预算 microunit · null = 不限
+  "auto_refill_min_wallet_reserve": null, // 跨车调度护栏 · 钱包低于此值 auto 车暂停 · null = 不限
+  "auto_refill_vendor_allowlist": null,   // 跨车调度护栏 · 允许 vendor id 数组 · null = 不限
   "used_today": { "rounds": 6, "spend": 45000000 }   // 只读 · UI 画用量进度条
 }
 ```
@@ -604,31 +616,37 @@ curl https://<base-url>/api/me \
 - 跟车级同名字段取**更严**的（AND）
 - **提取 key 只受全局管** —— record group 没有车级限额
 
-**三个 `default_*` 补车字段（1f-B）**：作用是「运行时 fallback + 新车 seed」双职（详见 `docs/15-scheduling.md §4.3.2b` 方案 A）—— 用户改这三项会**同步影响所有"跟随全局"的车**；已经"覆盖本车"的车不受影响。三字段权威读取入口：`internal/strategy.Effective()`（见 `docs/15-scheduling.md §4.3.4`）· 别再手工从 DB 拼字段。
+**四组字段职责（migration 040 后 · `docs/15-scheduling.md §4.3.2`）**：
+1. **硬上限**（`max_unit_price / daily_round_limit / daily_spend_limit`）· 每次拉号校验 · 跟车级取更严
+2. **新车默认 + 运行时 fallback**（`per_round_count / preferred_vendor / default_zone`）· 车级 NULL 时读这里
+3. **新车 seed 补车字段**（`default_auto_refill_enabled / default_refill_watermark / default_refill_min_count`）· **只做建车预填** · 不做运行时 fallback · 改这里不影响老车
+4. **跨车调度护栏**（`auto_refill_daily_budget / auto_refill_min_wallet_reserve / auto_refill_vendor_allowlist`）· **只对自动补车 refill/scheduler/webhook 三桥生效** · 手动拉号不受此约束
+
+权威读取入口：`internal/strategy.Effective()`（见 `docs/15-scheduling.md §4.3.4`）· 别再手工从 DB 拼字段。
 
 ### `PUT /api/me/buses/{bus_id}/strategy`
 
 **读取入口**：车级 strategy 不单独开 GET 端点 —— 通过 `GET /api/me/buses/{bus_id}` 返回体里的 `strategy` 字段读（省一次请求）。
 
-**null 语义明确**（1f-B · `docs/15-scheduling.md §4.3.2b` 方案 A · nullable 表继承）：
+**auto_refill_* 三字段是纯车级 · 无 null 语义**（migration 040 后 · `docs/15-scheduling.md §4.3.2`）：
 
 ```json
 {
-  "auto_refill_enabled": null,   // null = 跟随全局默认（读 GET /me/strategy 的 default_auto_refill_enabled）· 非 null（含 false / 0）= 覆盖本车
-  "refill_watermark":    null,   // null = 跟随全局；非 null（含 0）= 覆盖本车
-  "refill_min_count":    null,   // null 三态：全局若也 null → 走 watermark-alive gap；全局非 null → 用全局；本车非 null → 覆盖本车
-  "per_round_count":     null,   // null = 跟随全局
-  "preferred_vendor":    null,   // null = 跟随全局；全局也 null 时走系统比价
-  "max_unit_price":      null,   // 硬上限 · null = 车级不加严；实际生效值 = min(本车值, 全局值)
+  "auto_refill_enabled": false,  // **必须非 null** · false/0 就是"这辆车关自动补" · 无"跟随全局"语义
+  "refill_watermark":    0,      // **必须非 null** · 0 就是"活号低于 0 才补"(即不补)
+  "refill_min_count":    null,   // nullable · null = 按 (watermark - alive) gap 补
+  "per_round_count":     null,   // 覆盖字段 · null = 跟随全局 · 非 null = 覆盖
+  "preferred_vendor":    null,   // 覆盖字段 · null = 跟随全局(全局也 null 时走 AutoPick)
+  "max_unit_price":      null,   // 硬上限 · null = 车级不加严 · 实际生效 = min(本车, 全局)
   "anon_zone":           null,   // anon 车专用 · null = 不限
   "anon_max_unit_price": null    // anon 车专用 · null = 不限
 }
 ```
 
-- **`null` 在这三个补车字段（`auto_refill_enabled` / `refill_watermark` / `refill_min_count`）上不等于"关闭"** —— 是"跟随全局"。想显式关闭 auto，传 `false` 覆盖本车。
-- `PUT` **部分更新**：payload 里没出现的字段服务端不改（不用带全字段）；显式传 `null` 才是把该字段清成"跟随全局"。
-- 权威读取入口 `internal/strategy.Effective()`（`docs/15-scheduling.md §4.3.4`）· UI 展示"实际生效值"的口径见 `§4.3.5.1`。
-- 迁移保行为：老车（1f-B migration 前建的）字段值原样保留为"覆盖本车" · 全局默认改变**不影响**老车（`§4.3.2b` 硬约束）。
+- **auto_refill_* 三字段传 null 会拒**（`NOT NULL` 约束）· 想关闭传 `false` / `0`
+- 其他覆盖字段：`PUT` **部分更新** · payload 里没出现的字段不改 · 显式传 `null` 才是清成"跟随全局"
+- 权威读取入口 `internal/strategy.Effective()`（`docs/15-scheduling.md §4.3.4`）
+- **迁移保行为**：migration 040 前老车的 nullable NULL 值 · 落库时 COALESCE 到 0 · 语义等价（关自动补）· 见 `decisions.md §13.5`
 
 ## 8. 下游配置
 

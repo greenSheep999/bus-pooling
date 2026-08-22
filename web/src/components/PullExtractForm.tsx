@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { UpstreamStatusPanel } from "@/components/UpstreamStatusPanel";
 import { ExtractConfirmModal } from "@/components/ExtractConfirmModal";
+import { notify } from "@/lib/toast";
 import { fmtCredits, toCredits, vendorLabel, I18N_VENDOR_IDS } from "@/lib/utils";
 import type { Zone } from "@/types";
 
@@ -102,19 +103,28 @@ export function PullExtractForm({
   /** 确认窗里点「确认提取」才真拉 · couponCode 是本次减免码
    *  Step 5d · 带上 account_kind + plan · 后端硬约束（缺货不降级） */
   const onConfirm = async (couponCode?: string) => {
-    await pull.mutateAsync({
-      vendor_id: vendorId,
-      zone: zone === "auto" ? undefined : zone,
-      count,
-      coupon_code: couponCode,
-      account_kind: category,
-      plan: subscription as "power" | "pro" | "pro_plus" | "pro_max" | undefined,
-    });
-    setConfirmOpen(false);
-    setCount(3);
-    setVendorId("auto");
-    setZone("auto");
-    onSubmitted?.();
+    try {
+      const r = await pull.mutateAsync({
+        vendor_id: vendorId,
+        zone: zone === "auto" ? undefined : zone,
+        count,
+        coupon_code: couponCode,
+        account_kind: category,
+        plan: subscription as "power" | "pro" | "pro_plus" | "pro_max" | undefined,
+      });
+      notify.ok({
+        title: t("common:toast.extract_ok_title", { count: r.purchased }),
+        desc: t("common:toast.extract_ok_desc", { amount: fmtCredits(r.total_debit) }),
+        action: { label: t("common:toast.extract_ok_action"), href: "/extract" },
+      });
+      setConfirmOpen(false);
+      setCount(3);
+      setVendorId("auto");
+      setZone("auto");
+      onSubmitted?.();
+    } catch (err) {
+      notify.fail(err, t("common:toast.extract_fail"));
+    }
   };
 
   return (

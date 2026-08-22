@@ -6,6 +6,7 @@ import { useJoinByInviteCode, useMe } from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/primitives";
+import { notify } from "@/lib/toast";
 
 /**
  * /join/:code · 邀请链接落地页。
@@ -33,7 +34,10 @@ export default function JoinByLink() {
     attempted.current = true;
     join
       .mutateAsync(normalized)
-      .then((bus) => nav(`/buses/${bus.id}`, { replace: true }))
+      .then((bus) => {
+        notify.ok({ title: t("common:toast.joined") });
+        nav(`/buses/${bus.id}`, { replace: true });
+      })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes("404") || msg.toLowerCase().includes("not_found")) {

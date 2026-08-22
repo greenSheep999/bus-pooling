@@ -52,7 +52,7 @@
   "push": {
     "failed": "Push failed",
     "none": "Not pushed",
-    "partial": "Partial push {{ratio}}",
+    "partial": "Partial {{ratio}}",
     "pushed": "Pushed"
   },
   "result": {
@@ -84,7 +84,8 @@
       "pulled": "Pulled",
       "push": "Push",
       "status": "Status",
-      "usage": "Used"
+      "usage": "Used",
+      "rank": "Rank"
     },
     "push": {
       "failed": "Push failed",
@@ -92,7 +93,8 @@
       "pushed": "Pushed",
       "retry": "Retry",
       "retrying": "Pushing…",
-      "retry-tip": "Manually re-push · dead keys are rejected"
+      "retry-tip": "Manually re-push · dead keys are rejected",
+      "neterr": "Network error · try again later"
     },
     "status": {
       "alive": "Alive",
@@ -117,7 +119,7 @@
     "anon": "Ride pool",
     "anon-with-count": "Ride pool · {{count}} riders",
     "multi": "{{count}}-person bus",
-    "multi-card": "Pool · {{count}} riders",
+    "multi-card": "Bus · {{count}} riders",
     "solo": "Solo"
   },
   "pool-distribution": {
@@ -147,7 +149,8 @@
       "max-price": "unit ≤ <1>{{value}}</1>",
       "daily-limit": "daily <1>{{value}}</1>",
       "preferred": "prefer <1>{{vendor}}</1>"
-    }
+    },
+    "owner-badge": "I started it"
   },
   "join-anon-modal": {
     "title": "Hop on",
@@ -176,7 +179,8 @@
     "submit": "Join",
     "error-too-short": "Invite codes are at least 4 characters",
     "error-not-found": "Invalid code, or the bus was dissolved",
-    "error-full": "Bus is full · check with the owner or try another"
+    "error-full": "Bus is full · check with the owner or try another",
+    "error-generic": "Couldn't join · try again shortly"
   },
   "start-modal": {
     "title": "Start a bus",
@@ -238,23 +242,23 @@
     "submit": "Fetch {{count}} keys"
   },
   "settings-modal": {
-    "title": "Pool settings",
+    "title": "Bus settings",
     "rename": {
-      "label": "Pool name",
-      "placeholder": "Give this pool a name",
+      "label": "Bus name",
+      "placeholder": "Give this bus a name",
       "save": "Save",
       "saving": "Saving…",
       "saved": "Saved ✓"
     },
     "danger": {
       "title": "Danger zone",
-      "dissolve-title": "Dissolve this pool",
+      "dissolve-title": "Dissolve this bus",
       "dissolve-desc": "Live keys move to your extract log · dead keys archived · spent credits not refunded",
-      "dissolve-button": "Dissolve pool",
-      "confirm-title": "Dissolve pool",
+      "dissolve-button": "Dissolve bus",
+      "confirm-title": "Dissolve bus",
       "confirm-alert-title": "This action cannot be undone",
       "confirm-alert-body": "After dissolving, live keys move to your extract log · dead keys archived · spent credits not refunded",
-      "confirm-label-prefix": "Type the pool name",
+      "confirm-label-prefix": "Type the bus name",
       "confirm-label-suffix": "to confirm",
       "cancel": "Cancel",
       "confirm-button": "Confirm dissolve",

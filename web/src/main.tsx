@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router-dom";
 import { router } from "./router";
+import { Toaster } from "./components/ui/toaster";
 import { initTheme } from "./lib/theme";
 import "./i18n"; // 初始化 i18next · 只 import 即可（副作用）
 import "./index.css";
@@ -31,6 +32,7 @@ async function boot() {
     <StrictMode>
       <QueryClientProvider client={qc}>
         <RouterProvider router={router} />
+        <Toaster />
       </QueryClientProvider>
     </StrictMode>,
   );

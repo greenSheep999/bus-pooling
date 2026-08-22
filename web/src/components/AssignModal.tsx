@@ -18,6 +18,7 @@ import { VendorTag } from "@/components/ui/tags";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { notify } from "@/lib/toast";
 import {
   cn, fmtCredits, vendorLabel,
 } from "@/lib/utils";
@@ -154,33 +155,62 @@ export function AssignModal({
        号此刻**还在池里** —— 用户点「我已保存」才 ③ confirm 触发删除。
        ② 失败（比如断线）可以重试，因为号没删。 */
     if (kind === "handoff") {
-      const t = await handoffInit.mutateAsync(records.map((r) => r.id));
-      const got = await handoffFulfill.mutateAsync(t.download_token);
-      setHandoff({ token: t.download_token, keys: got.keys });
+      try {
+        const tok = await handoffInit.mutateAsync(records.map((r) => r.id));
+        const got = await handoffFulfill.mutateAsync(tok.download_token);
+        setHandoff({ token: tok.download_token, keys: got.keys });
+        notify.info({
+          title: t("common:toast.handoff_ready_title", { count: got.keys.length }),
+          desc: t("common:toast.handoff_ready_desc"),
+        });
+      } catch (err) {
+        notify.fail(err, t("common:toast.generic_fail"));
+      }
       return;
     }
 
-    const result = await assign.mutateAsync({
-      credential_ids: records.map((r) => r.id),
-      destination: kind,
-      ...(kind === "into_bus" ? { bus_id: busId } : {}),
-    });
-    // **P1-l/m 拒推场景**: 后端 errors[] 里带 credential_dead / credential_quota_exceeded
-    // 全被拒(assigned=0) · 弹窗保开 · 显 error 列表让用户知道
-    // 部分成功(assigned>0 · 部分 errors) · 也保弹窗显 · 但成功那部分 UI 已刷
-    if (result.errors && result.errors.length > 0) {
-      setAssignErrors(result.errors);
-      return;
+    try {
+      const result = await assign.mutateAsync({
+        credential_ids: records.map((r) => r.id),
+        destination: kind,
+        ...(kind === "into_bus" ? { bus_id: busId } : {}),
+      });
+      // **P1-l/m 拒推场景**: 后端 errors[] 里带 credential_dead / credential_quota_exceeded
+      // 全被拒(assigned=0) · 弹窗保开 · 显 error 列表让用户知道
+      // 部分成功(assigned>0 · 部分 errors) · 也保弹窗显 · 但成功那部分 UI 已刷
+      if (result.errors && result.errors.length > 0) {
+        setAssignErrors(result.errors);
+        // 明说"成功 X · 失败 Y" · 别只说"部分没派出去"（用户看不清楚哪半在哪半）
+        notify.warn({
+          title: t("common:toast.assign_partial_v2", {
+            ok: result.assigned,
+            fail: result.errors.length,
+          }),
+        });
+        return;
+      }
+      notify.ok({
+        title: kind === "into_bus"
+          ? t("common:toast.assign_bus_title", { count: result.assigned })
+          : t("common:toast.assign_push_title", { count: result.assigned }),
+      });
+      onClose();
+    } catch (err) {
+      notify.fail(err, t("common:toast.generic_fail"));
     }
-    onClose();
   };
 
   /** ③ 用户说"我已保存" → 这时才真删号 */
   const onConfirmHandoff = async () => {
     if (!handoff) return;
-    await handoffConfirm.mutateAsync(handoff.token);
-    setHandoff(null);
-    onClose();
+    try {
+      await handoffConfirm.mutateAsync(handoff.token);
+      notify.ok({ title: t("common:toast.handoff_done") });
+      setHandoff(null);
+      onClose();
+    } catch (err) {
+      notify.fail(err, t("common:toast.generic_fail"));
+    }
   };
 
   return (

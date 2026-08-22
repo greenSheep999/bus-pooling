@@ -382,6 +382,7 @@ func buildDecider(
 	cfg config.Config, sqldb *db.DB, reg *providers.Registry,
 	enqueuer decider.StockEnqueuer,
 	marketStockStore *marketstock.Store,
+	credplainStore *credplain.Store,
 ) (*decider.Orchestrator, housepool.HousePool, decider.Rates, error) {
 	live := !cfg.DryRun && os.Getenv("BP_ALLOW_LIVE_PULL") == "1"
 
@@ -551,6 +552,9 @@ func buildDecider(
 		// 我方第 7 家手工池 seller · settle 里跟 credential_ledger.INSERT 同 tx 卖号
 		// nil 允许（老装配 / 未接手工池）· 但号一旦是 market 来源就必须有
 		MarketStock: marketStockStore,
+		// I-01 · 手工池号 sold 时 · 迁明文 stash → credential_plaintext(同 tx)
+		// nil 允许(cipher 未配)· 号仍能卖 · push_pool 会走 placeholder
+		MarketPopper: credplainStore,
 	}), pubPool, rates, nil
 }
 
@@ -604,6 +608,14 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	marketStockStore := marketstock.NewStore(database.DB)
 	if err := vendorRegistry.Register(marketstock.NewVendor(marketStockStore), true); err != nil {
 		return fmt.Errorf("注册 Kiro Vendor Market: %w", err)
+	}
+
+	// credplain 提到这里(cipher 已在 562 行建)· 让 buildDecider / api.NewServer / pusher
+	// 三处装配都拿同一实例(避免多份 Store 走同一把 cipher 但语义分裂)
+	// nil 允许 · cipher 未配时(dev 环境无 BP_MASTER_KEY)手工池 stash 落不了 · push_pool 走 placeholder
+	var credplainStore *credplain.Store
+	if cipher != nil {
+		credplainStore = credplain.New(database.DB, cipher)
 	}
 	for _, e := range vendorRegistry.All() {
 		slog.Info("vendor 已注册", "vendor", e.VendorID, "enabled", e.Enabled)
@@ -673,7 +685,7 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		"kill_flag", killFlag.Path(),
 		"mode", modeMgr.Current().String())
 
-	orch, poolClient, rates, err := buildDecider(cfg, database, vendorRegistry, stockWatcher, marketStockStore)
+	orch, poolClient, rates, err := buildDecider(cfg, database, vendorRegistry, stockWatcher, marketStockStore, credplainStore)
 	if err != nil {
 		return err
 	}
@@ -939,12 +951,11 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		return fmt.Errorf("httpx(passengerpool): %w", err)
 	}
 	var pusher passengerpool.Pusher
-	if downstreamStore != nil && cipher != nil {
+	if downstreamStore != nil && credplainStore != nil {
 		// **P0-c 修(2026-08-16)**: credplain 表 · 拉号成功那一刻明文加密缓存 ·
 		// pusher 走这个查真明文 · 上游 housepool 后端 1.8.3 确认无 reveal 端点 ·
-		// 手动 seed 号走 seed-credplain CLI 塞明文 · 真拉号走 decider.settle 自动落。
+		// 手工池号 sold 时由 decider settle 从 stash 迁进来(I-01)· 老拉号靠 seed-credplain CLI。
 		// credplain Get 找不到 · pusher 走 placeholder 兜底(dev mock 环境)
-		credplainStore := credplain.New(database.DB, cipher)
 		pusher = passengerpool.NewPusher(passengerpool.PusherDeps{
 			Downstreams:    downstreamStore,
 			Plaintext:      credplain.NewLookup(credplainStore),
@@ -971,11 +982,23 @@ func runServe(ctx context.Context, cfg config.Config) error {
 	//
 	// **静默失败不阻塞主链** - Dispatch 是非阻塞入队 · 内部消费失败只 log · 不回滚主 tx。
 	webhookOutDisp := buildWebhookout(database.DB, downstreamStore)
+	// I-02 · bridge 建早 · 场景 1&2(decider.Pull) 挂 pullNotifier · 场景 3(assign into_bus)
+	// 由 api 层的 AutoPushOnAssign hook 调 bridge.AutoPushOnAssign
+	// pusher / downstreams nil 时静默跳过(测试 / dev 环境)
+	pullBridge := &pullSuccessBridge{
+		disp:        webhookOutDisp,
+		pusher:      pusher,
+		downstreams: downstreamStore,
+		vendorView:  vendorSvc,
+		db:          database.DB,
+		logger:      slog.Default(),
+	}
+
 	if webhookOutDisp != nil {
 		webhookOutDisp.Start(ctx)
 		defer webhookOutDisp.Stop(3 * time.Second)
 		// 桥接到 decider / deathwatch(handoff 桥在 handoff janitor 装配点)
-		orch.SetPullNotifier(&pullSuccessBridge{disp: webhookOutDisp, db: database.DB, logger: slog.Default()})
+		orch.SetPullNotifier(pullBridge)
 		if deathwatchWatcher != nil {
 			deathwatchWatcher.SetDeathNotifier(&deathBridge{disp: webhookOutDisp, db: database.DB, logger: slog.Default()})
 			deathwatchWatcher.SetRefundNotifier(&refundBridge{disp: webhookOutDisp, db: database.DB})
@@ -983,6 +1006,8 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		slog.Info("webhookout.Dispatcher 已装配 · retrier 已启动 · 3 触发源已桥")
 	} else {
 		slog.Warn("webhookout.Dispatcher 未装配 · handleTestWebhook 走 1a 兼容分支")
+		// I-02 · 即使 webhookout 未装配 · 只要 pusher + downstreams 就绪 · 自动推仍可跑
+		orch.SetPullNotifier(pullBridge)
 	}
 
 	apiSrv := api.NewServer(api.ServerDeps{
@@ -1025,6 +1050,11 @@ func runServe(ctx context.Context, cfg config.Config) error {
 		// 需要 BP_ADMIN_KEY · 走跟 admin/data-health 同套鉴权
 		// **必须跟 buildDecider 用同一个 Store 实例** —— 手工池 Reserve/Sell 是同一状态机
 		MarketStock: marketStockStore,
+		// I-01 · admin_market POST /admin/market/stock 时 · 明文加密写 market_stock_plaintext
+		// 暂存表 · settle 时同 tx 迁到 credential_plaintext。跟 buildDecider / pusher 同实例
+		Credplain: credplainStore,
+		// I-02 · assign into_bus 场景 · handler 后台调 bridge 自动推
+		AutoPushOnAssign: pullBridge.AutoPushOnAssign,
 	})
 	apiSrv.Routes(mux)
 

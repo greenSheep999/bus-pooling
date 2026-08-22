@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ export function BulkActionBar({
   /** 动作按钮 */
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       className={cn(
@@ -39,7 +41,7 @@ export function BulkActionBar({
           <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand text-label font-semibold tnum text-white">
             {count}
           </span>
-          <span className="text-label font-semibold">已选 {count} 个</span>
+          <span className="text-label font-semibold">{t("ui.selected-count", { count })}</span>
         </span>
 
         <span className="h-5 w-px bg-hairline" />
@@ -48,7 +50,7 @@ export function BulkActionBar({
         <span className="flex flex-wrap items-center gap-2">{children}</span>
 
         {/* 取消选择 */}
-        <Button variant="ghost" size="icon" onClick={onClear} aria-label="取消选择">
+        <Button variant="ghost" size="icon" onClick={onClear} aria-label={t("ui.clear-selection")}>
           <X />
         </Button>
       </div>
